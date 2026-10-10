@@ -162,6 +162,25 @@ class StopOrderScenarioTest extends TradingTestBase {
     assertThat(dec(trigger(t).get("price"))).isEqualByComparingTo("94.00");
   }
 
+  @Test
+  void aStopEnteredDuringTheSessionIsNoOpeningSoItsFirstQuoteDoesNotTriggerIt() {
+    String s = symbol();
+    Player p = holder(s, 3);
+    // the last trade (the reference) is 100.00, but the bid is already below the stop
+    OrderDto o = place(p, stop(cid(), s, Side.SELL, "3", "99.99", TimeInForce.DAY)).order();
+    time.advance(Duration.ofSeconds(1));
+    quote(s, "99.97", 1000, "99.99", 1000);
+    print(s, "100.00", 100);
+    step();
+    OrderDto armed = order(p, o.orderId());
+    assertThat(armed.status()).isEqualTo(OrderStatus.WORKING);
+    assertThat(armed.triggered()).as("prints flow: only a print at or below 99.99 triggers").isFalse();
+    time.advance(Duration.ofSeconds(1));
+    print(s, "99.99", 100);
+    step();
+    assertThat(trigger(order(p, o.orderId()))).containsEntry("basis", "PRINT");
+  }
+
   // ------------------------------------------------------------------------------------------- opening gap
 
   @Test

@@ -167,6 +167,8 @@ class Evaluator {
       return;
     }
     boolean arriving = e.reopenPending;
+    // §12.7 opening gap: the first evaluation of a session (an order queued for the open, a resume, after a halt)
+    boolean sessionStart = e.reopenPending || (r.status() == OrderStatus.PENDING && e.queuedForOpen);
     if (r.status() == OrderStatus.PENDING) {
       writer.activate(r.id(), now);
       writer.event(r.id(), OrderEventType.WORKING, OrderStatus.WORKING, now, null);
@@ -191,7 +193,7 @@ class Evaluator {
       return;
     }
     if (OrderTypes.isStop(r.type()) && !r.triggered()) {
-      armed(e, r, now, prints, arriving, tx);
+      armed(e, r, now, prints, sessionStart, tx);
       return;
     }
     Optional<ExecQuote> quote = marketData.executableQuote(r.symbol(), r.eligibleAt(), session.type());
@@ -250,19 +252,20 @@ class Evaluator {
   }
 
   /**
-   * An armed stop (§12.7): the trigger decision only, never a fill in the same step. {@code arriving}: the first
-   * evaluation of a session (activation, resume at the open, after a halt), when a quote already through the stop
-   * triggers at once (opening gap); that check stays pending until a quote was available.
+   * An armed stop (§12.7): the trigger decision only, never a fill in the same step. {@code opening}: the first
+   * evaluation of a session (activation of an order queued for the open, a resume at the open, after a halt), when a
+   * quote already through the stop triggers at once (opening gap); that check stays pending until a quote was
+   * available. A stop entered during the session is not an opening at its activation.
    */
-  private void armed(OpenOrderIndex.Entry e, OrderRow r, Instant now, List<PrintBuffer.Seq> prints, boolean arriving,
+  private void armed(OpenOrderIndex.Entry e, OrderRow r, Instant now, List<PrintBuffer.Seq> prints, boolean opening,
                      EngineTx tx) {
     TriggerEvaluator.Result t = triggers.evaluate(e, r, now, prints.stream().map(PrintBuffer.Seq::print).toList(),
-        arriving, tx);
+        opening, tx);
     if (t.quoteMissing()) {
       requestRefresh(r.symbol(), now);
     }
     if (!t.triggered()) {
-      boolean keepOpening = arriving && t.quoteMissing();
+      boolean keepOpening = opening && t.quoteMissing();
       tx.afterCommit(() -> {
         e.reopenPending = keepOpening;
         e.awaitingQuoteNoted = false;
