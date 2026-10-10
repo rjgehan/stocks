@@ -45,23 +45,19 @@ class FeeCalculatorTest {
 
   @Test
   void tenPartialSellsAreChargedCumulatively() {
+    // cumulative exact SEC = 0.103·k → CEIL_CENT 0.11, 0.21, 0.31, 0.42, 0.52, 0.62, 0.73, 0.83, 0.93, 1.03
+    String[] expected = {"0.11", "0.10", "0.10", "0.11", "0.10", "0.10", "0.11", "0.10", "0.10", "0.10"};
     BigDecimal qty = BigDecimal.ZERO;
     BigDecimal principal = BigDecimal.ZERO;
     BigDecimal total = BigDecimal.ZERO;
-    BigDecimal first = null;
     for (int k = 0; k < 10; k++) {
       Fees f = fees.forExecution(Side.SELL, OCT_9, qty, principal, d("100"), d("5000.00"));
-      if (first == null) {
-        first = f.sec();
-      } else {
-        assertThat(f.sec()).isEqualByComparingTo("0.10");
-      }
+      assertThat(f.sec()).as("SEC charge of fill %d", k + 1).isEqualByComparingTo(expected[k]);
       total = total.add(f.sec());
       qty = qty.add(d("100"));
       principal = principal.add(d("5000.00"));
     }
-    assertThat(first).isEqualByComparingTo("0.11");
-    assertThat(total).isEqualByComparingTo("1.03");
+    assertThat(total).as("not 10 × 0.11 = 1.10").isEqualByComparingTo("1.03");
   }
 
   @Test

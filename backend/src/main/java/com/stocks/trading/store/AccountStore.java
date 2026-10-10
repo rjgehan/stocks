@@ -93,9 +93,10 @@ public class AccountStore {
 
   /** The latest settle date of unsettled positive ledger rows (GFV funding attribution, §10.4), if any. */
   public Optional<LocalDate> latestUnsettledCreditDate(long accountId, LocalDate asOfEt) {
-    return Optional.ofNullable(jdbc.sql("""
+    // an aggregate over no rows is one NULL row: map it to empty (single() rejects a null value)
+    return jdbc.sql("""
             SELECT MAX(settle_date) FROM cash_ledger WHERE account_id = ? AND amount > 0 AND settle_date > ?""")
-        .params(accountId, asOfEt).query((rs, n) -> Jdbc.date(rs, 1)).single());
+        .params(accountId, asOfEt).query((rs, n) -> Optional.ofNullable(Jdbc.date(rs, 1))).single();
   }
 
   // ------------------------------------------------------------------------------------------- positions and lots
@@ -161,9 +162,8 @@ public class AccountStore {
   }
 
   public Optional<Instant> nextViolationExpiry(long accountId, Instant now) {
-    return Optional.ofNullable(jdbc.sql("SELECT MIN(expires_at) FROM account_violation WHERE account_id = ?"
-            + " AND expires_at > ?")
-        .params(accountId, Jdbc.ts(now)).query((rs, n) -> Jdbc.instant(rs, 1)).single());
+    return jdbc.sql("SELECT MIN(expires_at) FROM account_violation WHERE account_id = ? AND expires_at > ?")
+        .params(accountId, Jdbc.ts(now)).query((rs, n) -> Optional.ofNullable(Jdbc.instant(rs, 1))).single();
   }
 
   // ------------------------------------------------------------------------------------------- players
