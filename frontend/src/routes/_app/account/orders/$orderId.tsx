@@ -142,7 +142,7 @@ function StopPanel({ o }: { o: Order }) {
     <section className="rounded-lg border border-divider bg-bg-1 p-4" aria-label="Stop">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h2 className="text-section font-semibold">{trailing ? 'Trailing stop' : 'Stop'}</h2>
-        <Pill tone={o.triggered ? 'warn' : armed ? 'accent' : 'neutral'}>{o.triggered ? 'Triggered' : armed ? 'Armed' : 'Not triggered'}</Pill>
+        <Pill tone={o.triggered ? 'warn' : armed ? 'accent' : 'neutral'}>{o.triggered ? 'Triggered' : armed ? 'Armed' : o.group?.held ? 'Waiting for entry' : 'Not triggered'}</Pill>
       </div>
       <dl>
         {trailing ? <Field label="Trail">{trailLabel(o) ?? '--'}</Field> : null}

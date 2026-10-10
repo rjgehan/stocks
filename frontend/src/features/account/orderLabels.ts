@@ -117,9 +117,12 @@ export function orderTitle(o: Order): string {
   return `${side} ${orderSizeLabel(o)} ${o.symbol ?? ''} · ${type}${price ? ` ${price}` : ''}`
 }
 
-/** A stop order that has not triggered yet: the ticket, list and detail show its live stop (§12.7). */
-export const isArmedStop = (o: Pick<Order, 'type' | 'triggered' | 'status'>): boolean =>
-  (o.type === 'STOP' || o.type === 'STOP_LIMIT' || o.type === 'TRAILING_STOP') && !o.triggered && (o.status === 'PENDING' || o.status === 'WORKING')
+/**
+ * A stop order that has not triggered yet: the ticket, list and detail show its live stop (§12.7). A group child still
+ * waiting for its entry (§11.9 `held`) is not armed yet.
+ */
+export const isArmedStop = (o: Pick<Order, 'type' | 'triggered' | 'status'> & { group?: Order['group'] }): boolean =>
+  (o.type === 'STOP' || o.type === 'STOP_LIMIT' || o.type === 'TRAILING_STOP') && !o.triggered && (o.status === 'PENDING' || o.status === 'WORKING') && !o.group?.held
 
 /** What triggered a stop (`TRIGGERED` event `detail.basis`, §12.7). */
 export const TRIGGER_BASIS_LABEL: Record<string, string> = {
