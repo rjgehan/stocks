@@ -89,6 +89,7 @@ services:
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
       STARTING_CASH_DEFAULT: ${STARTING_CASH_DEFAULT:-500.00}
       MARKETDATA_PROFILE: ${MARKETDATA_PROFILE:-hybrid}
+      MARKETDATA_ALLOW_SIMULATED_IN_PROD: ${MARKETDATA_ALLOW_SIMULATED_IN_PROD:-false}
       ALPACA_KEY_ID: ${ALPACA_KEY_ID:-}
       ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
       ALPACA_FEED: ${ALPACA_FEED:-iex}
@@ -151,6 +152,10 @@ services:
           description:
             en_us: hybrid (Alpaca Basic + Finnhub, free) or alpaca-sip (paid SIP plan).
             en_US: hybrid (Alpaca Basic + Finnhub, free) or alpaca-sip (paid SIP plan).
+        - container: MARKETDATA_ALLOW_SIMULATED_IN_PROD
+          description:
+            en_us: true runs on simulated prices (set MARKETDATA_PROFILE=simulated) until Alpaca keys exist; otherwise false.
+            en_US: true runs on simulated prices (set MARKETDATA_PROFILE=simulated) until Alpaca keys exist; otherwise false.
         - container: ALPACA_KEY_ID
           description:
             en_us: Alpaca PAPER account key id (use a different Alpaca account than dev).

@@ -41,3 +41,4 @@ stocks:
     seed: ${ENGINE_SEED}
   marketdata:
     profile: ${MARKETDATA_PROFILE}          # hybrid (free tier) or alpaca-sip (paid); SIM refused unless overridden
+    allow-simulated-in-prod: ${MARKETDATA_ALLOW_SIMULATED_IN_PROD:false}  # true only while no Alpaca keys exist
