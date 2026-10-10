@@ -549,8 +549,8 @@ export interface paths {
         get: operations["list_3"];
         put?: never;
         /**
-         * Issue an API key for a player
-         * @description Recent password check. scopes default to all four for an AI player (the read scopes, plus 'trade' if allowed, for a human); expiresInDays 1-365 or omitted. The token and the Claude Code, Claude API, OpenAI Responses and curl snippets are shown once. Errors: PLAYER_NOT_FOUND, VALIDATION_FAILED, FORBIDDEN_SCOPE.
+         * Issue an API key for an AI player
+         * @description Recent password check. AI players only: a human's keys are personal (Settings > API keys), so the admin never holds a token that reads a friend's live account (§16.7). scopes default to all four; expiresInDays 1-365 or omitted. The token and the Claude Code, Claude API, OpenAI Responses and curl snippets are shown once. Errors: PLAYER_NOT_FOUND, VALIDATION_FAILED, FORBIDDEN (a human).
          */
         post: operations["issue"];
         delete?: never;
@@ -773,7 +773,7 @@ export interface paths {
         };
         /**
          * Company logo
-         * @description A PNG (a generated placeholder when no logo is available). Cached for a year by the browser.
+         * @description A PNG (a generated placeholder for an unknown symbol or when no logo is available). A real logo is cached for a year by the browser, a placeholder for an hour.
          */
         get: operations["logo"];
         put?: never;
@@ -815,7 +815,7 @@ export interface paths {
         put?: never;
         /**
          * Log in with handle and password
-         * @description Humans only. Starts a session (stocks_sid cookie), rotates XSRF-TOKEN and returns Me. Errors: BAD_CREDENTIALS, LOGIN_LOCKED, PLAYER_DISABLED. Limited to 10 attempts per minute per IP.
+         * @description Humans only. Starts a session (stocks_sid cookie), rotates XSRF-TOKEN and returns Me. Errors: BAD_CREDENTIALS, LOGIN_LOCKED (10 failures of one handle from one IP, or 100 from anywhere, lock it for 15 minutes), PLAYER_DISABLED. Limited to 10 attempts per minute per IP.
          */
         post: operations["login"];
         delete?: never;
@@ -855,7 +855,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm the password again
-         * @description Session only. Refreshes the session's authenticatedAt, which @RecentAuth actions (cash transfers, resets, freeze, key issuance, role changes, break-glass view) require to be at most 15 minutes old (RECENT_AUTH_REQUIRED otherwise). Errors: BAD_CREDENTIALS, LOGIN_LOCKED.
+         * @description Session only. Refreshes the session's authenticatedAt, which @RecentAuth actions (cash transfers, resets, freeze, key issuance, role changes, break-glass view) require to be at most 15 minutes old (RECENT_AUTH_REQUIRED otherwise). Never locked by failed logins from elsewhere; 5 wrong passwords end this session (UNAUTHENTICATED). Errors: BAD_CREDENTIALS, UNAUTHENTICATED.
          */
         post: operations["reauth"];
         delete?: never;
@@ -1143,7 +1143,7 @@ export interface paths {
         put?: never;
         /**
          * Change my password
-         * @description Session only. Verifies the current password, sets the new one (at least 10 characters), rotates this session's id, ends every other session and revokes all of my API keys (§17.3). Errors: BAD_CREDENTIALS, LOGIN_LOCKED, WEAK_PASSWORD.
+         * @description Session only. Verifies the current password, sets the new one (at least 10 characters), rotates this session's id, ends every other session and revokes all of my API keys (§17.3). Errors: BAD_CREDENTIALS, WEAK_PASSWORD; 5 wrong current passwords end this session (UNAUTHENTICATED).
          */
         post: operations["changePassword"];
         delete?: never;
