@@ -41,9 +41,9 @@ public final class MetricsCalculator {
   /** Sharpe ratio and profit factor: scale 4. */
   public static final int RATIO_SCALE = 4;
   /** Trading days per year (annualization). */
-  public static final int TRADING_DAYS = 252;
+  public static final int DAYS_PER_YEAR = 252;
   private static final MathContext MC = MathContext.DECIMAL128;
-  private static final BigDecimal SQRT_TRADING_DAYS = BigDecimal.valueOf(TRADING_DAYS).sqrt(MC);
+  private static final BigDecimal SQRT_DAYS_PER_YEAR = BigDecimal.valueOf(DAYS_PER_YEAR).sqrt(MC);
 
   private MetricsCalculator() {}
 
@@ -151,8 +151,8 @@ public final class MetricsCalculator {
       return new RiskStats(n, null, null);
     }
     BigDecimal sd = variance.sqrt(MC);
-    BigDecimal sharpe = mean.divide(sd, MC).multiply(SQRT_TRADING_DAYS, MC).setScale(RATIO_SCALE, MODE);
-    BigDecimal volatility = sd.multiply(SQRT_TRADING_DAYS, MC).setScale(RETURN_SCALE, MODE);
+    BigDecimal sharpe = mean.divide(sd, MC).multiply(SQRT_DAYS_PER_YEAR, MC).setScale(RATIO_SCALE, MODE);
+    BigDecimal volatility = sd.multiply(SQRT_DAYS_PER_YEAR, MC).setScale(RETURN_SCALE, MODE);
     return new RiskStats(n, sharpe, volatility);
   }
 
