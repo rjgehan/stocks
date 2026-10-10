@@ -9,7 +9,7 @@ import { isApiError } from './problem'
 export interface ErrorCopy {
   title: string
   /** The PlaceOrderRequest member the code is about (inline ticket error). */
-  field?: 'qty' | 'notional' | 'limitPrice' | 'stopPrice' | 'side' | 'symbol' | 'timeInForce' | 'extendedHours' | 'type' | 'amount'
+  field?: 'qty' | 'notional' | 'limitPrice' | 'stopPrice' | 'trailAmount' | 'trailPercent' | 'side' | 'symbol' | 'timeInForce' | 'extendedHours' | 'type' | 'amount'
 }
 
 export const ERROR_COPY: Record<string, ErrorCopy> = {
@@ -52,11 +52,11 @@ export const ERROR_COPY: Record<string, ErrorCopy> = {
   INVALID_TICK: { title: 'Price must be in $0.01 steps ($0.0001 under $1)', field: 'limitPrice' },
   LIMIT_PRICE_REQUIRED: { title: 'Enter a limit price', field: 'limitPrice' },
   STOP_PRICE_REQUIRED: { title: 'Enter a stop price', field: 'stopPrice' },
-  TRAIL_REQUIRED: { title: 'Enter a trail amount or percent' },
+  TRAIL_REQUIRED: { title: 'Enter a trail amount or percent', field: 'trailAmount' },
   PRICE_NOT_ALLOWED: { title: 'This order type does not take that price' },
   EXT_HOURS_LIMIT_ONLY: { title: 'Extended hours need a Limit order', field: 'extendedHours' },
   TIF_NOT_ALLOWED: { title: 'That time in force is not allowed for this order', field: 'timeInForce' },
-  SESSION_NOT_ALLOWED: { title: 'Not allowed in the current session' },
+  SESSION_NOT_ALLOWED: { title: 'Not allowed in the current session (trailing stops: 9:30–16:00 ET)' },
   STOP_PRICE_WRONG_SIDE: { title: 'The stop price is on the wrong side of the market', field: 'stopPrice' },
   PRICE_TOO_FAR: { title: 'The price is more than 50% from the market', field: 'limitPrice' },
   SHORT_SELLING_NOT_ALLOWED: { title: 'You have no shares to sell (no short selling)', field: 'side' },

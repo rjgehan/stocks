@@ -233,14 +233,15 @@ describe('mock server: auth', () => {
   })
 })
 
+const lastOf = async (symbol: string) => (await call<{ quotes: Array<{ last: string }> }>('GET', `/quotes?symbols=${symbol}`)).body.quotes[0]!.last
+const cents = (n: number) => (Math.round(n * 100) / 100).toFixed(2)
+const preview = async (body: Record<string, unknown>) =>
+  (await call<{ valid: boolean; errors: Array<{ code: string; field: string | null }> }>('POST', '/orders/preview', { symbol: 'AAPL', side: 'BUY', qty: '1', ...body })).body
+
 describe('mock server: stop orders (§11.1, §12.7)', () => {
-  const lastOf = async (symbol: string) => (await call<{ quotes: Array<{ last: string }> }>('GET', `/quotes?symbols=${symbol}`)).body.quotes[0]!.last
-  const cents = (n: number) => (Math.round(n * 100) / 100).toFixed(2)
 
   it('validates stop prices, trails and TIF per type', async () => {
     const last = Number(await lastOf('AAPL'))
-    const preview = async (body: Record<string, unknown>) =>
-      (await call<{ valid: boolean; errors: Array<{ code: string; field: string | null }> }>('POST', '/orders/preview', { symbol: 'AAPL', side: 'BUY', qty: '1', ...body })).body
     expect((await preview({ type: 'STOP' })).errors.map((e) => e.code)).toContain('STOP_PRICE_REQUIRED')
     expect((await preview({ type: 'STOP', stopPrice: cents(last * 0.98) })).errors).toEqual([expect.objectContaining({ code: 'STOP_PRICE_WRONG_SIDE', field: 'stopPrice' })])
     expect((await preview({ type: 'STOP_LIMIT', stopPrice: cents(last * 1.02) })).errors.map((e) => e.code)).toContain('LIMIT_PRICE_REQUIRED')

@@ -7,7 +7,7 @@ import { MockServer } from './server'
 let server: MockServer | null = null
 
 /**
- * Test hooks for Playwright in mock mode (`window.__stocksMock`): move a price through a stop trigger and publish a
+ * Test hooks for Playwright in mock mode (`window.stocksMock`): move a price through a stop trigger and publish a
  * league feed event without waiting for the random walk or the feed timer. Mock builds only.
  */
 export interface MockHooks {
@@ -18,7 +18,7 @@ export interface MockHooks {
 
 declare global {
   interface Window {
-    __stocksMock?: MockHooks
+    stocksMock?: MockHooks
   }
 }
 
@@ -27,7 +27,7 @@ export function mockServer(): MockServer {
     const s = new MockServer()
     server = s
     if (typeof window !== 'undefined') {
-      window.__stocksMock = {
+      window.stocksMock = {
         nudge: (symbol, bps) => {
           s.market.nudge(symbol, bps)
           s.onMarketStep(symbol)

@@ -12,7 +12,7 @@ import { Pill } from '@/components/ui/Pill'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
 import { toast } from '@/features/notifications/toastStore'
-import { ORDER_TYPE_LABEL, STATUS_LABEL, STATUS_TONE, orderSizeLabel, statusLine } from './orderLabels'
+import { ORDER_TYPE_LABEL, STATUS_LABEL, STATUS_TONE, isArmedStop, orderPriceLabel, orderSizeLabel, statusLine } from './orderLabels'
 
 export type OrderView = 'OPEN' | 'FILLED' | 'CANCELLED' | 'ALL'
 
@@ -54,16 +54,22 @@ export function OrderRow({ o, onCancel, cancelling, showDate }: { o: Order; onCa
       <Link to="/account/orders/$orderId" params={{ orderId: o.orderId ?? '' }} className="min-w-0 flex-1 hover:text-accent">
         <div className="truncate font-semibold">
           {o.symbol} · {orderSizeLabel(o)} · {o.type ? ORDER_TYPE_LABEL[o.type] : ''}
-          {o.limitPrice ? ` ${formatPrice(o.limitPrice)}` : ''}
+          {orderPriceLabel(o) ? ` ${orderPriceLabel(o)}` : ''}
           {o.timeInForce === 'GTC' ? ' · GTC' : ''}
           {o.extendedHours ? ' · Ext' : ''}
         </div>
         <div className="truncate text-caption text-text-3">
           {o.status === 'FILLED' || o.status === 'PARTIALLY_FILLED' ? `Filled ${formatQty(o.filledQty)} @ ${formatPrice(o.avgFillPrice)}` : statusLine(o)}
+          {o.type === 'TRAILING_STOP' && isArmedStop(o) && o.stopPrice ? ` · stop ${formatPrice(o.stopPrice)}` : ''}
           {' · '}
           {showDate ? formatDateTimeEt(o.receivedAt) : formatTimeEt(o.receivedAt)}
         </div>
       </Link>
+      {o.triggered && isOpenStatus(o.status) ? (
+        <Pill tone="warn" className="hidden tablet:inline-flex" title="The stop price was reached">
+          Triggered
+        </Pill>
+      ) : null}
       <Pill tone={o.status ? STATUS_TONE[o.status] : 'neutral'} className="hidden tablet:inline-flex">
         {o.status ? STATUS_LABEL[o.status] : '--'}
       </Pill>

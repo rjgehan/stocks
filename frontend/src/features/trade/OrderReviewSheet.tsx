@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { ORDER_TYPE_LABEL } from '@/features/account/orderLabels'
 import { EstimatesPanel } from './EstimatesPanel'
-import { withoutQueueDuplicates } from './ticketState'
+import { isStopType, stopExplanation, withoutQueueDuplicates } from './ticketState'
 
 /** Review sheet (§22.5, on by default via `confirmOrders`): every field and warning, then Confirm or Edit. */
 export function OrderReviewSheet({
@@ -30,11 +30,12 @@ export function OrderReviewSheet({
     ['Order type', request.type ? ORDER_TYPE_LABEL[request.type] : ''],
     [request.notional ? 'Amount' : 'Shares', request.notional ? formatMoney(request.notional) : formatQty(request.qty)],
   ]
-  if (request.limitPrice) rows.push(['Limit price', formatPrice(request.limitPrice)])
   if (request.stopPrice) rows.push(['Stop price', formatPrice(request.stopPrice)])
-  if (request.trailAmount) rows.push(['Trail', formatMoney(request.trailAmount)])
-  if (request.trailPercent) rows.push(['Trail', `${request.trailPercent}%`])
+  if (request.limitPrice) rows.push(['Limit price', formatPrice(request.limitPrice)])
+  if (request.trailAmount) rows.push(['Trail', `${formatMoney(request.trailAmount)} ${buy ? 'above the low' : 'below the high'}`])
+  if (request.trailPercent) rows.push(['Trail', `${request.trailPercent}% ${buy ? 'above the low' : 'below the high'}`])
   rows.push(['Time in force', request.timeInForce === 'GTC' ? 'GTC (60 days)' : 'Day'])
+  const explanation = request.type && request.side && isStopType(request.type) ? stopExplanation({ ...request, side: request.side, type: request.type, symbol: request.symbol ?? '' }) : null
   if (request.extendedHours) rows.push(['Extended hours', 'Yes'])
   if (request.rationale) rows.push(['Note', request.shareNote ? 'Shared publicly' : 'Private'])
   const side = buy ? 'buy' : 'sell'
@@ -64,8 +65,9 @@ export function OrderReviewSheet({
             </div>
           ))}
         </dl>
+        {explanation ? <p className="rounded-sm bg-accent-bg px-2 py-1.5 text-caption text-text-1">{explanation}</p> : null}
         <div className="rounded-md bg-bg-2/60 px-3 py-2">
-          <EstimatesPanel preview={preview} loading={false} notional={Boolean(request.notional)} />
+          <EstimatesPanel preview={preview} loading={false} notional={Boolean(request.notional)} stop={isStopType(request.type)} />
         </div>
         {withoutQueueDuplicates(preview.warnings ?? [], preview.sessionNote).map((w) => (
           <p key={w.code} className="rounded-sm bg-warn/10 p-2 text-caption text-warn">
@@ -73,7 +75,11 @@ export function OrderReviewSheet({
           </p>
         ))}
         {request.rationale ? <p className="rounded-sm bg-bg-2 p-2 text-caption text-text-2">“{request.rationale}”</p> : null}
-        <p className="text-micro text-text-3">Market orders fill at the best available price, which may differ from the estimate. Paper trading only.</p>
+        <p className="text-micro text-text-3">
+          {isStopType(request.type)
+            ? 'A stop is not a guaranteed price: once triggered, the order fills at the next available price (a stop limit may not fill). Paper trading only.'
+            : 'Market orders fill at the best available price, which may differ from the estimate. Paper trading only.'}
+        </p>
       </div>
     </Dialog>
   )

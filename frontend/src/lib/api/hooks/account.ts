@@ -49,6 +49,12 @@ export function useOrder(orderId: string) {
     queryKey: queryKeys.order(orderId),
     queryFn: () => unwrap(api.GET('/api/v1/orders/{orderId}', { params: { path: { orderId } } })),
     staleTime: 5_000,
+    // an armed trailing stop's watermark moves without an order event (TRAIL_UPDATED is throttled to 10 s, §11.5):
+    // keep the detail fresh while one is open
+    refetchInterval: (q) => {
+      const o = q.state.data
+      return o && o.type === 'TRAILING_STOP' && !o.triggered && (o.status === 'PENDING' || o.status === 'WORKING') ? 3_000 : false
+    },
   })
 }
 
