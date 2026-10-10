@@ -1,0 +1,26 @@
+{
+  "corporate_actions": {
+    "forward_splits": [
+      {"id": "4a2f2f3e-0b7a-4c1d-9a1e-1d2b3c4d5e01", "symbol": "NVDA", "cusip": "67066G104", "new_rate": 10, "old_rate": 1,
+       "process_date": "2026-10-12", "ex_date": "2026-10-12", "record_date": "2026-10-12", "payable_date": "2026-10-09",
+       "due_bill_redemption_date": "2026-10-13"}
+    ],
+    "reverse_splits": [
+      {"id": "4a2f2f3e-0b7a-4c1d-9a1e-1d2b3c4d5e02", "symbol": "SQQQ", "old_cusip": "74347G432", "new_cusip": "74350P800",
+       "new_rate": 1, "old_rate": 5, "process_date": "2026-10-14", "ex_date": "2026-10-14", "record_date": "2026-10-14",
+       "payable_date": "2026-10-14"},
+      {"id": "4a2f2f3e-0b7a-4c1d-9a1e-1d2b3c4d5e03", "symbol": "OLDR", "old_cusip": "000000001", "new_cusip": "000000002",
+       "new_rate": 1, "old_rate": 10, "process_date": "2026-10-15", "ex_date": "2026-10-15", "new_symbol": "NEWR"}
+    ],
+    "cash_dividends": [
+      {"id": "4a2f2f3e-0b7a-4c1d-9a1e-1d2b3c4d5e04", "symbol": "AAPL", "cusip": "037833100", "rate": 0.26, "special": false,
+       "foreign": false, "process_date": "2026-11-13", "ex_date": "2026-11-10", "record_date": "2026-11-10",
+       "payable_date": "2026-11-13"}
+    ],
+    "name_changes": [
+      {"id": "4a2f2f3e-0b7a-4c1d-9a1e-1d2b3c4d5e05", "old_symbol": "FB", "old_cusip": "30303M102", "new_symbol": "META",
+       "new_cusip": "30303M102", "process_date": "2026-10-13"}
+    ]
+  },
+  "next_page_token": "cGFnZTI="
+}
