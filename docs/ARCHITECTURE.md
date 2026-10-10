@@ -1740,7 +1740,7 @@ CREATE TABLE SPRING_SESSION_ATTRIBUTES (
 | I7 | Per account: Σ `reserved_cash` of open BUY orders ≤ `cash_balance`, so buying power is ≥ 0. |
 | I8 | `trade_order.filled_qty` = Σ `execution.qty`, and `fees_total` = Σ execution fees. A terminal order has no reservations. |
 | I9 | Every `execution` has exactly one `cash_ledger` row with `amount = net_amount`. Every APPLIED `cash_transfer` has exactly one ledger row. |
-| I10 | (Warning only.) Every execution price lies within the SIP 1-minute [low − spread, high + spread] of its minute. Checked by `FillQualityAudit` after the 15-minute embargo; never halts the engine. |
+| I10 | (Warning only.) Every execution price lies within the SIP 1-minute [low − spread, high + spread] of its minute (spread = the execution's reference-quote spread, at least one tick; RAW bars; a minute with only the IEX tail is retried until the execution is 30 minutes old). Checked by `FillQualityAudit` after the 15-minute embargo; a finding is logged at WARN and written once to `audit_log` as `SYSTEM/FILL_QUALITY_WARNING` (target the execution); it never halts the engine. |
 
 ---
 
@@ -1857,8 +1857,8 @@ Settlement **needs no job**: a row counts as settled once `settle_date ≤ asOfE
 | MARKET by shares, queued (entered outside REGULAR) | `qty × ref × 1.15 + estCAT`, where `ref` = latest consolidated or IEX last, else the previous close (split-adjusted, §14) |
 | MARKET notional | `notional`, which is all-in (§11.1) |
 | LIMIT, STOP_LIMIT | `qty × limit + estCAT` |
-| STOP | `qty × max(stop, ref) × 1.02 + estCAT` |
-| TRAILING_STOP (buy) | `qty × (ref + trail) × 1.02 + estCAT`, where trail is the amount, or `ref × pct/100` |
+| STOP | `qty × max(stop, ref) × 1.02 + estCAT` (the stop alone when no reference price exists) |
+| TRAILING_STOP (buy) | `qty × (ref + trail) × 1.02 + estCAT`, where trail is the amount, or `ref × pct/100`; no reference → `MARKET_DATA_UNAVAILABLE` (check 25) |
 | SELL (any) | `reserved_cash = 0`, and `reserved_qty = qty` (notional sell: `min(available, ceil5(notional / ref × 1.05))`) |
 
 The 102% and 115% cushions come from Webull [V].
@@ -1942,7 +1942,7 @@ What a frozen or disabled bot sees is fixed by the authentication outcome order 
 | `STOP_LIMIT` | REGULAR only | DAY, GTC | whole shares | Triggers like `STOP`, then becomes a limit order. |
 | `TRAILING_STOP` | REGULAR only, and **can only be entered in REGULAR** (Webull accepts trailing stops during market hours only; otherwise `SESSION_NOT_ALLOWED`) | **DAY only** [V] | whole shares | Exactly one of `trailAmount` ($) or `trailPercent` (0 < p < 100). |
 
-**Delivery staging (M1+, WS3).** The engine and validator ship MARKET and LIMIT first. Until `TriggerEvaluator` lands (M2), a `STOP`, `STOP_LIMIT` or `TRAILING_STOP` request is rejected synchronously with `400 VALIDATION_FAILED` on `type` (not persisted, D15), so no stop order can be accepted and then never trigger.
+**Delivery staging (WS3).** M1+ shipped MARKET and LIMIT first and rejected the stop types with `400 VALIDATION_FAILED` on `type`. Since M2 (`TriggerEvaluator`, §12.7) all five types are accepted, and `GET /rules` publishes all five in `orders.matrix`.
 
 **Fractional and notional rules** (D7):
 - The symbol must be `fractionable`.
@@ -1979,11 +1979,11 @@ Checks run in the row order below; the first failure wins. The numbers are stabl
 | 13 | Validator | Fractional or notional with GTC or EXT | `FRACTIONAL_DAY_ONLY` |
 | 14 | Validator | Notional below the minimum, or a fractional-quantity BUY worth less than the buy minimum at the ask (else the reference) | `NOTIONAL_TOO_SMALL` |
 | 15 | Validator | Prices required by type: `limitPrice` for LIMIT and STOP_LIMIT; `stopPrice` for STOP and STOP_LIMIT; a trail for TRAILING_STOP. A price field not used by the type gives `PRICE_NOT_ALLOWED`. | `LIMIT_PRICE_REQUIRED`, `STOP_PRICE_REQUIRED`, `TRAIL_REQUIRED`, `PRICE_NOT_ALLOWED` |
-| 16 | Validator | Prices on tick | `INVALID_TICK` |
+| 16 | Validator | Prices on tick, and `> 0`. A `trailAmount` must be on the tick of the reference price (of the amount itself without one); `trailPercent` must be `0 < p < 100` with at most 4 decimals (`VALIDATION_FAILED`). | `INVALID_TICK` |
 | 17 | Validator | `extendedHours=true` with a type other than LIMIT | `EXT_HOURS_LIMIT_ONLY` |
 | 18 | Validator | TRAILING_STOP with GTC, or MARKET with GTC → `TIF_NOT_ALLOWED`. TRAILING_STOP entered while the session is not REGULAR → `SESSION_NOT_ALLOWED`. | `TIF_NOT_ALLOWED`, `SESSION_NOT_ALLOWED` |
 | 19 | Validator | Buy stop ≤ reference, or sell stop ≥ reference (reference = consolidated last, else IEX last, else previous close; split-adjusted, §14) | `STOP_PRICE_WRONG_SIDE` |
-| 20 | Validator | Limit or stop more than 50% from the reference. Between 5% and 50% only adds the warning `FAT_FINGER`. | `PRICE_TOO_FAR` |
+| 20 | Validator | Limit or stop more than 50% from the reference (for a trailing stop, its starting stop `ref ∓ trail`). Between 5% and 50% only adds the warning `FAT_FINGER`. | `PRICE_TOO_FAR` |
 | 21 | Validator | Account restriction: buy under `LIQUIDATION_ONLY`, or any order under `FROZEN` | `ACCOUNT_RESTRICTED` |
 | 22 | Validator | Open orders ≥ 50 | `TOO_MANY_OPEN_ORDERS` |
 | 23 | Validator | SELL with no position | `SHORT_SELLING_NOT_ALLOWED` |
@@ -1991,6 +1991,8 @@ Checks run in the row order below; the first failure wins. The numbers are stabl
 | 25 | Validator | BUY with no reference price available for the hold | `MARKET_DATA_UNAVAILABLE` |
 | 26 | Validator | BUY hold > buying power. The `hint` gives the maximum affordable whole shares and suggests a notional amount. | `INSUFFICIENT_BUYING_POWER` |
 | 27 | Validator | SELL predicted to cause a GFV on `session_date` (§10.4), with ack required and `acknowledge` missing `"GFV_RISK"` | `GFV_ACK_REQUIRED` |
+
+Check 18's `SESSION_NOT_ALLOWED` comes from `SessionOrderMatrix` but is raised in row order, so checks 7–17 (for example `TRAIL_REQUIRED`) win over it. A preview (`POST /orders/preview`, MCP `preview_order`) runs check 7 without requiring an AI player's rationale (§20.3: the rationale is optional there); its length is still checked.
 
 **Synchronous failures are not persisted** (D15). They return 422 (or the status in §7.2) and write `audit_log` (`category=ORDER, action=ORDER_REJECT, outcome=REJECTED, detail={code, request}`). The `clientOrderId` stays free for a corrected retry. A 422 still costs the write token it was charged at check 4.
 
@@ -2065,6 +2067,7 @@ stateDiagram-v2
 - Allowed only for **unfilled, whole-share** orders in PENDING or WORKING. A filled, partially filled or terminal order returns `409 ORDER_NOT_REPLACEABLE`; a fractional or notional order returns `422 FRACTIONAL_NOT_REPLACEABLE` (a property of the request, as listed in §7.2).
 - Mutable fields: `qty`, `limitPrice`, `stopPrice`, `trailAmount`/`trailPercent`, `timeInForce`, `extendedHours`.
 - Immutable fields: symbol, side, type.
+- Stops: a replaced stop is a new, untriggered order (§12.7 Replace).
 - A **new `clientOrderId` is required.**
 - In one transaction: the old order becomes `REPLACED` (holds released, `replaced_by_order_id` set) and the new order is validated with the old hold credited back. If validation fails, nothing changes and the response is 422.
 - The new order has `replaces_order_id` set and gets a fresh latency window.
@@ -2216,21 +2219,25 @@ All fills from one evaluation share `executed_at = now` and are separate `execut
 
 These run in REGULAR only, for WORKING orders with `triggered=false` (`wait_reason=NOT_TRIGGERED`).
 
-- **Trigger source.** The trigger uses eligible consolidated prints drained since the last evaluation with `observedAt ≥ eligible_at`.
-  - A SELL stop triggers when `min(price) ≤ stop`; a BUY stop when `max(price) ≥ stop`.
+- **Trigger source.** The trigger uses eligible consolidated prints drained since the last evaluation with `observedAt ≥ max(eligible_at, trackedAt)`, where `trackedAt` is when the engine loaded the order (its acceptance, or the boot that reloaded it): nothing observed while the engine was down, or before the order was loaded, is ever trigger evidence, so a restart never triggers retroactively. The executable quote is anti-look-ahead from the same instant (§12.3).
+  - A SELL stop triggers when `min(price) ≤ stop`; a BUY stop when `max(price) ≥ stop`. Prints are taken in arrival order (the first crossing print is the trigger price).
   - If the symbol has no consolidated trade stream, or no consolidated print in the last 15 s, the executable quote is used instead: SELL when `bid ≤ stop`, BUY when `ask ≥ stop` [U: Webull's trigger basis].
-  - Provider adapters drop ineligible prints (odd-lot, average-price, out-of-sequence, derivatively priced, prior-reference) using per-provider condition-code tables [VERIFY tables].
+  - Provider adapters drop ineligible prints (odd-lot, average-price, out-of-sequence, derivatively priced, prior-reference) using per-provider condition-code tables [VERIFY tables]. Print prices are taken at scale 4.
+- **Evaluation.** In `evaluateSymbol` an armed stop gets only the trigger decision: it never fills in the step that triggers it. A halted symbol (or one on a corporate-action hold) is not evaluated (`wait_reason=HALTED`), and the first evaluation after the halt is an opening evaluation (below). Session transitions and catch-up never run the trigger (§9.4).
 - **On trigger:**
   - Set `triggered=true` and `triggered_at`.
-  - Write the `TRIGGERED` event with `{price, basis}`.
-  - Set `eligible_at = now + latency`.
-  - STOP then behaves as MARKET (the collar is set at the first post-trigger evaluation). STOP_LIMIT behaves as a LIMIT with arriving semantics.
-- **Opening gap.** At the first REGULAR evaluation of the day, if the first executable quote or print is already through the stop, the order triggers immediately.
+  - Write the `TRIGGERED` event with `{price, basis, stopPrice, watermark (trailing only), eligibleAt}`; `basis` is `PRINT`, `QUOTE` (the 15 s fallback) or `OPENING_QUOTE` (the opening gap).
+  - Set `eligible_at = now + latency` (`wait_reason=LATENCY`; seeded per order and resume count).
+  - STOP and TRAILING_STOP then behave as MARKET through `FillModel` (the collar is set at the first post-trigger evaluation; liquidity `TOUCH`/`WALK`, never `OPEN`). STOP_LIMIT behaves as a LIMIT with arriving semantics (marketable at the touch within the limit, else it rests at the limit with `LIMIT_NOT_REACHED`).
+  - The order's market-data lease drops from `ORDER_TRIGGER` to `ORDER_RESTING` (a repeat lease updates the priority).
+- **Opening gap.** At the first REGULAR evaluation of the day (activation of an order queued for the open, a GTC stop resumed at the open, or the first evaluation after a halt), if the first executable quote or print is already through the stop, the order triggers immediately. If no executable quote exists at that evaluation, the opening check stays pending until one does (a print through the stop triggers regardless).
 - **Trailing stop:**
   - The watermark initializes at activation in REGULAR to the first eligible consolidated print, or to the executable mid if there is none. (Trailing stops are only entered in REGULAR, so none is ever queued for the open.)
   - SELL: `hwm = max(hwm, p)`; `stop = TICK_DOWN(hwm − amount)` or `TICK_DOWN(hwm × (1 − pct/100))`.
   - BUY: `lwm = min(lwm, p)`; `stop = TICK_UP(lwm + amount)` or `TICK_UP(lwm × (1 + pct/100))`.
-  - `watermark_price` and `stop_price` are persisted at most once per second per order. The trigger works as for a stop.
+  - In quote mode (the 15 s fallback) `p` is the touch: the bid for a SELL, the ask for a BUY.
+  - `watermark_price` and `stop_price` are persisted at most once per second per order (`stop_price` is NULL until the first watermark), and `TRAIL_UPDATED {watermark, stopPrice}` is written when the stop moved, at most once every 10 s. After a restart the order continues from the persisted watermark. The trigger works as for a stop.
+- **Replace.** Replacing an unfilled stop (§11.6) creates a new, untriggered order (its stop is re-checked by checks 19–20 against the current reference); a trailing stop's new order starts a fresh watermark, and its trail is replaced as a pair (sending one of `trailAmount`/`trailPercent` drops the other).
 
 ### 12.8 Posting a fill (`PostingService.post`, inside the engine transaction)
 
@@ -2900,7 +2907,7 @@ Every row records actor, kind, channel, API key id, MCP client and tool, IP, use
 | KEY | Issue, revoke |
 | ADMIN | Player create, update, freeze, disable; settings; invites; calendar overrides; engine halt and resume; corporate-action resolve; admin order cancel; **break-glass live view** (`PLAYER_LIVE_VIEW`, with the reason) |
 | ACCOUNT | Reset, GFV issued, restriction change, split and name-change effects. Audit is the security record only; the player-facing activity history comes from `cash_ledger` and `account_event` (§18.2), never from `audit_log`. |
-| SYSTEM | Job failures, invariant failures, provider 406 |
+| SYSTEM | Job failures, invariant failures, provider 406, fill-quality warnings (I10, `FILL_QUALITY_WARNING`) |
 
 Secrets are never logged. Reads are not audited in Phase 1 (structured logs instead), with one exception: the admin's break-glass live view of another player (§21.3). Client-controlled fields are already bounded by `RequestMeta` (§6.6), so an audit insert never fails on length.
 
@@ -4273,7 +4280,7 @@ Actions are pinned to their current major versions: `actions/checkout@v7`, `acti
 | 09:00 next trading day | Re-mark PROVISIONAL marks; re-run the EOD snapshot for that date if any mark changed | Scheduled | WS2 → WS4 | no | `date:REMARK` | LATEST_ONLY |
 | at boot, once | `BenchmarkBackfillJob` (§16.6) | Scheduled (single occurrence) | WS4 | no | `2025-12-31` | ALL_MISSED |
 | every 5 s | Leaderboard recompute; feed visibility publisher | Periodic | WS4 | no | — | — |
-| rolling, 16 min after each execution | `FillQualityAudit` (I10, warnings only) | Periodic (scans executions 16–30 min old) | WS3 | no | — | — |
+| rolling, 16 min after each execution | `FillQualityAudit` (I10, warnings only; `FILL_QUALITY_AUDIT`, every 60 s) | Periodic (scans executions 16–30 min old) | WS3 | no | — | — |
 
 ## 26. Testing strategy
 
@@ -4293,7 +4300,7 @@ WS3 owns **`DirectEngineExecutor`** (`src/test/java/com/stocks/trading/engine/te
 | Pure unit | `Rounding` and tick rules; `FeeCalculator` (golden table §13); `HoldCalculator`; `BalanceCalculator`; `OrderValidator` (every `ErrorCode` path, including `SESSION_NOT_ALLOWED`); `OrderGate` (token charged once, replays free, preview never charged); `SessionOrderMatrix`; `ExpiryCalculator` (DAY/GTC 60 days, early close, DST); `OrderStateMachine` (every legal and illegal transition, table-driven); `FillModel` (touch, walk, collar, resting, trade-through, **wide IEX quote with and without a fresh print, clamp**); `TriggerEvaluator` (stop, gap, trailing HWM); `SplitMath` (3:2, 1:3, 1:8 on multi-lot fractional positions; no bare `divide`); `SplitAdjustments`; `UnitMath` and every §16.2 golden vector (deposit, deposit to ALL, tiny equity, rebase, reset continuity); receivable point-in-time (§16.1); `MetricsCalculator` (MDD, excess); `MarketCalendar` (§9.2 golden dates); `GfvService.predict` with `session_date` (weekend entry) | JUnit 6, AssertJ |
 | Property-based | Random sequences of {orders, cancels, replaces, quotes, prints, transitions, deposits, withdrawals, splits (including non-terminating ratios), dividends, resets}. **Invariants I1–I9 hold after every step.** A deposit at any instant leaves U unchanged. Notional principal + fees ≤ notional. Fee deltas sum to the rounded cumulative fee. TWR is independent of deposit timing when per-period returns are fixed. A reset never raises any period's TWR. | jqwik, `DirectEngineExecutor`, SIM |
 | Engine scenarios (golden event logs, `golden/engine`) | Notional $500 all-in buy; marketable limit fills at the ask; resting limit fills at L on quote cross and on trade-through; partial fills by displayed size and walk; market beyond collar waits; stale quote leads to AWAITING_QUOTE then EXPIRED; **no fill on a quote confirmed before `eligible_at`**; queued market order fills after 09:30 + latency; GTC paused overnight and resumed; DAY expiry at 16:00, at 20:00 with EXT, and on the 13:00/17:00 early close; halt then reopen at `min(L, ask)`; a stale symbol is never marked halted; stop gap at open; trailing stop (rejected outside REGULAR); cancel vs fill ordering; replace (hold re-check); **GFV**: buy with unsettled proceeds then sell the same day gives a GFV, selling after settlement gives none, escalation at 3 and 4; Columbus Day settlement; 2:1 split mid-GTC (orders cancelled, qty doubled, cost unchanged, equity continuous); **3:2, 1:3 and 1:8 splits on multi-lot fractional positions** (I5 after each, dust, cash in lieu); marks between the 03:45 split and the first print are split-adjusted; a detected split puts the symbol on hold and the admin resolves it; name change (Day P&L uses the old symbol's snapshot); dividend accrue then pay with continuous equity; admin deposit to ALL during the session leaves U unchanged; deposit into a $0.40 account applies; withdrawal above withdrawable is skipped; reset opens run 2 at the final U; freeze cancels orders and unfreeze restores the GFV restriction | `DirectEngineExecutor`, `ScriptedMarketData`, SIM scenarios |
-| Recovery | Restart mid-session: state is identical; a missed `RTH_CLOSE` expires DAY orders with no retroactive fills; catch-up of a missed EOD after a split reconstructs pre-split holdings from `position_adjustment`; with the guard **explicitly enabled**, a second instance cannot take the advisory lock or a live H2 lease, and a lease left by a dead PID on the same host is taken over | `@SpringBootTest` (`stocks.single-instance.enabled=true`) |
+| Recovery | Restart mid-session: state is identical; a stop never triggers on prints or quotes from the downtime (`EngineCore.restart()` through `DirectEngineExecutor.restart()` drops every in-memory structure and reloads the open orders); a missed `RTH_CLOSE` expires DAY orders with no retroactive fills; catch-up of a missed EOD after a split reconstructs pre-split holdings from `position_adjustment`; with the guard **explicitly enabled**, a second instance cannot take the advisory lock or a live H2 lease, and a lease left by a dead PID on the same host is taken over | `@SpringBootTest` (`stocks.single-instance.enabled=true`) |
 | Concurrency | 50 virtual threads send the same `clientOrderId` and get exactly one order (a mix of 201 and 200, one write token charged); 50 threads send the same `Idempotency-Key` on a cash transfer and get exactly one batch; the same for a reset (one new run, one RESET event); a retry after a simulated `ENGINE_TIMEOUT` replays; 200 mixed operations on one account keep invariants and never deadlock | `@SpringBootTest` |
 | Persistence | Flyway V1 applies on H2 (always) and on PostgreSQL 18.6 (`-Ppg-it`: embedded zonky PG, no Docker, run locally and in CI). PG append-only triggers reject UPDATE/DELETE. The CHECK constraints in §8 reject bad rows (admin AI, cash < 0, fractional GTC…). **Every repository method that issues a MERGE or binds a nullable or temporal parameter runs on both databases**, including null values for every nullable MERGE column. | JdbcClient tests |
 | Web and security | `AdminSecurityIT` (§17.4); CSRF required on session POSTs; a bearer request ignores cookies; scope matrix (personal key without `trade`); rate limit returns 429 with headers; key revocation is effective immediately; frozen bot gets `PLAYER_FROZEN`; forwarded headers are honored only from trusted proxies; problem-details shape (`INTERNAL_ERROR` hides details); **oversized `X-Request-Id`, `User-Agent` and MCP client headers** are replaced or truncated and the audit row is still written; **STOMP CONNECT with the raw `XSRF-TOKEN`** succeeds and without it fails; `/api/swagger-ui/index.html` requires authentication | MockMvc (`spring-boot-starter-webmvc-test`), WebSocket client |

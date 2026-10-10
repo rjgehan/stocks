@@ -47,6 +47,8 @@ public final class OpenOrderIndex {
     boolean beyondCollarNoted;
     boolean queuedForOpen;
     LeaseHandle lease;
+    /** An armed stop's trigger state (§12.7), null for other orders; see {@link TriggerEvaluator.State}. */
+    TriggerEvaluator.State trigger;
 
     Entry(OrderRow r) {
       this.id = r.id();

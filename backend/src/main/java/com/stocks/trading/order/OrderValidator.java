@@ -37,8 +37,7 @@ import org.springframework.stereotype.Component;
  * {@code PlaceOrderCmd} runs it again on the engine thread against the engine's state, where only that result counts.
  * Success yields the holds, the warnings and the pre-trade estimate.
  *
- * <p>Phase-1 scope of this build: MARKET and LIMIT. STOP, STOP_LIMIT and TRAILING_STOP are rejected with
- * {@code VALIDATION_FAILED} on {@code type} until the trigger evaluator lands.
+ * <p>Every Phase 1 order type is accepted (§11.1): MARKET, LIMIT, STOP, STOP_LIMIT and TRAILING_STOP.
  */
 @Component
 public class OrderValidator {
@@ -62,12 +61,22 @@ public class OrderValidator {
   public record MarketSnapshot(Asset asset, boolean corporateActionHold, QuoteView quote, BigDecimal reference) {}
 
   /**
-   * @param holdCreditBack a replaced order's hold, credited back to buying power (§11.6); zero otherwise
-   * @param gfvRisk        GfvService predicts a good-faith violation on {@code sessionDate} (§10.4)
+   * @param holdCreditBack   a replaced order's hold, credited back to buying power (§11.6); zero otherwise
+   * @param gfvRisk          GfvService predicts a good-faith violation on {@code sessionDate} (§10.4)
+   * @param sessionRejection {@code SESSION_NOT_ALLOWED} from {@link SessionOrderMatrix#accept} (a trailing stop
+   *                         outside REGULAR), thrown at check 18 so the checks before it win; null otherwise
    */
   public record Input(NormalizedOrder order, PlayerKind kind, boolean botsRequireRationale, MarketSnapshot market,
                       AccountSnapshot account, SessionOrderMatrix.Acceptance acceptance, LocalDate sessionDate,
-                      boolean gfvRisk, BigDecimal holdCreditBack, Instant now) {}
+                      boolean gfvRisk, BigDecimal holdCreditBack, Instant now, ApiException sessionRejection) {
+
+    public Input(NormalizedOrder order, PlayerKind kind, boolean botsRequireRationale, MarketSnapshot market,
+                 AccountSnapshot account, SessionOrderMatrix.Acceptance acceptance, LocalDate sessionDate,
+                 boolean gfvRisk, BigDecimal holdCreditBack, Instant now) {
+      this(order, kind, botsRequireRationale, market, account, acceptance, sessionDate, gfvRisk, holdCreditBack, now,
+          null);
+    }
+  }
 
   /** A valid order: what to reserve, the warnings and the estimate. */
   public record Result(BigDecimal reservedCash, BigDecimal reservedQty, List<Warning> warnings, EstimateDto estimate,
@@ -92,7 +101,7 @@ public class OrderValidator {
       throw ApiException.validation("side", "side is required (BUY or SELL)");
     }
     if (o.type() == null) {
-      throw ApiException.validation("type", "type is required (MARKET or LIMIT)");
+      throw ApiException.validation("type", "type is required (MARKET, LIMIT, STOP, STOP_LIMIT or TRAILING_STOP)");
     }
   }
 
@@ -188,24 +197,37 @@ public class OrderValidator {
     }
 
     // 15: prices required / allowed by type
-    if (o.type() != OrderType.MARKET && o.type() != OrderType.LIMIT) {
-      throw ApiException.validation("type", o.type() + " orders are not available yet; use MARKET or LIMIT.");
+    OrderType type = o.type();
+    if (o.limitPrice() != null && !OrderTypes.usesLimit(type)) {
+      throw priceNotAllowed("limitPrice", type, type == OrderType.MARKET ? "Remove it, or use type LIMIT"
+          : "Remove it, or use type STOP_LIMIT");
     }
-    if (o.stopPrice() != null || o.trailAmount() != null || o.trailPercent() != null) {
-      String field = o.stopPrice() != null ? "stopPrice" : o.trailAmount() != null ? "trailAmount" : "trailPercent";
-      throw ApiException.of(ErrorCode.PRICE_NOT_ALLOWED, field + " is not used by " + o.type() + " orders.")
-          .withField(field, ErrorCode.PRICE_NOT_ALLOWED, "Remove it");
+    if (o.stopPrice() != null && !OrderTypes.usesStop(type)) {
+      throw priceNotAllowed("stopPrice", type, type == OrderType.TRAILING_STOP
+          ? "A trailing stop's stop is computed from trailAmount or trailPercent" : "Remove it, or use type STOP");
     }
-    if (o.type() == OrderType.MARKET && o.limitPrice() != null) {
-      throw ApiException.of(ErrorCode.PRICE_NOT_ALLOWED, "limitPrice is not used by MARKET orders.")
-          .withField("limitPrice", ErrorCode.PRICE_NOT_ALLOWED, "Remove it, or use type LIMIT");
+    if ((o.trailAmount() != null || o.trailPercent() != null) && !OrderTypes.usesTrail(type)) {
+      throw priceNotAllowed(o.trailAmount() != null ? "trailAmount" : "trailPercent", type,
+          "Remove it, or use type TRAILING_STOP");
     }
-    if (o.type() == OrderType.LIMIT && o.limitPrice() == null) {
-      throw ApiException.of(ErrorCode.LIMIT_PRICE_REQUIRED, "LIMIT orders need a limitPrice.")
+    if (OrderTypes.usesLimit(type) && o.limitPrice() == null) {
+      throw ApiException.of(ErrorCode.LIMIT_PRICE_REQUIRED, type + " orders need a limitPrice.")
           .withField("limitPrice", ErrorCode.LIMIT_PRICE_REQUIRED, "Required");
     }
+    if (OrderTypes.usesStop(type) && o.stopPrice() == null) {
+      throw ApiException.of(ErrorCode.STOP_PRICE_REQUIRED, type + " orders need a stopPrice (the trigger price).")
+          .withField("stopPrice", ErrorCode.STOP_PRICE_REQUIRED, "Required");
+    }
+    if (OrderTypes.usesTrail(type) && (o.trailAmount() == null) == (o.trailPercent() == null)) {
+      throw ApiException.of(ErrorCode.TRAIL_REQUIRED, "TRAILING_STOP orders need exactly one of trailAmount "
+              + "(dollars) or trailPercent (0 < p < 100).")
+          .withHint("For example \"trailPercent\": \"5\" trails 5% behind the best price since the order started.")
+          .withField(o.trailAmount() != null ? "trailPercent" : "trailAmount", ErrorCode.TRAIL_REQUIRED,
+              "Exactly one of trailAmount and trailPercent");
+    }
 
-    // 16: tick
+    // 16: tick (and positive prices)
+    BigDecimal ref = in.market().reference();
     BigDecimal limit = null;
     if (o.limitPrice() != null) {
       if (o.limitPrice().signum() <= 0) {
@@ -213,34 +235,58 @@ public class OrderValidator {
       }
       limit = Prices.requireOnTick("limitPrice", o.limitPrice());
     }
+    BigDecimal stop = null;
+    if (o.stopPrice() != null) {
+      if (o.stopPrice().signum() <= 0) {
+        throw ApiException.validation("stopPrice", "stopPrice must be > 0");
+      }
+      stop = Prices.requireOnTick("stopPrice", o.stopPrice());
+    }
+    if (o.trailAmount() != null) {
+      requireTrailAmountOnTick(o.trailAmount(), ref);
+    }
+    if (o.trailPercent() != null && (o.trailPercent().signum() <= 0
+        || o.trailPercent().compareTo(HUNDRED) >= 0 || !Money.hasAtMostDecimals(o.trailPercent(), 4))) {
+      throw ApiException.validation("trailPercent", "trailPercent must be > 0 and < 100, with at most 4 decimals");
+    }
 
     // 17: extended hours
-    if (o.extendedHours() && o.type() != OrderType.LIMIT) {
+    if (o.extendedHours() && type != OrderType.LIMIT) {
       throw ApiException.of(ErrorCode.EXT_HOURS_LIMIT_ONLY, "Extended-hours orders must be LIMIT orders.")
           .withField("extendedHours", ErrorCode.EXT_HOURS_LIMIT_ONLY, "LIMIT only");
     }
 
-    // 18: time in force
-    if (o.type() == OrderType.MARKET && o.timeInForce() == TimeInForce.GTC) {
-      throw ApiException.of(ErrorCode.TIF_NOT_ALLOWED, "MARKET orders are DAY only.")
+    // 18: time in force, and the session a trailing stop may be entered in (§11.3)
+    if ((type == OrderType.MARKET || type == OrderType.TRAILING_STOP) && o.timeInForce() == TimeInForce.GTC) {
+      throw ApiException.of(ErrorCode.TIF_NOT_ALLOWED, type + " orders are DAY only.")
           .withField("timeInForce", ErrorCode.TIF_NOT_ALLOWED, "DAY");
     }
+    if (in.sessionRejection() != null) {
+      throw in.sessionRejection();
+    }
 
-    // 20: limit far from the reference (19 applies to stops only)
-    BigDecimal ref = in.market().reference();
-    if (limit != null && ref != null && ref.signum() > 0) {
-      BigDecimal pct = limit.subtract(ref).abs().multiply(HUNDRED).divide(ref, 4, RoundingMode.HALF_UP);
-      if (pct.compareTo(rules.priceTooFarPct()) > 0) {
-        throw ApiException.of(ErrorCode.PRICE_TOO_FAR, "limitPrice " + limit.toPlainString() + " is "
-                + pct.setScale(1, RoundingMode.HALF_UP).toPlainString() + "% from the reference " + ref.toPlainString()
-                + ".")
-            .withHint("Limit prices must be within " + rules.priceTooFarPct().toPlainString() + "% of the market.")
-            .withField("limitPrice", ErrorCode.PRICE_TOO_FAR, "Too far from " + ref.toPlainString());
+    // 19: a stop on the right side of the market (it would trigger at once otherwise)
+    if (stop != null && ref != null && ref.signum() > 0) {
+      boolean wrongSide = buy ? stop.compareTo(ref) <= 0 : stop.compareTo(ref) >= 0;
+      if (wrongSide) {
+        throw ApiException.of(ErrorCode.STOP_PRICE_WRONG_SIDE, "A " + (buy ? "buy" : "sell") + " stop must be "
+                + (buy ? "above" : "below") + " the market: stopPrice " + stop.toPlainString() + ", reference "
+                + ref.toPlainString() + ".")
+            .withHint(buy ? "A buy stop triggers when the price rises to it; to buy below the market use a LIMIT."
+                : "A sell stop triggers when the price falls to it; to sell above the market use a LIMIT.")
+            .withField("stopPrice", ErrorCode.STOP_PRICE_WRONG_SIDE, (buy ? "Above " : "Below ")
+                + ref.toPlainString());
       }
-      if (pct.compareTo(rules.fatFingerWarnPct()) > 0) {
-        warnings.add(Warning.of(WarningCode.FAT_FINGER, "limitPrice is "
-            + pct.setScale(1, RoundingMode.HALF_UP).toPlainString() + "% from the reference price "
-            + ref.toPlainString() + "."));
+    }
+
+    // 20: limit or stop far from the reference (a trailing stop's starting stop, ref ∓ trail, counts as its stop)
+    if (ref != null && ref.signum() > 0) {
+      checkDistance("limitPrice", limit, ref, warnings);
+      checkDistance("stopPrice", stop, ref, warnings);
+      if (OrderTypes.usesTrail(type)) {
+        BigDecimal t = HoldCalculator.trail(o, ref);
+        checkDistance(o.trailAmount() != null ? "trailAmount" : "trailPercent", buy ? ref.add(t) : ref.subtract(t),
+            ref, warnings);
       }
     }
 
@@ -332,6 +378,51 @@ public class OrderValidator {
     return new Result(reservedCash, reservedQty, List.copyOf(warnings), estimate, bpBefore, bpAfter);
   }
 
+  private static ApiException priceNotAllowed(String field, OrderType type, String fix) {
+    return ApiException.of(ErrorCode.PRICE_NOT_ALLOWED, field + " is not used by " + type + " orders.")
+        .withField(field, ErrorCode.PRICE_NOT_ALLOWED, fix);
+  }
+
+  /**
+   * A trail amount is a price distance: positive, at most 4 decimals and on the tick of the stock's price ($0.01 at
+   * or above $1.00, $0.0001 below; §6.2); without a reference price, on the tick of the amount itself.
+   */
+  static void requireTrailAmountOnTick(BigDecimal amount, BigDecimal ref) {
+    if (amount.signum() <= 0) {
+      throw ApiException.validation("trailAmount", "trailAmount must be > 0");
+    }
+    BigDecimal tick = Prices.tick(ref != null && ref.signum() > 0 ? ref : amount);
+    if (!Money.hasAtMostDecimals(amount, Prices.SCALE) || amount.remainder(tick).signum() != 0) {
+      throw ApiException.of(ErrorCode.INVALID_TICK, "trailAmount " + amount.toPlainString() + " is not on the "
+              + tick.toPlainString() + " tick")
+          .withField("trailAmount", ErrorCode.INVALID_TICK, "A multiple of " + tick.toPlainString());
+    }
+  }
+
+  /** Check 20: more than {@code priceTooFarPct} from the reference is rejected; more than 5% warns. */
+  private void checkDistance(String field, BigDecimal price, BigDecimal ref, List<Warning> warnings) {
+    if (price == null) {
+      return;
+    }
+    BigDecimal pct = price.subtract(ref).abs().multiply(HUNDRED).divide(ref, 4, RoundingMode.HALF_UP);
+    String shown = pct.setScale(1, RoundingMode.HALF_UP).toPlainString();
+    if (pct.compareTo(rules.priceTooFarPct()) > 0) {
+      String what = field.startsWith("trail") ? "The trailing stop would start at " + price.setScale(Prices.SCALE,
+          RoundingMode.HALF_UP).stripTrailingZeros().toPlainString() + ", " : field + " " + price.toPlainString()
+          + " is ";
+      throw ApiException.of(ErrorCode.PRICE_TOO_FAR, what + shown + "% from the reference " + ref.toPlainString()
+              + ".")
+          .withHint("Limit and stop prices must be within " + rules.priceTooFarPct().toPlainString()
+              + "% of the market.")
+          .withField(field, ErrorCode.PRICE_TOO_FAR, "Too far from " + ref.toPlainString());
+    }
+    if (pct.compareTo(rules.fatFingerWarnPct()) > 0) {
+      String label = field.startsWith("trail") ? "The trailing stop's starting stop" : field;
+      warnings.add(Warning.of(WarningCode.FAT_FINGER, label + " is " + shown + "% from the reference price "
+          + ref.toPlainString() + "."));
+    }
+  }
+
   private ApiException insufficientBuyingPower(NormalizedOrder o, BigDecimal hold, BigDecimal bp, BigDecimal perShare) {
     String detail = "Order needs $" + hold.toPlainString() + "; buying power is $" + bp.toPlainString() + ".";
     String hint;
@@ -355,12 +446,14 @@ public class OrderValidator {
                        QuoteView q, BigDecimal hold, BigDecimal available, LocalDate tradeDate) {
     boolean buy = o.side() == Side.BUY;
     BigDecimal touch = buy ? ask : bid;
-    BigDecimal price;
-    if (o.type() == OrderType.LIMIT) {
-      price = touch != null && (buy ? touch.compareTo(limit) < 0 : touch.compareTo(limit) > 0) ? touch : limit;
-    } else {
-      price = touch != null ? touch : ref;
-    }
+    BigDecimal price = switch (o.type()) {
+      case LIMIT -> touch != null && (buy ? touch.compareTo(limit) < 0 : touch.compareTo(limit) > 0) ? touch : limit;
+      // a stop is expected to fill around its trigger; a stop-limit never beyond its limit
+      case STOP -> o.stopPrice();
+      case STOP_LIMIT -> buy ? o.stopPrice().min(limit) : o.stopPrice().max(limit);
+      case TRAILING_STOP -> ref == null || ref.signum() <= 0 ? null : trailingStart(o, ref);
+      default -> touch != null ? touch : ref;
+    };
     BigDecimal qty = o.qty();
     if (qty == null && price != null && price.signum() > 0) {
       qty = buy ? notionalBuyQty(o.notional(), price, tradeDate)
@@ -375,6 +468,16 @@ public class OrderValidator {
     return new EstimateDto(price == null ? null : Prices.normalize(price.setScale(Prices.SCALE, RoundingMode.HALF_UP)),
         qty == null ? null : qtyOut(qty), principal, f.toDto(), hold, q == null ? null : q.asOf(),
         q == null ? DataQuality.NONE : q.quality());
+  }
+
+  /** A trailing stop's starting stop: {@code TICK_DOWN(ref − trail)} (sell) or {@code TICK_UP(ref + trail)} (buy). */
+  static BigDecimal trailingStart(NormalizedOrder o, BigDecimal ref) {
+    BigDecimal t = HoldCalculator.trail(o, ref);
+    if (o.side() == Side.BUY) {
+      return Rounding.TICK_UP.apply(ref.add(t));
+    }
+    BigDecimal s = ref.subtract(t);
+    return s.signum() <= 0 ? null : Rounding.TICK_DOWN.apply(s);
   }
 
   /**

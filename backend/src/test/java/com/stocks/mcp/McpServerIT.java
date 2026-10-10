@@ -509,6 +509,53 @@ class McpServerIT {
   }
 
   @Test
+  void stopOrdersRunThroughTheRealServer() {
+    try (McpSyncClient client = client(botKey)) {
+      client.initialize();
+      CallToolResult quotes = client.callTool(new CallToolRequest("get_quotes", Map.of("symbols", List.of("F"))));
+      assertThat(quotes.isError()).as(String.valueOf(quotes.content())).isFalse();
+      JsonNode q = jsonMapper.valueToTree(quotes.structuredContent()).get("quotes").get(0);
+      BigDecimal ref = new BigDecimal(q.get("last").isNull() ? q.get("ask").asString() : q.get("last").asString());
+      BigDecimal stop = ref.multiply(new BigDecimal("1.04")).setScale(2, java.math.RoundingMode.UP);
+      BigDecimal limit = stop.add(new BigDecimal("0.10"));
+
+      // WS3's real validator behind preview_order and place_order (§11.1: all five types are live)
+      CallToolResult preview = client.callTool(new CallToolRequest("preview_order", Map.of("symbol", "F",
+          "side", "BUY", "type", "TRAILING_STOP", "qty", "2", "trail_percent", "5")));
+      assertThat(preview.isError()).as(String.valueOf(preview.content())).isFalse();
+      JsonNode p = jsonMapper.valueToTree(preview.structuredContent());
+      assertThat(p.get("valid").asBoolean()).as(p.toString()).isTrue();
+      assertThat(p.get("estimate").get("hold").isString()).as("decimals are strings").isTrue();
+
+      CallToolResult wrongSide = client.callTool(new CallToolRequest("place_order", Map.of("client_order_id",
+          "stop-" + SEQ.incrementAndGet(), "symbol", "F", "side", "BUY", "type", "STOP", "qty", "1",
+          "stop_price", ref.multiply(new BigDecimal("0.90")).setScale(2, java.math.RoundingMode.DOWN).toPlainString(),
+          "rationale", "test")));
+      assertThat(wrongSide.isError()).isTrue();
+      assertThat(jsonMapper.readTree(((TextContent) wrongSide.content().get(0)).text()).get("code").asString())
+          .isEqualTo("STOP_PRICE_WRONG_SIDE");
+
+      CallToolResult placed = client.callTool(new CallToolRequest("place_order", Map.of("client_order_id",
+          "stop-" + SEQ.incrementAndGet(), "symbol", "F", "side", "BUY", "type", "STOP_LIMIT", "qty", "2",
+          "stop_price", stop.toPlainString(), "limit_price", limit.toPlainString(), "time_in_force", "GTC",
+          "rationale", "Breakout entry above resistance.")));
+      assertThat(placed.isError()).as(String.valueOf(placed.content())).isFalse();
+      JsonNode order = jsonMapper.valueToTree(placed.structuredContent()).get("order");
+      assertThat(order.get("type").asString()).isEqualTo("STOP_LIMIT");
+      assertThat(new BigDecimal(order.get("stopPrice").asString())).isEqualByComparingTo(stop);
+      assertThat(new BigDecimal(order.get("limitPrice").asString())).isEqualByComparingTo(limit);
+      assertThat(order.get("triggered").asBoolean()).isFalse();
+      assertThat(order.get("trailPercent").isNull()).isTrue();
+
+      CallToolResult cancelled = client.callTool(new CallToolRequest("cancel_order", Map.of("order_id",
+          order.get("orderId").asString())));
+      assertThat(cancelled.isError()).as(String.valueOf(cancelled.content())).isFalse();
+      assertThat(jsonMapper.valueToTree(cancelled.structuredContent()).get("status").asString())
+          .isEqualTo("CANCELLED");
+    }
+  }
+
+  @Test
   void argumentsThatViolateTheInputSchemaAreRefusedByTheSdkBeforeTheToolRuns() {
     try (McpSyncClient client = client(botKey)) {
       client.initialize();

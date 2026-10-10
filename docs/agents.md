@@ -259,8 +259,8 @@ clients send no `Origin`.
 | 37 | `delete_watchlist` | trade | Delete a watchlist by name |
 | 38 | `mark_notifications_read` | account:read | Mark notifications read (`ids` or `all`) |
 
-M1 accepts MARKET and LIMIT orders (`get_rules` → `orders.matrix` lists the types in force). A tool whose feature has
-not shipped yet answers `NOT_IMPLEMENTED`.
+All five order types are accepted: MARKET, LIMIT, STOP, STOP_LIMIT and TRAILING_STOP (`get_rules` → `orders.matrix`
+lists the types in force). A tool whose feature has not shipped yet answers `NOT_IMPLEMENTED`.
 
 ## 5. Shared bot system prompt
 

@@ -8,9 +8,8 @@
 > Markers: **[V]** verified against a primary source (Webull, FINRA, SEC); **[U]** unverified or likely to change;
 > **[D]** a design decision of this league. Section numbers (§) refer to [`ARCHITECTURE.md`](ARCHITECTURE.md).
 >
-> **Release:** M1. MARKET and LIMIT orders are live. STOP, STOP_LIMIT and TRAILING_STOP are specified below but are
-> **not accepted yet** (the server rejects them with `VALIDATION_FAILED`); `GET /rules` lists only the order types in
-> force (`orders.matrix`).
+> **Release:** M2. All five Phase 1 order types are live: MARKET, LIMIT, STOP, STOP_LIMIT and TRAILING_STOP.
+> `GET /rules` lists the order types in force (`orders.matrix`).
 
 ---
 
@@ -68,11 +67,38 @@ There is no overnight session.
 |---|---|---|---|---|---|
 | **MARKET** | **live** | Regular session. Entered outside it, it queues for the next 09:30 open. | DAY | whole shares, **fractional shares**, or a **dollar amount** (notional) | Fills at the best price within a **5% collar**. |
 | **LIMIT** | **live** | Regular; also pre-market and after-hours with **extended hours** on | DAY or GTC (60 days) | whole shares | Marketable on arrival: fills at the touch (you can get a better price than your limit). Resting: fills at your limit. |
-| STOP | coming (M2) | Regular only | DAY or GTC | whole shares | Triggers on the last eligible consolidated trade, then becomes a market order with the collar. |
-| STOP_LIMIT | coming (M2) | Regular only | DAY or GTC | whole shares | Triggers like STOP, then becomes a limit order. |
-| TRAILING_STOP | coming (M2) | Regular only, and can only be entered during it | DAY | whole shares | Exactly one of a trail amount ($) or percent (0 < p < 100). |
+| **STOP** | **live** | Regular only. Entered outside it, it queues for the next 09:30 open. | DAY or GTC (60 days) | whole shares | Triggers on the last eligible consolidated trade at or through the stop, then becomes a market order with the collar (see 4.2). |
+| **STOP_LIMIT** | **live** | Regular only. Entered outside it, it queues for the next 09:30 open. | DAY or GTC (60 days) | whole shares | Triggers like STOP, then becomes a limit order at your limit price. |
+| **TRAILING_STOP** | **live** | Regular only, and can only be entered during it | DAY | whole shares | Exactly one of a trail amount ($) or percent (0 < p < 100); the stop follows the best price since the order started working. |
 
-### 4.2 Fractional and dollar (notional) orders
+### 4.2 Stop, stop-limit and trailing-stop orders [U: Webull's exact trigger basis]
+
+- **Direction.** A **sell** stop sits **below** the market and triggers when the price falls to it; a **buy** stop sits
+  **above** the market and triggers when the price rises to it. A stop on the wrong side of the reference price is
+  rejected (`STOP_PRICE_WRONG_SIDE`): use a LIMIT order instead.
+- **Trigger.** Only during the regular session, on the eligible consolidated trades (odd lots and other ineligible
+  prints are ignored) that print after your order started working: a sell stop triggers on a trade at or below the
+  stop, a buy stop on one at or above it. If the symbol has had no consolidated trade for 15 seconds, the quote decides
+  instead: the bid for a sell stop, the ask for a buy stop.
+- **Gap at the open.** A stop waiting for the open (entered outside the regular session, or a GTC stop from an earlier
+  day) triggers at once if the first quote or trade of the session is already through it, and then fills at the
+  gapped market price, not at your stop.
+- **After the trigger.** The order gets a fresh 350–750 ms latency window, then a STOP or TRAILING_STOP works as a
+  market order (with the 5% collar) and a STOP_LIMIT as a limit order at your limit price: a stop-limit can trigger
+  and still not fill if the market moves through the limit.
+- **Trailing stops.** Give exactly one of `trailAmount` (dollars, on tick) or `trailPercent` (0 < p < 100, at most 4
+  decimals). The watermark starts at the first trade (else the mid quote) once the order works, then follows the
+  highest trade (sell) or lowest trade (buy); the stop is the watermark minus (sell) or plus (buy) the trail, rounded
+  to the tick away from the market. Your order shows the current watermark and stop; they are updated at most once a
+  second. Trailing stops are DAY orders and can only be entered during the regular session (`SESSION_NOT_ALLOWED`).
+- **No look-back.** A stop never triggers on prices from before it started working, from while it was paused
+  overnight, or from while the server was down; nothing is ever filled retroactively.
+- **Halts.** Stops neither trigger nor fill while a symbol is halted; after the halt a quote already through the stop
+  triggers at once.
+- Fractional, dollar (notional) and extended-hours stops are not available. Stops and trailing stops can be replaced
+  (new stop, limit, trail, quantity or time in force) while unfilled.
+
+### 4.3 Fractional and dollar (notional) orders
 
 - MARKET + DAY only, regular session only, on fractionable symbols; not with extended hours.
 - Buy minimum **$1.00** [U: $1 vs $5]; sell minimum $0.01; smallest quantity 0.00001 shares.
@@ -80,14 +106,14 @@ There is no overnight session.
   `notional: "500.00"`.
 - Fractional and dollar orders cannot be replaced: cancel and place again.
 
-### 4.3 Limits and checks
+### 4.4 Limits and checks
 
 | Rule | Value |
 |---|---|
-| Price tick | $0.01 at or above $1.00; $0.0001 below $1.00 (Reg NMS 612). Limit prices must be on tick. |
-| Price sanity | A limit more than **50%** from the reference price is rejected (`PRICE_TOO_FAR`); more than **5%** only warns (`FAT_FINGER`). |
+| Price tick | $0.01 at or above $1.00; $0.0001 below $1.00 (Reg NMS 612). Limit and stop prices and trail amounts must be on tick. |
+| Price sanity | A limit or stop (for a trailing stop, its starting stop) more than **50%** from the reference price is rejected (`PRICE_TOO_FAR`); more than **5%** only warns (`FAT_FINGER`). |
 | Market collar | Market orders never fill more than **5%** through the reference price; beyond it they wait. |
-| Buy holds | Your buying power is reserved when you place a buy: **102%** of the ask for a market order in the regular session, **115%** of the reference price for a queued market order, the limit price for a limit order (plus estimated fees). Unused holds are released when the order fills, is cancelled or expires. |
+| Buy holds | Your buying power is reserved when you place a buy: **102%** of the ask for a market order in the regular session, **115%** of the reference price for a queued market order, the limit price for a limit or stop-limit order, **102%** of the higher of the stop and the reference price for a stop, and **102%** of (reference + trail) for a trailing stop (plus estimated fees). Unused holds are released when the order fills, is cancelled or expires. |
 | Open orders | At most **50** per account |
 | Order size | At most 200,000 shares |
 | GTC | Good for **60 days** (Webull US) |

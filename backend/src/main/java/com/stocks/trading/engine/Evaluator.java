@@ -3,7 +3,6 @@ package com.stocks.trading.engine;
 import com.stocks.common.domain.CancelReason;
 import com.stocks.common.domain.OrderEventType;
 import com.stocks.common.domain.OrderStatus;
-import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.SessionType;
 import com.stocks.common.domain.Side;
 import com.stocks.common.domain.WaitReason;
@@ -20,6 +19,7 @@ import com.stocks.contract.marketdata.RefreshPriority;
 import com.stocks.trading.config.RulesProperties;
 import com.stocks.trading.engine.write.OrderWriter;
 import com.stocks.trading.order.OrderStateMachine;
+import com.stocks.trading.order.OrderTypes;
 import com.stocks.trading.order.OrderValidator;
 import com.stocks.trading.order.SessionOrderMatrix;
 import com.stocks.trading.order.TradingClock;
@@ -39,9 +39,10 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Works one open order on the engine thread (§11.3, §12.2–§12.6), inside the transaction its caller opened:
- * expiry, pause and resume at window edges, activation once {@code eligible_at} passes, halts, the anti-look-ahead
- * executable quote, the fill decision ({@link FillModel}) and posting ({@link PostingService}).
+ * Works one open order on the engine thread (§11.3, §12.2–§12.7), inside the transaction its caller opened:
+ * expiry, pause and resume at window edges, activation once {@code eligible_at} passes, halts, the trigger of an armed
+ * stop ({@link TriggerEvaluator}), the anti-look-ahead executable quote, the fill decision ({@link FillModel}; a
+ * triggered stop works as a MARKET or LIMIT order) and posting ({@link PostingService}).
  */
 @Component
 class Evaluator {
@@ -58,12 +59,13 @@ class Evaluator {
   private final TradingClock clock;
   private final RulesProperties rules;
   private final OrderHandler handler;
+  private final TriggerEvaluator triggers;
   private final JsonMapper json;
   private final Map<String, Instant> lastRefresh = new HashMap<>();
 
   Evaluator(OrderStore orders, AccountStore accounts, OrderWriter writer, PostingService posting,
             MarketDataService marketData, OrderValidator validator, LatencyModel latency, TradingClock clock,
-            RulesProperties rules, OrderHandler handler, JsonMapper json) {
+            RulesProperties rules, OrderHandler handler, TriggerEvaluator triggers, JsonMapper json) {
     this.orders = orders;
     this.accounts = accounts;
     this.writer = writer;
@@ -74,6 +76,7 @@ class Evaluator {
     this.clock = clock;
     this.rules = rules;
     this.handler = handler;
+    this.triggers = triggers;
     this.json = json;
   }
 
@@ -164,6 +167,8 @@ class Evaluator {
       return;
     }
     boolean arriving = e.reopenPending;
+    // §12.7 opening gap: the first evaluation of a session (an order queued for the open, a resume, after a halt)
+    boolean sessionStart = e.reopenPending || (r.status() == OrderStatus.PENDING && e.queuedForOpen);
     if (r.status() == OrderStatus.PENDING) {
       writer.activate(r.id(), now);
       writer.event(r.id(), OrderEventType.WORKING, OrderStatus.WORKING, now, null);
@@ -187,8 +192,12 @@ class Evaluator {
       tx.afterCommit(() -> e.reopenPending = true);
       return;
     }
+    if (OrderTypes.isStop(r.type()) && !r.triggered()) {
+      armed(e, r, now, prints, sessionStart, tx);
+      return;
+    }
     Optional<ExecQuote> quote = marketData.executableQuote(r.symbol(), r.eligibleAt(), session.type());
-    boolean resting = r.type() == OrderType.LIMIT && r.hasRested() && !arriving;
+    boolean resting = OrderTypes.usesLimit(r.type()) && r.hasRested() && !arriving;
     List<Print> eligiblePrints = prints.stream().map(PrintBuffer.Seq::print)
         .filter(p -> !p.observedAt().isBefore(row.eligibleAt())).toList();
 
@@ -203,13 +212,14 @@ class Evaluator {
       handler.cancelOpen(r, CancelReason.DUST, 0, now, tx);
       return;
     }
-    FillModel.OrderView view = new FillModel.OrderView(r.side(), r.type(), r.fractional(), remaining,
-        r.limitPrice(), r.collarPrice());
+    // a triggered STOP / TRAILING_STOP works as a MARKET order, a triggered STOP_LIMIT as a LIMIT (§12.7)
+    FillModel.OrderView view = new FillModel.OrderView(r.side(), OrderTypes.fillsAs(r.type()), r.fractional(),
+        remaining, r.limitPrice(), r.collarPrice());
     FillModel.Decision d;
     if (resting) {
       d = FillModel.resting(view, q, eligiblePrints, rules.fill().restingRequiresPrint());
     } else {
-      boolean opening = e.queuedForOpen && r.filledQty().signum() == 0;
+      boolean opening = e.queuedForOpen && !OrderTypes.isStop(r.type()) && r.filledQty().signum() == 0;
       d = FillModel.marketable(view, q, opening, rules.marketCollarPct());
     }
     if (d.collar() != null && r.collarPrice() == null) {
@@ -233,12 +243,35 @@ class Evaluator {
     OrderRow after = orders.byId(r.id()).orElseThrow();
     if (d.beyondCollar()) {
       setWait(after, WaitReason.BEYOND_COLLAR, OrderEventType.BEYOND_COLLAR, tx, now);
-    } else if (after.type() == OrderType.LIMIT) {
+    } else if (OrderTypes.usesLimit(after.type())) {
       setWait(after, WaitReason.LIMIT_NOT_REACHED, null, tx, now);
     } else if (after.waitReason() != null) {
       setWait(after, null, null, tx, now);
     }
     tx.afterCommit(() -> orders.byId(e.id).ifPresent(fresh -> e.refresh(fresh)));
+  }
+
+  /**
+   * An armed stop (§12.7): the trigger decision only, never a fill in the same step. {@code opening}: the first
+   * evaluation of a session (activation of an order queued for the open, a resume at the open, after a halt), when a
+   * quote already through the stop triggers at once (opening gap); that check stays pending until a quote was
+   * available. A stop entered during the session is not an opening at its activation.
+   */
+  private void armed(OpenOrderIndex.Entry e, OrderRow r, Instant now, List<PrintBuffer.Seq> prints, boolean opening,
+                     EngineTx tx) {
+    TriggerEvaluator.Result t = triggers.evaluate(e, r, now, prints.stream().map(PrintBuffer.Seq::print).toList(),
+        opening, tx);
+    if (t.quoteMissing()) {
+      requestRefresh(r.symbol(), now);
+    }
+    if (!t.triggered()) {
+      boolean keepOpening = opening && t.quoteMissing();
+      tx.afterCommit(() -> {
+        e.reopenPending = keepOpening;
+        e.awaitingQuoteNoted = false;
+      });
+    }
+    tx.afterCommit(() -> orders.byId(e.id).ifPresent(e::refresh));
   }
 
   /** The quantity to work now: the remaining shares, or a notional order sized from the touch (§11.1). */
@@ -274,6 +307,12 @@ class Evaluator {
       writer.event(r.id(), eventOrNull, r.status(), now, null);
       tx.publish(new OrderChanged(r.accountId(), r.playerId(), r.publicId(), eventOrNull, r.status(), now));
     }
+  }
+
+  /** Forgets the in-memory market observations (refresh throttle, last consolidated prints): a restart (§12.9). */
+  void forget() {
+    lastRefresh.clear();
+    triggers.clear();
   }
 
   /** {@code ORDER_CRITICAL} refresh for a symbol awaiting a quote, at most once per 2 s (§12.2). */

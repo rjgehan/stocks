@@ -146,6 +146,26 @@ public class EngineCore {
     return bootstrapped;
   }
 
+  /**
+   * What a process restart does to the engine (§12.9, §26 Recovery): every in-memory structure is dropped (open-order
+   * index and leases, print buffer, dirty symbols, trigger and refresh state) and the open orders are reloaded from
+   * the database. Nothing that happened while the engine was "down" is evaluated retroactively: prints and quotes
+   * observed before the reload are never trigger or fill evidence. Recovery tests call it through
+   * {@code DirectEngineExecutor.restart()}.
+   */
+  public synchronized void restart() {
+    EngineThread.assertCurrent();
+    for (OpenOrderIndex.Entry e : index.all()) {
+      orders.untrack(e.id());
+    }
+    index.clear();
+    prints.clear();
+    dirty.clear();
+    evaluator.forget();
+    bootstrapped = false;
+    bootstrap();
+  }
+
   // ------------------------------------------------------------------------------------------- commands
 
   /** Runs one command in one transaction; publishes its events after commit. Engine thread only. */

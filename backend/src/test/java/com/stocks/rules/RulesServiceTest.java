@@ -81,8 +81,9 @@ class RulesServiceTest {
     assertThat(r.orders().rationaleRequiredForAi()).isTrue();
     assertThat(r.orders().fractional().minBuyNotional()).isEqualByComparingTo("1.00");
     assertThat(r.orders().fractional().marketOnly()).isTrue();
-    assertThat(r.orders().matrix()).as("M1 accepts MARKET and LIMIT only").extracting(
-        RulesDto.OrderMatrixRowDto::type).containsExactly(OrderType.MARKET, OrderType.LIMIT);
+    assertThat(r.orders().matrix()).as("M2 accepts all five Phase 1 order types").extracting(
+        RulesDto.OrderMatrixRowDto::type).containsExactly(OrderType.MARKET, OrderType.LIMIT, OrderType.STOP,
+            OrderType.STOP_LIMIT, OrderType.TRAILING_STOP);
     assertThat(RulesService.matrix(RulesConfig.from(env).rules())).extracting(RulesDto.OrderMatrixRowDto::type)
         .containsExactly(OrderType.MARKET, OrderType.LIMIT, OrderType.STOP, OrderType.STOP_LIMIT,
             OrderType.TRAILING_STOP);

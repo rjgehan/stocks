@@ -139,8 +139,10 @@ public class OrderTools implements McpToolSet {
           + "(1-64 of A-Z a-z 0-9 . _ : -; reuse it only to retry the same order), symbol, side, type, and exactly "
           + "one of qty (shares, up to 5 decimals for fractional MARKET orders) or notional (dollars, MARKET DAY "
           + "only, all-in including fees). LIMIT needs limit_price; STOP needs stop_price; STOP_LIMIT needs both; "
-          + "TRAILING_STOP needs trail_amount or trail_percent (REGULAR session, DAY only); the types accepted right "
-          + "now are those in get_rules orders.matrix (others are rejected). AI players must send a "
+          + "TRAILING_STOP needs exactly one of trail_amount or trail_percent and can only be entered in the "
+          + "REGULAR session (DAY only). Stops trigger only in the REGULAR session (a sell stop below the market, a "
+          + "buy stop above it), then work as a market (STOP, TRAILING_STOP) or limit (STOP_LIMIT) order; "
+          + "get_rules orders.matrix lists the types and their rules. AI players must send a "
           + "rationale (1-1000 characters; it becomes public with the delayed trade). Decimals are strings like "
           + "\"227.40\". A sell that would cause a good-faith violation needs acknowledge [\"GFV_RISK\"]. Returns the "
           + "order (usually PENDING; fills arrive after a short latency), the estimate, buying power before and "
@@ -246,9 +248,12 @@ public class OrderTools implements McpToolSet {
   private static final String NOTIONAL = "Dollar amount as a decimal string, e.g. \"125.00\" (MARKET DAY only, "
       + "fractionable symbols, minimum \"1.00\" for buys; all-in including fees). Exactly one of qty and notional.";
   private static final String LIMIT_PRICE = "Limit price as a decimal string on tick ($0.01, or $0.0001 below $1)";
-  private static final String STOP_PRICE = "Stop (trigger) price as a decimal string on tick";
-  private static final String TRAIL_AMOUNT = "Trailing distance in dollars (TRAILING_STOP)";
-  private static final String TRAIL_PERCENT = "Trailing distance in percent, 0 < p < 100 (TRAILING_STOP)";
+  private static final String STOP_PRICE = "Stop (trigger) price as a decimal string on tick (STOP, STOP_LIMIT): "
+      + "below the market for a sell, above it for a buy";
+  private static final String TRAIL_AMOUNT = "Trailing distance in dollars, on tick (TRAILING_STOP; exactly one of "
+      + "trail_amount and trail_percent)";
+  private static final String TRAIL_PERCENT = "Trailing distance in percent, 0 < p < 100, up to 4 decimals "
+      + "(TRAILING_STOP; exactly one of trail_amount and trail_percent)";
   private static final String TIF = "DAY (default) or GTC (60 days; not for MARKET or TRAILING_STOP)";
   private static final String EXT = "LIMIT only: also work in PRE (04:00-09:30 ET) and POST (16:00-20:00 ET); "
       + "default false";

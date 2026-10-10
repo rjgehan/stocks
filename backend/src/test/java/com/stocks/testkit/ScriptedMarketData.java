@@ -22,6 +22,7 @@ import com.stocks.contract.marketdata.QuoteView;
 import com.stocks.contract.marketdata.RefreshPriority;
 import com.stocks.contract.marketdata.model.AdjustmentMode;
 import com.stocks.contract.marketdata.model.Asset;
+import com.stocks.contract.marketdata.model.Bar;
 import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.contract.marketdata.model.Movers;
 import com.stocks.contract.marketdata.model.NewsItem;
@@ -59,7 +60,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * returns the latest quote confirmed in {@code [notBefore, now]} (anti-look-ahead, §12.3); {@link #drainPrints}
  * returns each print with {@code observedAt <= now} once; {@link #requestRefresh} is recorded and calls every
  * registered {@link MarketUpdateListener} synchronously; {@link #mark} is the last print, else the quote mid, else the
- * previous close. Bars, movers, news and fundamentals are empty unless scripted.
+ * previous close. Bars ({@link #scriptBar}), movers, news and fundamentals are empty unless scripted.
  */
 public class ScriptedMarketData implements MarketDataService {
 
@@ -86,6 +87,7 @@ public class ScriptedMarketData implements MarketDataService {
   private final Map<String, Map<LocalDate, BigDecimal>> dayEndMarks = new ConcurrentHashMap<>();
   private final Map<String, List<Halt>> halts = new ConcurrentHashMap<>();
   private final Map<String, Fundamentals> fundamentals = new ConcurrentHashMap<>();
+  private final Map<String, List<Bar>> scriptedBars = new ConcurrentHashMap<>();
   private final Map<String, Set<String>> leases = new ConcurrentHashMap<>();
   private final List<MarketUpdateListener> listeners = new CopyOnWriteArrayList<>();
   private final List<RefreshRequest> refreshRequests = new CopyOnWriteArrayList<>();
@@ -141,6 +143,12 @@ public class ScriptedMarketData implements MarketDataService {
   /** Halted from {@code from} until {@code toOrNull} (exclusive; null = until further notice). */
   public ScriptedMarketData halt(String symbol, Instant from, Instant toOrNull) {
     halts.computeIfAbsent(norm(symbol), k -> new CopyOnWriteArrayList<>()).add(new Halt(from, toOrNull));
+    return this;
+  }
+
+  /** A bar that {@link #bars} returns for its symbol and timeframe when the request window covers its start. */
+  public ScriptedMarketData scriptBar(Bar bar) {
+    scriptedBars.computeIfAbsent(norm(bar.symbol()), k -> new CopyOnWriteArrayList<>()).add(bar);
     return this;
   }
 
@@ -289,7 +297,13 @@ public class ScriptedMarketData implements MarketDataService {
   public BarSeries bars(BarRequest request) {
     Timeframe tf = request.timeframeOrNull() != null ? request.timeframeOrNull() : Timeframe.MIN1;
     AdjustmentMode adj = request.adjustment() != null ? request.adjustment() : AdjustmentMode.SPLIT;
-    return new BarSeries(norm(request.symbol()), tf, adj, List.of(), null, SOURCE);
+    List<Bar> out = scriptedBars.getOrDefault(norm(request.symbol()), List.of()).stream()
+        .filter(b -> b.tf() == tf)
+        .filter(b -> request.startOrNull() == null || !b.start().isBefore(request.startOrNull()))
+        .filter(b -> request.endOrNull() == null || b.start().isBefore(request.endOrNull()))
+        .sorted((a, b) -> a.start().compareTo(b.start()))
+        .toList();
+    return new BarSeries(norm(request.symbol()), tf, adj, out, null, SOURCE);
   }
 
   @Override

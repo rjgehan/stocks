@@ -58,6 +58,54 @@ class HoldAndHashTest {
     assertThat(holds.holdFor(d("4000"), d("1.00"), DAY)).isEqualByComparingTo("4000.01");
   }
 
+  static NormalizedOrder stopOrder(OrderType type, Side side, String qty, String limit, String stop, String amount,
+                                   String pct) {
+    return NormalizedOrder.of(new PlaceOrderRequest("c1", "aapl", side, type, d(qty), null,
+        limit == null ? null : d(limit), stop == null ? null : d(stop), amount == null ? null : d(amount),
+        pct == null ? null : d(pct), null, null, null, null, null));
+  }
+
+  @Test
+  void stopBuysHold102PercentOfTheHigherOfStopAndReference() {
+    NormalizedOrder stop = stopOrder(OrderType.STOP, Side.BUY, "2", null, "105.00", null, null);
+    // 2 × max(105, 100) × 1.02 = 214.20
+    assertThat(holds.buyHold(stop, false, d("100.00"), d("100.00"), DAY)).isEqualByComparingTo("214.20");
+    // the market already above the stop: 2 × 110 × 1.02 = 224.40 (queued or not)
+    assertThat(holds.buyHold(stop, true, null, d("110.00"), DAY)).isEqualByComparingTo("224.40");
+    // no reference: the stop itself
+    assertThat(holds.buyHold(stop, false, null, null, DAY)).isEqualByComparingTo("214.20");
+  }
+
+  @Test
+  void stopLimitBuysHoldTheLimitAndTrailingBuysTheReferencePlusTheTrail() {
+    assertThat(holds.buyHold(stopOrder(OrderType.STOP_LIMIT, Side.BUY, "3", "52.50", "52.00", null, null), false,
+        d("50.00"), d("50.00"), DAY)).isEqualByComparingTo("157.50");
+    // 4 × (50 + 2) × 1.02 = 212.16
+    assertThat(holds.buyHold(stopOrder(OrderType.TRAILING_STOP, Side.BUY, "4", null, null, "2.00", null), false,
+        d("50.02"), d("50.00"), DAY)).isEqualByComparingTo("212.16");
+    // 4 × (50 + 50 × 5%) × 1.02 = 214.20
+    assertThat(holds.buyHold(stopOrder(OrderType.TRAILING_STOP, Side.BUY, "4", null, null, null, "5"), false,
+        null, d("50.00"), DAY)).isEqualByComparingTo("214.20");
+    assertThat(holds.buyHold(stopOrder(OrderType.TRAILING_STOP, Side.BUY, "4", null, null, null, "5"), false,
+        d("50.02"), null, DAY)).as("no reference: MARKET_DATA_UNAVAILABLE").isNull();
+    assertThat(HoldCalculator.trail(stopOrder(OrderType.TRAILING_STOP, Side.SELL, "1", null, null, null, "2.5"),
+        d("80.00"))).isEqualByComparingTo("2.00");
+  }
+
+  @Test
+  void stopAndTrailFieldsArePartOfTheRequestHash() {
+    NormalizedOrder a = stopOrder(OrderType.STOP, Side.SELL, "2", null, "95.00", null, null);
+    assertThat(RequestHasher.hash(a)).isEqualTo(RequestHasher.hash(stopOrder(OrderType.STOP, Side.SELL, "2", null,
+        "95.0", null, null)));
+    assertThat(RequestHasher.hash(a)).isNotEqualTo(RequestHasher.hash(stopOrder(OrderType.STOP, Side.SELL, "2", null,
+        "95.01", null, null)));
+    NormalizedOrder pct = stopOrder(OrderType.TRAILING_STOP, Side.SELL, "2", null, null, null, "5");
+    assertThat(RequestHasher.hash(pct)).isEqualTo(RequestHasher.hash(stopOrder(OrderType.TRAILING_STOP, Side.SELL,
+        "2", null, null, null, "5.000")));
+    assertThat(RequestHasher.hash(pct)).isNotEqualTo(RequestHasher.hash(stopOrder(OrderType.TRAILING_STOP,
+        Side.SELL, "2", null, null, "5", null)));
+  }
+
   @Test
   void sellsReserveShares() {
     assertThat(holds.sellReservedQty(order(OrderType.MARKET, Side.SELL, "1.5", null, null), d("3"), d("10")))

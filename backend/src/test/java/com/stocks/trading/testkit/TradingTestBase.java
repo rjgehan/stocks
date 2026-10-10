@@ -177,6 +177,26 @@ public abstract class TradingTestBase {
         new BigDecimal(price), null, null, null, tif, ext, "test", null, Set.of());
   }
 
+  protected static PlaceOrderRequest stop(String cid, String symbol, Side side, String qty, String stopPrice,
+                                          TimeInForce tif) {
+    return new PlaceOrderRequest(cid, symbol, side, OrderType.STOP, new BigDecimal(qty), null, null,
+        new BigDecimal(stopPrice), null, null, tif, false, "test", null, Set.of());
+  }
+
+  protected static PlaceOrderRequest stopLimit(String cid, String symbol, Side side, String qty, String stopPrice,
+                                               String limitPrice, TimeInForce tif) {
+    return new PlaceOrderRequest(cid, symbol, side, OrderType.STOP_LIMIT, new BigDecimal(qty), null,
+        new BigDecimal(limitPrice), new BigDecimal(stopPrice), null, null, tif, false, "test", null, Set.of());
+  }
+
+  /** A DAY trailing stop with exactly one of {@code amount} or {@code percent} (the other null). */
+  protected static PlaceOrderRequest trailing(String cid, String symbol, Side side, String qty, String amount,
+                                              String percent) {
+    return new PlaceOrderRequest(cid, symbol, side, OrderType.TRAILING_STOP, new BigDecimal(qty), null, null, null,
+        amount == null ? null : new BigDecimal(amount), percent == null ? null : new BigDecimal(percent),
+        TimeInForce.DAY, false, "test", null, Set.of());
+  }
+
   protected PlaceOrderResponse place(Player p, PlaceOrderRequest req) {
     return orders.place(p.principal(), req, meta());
   }

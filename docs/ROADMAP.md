@@ -74,10 +74,10 @@
 - [x] `TradingEngine`: single thread, bounded queue, one transaction per command, events after commit, sweep, dirty-symbol drain
 - [x] `OrderGate` (checks 1–6, one write token, free replays) and pure `OrderValidator` (checks 7–27, authoritative on the engine thread), `HoldCalculator` (102% and 115% cushions), `SessionOrderMatrix`, `ExpiryCalculator` (DAY, GTC 60 days, early closes)
 - [x] `OrderStateMachine`, table-driven and exhaustively tested
-- [ ] Order types: **MARKET** (with collar), **LIMIT** (+ extended hours), **STOP**, **STOP_LIMIT**, **TRAILING_STOP** (DAY; entered in REGULAR only) — M1+: MARKET and LIMIT done; stop types rejected with `VALIDATION_FAILED` until M2 (§11.1)
+- [x] Order types: **MARKET** (with collar), **LIMIT** (+ extended hours), **STOP**, **STOP_LIMIT**, **TRAILING_STOP** (DAY; entered in REGULAR only) — all five accepted since M2 (§11.1); golden scenarios in `StopOrderScenarioTest`, every validation path in `StopOrderValidationTest`
 - [x] **Fractional and notional market orders** (RTH, DAY, ≥ $1, 5 dp, notional all-in including fees)
 - [x] `FillModel`: touch, book walk, partial fills by displayed size, resting fills at L, trade-through, opening and reopen semantics, halts
-- [ ] `TriggerEvaluator`: stop triggers on consolidated prints with a bid/ask fallback, gap at open, trailing watermark
+- [x] `TriggerEvaluator`: stop triggers on consolidated prints with a bid/ask fallback, gap at open, trailing watermark (persisted ≤ 1/s, `TRAIL_UPDATED` ≤ 1 per 10 s), halts, no retroactive trigger after a restart (§12.7); stop property test (I1–I9, holds never negative)
 - [x] `PostingService`: execution, ledger row (net of fees), FIFO lots, position, realized P&L, order update, events
 - [x] `FeeCalculator`: effective-dated, cumulative per-order delta charging; golden table (§13)
 - [x] `BalanceCalculator`: settled/unsettled (T+1 derived), settled available, withdrawable, buying power by restriction
@@ -88,7 +88,7 @@
 - [ ] `account_event` and `position_adjustment` (append-only); activities merged from `cash_ledger` and `account_event`; `AdminOrderService`, `EngineControl`, `CorporateActionQueries`/`Service`
 - [x] Session transitions (PRE_OPEN, RTH_OPEN, RTH_CLOSE, POST_CLOSE) with catch-up and no retroactive fills
 - [ ] Corporate actions: sync, forward and reverse splits (per-lot `SPLIT_QTY`, position = Σ lots, dust and cash in lieu, cancel orders; golden 2:1, 3:2, 1:3, 1:8), cash dividends (accrue on ex-date, pay on payable date, `voided_at`), name changes (incl. `WatchlistService.renameSymbol`); others go to NEEDS_ADMIN; admin resolve
-- [ ] `InvariantChecker` (I1–I9) with auto-halt; `DailyMaintenanceCmd`; `FillQualityAudit` (I10, warnings) — I1–I9, auto-halt and daily maintenance done; `FillQualityAudit` open
+- [x] `InvariantChecker` (I1–I9) with auto-halt; `DailyMaintenanceCmd`; `FillQualityAudit` (I10, warnings: `FILL_QUALITY_AUDIT` periodic task, `SYSTEM/FILL_QUALITY_WARNING` audit rows)
 - [x] REST: `/orders/**`, `/orders/preview`, `/account`, `/account/positions/**`, `/account/activities`, `/account/executions`, `/account/violations`, `/account/runs`, `/account/reset`
 
 ### WS4: Portfolio and league
@@ -108,7 +108,7 @@
 - [x] STOMP `/ws`: session auth, CSRF on CONNECT (raw cookie token, non-masking `csrfChannelInterceptor`), heartbeats, subscription caps, leases (quote and `bars.{SYM}.1Min` → VIEWING, tick → LIST)
 - [x] `QuoteFanout` as a `MarketUpdateListener` (≤ 4/s and ≤ 1/s), bars topic, session topic, leaderboard signal, feed topic (the leaderboard signal and feed topic are published by WS4's `LeaderboardServiceImpl` and `FeedService`, §19)
 - [x] `UserEventPublisher` (`/user/queue/orders|account|notifications|admin`) and `NotificationService` (sole writer, idempotent by `source_ref`) with `/me/notifications` (`/user/queue/admin` is subscribable by admins; no `AdminAlertDto` source publishes to it yet)
-- [x] `RulesService` and `GET /rules` (the bots' source of truth, versioned) (M1 publishes only MARKET and LIMIT in the order matrix)
+- [x] `RulesService` and `GET /rules` (the bots' source of truth, versioned); the order matrix publishes all five order types since M2
 - [x] MCP server (STATELESS, `/mcp`): `McpConfig` (Boot `JsonMapper` as `mcpServerJsonMapper`, transport override with `contextExtractor`, output schemas with decimal strings); all 38 tools of §20.3 with explicit hints, fixed order, snake_case inputs, the `untrusted` envelope, stable error codes, rate limits, audit; `mcpClient` from `X-Stocks-Client` / last `initialize` / User-Agent
 - [x] MCP tests: `tools/list` snapshot, identity, JSON contract (decimal strings, nulls, `outputSchema` validation), tool coverage vs `docs/openapi.json`, idempotent `place_order`, `RATIONALE_REQUIRED`, no admin tools (idempotent replay, `RATIONALE_REQUIRED` and rate limits are WS3/WS1 behavior passed through; covered with fakes)
 - [ ] **Agent runner** (`tools/agent-runner/`, §20.5): compose service `agent-runner` (profile `agents`); one model-agnostic loop for Claude and ChatGPT; same prompt, tools and schedule (09:45, 12:30, 15:30 ET); per-run tool-call and time caps; per-bot daily dollar cap; notes-file memory; JSONL run log
