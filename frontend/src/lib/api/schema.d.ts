@@ -84,6 +84,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List notifications
+         * @description Newest first. unreadOnly keeps unread ones; page with the opaque nextCursor (§6.6).
+         */
+        get: operations["list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark notifications read
+         * @description Exactly one of ids (up to 200 notification ids) and all=true. Ids that are not yours or already read are ignored.
+         */
+        post: operations["markRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The rulebook
+         * @description Account, session, order, execution, fee, rate-limit, leaderboard and fairness rules as configured now. version changes whenever a rule changes; docs/rules.md explains them for people.
+         */
+        get: operations["rules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -91,6 +151,10 @@ export interface components {
         LoginRequest: {
             handle: string | null;
             password: string | null;
+        };
+        MarkNotificationsReadRequest: {
+            all?: boolean | null;
+            ids?: string[] | null;
         };
         Me: {
             accountId: string | null;
@@ -112,6 +176,32 @@ export interface components {
             scopes: string[] | null;
             /** @enum {string|null} */
             status: "ACTIVE" | "DISABLED" | "FROZEN" | null;
+        };
+        Notification: {
+            body: string | null;
+            /** Format: date-time */
+            createdAt: string | null;
+            id: string | null;
+            /** @enum {string|null} */
+            kind: "FILL" | "PARTIAL_FILL" | "ORDER_CANCELLED" | "ORDER_EXPIRED" | "DEPOSIT" | "WITHDRAWAL" | "ADJUSTMENT" | "GFV_ISSUED" | "RESTRICTION_CHANGED" | "CORPORATE_ACTION" | "ACCOUNT_RESET" | "SYSTEM" | null;
+            payload: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: date-time */
+            readAt: string | null;
+            title: string | null;
+        };
+        OrderMatrixRow: {
+            notes: string | null;
+            qtyForms: string[] | null;
+            sessions: string | null;
+            timeInForce: ("DAY" | "GTC")[] | null;
+            /** @enum {string|null} */
+            type: "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | null;
+        };
+        PageNotification: {
+            items: components["schemas"]["Notification"][] | null;
+            nextCursor: string | null;
         };
         Preferences: {
             confirmOrders: boolean;
@@ -143,6 +233,133 @@ export interface components {
             code: string | null;
             field: string | null;
             message: string | null;
+        };
+        Rules: {
+            account: components["schemas"]["RulesAccount"] | null;
+            /** Format: date-time */
+            asOf: string | null;
+            dataSources: string[] | null;
+            execution: components["schemas"]["RulesExecution"] | null;
+            fairness: string[] | null;
+            fees: components["schemas"]["RulesFee"][] | null;
+            leaderboard: components["schemas"]["RulesLeaderboard"] | null;
+            orders: components["schemas"]["RulesOrders"] | null;
+            rateLimits: {
+                [key: string]: unknown;
+            } | null;
+            sessions: components["schemas"]["RulesSessions"] | null;
+            social: components["schemas"]["RulesSocial"] | null;
+            version: string | null;
+        };
+        RulesAccount: {
+            buyingPowerFormula: string | null;
+            depositsSettleImmediately: boolean;
+            gfv: components["schemas"]["RulesGfv"] | null;
+            pdtEnforced: boolean;
+            settlement: string | null;
+            shortSelling: boolean;
+            /** Format: decimal */
+            startingCash: string | null;
+            /** @enum {string|null} */
+            type: "CASH" | "MARGIN" | null;
+        };
+        RulesExecution: {
+            freshness: {
+                [key: string]: unknown;
+            } | null;
+            latency: string | null;
+            liquiditySharedAcrossPlayers: boolean;
+            partialFills: string | null;
+            qualityLadder: string[] | null;
+        };
+        RulesFee: {
+            /** @enum {string|null} */
+            appliesTo: "SELL" | "BOTH" | null;
+            /** @enum {string|null} */
+            basis: "PRINCIPAL" | "SHARES" | null;
+            /** @enum {string|null} */
+            code: "SEC" | "TAF" | "CAT" | null;
+            /** Format: date */
+            effectiveFrom: string | null;
+            /** Format: date */
+            effectiveTo: string | null;
+            /** Format: decimal */
+            maxPerOrder: string | null;
+            note: string | null;
+            /** Format: decimal */
+            rate: string | null;
+            rounding: string | null;
+        };
+        RulesFractional: {
+            dayOnly: boolean;
+            marketOnly: boolean;
+            /** Format: decimal */
+            minBuyNotional: string | null;
+            /** Format: decimal */
+            minQty: string | null;
+            /** Format: decimal */
+            minSellNotional: string | null;
+            replaceable: boolean;
+            rthOnly: boolean;
+        };
+        RulesGfv: {
+            expiresAfter: string | null;
+            /** Format: int32 */
+            liquidationOnlyAt: number;
+            requiresAck: boolean;
+            /** Format: int32 */
+            restrictionDays: number;
+            /** Format: int32 */
+            settledCashOnlyAt: number;
+        };
+        RulesLeaderboard: {
+            benchmark: string | null;
+            /** Format: int32 */
+            minFills: number;
+            /** Format: int32 */
+            minSymbols: number;
+            pnlDayEnds: string | null;
+            pnlDefinition: string | null;
+            resetPolicy: string | null;
+            returnDefinition: string | null;
+            ties: string | null;
+        };
+        RulesOrders: {
+            clientOrderIdPattern: string | null;
+            /** Format: decimal */
+            collarPct: string | null;
+            /** Format: decimal */
+            fatFingerWarnPct: string | null;
+            fractional: components["schemas"]["RulesFractional"] | null;
+            /** Format: int32 */
+            gtcDays: number;
+            /** Format: decimal */
+            holdPctQueued: string | null;
+            /** Format: decimal */
+            holdPctRegular: string | null;
+            matrix: components["schemas"]["OrderMatrixRow"][] | null;
+            /** Format: int32 */
+            maxOpenOrders: number;
+            /** Format: decimal */
+            maxQty: string | null;
+            /** Format: decimal */
+            priceTooFarPct: string | null;
+            rationaleRequiredForAi: boolean;
+            tick: string | null;
+        };
+        RulesSessions: {
+            earlyClose: string | null;
+            liveIexWindow: string | null;
+            overnight: boolean;
+            post: string | null;
+            pre: string | null;
+            regular: string | null;
+            timezone: string | null;
+        };
+        RulesSocial: {
+            /** @enum {string|null} */
+            holdingsVisibility: "EOD_WEIGHTS" | "EOD_FULL" | "HIDDEN" | null;
+            tradeFeedDelay: string | null;
         };
     };
     responses: never;
@@ -256,6 +473,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list: {
+        parameters: {
+            query?: {
+                /** @description Only unread notifications */
+                unreadOnly?: boolean;
+                /** @description Opaque cursor from a previous page */
+                cursor?: string;
+                /** @description 1-200, default 50 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageNotification"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    markRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkNotificationsReadRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    rules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Rules"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

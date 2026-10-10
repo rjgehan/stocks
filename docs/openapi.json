@@ -25,8 +25,16 @@
       "name": "auth"
     },
     {
+      "description": "The player's notifications",
+      "name": "notifications"
+    },
+    {
       "description": "The authenticated player",
       "name": "me"
+    },
+    {
+      "description": "The league rulebook (bots read this first)",
+      "name": "rules"
     }
   ],
   "paths": {
@@ -155,6 +163,136 @@
           "me"
         ]
       }
+    },
+    "/api/v1/me/notifications": {
+      "get": {
+        "description": "Newest first. unreadOnly keeps unread ones; page with the opaque nextCursor (§6.6).",
+        "operationId": "list",
+        "parameters": [
+          {
+            "description": "Only unread notifications",
+            "in": "query",
+            "name": "unreadOnly",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "description": "Opaque cursor from a previous page",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1-200, default 50",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageNotification"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "List notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/me/notifications/read": {
+      "post": {
+        "description": "Exactly one of ids (up to 200 notification ids) and all=true. Ids that are not yours or already read are ignored.",
+        "operationId": "markRead",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkNotificationsReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Mark notifications read",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/rules": {
+      "get": {
+        "description": "Account, session, order, execution, fee, rate-limit, leaderboard and fairness rules as configured now. version changes whenever a rule changes; docs/rules.md explains them for people.",
+        "operationId": "rules",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Rules"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "The rulebook",
+        "tags": [
+          "rules"
+        ]
+      }
     }
   },
   "components": {
@@ -181,6 +319,26 @@
           "handle",
           "password"
         ]
+      },
+      "MarkNotificationsReadRequest": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "Me": {
         "type": "object",
@@ -306,6 +464,164 @@
           "runNo",
           "scopes",
           "status"
+        ]
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "FILL",
+              "PARTIAL_FILL",
+              "ORDER_CANCELLED",
+              "ORDER_EXPIRED",
+              "DEPOSIT",
+              "WITHDRAWAL",
+              "ADJUSTMENT",
+              "GFV_ISSUED",
+              "RESTRICTION_CHANGED",
+              "CORPORATE_ACTION",
+              "ACCOUNT_RESET",
+              "SYSTEM",
+              null
+            ]
+          },
+          "payload": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "readAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "body",
+          "createdAt",
+          "id",
+          "kind",
+          "payload",
+          "readAt",
+          "title"
+        ]
+      },
+      "OrderMatrixRow": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qtyForms": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "sessions": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeInForce": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "DAY",
+                "GTC"
+              ]
+            }
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "MARKET",
+              "LIMIT",
+              "STOP",
+              "STOP_LIMIT",
+              "TRAILING_STOP",
+              null
+            ]
+          }
+        },
+        "required": [
+          "notes",
+          "qtyForms",
+          "sessions",
+          "timeInForce",
+          "type"
+        ]
+      },
+      "PageNotification": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
         ]
       },
       "Preferences": {
@@ -478,6 +794,652 @@
           "code",
           "field",
           "message"
+        ]
+      },
+      "Rules": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesAccount"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "dataSources": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesExecution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fairness": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "fees": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RulesFee"
+            }
+          },
+          "leaderboard": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesLeaderboard"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orders": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesOrders"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rateLimits": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "sessions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesSessions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "social": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesSocial"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "account",
+          "asOf",
+          "dataSources",
+          "execution",
+          "fairness",
+          "fees",
+          "leaderboard",
+          "orders",
+          "rateLimits",
+          "sessions",
+          "social",
+          "version"
+        ]
+      },
+      "RulesAccount": {
+        "type": "object",
+        "properties": {
+          "buyingPowerFormula": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "depositsSettleImmediately": {
+            "type": "boolean"
+          },
+          "gfv": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesGfv"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pdtEnforced": {
+            "type": "boolean"
+          },
+          "settlement": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shortSelling": {
+            "type": "boolean"
+          },
+          "startingCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CASH",
+              "MARGIN",
+              null
+            ]
+          }
+        },
+        "required": [
+          "buyingPowerFormula",
+          "depositsSettleImmediately",
+          "gfv",
+          "pdtEnforced",
+          "settlement",
+          "shortSelling",
+          "startingCash",
+          "type"
+        ]
+      },
+      "RulesExecution": {
+        "type": "object",
+        "properties": {
+          "freshness": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "latency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "liquiditySharedAcrossPlayers": {
+            "type": "boolean"
+          },
+          "partialFills": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qualityLadder": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "freshness",
+          "latency",
+          "liquiditySharedAcrossPlayers",
+          "partialFills",
+          "qualityLadder"
+        ]
+      },
+      "RulesFee": {
+        "type": "object",
+        "properties": {
+          "appliesTo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "SELL",
+              "BOTH",
+              null
+            ]
+          },
+          "basis": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PRINCIPAL",
+              "SHARES",
+              null
+            ]
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "SEC",
+              "TAF",
+              "CAT",
+              null
+            ]
+          },
+          "effectiveFrom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "effectiveTo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "maxPerOrder": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "rounding": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "appliesTo",
+          "basis",
+          "code",
+          "effectiveFrom",
+          "effectiveTo",
+          "maxPerOrder",
+          "note",
+          "rate",
+          "rounding"
+        ]
+      },
+      "RulesFractional": {
+        "type": "object",
+        "properties": {
+          "dayOnly": {
+            "type": "boolean"
+          },
+          "marketOnly": {
+            "type": "boolean"
+          },
+          "minBuyNotional": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "minQty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "minSellNotional": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "replaceable": {
+            "type": "boolean"
+          },
+          "rthOnly": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dayOnly",
+          "marketOnly",
+          "minBuyNotional",
+          "minQty",
+          "minSellNotional",
+          "replaceable",
+          "rthOnly"
+        ]
+      },
+      "RulesGfv": {
+        "type": "object",
+        "properties": {
+          "expiresAfter": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "liquidationOnlyAt": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requiresAck": {
+            "type": "boolean"
+          },
+          "restrictionDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "settledCashOnlyAt": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "expiresAfter",
+          "liquidationOnlyAt",
+          "requiresAck",
+          "restrictionDays",
+          "settledCashOnlyAt"
+        ]
+      },
+      "RulesLeaderboard": {
+        "type": "object",
+        "properties": {
+          "benchmark": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "minFills": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "minSymbols": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pnlDayEnds": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pnlDefinition": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resetPolicy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "returnDefinition": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ties": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "benchmark",
+          "minFills",
+          "minSymbols",
+          "pnlDayEnds",
+          "pnlDefinition",
+          "resetPolicy",
+          "returnDefinition",
+          "ties"
+        ]
+      },
+      "RulesOrders": {
+        "type": "object",
+        "properties": {
+          "clientOrderIdPattern": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "collarPct": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "fatFingerWarnPct": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "fractional": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesFractional"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gtcDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "holdPctQueued": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "holdPctRegular": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "matrix": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/OrderMatrixRow"
+            }
+          },
+          "maxOpenOrders": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxQty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "priceTooFarPct": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "rationaleRequiredForAi": {
+            "type": "boolean"
+          },
+          "tick": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "clientOrderIdPattern",
+          "collarPct",
+          "fatFingerWarnPct",
+          "fractional",
+          "gtcDays",
+          "holdPctQueued",
+          "holdPctRegular",
+          "matrix",
+          "maxOpenOrders",
+          "maxQty",
+          "priceTooFarPct",
+          "rationaleRequiredForAi",
+          "tick"
+        ]
+      },
+      "RulesSessions": {
+        "type": "object",
+        "properties": {
+          "earlyClose": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "liveIexWindow": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overnight": {
+            "type": "boolean"
+          },
+          "post": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pre": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "regular": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "earlyClose",
+          "liveIexWindow",
+          "overnight",
+          "post",
+          "pre",
+          "regular",
+          "timezone"
+        ]
+      },
+      "RulesSocial": {
+        "type": "object",
+        "properties": {
+          "holdingsVisibility": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "EOD_WEIGHTS",
+              "EOD_FULL",
+              "HIDDEN",
+              null
+            ]
+          },
+          "tradeFeedDelay": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "holdingsVisibility",
+          "tradeFeedDelay"
         ]
       }
     },
