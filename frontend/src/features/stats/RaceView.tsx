@@ -32,14 +32,16 @@ function LegendRow({ s, color, me, active, onToggle }: { s: RaceSeries; color: s
         type="button"
         aria-pressed={active}
         onClick={onToggle}
-        onMouseEnter={onToggle}
+        onPointerEnter={(e) => {
+          if (e.pointerType === 'mouse') onToggle()
+        }}
         aria-label={`Highlight ${p?.displayName ?? p?.handle}`}
         className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left tablet:min-h-9"
       >
         <span className="w-6 shrink-0 text-center text-caption font-semibold text-text-2">{s.rank ?? '–'}</span>
         <span className="h-1 w-4 shrink-0 rounded-full" style={{ background: color }} aria-hidden="true" />
         <Avatar player={p} size={22} />
-        <span className="min-w-0 flex-1 truncate font-semibold">
+        <span className="min-w-0 flex-1 truncate font-semibold" title={p?.displayName ?? p?.handle ?? ''}>
           {p?.displayName ?? p?.handle}
           {me ? <span className="ml-1 text-micro text-accent">You</span> : null}
         </span>
@@ -53,7 +55,7 @@ function LegendRow({ s, color, me, active, onToggle }: { s: RaceSeries; color: s
         <span className={cx('w-16 shrink-0 text-right font-semibold tabular-nums', DIRECTION_TEXT[pctDirection(s.return)])}>{formatPct(s.return)}</span>
       </button>
       <Link to="/players/$handle" params={{ handle: p?.handle ?? '' }} className="hidden shrink-0 desktop:block" aria-label={`Rank history of ${p?.displayName ?? p?.handle}`}>
-        <RankHistory ranks={s.ranks} width={64} height={22} />
+        <RankHistory ranks={s.ranks} width={52} height={22} compact />
       </Link>
     </li>
   )
@@ -133,13 +135,12 @@ export function RaceView({ period, kind, myHandle }: { period: LeaderboardPeriod
             })}
           </ul>
         )}
-        {highlight ? (
-          <div className="flex justify-end border-t border-divider p-2">
-            <button type="button" onClick={() => setHighlight(null)} className="h-11 px-2 text-caption text-accent tablet:h-7">
-              Show all lines
-            </button>
-          </div>
-        ) : null}
+        {/* always rendered (disabled when every line shows): no layout shift under the pointer */}
+        <div className="flex justify-end border-t border-divider p-2">
+          <button type="button" disabled={!highlight} onClick={() => setHighlight(null)} className="h-11 px-2 text-caption text-accent disabled:text-text-3 tablet:h-7">
+            Show all lines
+          </button>
+        </div>
       </div>
     </section>
   )

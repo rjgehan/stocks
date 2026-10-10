@@ -35,6 +35,8 @@ const ACTIVITY_KEYS = [
 const LEADERBOARD_ROW_KEYS = [
   'rank', 'rankChange', 'eligible', 'eligibilityNote', 'partialPeriod', 'rebased', 'player', 'apiTrader', 'return', 'pnl',
   'excessVsBenchmark', 'maxDrawdown', 'equity', 'netContributions', 'flowsInPeriod', 'fills', 'symbolsTraded', 'winRate', 'topHolding', 'spark',
+  // Phase 2 (§16.8)
+  'sharpe', 'profitFactor',
 ]
 
 const keys = (o: unknown) => Object.keys(o as object).sort()

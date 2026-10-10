@@ -38,7 +38,9 @@ export function PnlBySymbol({ analysis, isPending }: { analysis: PnlAnalysis | u
                 <button
                   type="button"
                   aria-expanded={expanded}
-                  onMouseEnter={() => setOpen(b.symbol)}
+                  onPointerEnter={(e) => {
+                    if (e.pointerType === 'mouse') setOpen(b.symbol)
+                  }}
                   onClick={() => setOpen((o) => (o === b.symbol ? null : b.symbol))}
                   className="grid min-h-11 w-full grid-cols-[4.5rem_1fr_5.5rem] items-center gap-2 px-4 py-1.5 text-left text-table"
                 >

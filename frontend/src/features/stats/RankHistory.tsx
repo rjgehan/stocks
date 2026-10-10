@@ -5,11 +5,27 @@ import { cx } from '@/components/ui/cx'
  * Rank history (§16.8): a small inverted sparkline of the latest EOD ranks (rank 1 at the top) with a ▲/▼ marker on
  * every day the rank changed, and the latest change as text. Unranked days leave a gap. SVG numbers are display only.
  */
-export function RankHistory({ ranks, current, width = 96, height = 28, className }: { ranks: ReadonlyArray<RankPoint> | null | undefined; current?: number | null; width?: number; height?: number; className?: string }) {
+export function RankHistory({
+  ranks,
+  current,
+  width = 96,
+  height = 28,
+  className,
+  compact = false,
+}: {
+  ranks: ReadonlyArray<RankPoint> | null | undefined
+  current?: number | null
+  width?: number
+  height?: number
+  className?: string
+  /** The sparkline only (legend rows): no "#3 ▲1" label and no "No history yet". */
+  compact?: boolean
+}) {
   const points = (ranks ?? []).map((r) => r.rank)
   if (current != null) points.push(current)
   const ranked = points.filter((r): r is number => r != null)
   if (ranked.length < 2) {
+    if (compact) return <span className={cx('inline-block', className)} style={{ width, height }} aria-hidden="true" />
     return <span className={cx('text-micro text-text-3', className)}>{ranked.length ? `#${ranked[0]}` : 'No history yet'}</span>
   }
   const lo = Math.min(...ranked)
@@ -50,10 +66,12 @@ export function RankHistory({ ranks, current, width = 96, height = 28, className
           </text>
         ))}
       </svg>
-      <span className="text-micro whitespace-nowrap text-text-2" aria-label={`Rank ${last}${change ? `, ${change > 0 ? 'up' : 'down'} ${Math.abs(change)}` : ''}`}>
-        #{last}
-        {change ? <span className={change > 0 ? 'text-up' : 'text-down'}> {change > 0 ? '▲' : '▼'}{Math.abs(change)}</span> : null}
-      </span>
+      {compact ? null : (
+        <span className="text-micro whitespace-nowrap text-text-2" aria-label={`Rank ${last}${change ? `, ${change > 0 ? 'up' : 'down'} ${Math.abs(change)}` : ''}`}>
+          #{last}
+          {change ? <span className={change > 0 ? 'text-up' : 'text-down'}> {change > 0 ? '▲' : '▼'}{Math.abs(change)}</span> : null}
+        </span>
+      )}
     </span>
   )
 }

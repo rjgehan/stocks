@@ -6,6 +6,18 @@ import { Popover } from '@/components/ui/Popover'
 import { cx } from '@/components/ui/cx'
 import { EMOJI, REACTIONS, myReaction, reactorsLabel, toggleReaction } from './reactions'
 
+/** A smiley with a plus: "add a reaction". */
+function SmilePlus() {
+  return (
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M21 12a9 9 0 1 1-6.2-8.56" />
+      <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0" />
+      <path d="M9 9.5h.01M15 9.5h.01" strokeWidth={2.5} />
+      <path d="M19 2v5M16.5 4.5h5" />
+    </svg>
+  )
+}
+
 /**
  * Reactions under a feed item (§16.11, §22.4 Phase 2): a chip per emoji in use ("🚀 3", the viewer's own highlighted
  * and `aria-pressed`, the title lists who reacted) and a "+" picker with the six emojis. One reaction per player per
@@ -29,7 +41,7 @@ export function ReactionBar({ item }: { item: FeedItem }) {
   }
 
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-1" aria-label="Reactions" role="group">
+    <div className="flex flex-wrap items-center gap-1" aria-label="Reactions" role="group">
       {reactions.map((r) =>
         r.reaction ? (
           <button
@@ -60,9 +72,9 @@ export function ReactionBar({ item }: { item: FeedItem }) {
               type="button"
               {...props}
               aria-label="Add a reaction"
-              className="inline-flex h-8 min-w-11 items-center justify-center rounded-full border border-dashed border-divider px-2 text-caption text-text-3 hover:border-border hover:text-text-1 tablet:h-6 tablet:min-w-8"
+              className="inline-flex h-8 min-w-11 items-center justify-center rounded-full text-text-3 hover:bg-bg-2 hover:text-text-1 tablet:h-6 tablet:min-w-7"
             >
-              <span aria-hidden="true">☺+</span>
+              <SmilePlus />
             </button>
           )}
         >

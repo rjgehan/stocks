@@ -39,7 +39,7 @@ export default function RaceChart({ lines, highlight, intraday }: { lines: reado
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: cssVar('--text-3'), fontFamily: cssVar('--font-sans'), attributionLogo: true },
       grid: { vertLines: { visible: false }, horzLines: { color: cssVar('--chart-grid') } },
-      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.08 } },
+      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.14, bottom: 0.08 } },
       timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true, tickMarkFormatter: etTickLabel },
       localization: { timeFormatter: (time: Time) => `${etFull.format(new Date((time as number) * 1000))} ET`, priceFormatter: (p: number) => axisLabel(p, 'percent') },
       crosshair: { vertLine: { color: cssVar('--chart-crosshair') }, horzLine: { color: cssVar('--chart-crosshair') } },
