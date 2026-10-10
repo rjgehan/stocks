@@ -10,6 +10,7 @@ import com.stocks.config.CommonAutoConfiguration;
 import com.stocks.config.stubs.StubsAutoConfiguration;
 import com.stocks.contract.calendar.CalendarAdmin;
 import com.stocks.contract.calendar.MarketCalendar;
+import com.stocks.contract.marketdata.CorporateActionSource;
 import com.stocks.contract.marketdata.DailyMarkService;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.MarketUpdateListener;
@@ -150,6 +151,13 @@ public class MarketDataAutoConfiguration {
   @ConditionalOnMissingBean(DailyMarkService.class)
   DailyMarkService dailyMarkService(MarketDataRuntime runtime) {
     return runtime.dailyMarkService();
+  }
+
+  /** §14 corporate-action feed for WS3's sync job: the profile's primary provider (Alpaca or the SIM scenarios). */
+  @Bean
+  @ConditionalOnMissingBean(CorporateActionSource.class)
+  CorporateActionSource corporateActionSource(MarketDataRuntime runtime) {
+    return (symbols, from, to) -> runtime.primary().corporateActions(symbols, from, to);
   }
 
   /**

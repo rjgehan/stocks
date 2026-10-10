@@ -1,0 +1,240 @@
+{
+  "2:1 one lot" : {
+    "lots" : [ {
+      "id" : 1,
+      "qtyBefore" : "10",
+      "qtyAfter" : "20.00000",
+      "qtyOriginalAfter" : "20.00000",
+      "costBefore" : "1000.00",
+      "costAfter" : "1000.00",
+      "closed" : false,
+      "absorbedCashInLieu" : false
+    } ],
+    "qtyBefore" : "10.00000",
+    "qtyAfter" : "20.00000",
+    "costBefore" : "1000.00",
+    "costAfter" : "1000.00",
+    "entitled" : "20.00000",
+    "dust" : "0.00000",
+    "cashInLieuQty" : "0.00000",
+    "cashInLieu" : "0.00",
+    "forfeitedQty" : "0.00000",
+    "relievedCost" : "0.00",
+    "realizedPnl" : "0.00"
+  },
+  "3:2 two fractional lots" : {
+    "lots" : [ {
+      "id" : 1,
+      "qtyBefore" : "0.33333",
+      "qtyAfter" : "0.49999",
+      "qtyOriginalAfter" : "0.49999",
+      "costBefore" : "33.33",
+      "costAfter" : "33.33",
+      "closed" : false,
+      "absorbedCashInLieu" : false
+    }, {
+      "id" : 2,
+      "qtyBefore" : "0.33333",
+      "qtyAfter" : "0.49999",
+      "qtyOriginalAfter" : "0.49999",
+      "costBefore" : "34.00",
+      "costAfter" : "34.00",
+      "closed" : false,
+      "absorbedCashInLieu" : false
+    } ],
+    "qtyBefore" : "0.66666",
+    "qtyAfter" : "0.99998",
+    "costBefore" : "67.33",
+    "costAfter" : "67.33",
+    "entitled" : "0.99999",
+    "dust" : "0.00001",
+    "cashInLieuQty" : "0.00001",
+    "cashInLieu" : "0.00",
+    "forfeitedQty" : "0.00001",
+    "relievedCost" : "0.00",
+    "realizedPnl" : "0.00"
+  },
+  "1:3 two fractional lots" : {
+    "lots" : [ {
+      "id" : 1,
+      "qtyBefore" : "0.33333",
+      "qtyAfter" : "0.11111",
+      "qtyOriginalAfter" : "0.11111",
+      "costBefore" : "33.33",
+      "costAfter" : "33.33",
+      "closed" : false,
+      "absorbedCashInLieu" : false
+    }, {
+      "id" : 2,
+      "qtyBefore" : "0.33333",
+      "qtyAfter" : "0.11111",
+      "qtyOriginalAfter" : "0.11111",
+      "costBefore" : "34.00",
+      "costAfter" : "34.00",
+      "closed" : false,
+      "absorbedCashInLieu" : false
+    } ],
+    "qtyBefore" : "0.66666",
+    "qtyAfter" : "0.22222",
+    "costBefore" : "67.33",
+    "costAfter" : "67.33",
+    "entitled" : "0.22222",
+    "dust" : "0.00000",
+    "cashInLieuQty" : "0.00000",
+    "cashInLieu" : "0.00",
+    "forfeitedQty" : "0.00000",
+    "relievedCost" : "0.00",
+    "realizedPnl" : "0.00"
+  },
+  "1:8 two fractional lots" : {
+    "lots" : [ {
+      "id" : 1,
+      "qtyBefore" : "0.33333",
+      "qtyAfter" : "0.04166",
+      "qtyOriginalAfter" : "0.04166",
+      "costBefore" : "33.33",
+      "costAfter" : "33.33",
+      "closed" : false,
+      "absorbedCashInLieu" : false
+    }, {
+      "id" : 2,
+      "qtyBefore" : "0.33333",
+      "qtyAfter" : "0.04166",
+      "qtyOriginalAfter" : "0.04166",
+      "costBefore" : "34.00",
+      "costAfter" : "34.00",
+      "closed" : false,
+      "absorbedCashInLieu" : false
+    } ],
+    "qtyBefore" : "0.66666",
+    "qtyAfter" : "0.08332",
+    "costBefore" : "67.33",
+    "costAfter" : "67.33",
+    "entitled" : "0.08333",
+    "dust" : "0.00001",
+    "cashInLieuQty" : "0.00001",
+    "cashInLieu" : "0.00",
+    "forfeitedQty" : "0.00001",
+    "relievedCost" : "0.00",
+    "realizedPnl" : "0.00"
+  },
+  "3:2 fractional dust paid" : {
+    "lots" : [ {
+      "id" : 1,
+      "qtyBefore" : "0.33333",
+      "qtyAfter" : "0.49999",
+      "qtyOriginalAfter" : "0.49999",
+      "costBefore" : "33.33",
+      "costAfter" : "33.33",
+      "closed" : false,
+      "absorbedCashInLieu" : false
+    }, {
+      "id" : 2,
+      "qtyBefore" : "0.33333",
+      "qtyAfter" : "0.49999",
+      "qtyOriginalAfter" : "0.49999",
+      "costBefore" : "34.00",
+      "costAfter" : "34.00",
+      "closed" : false,
+      "absorbedCashInLieu" : true
+    } ],
+    "qtyBefore" : "0.66666",
+    "qtyAfter" : "0.99998",
+    "costBefore" : "67.33",
+    "costAfter" : "67.33",
+    "entitled" : "0.99999",
+    "dust" : "0.00001",
+    "cashInLieuQty" : "0.00001",
+    "cashInLieu" : "0.66",
+    "forfeitedQty" : "0.00000",
+    "relievedCost" : "0.00",
+    "realizedPnl" : "0.66"
+  },
+  "3:2 non-fractionable" : {
+    "lots" : [ {
+      "id" : 1,
+      "qtyBefore" : "1",
+      "qtyAfter" : "1.00000",
+      "qtyOriginalAfter" : "1.50000",
+      "costBefore" : "100.00",
+      "costAfter" : "66.67",
+      "closed" : false,
+      "absorbedCashInLieu" : true
+    } ],
+    "qtyBefore" : "1.00000",
+    "qtyAfter" : "1.00000",
+    "costBefore" : "100.00",
+    "costAfter" : "66.67",
+    "entitled" : "1.50000",
+    "dust" : "0.00000",
+    "cashInLieuQty" : "0.50000",
+    "cashInLieu" : "30.00",
+    "forfeitedQty" : "0.00000",
+    "relievedCost" : "33.33",
+    "realizedPnl" : "-3.33"
+  },
+  "1:3 non-fractionable two lots" : {
+    "lots" : [ {
+      "id" : 1,
+      "qtyBefore" : "4",
+      "qtyAfter" : "1.33333",
+      "qtyOriginalAfter" : "1.33333",
+      "costBefore" : "40.00",
+      "costAfter" : "40.00",
+      "closed" : false,
+      "absorbedCashInLieu" : false
+    }, {
+      "id" : 2,
+      "qtyBefore" : "4",
+      "qtyAfter" : "0.66667",
+      "qtyOriginalAfter" : "1.33333",
+      "costBefore" : "41.00",
+      "costAfter" : "20.50",
+      "closed" : false,
+      "absorbedCashInLieu" : true
+    } ],
+    "qtyBefore" : "8.00000",
+    "qtyAfter" : "2.00000",
+    "costBefore" : "81.00",
+    "costAfter" : "60.50",
+    "entitled" : "2.66666",
+    "dust" : "0.00000",
+    "cashInLieuQty" : "0.66666",
+    "cashInLieu" : "9.99",
+    "forfeitedQty" : "0.00000",
+    "relievedCost" : "20.50",
+    "realizedPnl" : "-10.51"
+  },
+  "1:8 non-fractionable all cash" : {
+    "lots" : [ {
+      "id" : 1,
+      "qtyBefore" : "3",
+      "qtyAfter" : "0.00000",
+      "qtyOriginalAfter" : "0.37500",
+      "costBefore" : "30.00",
+      "costAfter" : "0.00",
+      "closed" : true,
+      "absorbedCashInLieu" : false
+    }, {
+      "id" : 2,
+      "qtyBefore" : "2",
+      "qtyAfter" : "0.00000",
+      "qtyOriginalAfter" : "0.25000",
+      "costBefore" : "20.00",
+      "costAfter" : "0.00",
+      "closed" : true,
+      "absorbedCashInLieu" : true
+    } ],
+    "qtyBefore" : "5.00000",
+    "qtyAfter" : "0.00000",
+    "costBefore" : "50.00",
+    "costAfter" : "0.00",
+    "entitled" : "0.62500",
+    "dust" : "0.00000",
+    "cashInLieuQty" : "0.62500",
+    "cashInLieu" : "50.00",
+    "forfeitedQty" : "0.00000",
+    "relievedCost" : "50.00",
+    "realizedPnl" : "0.00"
+  }
+}

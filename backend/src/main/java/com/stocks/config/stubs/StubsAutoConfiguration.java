@@ -1,11 +1,7 @@
 package com.stocks.config.stubs;
 
 import com.stocks.config.CommonAutoConfiguration;
-import com.stocks.contract.trading.CorporateActionQueries;
-import com.stocks.contract.trading.CorporateActionService;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.context.annotation.Bean;
 
 /**
  * Day-0 stub beans so the app boots before the features land (§27.1). Registered through
@@ -15,8 +11,10 @@ import org.springframework.context.annotation.Bean;
  *
  * <p>Every stub throws {@code ApiException(NOT_IMPLEMENTED)} (501) from each method, except the market-data default
  * {@link NoopMarketDataService} (every quote {@code quality=NONE}). All of them implement {@link ContractStub}.
- * <b>Each workstream deletes its stubs here in the PR that lands the real bean</b>; at M4 this class is empty and
- * removed. SPIs that are discovered as lists ({@code ScheduledJob}, {@code PeriodicTask},
+ * <b>Each workstream deletes its stubs here in the PR that lands the real bean</b>. Since the corporate-action
+ * contracts landed (M3) no stub bean is left: the class stays as the documented extension point for a future
+ * contract's Day-0 stub, and {@code ContractStubsIT} fails if any {@link ContractStub} bean reaches the
+ * application. SPIs that are discovered as lists ({@code ScheduledJob}, {@code PeriodicTask},
  * {@code MarketUpdateListener}) need no stub.
  */
 @AutoConfiguration(after = CommonAutoConfiguration.class)
@@ -29,20 +27,8 @@ public class StubsAutoConfiguration {
   // (marketdata.config.MarketDataAutoConfiguration). NoopMarketDataService stays as a reusable "nothing known" double.
 
   // ===== WS3 =====
-  // OrderService, AdminOrderService, OrderQueries, AccountService, AccountQueries, CashTransferService and
-  // EngineControl landed (com.stocks.trading); corporate actions are still stubbed.
-
-  @Bean
-  @ConditionalOnMissingBean
-  CorporateActionQueries corporateActionQueriesStub() {
-    return NotImplementedStub.of(CorporateActionQueries.class, "WS3");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  CorporateActionService corporateActionServiceStub() {
-    return NotImplementedStub.of(CorporateActionService.class, "WS3");
-  }
+  // OrderService, AdminOrderService, OrderQueries, AccountService, AccountQueries, CashTransferService, EngineControl,
+  // CorporateActionQueries and CorporateActionService are real (com.stocks.trading).
 
   // ===== WS4 =====
   // ValuationService, LeaderboardService, PerformanceQueries and WatchlistService are real (portfolio, league,

@@ -43,6 +43,17 @@ public class LedgerWriter {
   public Posted append(long accountId, LedgerEntryType type, BigDecimal amount, LocalDate tradeDate,
                        LocalDate settleDate, Instant postedAt, Long transferId, Long executionId, String symbol,
                        String memo, String idempotencyKey) {
+    return append(accountId, type, amount, tradeDate, settleDate, postedAt, transferId, executionId, null, null,
+        symbol, memo, idempotencyKey);
+  }
+
+  /**
+   * {@link #append} with the corporate-action links (§14): {@code dividendId} for a DIVIDEND row (required by the
+   * CHECK), {@code corporateActionId} for DIVIDEND and CASH_IN_LIEU rows.
+   */
+  public Posted append(long accountId, LedgerEntryType type, BigDecimal amount, LocalDate tradeDate,
+                       LocalDate settleDate, Instant postedAt, Long transferId, Long executionId, Long dividendId,
+                       Long corporateActionId, String symbol, String memo, String idempotencyKey) {
     EngineThread.assertCurrent();
     BigDecimal cash = jdbc.sql("SELECT cash_balance FROM account WHERE id = ?").param(accountId)
         .query(BigDecimal.class).single();
@@ -54,10 +65,12 @@ public class LedgerWriter {
     KeyHolder keys = new GeneratedKeyHolder();
     jdbc.sql("""
             INSERT INTO cash_ledger (public_id, account_id, entry_type, amount, balance_after, trade_date, settle_date,
-                                     posted_at, transfer_id, execution_id, symbol, memo, idempotency_key)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""")
+                                     posted_at, transfer_id, execution_id, dividend_id, corporate_action_id, symbol,
+                                     memo, idempotency_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""")
         .params(publicId, accountId, type.name(), amount, after, tradeDate, settleDate, Jdbc.ts(postedAt),
             new SqlParameterValue(Types.BIGINT, transferId), new SqlParameterValue(Types.BIGINT, executionId),
+            new SqlParameterValue(Types.BIGINT, dividendId), new SqlParameterValue(Types.BIGINT, corporateActionId),
             new SqlParameterValue(Types.VARCHAR, symbol), new SqlParameterValue(Types.VARCHAR, memo),
             idempotencyKey)
         .update(keys, "id");

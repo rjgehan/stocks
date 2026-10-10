@@ -1,0 +1,27 @@
+{
+  "corporate_actions": {
+    "stock_dividends": [
+      {"id": "4a2f2f3e-0b7a-4c1d-9a1e-1d2b3c4d5e06", "symbol": "STKD", "cusip": "000000003", "rate": 0.05,
+       "process_date": "2026-10-20", "ex_date": "2026-10-19", "record_date": "2026-10-19", "payable_date": "2026-10-20"}
+    ],
+    "cash_mergers": [
+      {"id": "4a2f2f3e-0b7a-4c1d-9a1e-1d2b3c4d5e07", "acquiree_symbol": "TGTC", "acquiree_cusip": "000000004", "rate": 52.5,
+       "process_date": "2026-10-22", "effective_date": "2026-10-22", "acquirer_symbol": "BUYR"}
+    ],
+    "stock_mergers": [
+      {"id": "4a2f2f3e-0b7a-4c1d-9a1e-1d2b3c4d5e08", "acquirer_symbol": "BIGC", "acquirer_cusip": "000000005",
+       "acquirer_rate": 0.5, "acquiree_symbol": "SMLC", "acquiree_cusip": "000000006", "acquiree_rate": 1,
+       "process_date": "2026-10-23", "effective_date": "2026-10-23"}
+    ],
+    "spin_offs": [
+      {"id": "4a2f2f3e-0b7a-4c1d-9a1e-1d2b3c4d5e09", "source_symbol": "PRNT", "source_cusip": "000000007", "source_rate": 1,
+       "new_symbol": "SPUN", "new_cusip": "000000008", "new_rate": 0.25, "process_date": "2026-10-26",
+       "ex_date": "2026-10-26"}
+    ],
+    "worthless_removals": [
+      {"id": "4a2f2f3e-0b7a-4c1d-9a1e-1d2b3c4d5e10", "symbol": "GONE", "cusip": "000000009", "process_date": "2026-10-27"}
+    ],
+    "partial_calls": []
+  },
+  "next_page_token": null
+}

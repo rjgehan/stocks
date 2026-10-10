@@ -1,0 +1,26 @@
+{
+  "3:2" : {
+    "qtyBefore" : "0.66666",
+    "qtyAfter" : "0.99998",
+    "costBasis" : "60.00",
+    "dustQty" : "0.00001",
+    "cashInLieu" : "0.00",
+    "realizedPnl" : "0.00"
+  },
+  "1:3" : {
+    "qtyBefore" : "0.66666",
+    "qtyAfter" : "0.22222",
+    "costBasis" : "60.00",
+    "dustQty" : "0.00000",
+    "cashInLieu" : "0.00",
+    "realizedPnl" : "0.00"
+  },
+  "1:8" : {
+    "qtyBefore" : "0.66666",
+    "qtyAfter" : "0.08332",
+    "costBasis" : "60.00",
+    "dustQty" : "0.00001",
+    "cashInLieu" : "0.00",
+    "realizedPnl" : "0.00"
+  }
+}

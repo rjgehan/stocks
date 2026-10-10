@@ -6,7 +6,6 @@ import com.stocks.common.domain.PlayerKind;
 import com.stocks.common.domain.PlayerRole;
 import com.stocks.common.domain.PlayerStatus;
 import com.stocks.common.error.ApiException;
-import com.stocks.common.error.NotImplemented;
 import com.stocks.common.jdbc.Jdbc;
 import com.stocks.common.time.TimeSource;
 import com.stocks.contract.admin.dto.AdminPlayerDetailDto;
@@ -194,12 +193,12 @@ public class AdminPlayerViews {
   }
 
   /**
-   * A value from another workstream's contract for a read-only view: a Day-0 stub gives the fallback, and so does any
-   * other failure (logged), so one broken figure never hides the whole admin page.
+   * A value from another workstream's contract for a read-only view: any failure gives the fallback (logged), so one
+   * broken figure never hides the whole admin page.
    */
   static <T> T soft(java.util.function.Supplier<T> call, T fallback) {
     try {
-      return NotImplemented.orElse(call, fallback);
+      return call.get();
     } catch (ApiException e) {
       log.debug("Admin view: {} -> fallback", e.toString());
       return fallback;

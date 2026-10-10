@@ -308,53 +308,126 @@ public class AlpacaRestClient {
         .body();
   }
 
+  /** Corporate actions are read in pages of this many records (Alpaca's maximum). */
+  static final int CORPORATE_ACTIONS_PAGE = 1000;
+  /** At most this many pages per sync (100,000 records): a runaway token loop stops here. */
+  static final int CORPORATE_ACTIONS_MAX_PAGES = 100;
+
   /**
-   * {@code GET /v1/corporate-actions?symbols&start&end}: forward/reverse splits, cash dividends and name changes
-   * ({@code corporate_actions.{forward_splits,…}}). [VERIFY the payload against a live response.]
+   * {@code GET /v1/corporate-actions?symbols&start&end&limit&page_token} (verified against docs.alpaca.markets on
+   * 2026-10-10): {@code start}/{@code end} filter on {@code process_date}; {@code next_page_token} is followed until it
+   * is null. Mapping to the Phase 1 types (§14):
+   * <ul>
+   *   <li>{@code forward_splits}, {@code reverse_splits} → FORWARD_/REVERSE_SPLIT ({@code old_rate}, {@code new_rate},
+   *       {@code ex_date}); a reverse split that also changes the symbol ({@code new_symbol}) becomes a NAME_CHANGE
+   *       to the new symbol plus the split on the new symbol (NAME_CHANGE is applied first on the ex-date);</li>
+   *   <li>{@code stock_dividends} ({@code rate} new shares per share) → FORWARD_SPLIT {@code 1 → 1 + rate}: the same
+   *       pro-rata share increase with an unchanged total cost [VERIFY the rate convention on a live record];</li>
+   *   <li>{@code cash_dividends} → CASH_DIVIDEND ({@code rate} $/share, {@code ex_date}, {@code payable_date});</li>
+   *   <li>{@code name_changes} → NAME_CHANGE ({@code old_symbol} → {@code new_symbol} on {@code process_date});</li>
+   *   <li>{@code cash_mergers} → CASH_MERGER, {@code stock_mergers} and {@code stock_and_cash_mergers} →
+   *       STOCK_MERGER (the acquiree, on {@code effective_date}); {@code spin_offs}, {@code unit_splits} and
+   *       {@code rights_distributions} → SPIN_OFF (the source symbol); {@code worthless_removals} and
+   *       {@code redemptions} → DELISTING. WS3 sends these to NEEDS_ADMIN;</li>
+   *   <li>other categories ({@code partial_calls}, {@code reorganizations}, {@code capital_gains_distributions}) are
+   *       ignored in Phase 1.</li>
+   * </ul>
+   * {@code providerRef} is {@code alpaca:<id>} (plus {@code :name} for the derived rename).
    */
   public List<CorporateActionData> corporateActions(Set<String> symbols, LocalDate from, LocalDate to,
                                                     RefreshPriority priority) {
-    JsonNode root = http.getJson(priority, props.dataUrl(), "/v1/corporate-actions", ProviderHttp.query(
-        "symbols", symbols.isEmpty() ? null : String.join(",", new TreeSet<>(symbols)), "start", from.toString(),
-        "end", to.toString(), "limit", 1000));
-    JsonNode ca = root.get("corporate_actions");
     List<CorporateActionData> out = new ArrayList<>();
-    if (ca == null || !ca.isObject()) {
-      return out;
-    }
-    split(ca.get("forward_splits"), CorporateActionType.FORWARD_SPLIT, out);
-    split(ca.get("reverse_splits"), CorporateActionType.REVERSE_SPLIT, out);
-    JsonNode divs = ca.get("cash_dividends");
-    if (divs != null && divs.isArray()) {
-      for (JsonNode d : divs.values()) {
-        String sym = Json.str(d, "symbol");
-        LocalDate ex = Json.date(d, "ex_date");
-        out.add(new CorporateActionData(ref(d, "CASH_DIVIDEND", sym, ex), sym, CorporateActionType.CASH_DIVIDEND, ex,
-            Json.date(d, "record_date"), Json.date(d, "payable_date"), null, null, Json.dec(d, "rate"), null));
-      }
-    }
-    JsonNode names = ca.get("name_changes");
-    if (names != null && names.isArray()) {
-      for (JsonNode n : names.values()) {
-        String oldSym = Json.str(n, "old_symbol");
-        LocalDate ex = Json.date(n, "process_date");
-        out.add(new CorporateActionData(ref(n, "NAME_CHANGE", oldSym, ex), oldSym, CorporateActionType.NAME_CHANGE, ex,
-            null, null, null, null, null, Json.str(n, "new_symbol")));
+    String token = null;
+    for (int page = 0; page < CORPORATE_ACTIONS_MAX_PAGES; page++) {
+      JsonNode root = http.getJson(priority, props.dataUrl(), "/v1/corporate-actions", ProviderHttp.query(
+          "symbols", symbols.isEmpty() ? null : String.join(",", new TreeSet<>(symbols)), "start", from.toString(),
+          "end", to.toString(), "limit", CORPORATE_ACTIONS_PAGE, "page_token", token));
+      parseCorporateActions(root.get("corporate_actions"), out);
+      token = emptyToNull(Json.str(root, "next_page_token"));
+      if (token == null) {
+        break;
       }
     }
     return out;
   }
 
-  private static void split(JsonNode arr, CorporateActionType type, List<CorporateActionData> out) {
-    if (arr == null || !arr.isArray()) {
+  static void parseCorporateActions(JsonNode ca, List<CorporateActionData> out) {
+    if (ca == null || !ca.isObject()) {
       return;
     }
-    for (JsonNode s : arr.values()) {
-      String sym = Json.str(s, "symbol");
-      LocalDate ex = Json.date(s, "ex_date");
-      out.add(new CorporateActionData(ref(s, type.name(), sym, ex), sym, type, ex, Json.date(s, "record_date"),
-          Json.date(s, "payable_date"), Json.dec(s, "old_rate"), Json.dec(s, "new_rate"), null, null));
+    for (JsonNode s : items(ca, "forward_splits")) {
+      out.add(new CorporateActionData(ref(s, "FORWARD_SPLIT", Json.str(s, "symbol"), Json.date(s, "ex_date")),
+          Json.str(s, "symbol"), CorporateActionType.FORWARD_SPLIT, Json.date(s, "ex_date"),
+          Json.date(s, "record_date"), Json.date(s, "payable_date"), Json.dec(s, "old_rate"),
+          Json.dec(s, "new_rate"), null, null));
     }
+    for (JsonNode s : items(ca, "reverse_splits")) {
+      String sym = Json.str(s, "symbol");
+      String renamed = emptyToNull(Json.str(s, "new_symbol"));
+      LocalDate ex = Json.date(s, "ex_date");
+      String ref = ref(s, "REVERSE_SPLIT", sym, ex);
+      String splitSymbol = sym;
+      if (renamed != null && sym != null && !renamed.equalsIgnoreCase(sym)) {
+        out.add(new CorporateActionData(ref + ":name", sym, CorporateActionType.NAME_CHANGE, ex, null, null, null,
+            null, null, renamed));
+        splitSymbol = renamed;
+      }
+      out.add(new CorporateActionData(ref, splitSymbol, CorporateActionType.REVERSE_SPLIT, ex,
+          Json.date(s, "record_date"), Json.date(s, "payable_date"), Json.dec(s, "old_rate"),
+          Json.dec(s, "new_rate"), null, null));
+    }
+    for (JsonNode s : items(ca, "stock_dividends")) {
+      BigDecimal rate = Json.dec(s, "rate");
+      out.add(new CorporateActionData(ref(s, "STOCK_DIVIDEND", Json.str(s, "symbol"), Json.date(s, "ex_date")),
+          Json.str(s, "symbol"), CorporateActionType.FORWARD_SPLIT, Json.date(s, "ex_date"),
+          Json.date(s, "record_date"), Json.date(s, "payable_date"), rate == null ? null : BigDecimal.ONE,
+          rate == null ? null : BigDecimal.ONE.add(rate), null, null));
+    }
+    for (JsonNode d : items(ca, "cash_dividends")) {
+      String sym = Json.str(d, "symbol");
+      LocalDate ex = Json.date(d, "ex_date");
+      out.add(new CorporateActionData(ref(d, "CASH_DIVIDEND", sym, ex), sym, CorporateActionType.CASH_DIVIDEND, ex,
+          Json.date(d, "record_date"), Json.date(d, "payable_date"), null, null, Json.dec(d, "rate"), null));
+    }
+    for (JsonNode n : items(ca, "name_changes")) {
+      String oldSym = Json.str(n, "old_symbol");
+      LocalDate ex = Json.date(n, "process_date");
+      out.add(new CorporateActionData(ref(n, "NAME_CHANGE", oldSym, ex), oldSym, CorporateActionType.NAME_CHANGE, ex,
+          null, null, null, null, null, Json.str(n, "new_symbol")));
+    }
+    other(ca, "cash_mergers", "acquiree_symbol", "effective_date", CorporateActionType.CASH_MERGER, out);
+    other(ca, "stock_mergers", "acquiree_symbol", "effective_date", CorporateActionType.STOCK_MERGER, out);
+    other(ca, "stock_and_cash_mergers", "acquiree_symbol", "effective_date", CorporateActionType.STOCK_MERGER, out);
+    other(ca, "spin_offs", "source_symbol", "ex_date", CorporateActionType.SPIN_OFF, out);
+    other(ca, "unit_splits", "old_symbol", "effective_date", CorporateActionType.SPIN_OFF, out);
+    other(ca, "rights_distributions", "source_symbol", "ex_date", CorporateActionType.SPIN_OFF, out);
+    other(ca, "worthless_removals", "symbol", "process_date", CorporateActionType.DELISTING, out);
+    other(ca, "redemptions", "symbol", "process_date", CorporateActionType.DELISTING, out);
+  }
+
+  private static void other(JsonNode ca, String category, String symbolField, String dateField,
+                            CorporateActionType type, List<CorporateActionData> out) {
+    for (JsonNode n : items(ca, category)) {
+      String sym = Json.str(n, symbolField);
+      LocalDate date = Json.date(n, dateField);
+      if (date == null) {
+        date = Json.date(n, "process_date");
+      }
+      if (sym == null || date == null) {
+        continue;
+      }
+      out.add(new CorporateActionData(ref(n, type.name(), sym, date), sym, type, date, Json.date(n, "record_date"),
+          Json.date(n, "payable_date"), null, null, null, null));
+    }
+  }
+
+  private static List<JsonNode> items(JsonNode ca, String category) {
+    JsonNode arr = ca.get(category);
+    List<JsonNode> out = new ArrayList<>();
+    if (arr != null && arr.isArray()) {
+      arr.values().forEach(out::add);
+    }
+    return out;
   }
 
   private static String ref(JsonNode n, String type, String symbol, LocalDate ex) {

@@ -1,0 +1,20 @@
+{
+  "BEFORE_EX" : {
+    "cash" : "500.00",
+    "longMarketValue" : "500.00",
+    "receivable" : "0.00",
+    "equity" : "1000.00"
+  },
+  "EX_DATE" : {
+    "cash" : "500.00",
+    "longMarketValue" : "495.00",
+    "receivable" : "5.00",
+    "equity" : "1000.00"
+  },
+  "PAID" : {
+    "cash" : "505.00",
+    "longMarketValue" : "495.00",
+    "receivable" : "0.00",
+    "equity" : "1000.00"
+  }
+}
