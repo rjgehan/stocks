@@ -110,7 +110,14 @@ public final class McpOutputSchemas {
         return;
       }
       Class<?> raw = type.toClass();
-      if (raw == BigDecimal.class) {
+      if (raw == Object.class) {
+        // any JSON value (e.g. a compact bar row mixes timestamps, decimal strings and integers)
+        String description = text(node, "description");
+        node.removeAll();
+        if (description != null) {
+          node.put("description", description);
+        }
+      } else if (raw == BigDecimal.class) {
         decimal(node);
       } else if (raw.isEnum()) {
         enumeration(node, raw);
