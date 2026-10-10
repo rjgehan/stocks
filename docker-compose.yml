@@ -4,8 +4,12 @@
 #   A. plain Docker Compose: `docker compose -p stocks up -d` in a directory that also holds `.env`
 #      (copied from .env.example). This is what the GitHub Actions deploy job runs on the CasaOS host, in the
 #      project directory /DATA/AppData/stocks/compose/.
-#   B. CasaOS "App Store → Custom Install → Import". CasaOS reads the `x-casaos` blocks; Docker Compose ignores
-#      every `x-` key.
+#   B. CasaOS "App Store → Custom Install → Import". The CasaOS import form does NOT substitute ${...} variables,
+#      so import the resolved copy that deploy/scripts/casaos-compose.sh renders from .env (docker compose config).
+#      CasaOS reads the `x-casaos` blocks; Docker Compose ignores every `x-` key.
+#
+# No host port is published: the stocks-cloudflared sidecar (or any cloudflared joined to the stocks-edge network)
+# reaches the app at http://stocks-app:8080.
 #
 # Rules that keep this file importable by CasaOS (checked in CI by .github/scripts/check-compose.sh):
 #   - images only (ghcr.io/<owner>/stocks, built by .github/workflows/release.yml); never `build:`;
@@ -97,14 +101,6 @@ services:
       # Never pass this empty (an empty value would trust no proxy). Same networks as the §24.3 default.
       TRUSTED_PROXIES: '${TRUSTED_PROXIES:-127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|0:0:0:0:0:0:0:1|::1}'
       JDK_JAVA_OPTIONS: ${JDK_JAVA_OPTIONS:-}
-    ports:
-      # Only the tunnel needs this. 127.0.0.1 = reachable from the host only (host-network cloudflared);
-      # cloudflared on the stocks-edge network uses http://stocks-app:8080 and needs no published port at all.
-      # Actuator (8081) is never published.
-      - target: 8080
-        published: "${STOCKS_PORT:-8080}"
-        host_ip: ${STOCKS_BIND_IP:-127.0.0.1}
-        protocol: tcp
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/actuator/health/readiness"]
       interval: 15s
@@ -180,11 +176,6 @@ services:
           description:
             en_us: Extra JVM flags, applied after the image defaults. Usually empty.
             en_US: Extra JVM flags, applied after the image defaults. Usually empty.
-      ports:
-        - container: "8080"
-          description:
-            en_us: HTTP and WebSocket. Point the Cloudflare Tunnel here.
-            en_US: HTTP and WebSocket. Point the Cloudflare Tunnel here.
 
   backup:
     image: postgres:18.6-alpine
@@ -302,7 +293,7 @@ networks:
     name: stocks-backend
     internal: true # the database has no internet access
   edge:
-    name: stocks-edge # app egress (Alpaca, Finnhub); a cloudflared container may join it and use http://stocks-app:8080
+    name: stocks-edge # app egress (Alpaca, Finnhub) and the tunnel: cloudflared reaches http://stocks-app:8080
 
 x-casaos:
   architectures:
@@ -315,8 +306,8 @@ x-casaos:
   icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjExMiIgZmlsbD0iIzE1MTgxRSIvPgogIDxwb2x5Z29uIHBvaW50cz0iMTEyLDM0MCAyMDAsMjY4IDI2MiwzMDYgNDAwLDE3MCA0MDAsMzkyIDExMiwzOTIiIGZpbGw9IiMyMkM5OEEiIGZpbGwtb3BhY2l0eT0iMC4xNiIvPgogIDxwb2x5bGluZSBwb2ludHM9IjExMiwzNDAgMjAwLDI2OCAyNjIsMzA2IDQwMCwxNzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzIyQzk4QSIgc3Ryb2tlLXdpZHRoPSI0MCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPGNpcmNsZSBjeD0iNDAwIiBjeT0iMTcwIiByPSIzNCIgZmlsbD0iIzIyQzk4QSIvPgo8L3N2Zz4K
   thumbnail: ""
   screenshot_link: []
-  # The dashboard tile opens scheme://hostname:port_map/index: the tunnel hostname over https. The host port is
-  # bound to 127.0.0.1 and the session cookie is Secure, so http://<casaos-host>:8080 could not sign in anyway.
+  # The dashboard tile opens scheme://hostname:port_map/index: the tunnel hostname over https. No host port is
+  # published and the session cookie is Secure, so the app is only reachable through the tunnel.
   hostname: ${APP_PUBLIC_HOST:-}
   index: /
   port_map: "443"
@@ -331,20 +322,20 @@ x-casaos:
     en_us: >-
       Friends and Claude/ChatGPT bots trade fake money against the live US market (Webull-style UI, 500 USD starting
       cash, deposit-aware leaderboard). Spring Boot + React in one container, PostgreSQL 18, nightly backups.
-      Reach it through your Cloudflare Tunnel hostname (APP_PUBLIC_URL), not the LAN port.
+      Reach it through your Cloudflare Tunnel hostname (APP_PUBLIC_URL).
     en_US: >-
       Friends and Claude/ChatGPT bots trade fake money against the live US market (Webull-style UI, 500 USD starting
       cash, deposit-aware leaderboard). Spring Boot + React in one container, PostgreSQL 18, nightly backups.
-      Reach it through your Cloudflare Tunnel hostname (APP_PUBLIC_URL), not the LAN port.
+      Reach it through your Cloudflare Tunnel hostname (APP_PUBLIC_URL).
   tips:
     before_install:
       en_us: >-
-        Before importing, run deploy/scripts/init-host.sh with --casaos-link on the server. It creates
-        /DATA/AppData/stocks (with .env and scripts/pg_backup.sh) and links that .env into
-        /var/lib/casaos/apps/stocks/. Fill in .env first; every key must be set. Never Uninstall this app in
+        Before importing, run deploy/scripts/init-host.sh on the server, fill in /DATA/AppData/stocks/.env, then
+        run deploy/scripts/casaos-compose.sh and import the file it writes (/DATA/AppData/stocks/casaos-import.yml),
+        not this template: the import form does not substitute variables. Never Uninstall this app in
         CasaOS: an Uninstall that does not keep the data deletes /DATA/AppData/stocks. Guide: docs/deploy.md.
       en_US: >-
-        Before importing, run deploy/scripts/init-host.sh with --casaos-link on the server. It creates
-        /DATA/AppData/stocks (with .env and scripts/pg_backup.sh) and links that .env into
-        /var/lib/casaos/apps/stocks/. Fill in .env first; every key must be set. Never Uninstall this app in
+        Before importing, run deploy/scripts/init-host.sh on the server, fill in /DATA/AppData/stocks/.env, then
+        run deploy/scripts/casaos-compose.sh and import the file it writes (/DATA/AppData/stocks/casaos-import.yml),
+        not this template: the import form does not substitute variables. Never Uninstall this app in
         CasaOS: an Uninstall that does not keep the data deletes /DATA/AppData/stocks. Guide: docs/deploy.md.

@@ -166,7 +166,7 @@ layout that removes only `compose/` and the link, never the database, the dumps 
    | `ADMIN_BOOTSTRAP_USERNAME`, `ADMIN_BOOTSTRAP_PASSWORD` | your admin login (password ≥ 10 characters); used on first boot only, clear both afterwards |
    | `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY` | Alpaca paper keys |
    | `FINNHUB_TOKEN` | Finnhub key |
-   | `STOCKS_BIND_IP`, `STOCKS_PORT` | where the app listens on the host, see step 8 (default `127.0.0.1:8080`) |
+   | `CLOUDFLARE_TUNNEL_TOKEN` | this app's own tunnel token, see step 8 (no host port is published) |
    | everything else | keep the defaults, but keep every line (CasaOS needs them) |
 
    Do not put `$`, quotes or spaces in values: Docker Compose interpolates `$` inside `.env`.
@@ -277,9 +277,18 @@ If you prefer to install through the CasaOS UI first:
    `/var/lib/casaos/apps/stocks/.env`; CasaOS reads that `.env` whenever it starts the app.
 2. `init-host.sh` already put `pg_backup.sh` in `/DATA/AppData/stocks/scripts/`. Set `STOCKS_TAG` in `.env` to
    `latest` or a `sha-…` tag, and make sure the server can pull the image (step 3).
-3. CasaOS → **App Store → Custom Install** (the `+` at the top right, "Install a customized app") → **Import** →
-   paste the whole `docker-compose.yml` → **Submit**. Values show as `$VARIABLE` placeholders; leave them, they
-   come from `.env`. → **Install**.
+3. The CasaOS import form does **not** substitute `${...}` variables (the image shows up as `${STOCKS_IMAGE`), so
+   render a resolved copy from `.env` and import that instead:
+
+   ```sh
+   curl -fsSLo /tmp/casaos-compose.sh https://raw.githubusercontent.com/rjgehan/stocks/main/deploy/scripts/casaos-compose.sh
+   sudo bash /tmp/casaos-compose.sh          # writes /DATA/AppData/stocks/casaos-import.yml (mode 600, has secrets)
+   sudo cat /DATA/AppData/stocks/casaos-import.yml
+   ```
+
+   CasaOS → **App Store** → `+` (top right) → **Install a customized app** → **Import** → paste the whole file →
+   **Submit** → **Install**. Re-run the script and re-import only when `docker-compose.yml` itself changes; image
+   updates arrive through Watchtower.
 4. Check what CasaOS created: `docker inspect -f '{{.State.Health.Status}}' stocks-app` must become `healthy`,
    and `docker network inspect -f '{{.Internal}}' stocks-backend` must print `true`. If not, stop it with
    `sudo docker compose -p stocks down` (not CasaOS's Uninstall, see the warning in 7A) and use 7A.
@@ -289,10 +298,10 @@ Keep `DEPLOY_DIR` at `/DATA/AppData/stocks/compose`: the next pipeline deploy ta
 that compose file as root with mode 600 and may rewrite it, so the unprivileged runner can neither read nor safely
 update it.
 
-Why the compose file looks the way it does: CasaOS Import interpolates the file, drops `:-default` fallbacks
-(hence every key in `.env`), re-serializes it (hence no literal `$` anywhere), cannot resolve `env_file:` or
-relative paths (hence absolute `/DATA/AppData/stocks/...` mounts and an explicit `environment:` list), and leaves
-out services behind a profile (the `agents` runner). CI enforces these rules (`make compose-check`).
+Why the compose file looks the way it does: CasaOS Import cannot resolve `${...}`, `env_file:` or relative paths
+(hence the rendered copy, absolute `/DATA/AppData/stocks/...` mounts and an explicit `environment:` list), and
+re-serializes the file (hence no literal `$` anywhere). `docker compose config` leaves out services behind a
+profile (the `agents` runner). CI enforces these rules (`make compose-check`).
 
 ### After the first boot
 
@@ -310,8 +319,7 @@ runs:
 |---|---|---|
 | **as the `stocks-cloudflared` sidecar in this compose file** (default; one tunnel per app, like the owner's other CasaOS apps) | `http://stocks-app:8080` | `CLOUDFLARE_TUNNEL_TOKEN=<this app's tunnel token>` |
 | **as a container, joined to the `stocks-edge` network** (recommended with the CasaOS cloudflared app) | `http://stocks-app:8080` | defaults (the published port is not even used) |
-| on the host network, or as a system service | `http://localhost:8080` | `STOCKS_BIND_IP=127.0.0.1` (default) |
-| as a container on another network that cannot join `stocks-edge` | `http://<server-lan-ip>:8080` | `STOCKS_BIND_IP=0.0.0.0` **and** `TRUSTED_PROXIES` narrowed to cloudflared's Docker network, e.g. `172.18.0.0/16` (from `docker network inspect <its network>`). Any LAN device can then reach port 8080 over plain HTTP; with the broad default it could also forge `CF-Connecting-IP` (rate limits, lockout, audit) and `X-Forwarded-Proto: https`. |
+| as a container or service elsewhere | `http://stocks-app:8080` after joining it to the `stocks-edge` network (below) | leave `CLOUDFLARE_TUNNEL_TOKEN` empty and stop `stocks-cloudflared` |
 
 **The sidecar (default).** Zero Trust → **Networks → Tunnels → Create a tunnel → Cloudflared**, name it `stocks`,
 and copy the token from the install command it shows (the long string after `--token`). Put it in `.env` as
@@ -463,7 +471,6 @@ Database migrations run automatically when the new app starts (Flyway).
 | `… still uses the old layout` | The host was set up with `docker-compose.yml` directly in `/DATA/AppData/stocks`. Re-run `init-host.sh` (step 4.3): it moves the file into `compose/` and prints the one-time `up -d --force-recreate` that relabels the containers ([runbook.md](runbook.md#host-layout)). |
 | `docker compose config failed` | A variable is missing from `.env`, or a `$` is in a value. Compare with `.env.example`. Nothing was changed on the server; fix `.env` and re-run the job. |
 | App unhealthy, rolled back | Read the app log in the job output (or `docker logs stocks-app`). The prod profile fails fast on a missing or invalid `APP_PUBLIC_URL`, `API_KEY_PEPPER` (< 32 bytes), `ENGINE_SEED`, missing Alpaca keys in `hybrid`, or no admin and no bootstrap variables (§23.2). |
-| `port is already allocated` | Another app uses 8080 on that address: change `STOCKS_PORT` (and the tunnel URL if it uses the port). |
 | Tunnel returns 502 | cloudflared cannot reach the URL: check the table in step 8. Test the path from that network: `docker run --rm --network stocks-edge busybox wget -qO- http://stocks-app:8080/ \| head -c 200`. |
 | Login works but `/ws` fails | WebSockets off for the zone, or a cache rule on `/ws`. |
 | Requests show the proxy IP, or login cookies are not kept | `APP_PUBLIC_URL` is not the https hostname, or `TRUSTED_PROXIES` does not match cloudflared's address. |
