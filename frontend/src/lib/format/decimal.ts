@@ -194,6 +194,14 @@ export function roundToTick(price: Dec, mode: RoundingMode = 'HALF_UP'): Dec {
   return setScale(price, tickFor(price) === '0.01' ? 2 : 4, mode)
 }
 
+/**
+ * Round a value to the tick of a reference price (§11.2 check 16): a trail amount is checked against the tick of the
+ * price it trails ($0.01 at or above $1), not against its own size, so a $0.43 trail on a $42.56 stock has 2 decimals.
+ */
+export function roundToTickOf(value: Dec, reference: Dec, mode: RoundingMode = 'HALF_UP'): Dec {
+  return setScale(value, tickFor(reference) === '0.01' ? 2 : 4, mode)
+}
+
 /** Normalise user-typed input ("1,234.5", " $12 ") into a Dec, or null if it is not a number. */
 export function parseUserDecimal(input: string): Dec | null {
   const cleaned = input.replace(/[\s,$]/g, '').replace(/−/g, '-')

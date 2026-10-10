@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { entries, isProbeFailure, jobTone, unlimited, usageLabel, usagePct } from './systemStatus'
+import { entries, futureRunKey, isProbeFailure, jobTone, unlimited, usageLabel, usagePct } from './systemStatus'
 
 describe('admin system status helpers', () => {
   it('shows an unlimited budget as ∞ instead of "/-1"', () => {
@@ -39,5 +39,18 @@ describe('admin system status helpers', () => {
     ])
     expect(entries(null, true)).toEqual([])
     expect(entries({ statuses: false }, false)).toEqual([{ key: 'statuses', value: 'false', failed: false }])
+  })
+})
+
+// Review regression: "Run now" with a future key applied a split before its ex-date
+describe('futureRunKey', () => {
+  const now = Date.parse('2026-10-13T14:00:00Z') // Tue 10:00 ET
+  it('flags a key dated after today (ET), never today or earlier or an undated key', () => {
+    expect(futureRunKey('2026-10-14', now)).toBe(true)
+    expect(futureRunKey(' 2026-10-19:RTH_OPEN ', now)).toBe(true)
+    expect(futureRunKey('2026-10-13', now)).toBe(false)
+    expect(futureRunKey('2026-10-09', now)).toBe(false)
+    expect(futureRunKey('', now)).toBe(false)
+    expect(futureRunKey('manual', now)).toBe(false)
   })
 })

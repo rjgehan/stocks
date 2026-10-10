@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ERROR_COPY, describeError, errorBody, errorField } from './errors'
+import { ERROR_COPY, describeError, errorBody, errorField, humanizeMessage, orderErrorText } from './errors'
 import { ApiError, type ProblemDetail } from './problem'
 
 const problem = (over: Partial<ProblemDetail>): ApiError =>
@@ -46,5 +46,21 @@ describe('error copy (§7.2 → UI)', () => {
 
   it('describes non-API errors', () => {
     expect(describeError(new Error('boom'))).toMatchObject({ code: 'UNEXPECTED', detail: 'boom' })
+  })
+})
+
+// Review regression: the ticket never shows Java field names or 4-decimal internal prices
+describe('order error text for the ticket', () => {
+  it('turns stop and trail rejections into friendly copy with the market price', () => {
+    expect(orderErrorText({ code: 'STOP_PRICE_WRONG_SIDE', message: 'A buy stop must be above the market: stopPrice 100.0000, reference 256.3300.' })).toBe('Buy stops must be above the market (256.33).')
+    expect(orderErrorText({ code: 'STOP_PRICE_WRONG_SIDE', message: 'Below 41.2000' })).toBe('Sell stops must be below the market (41.20).')
+    expect(orderErrorText({ code: 'PRICE_TOO_FAR', message: 'stopPrice 900.0000 is 251.1% from the reference 256.3200.' })).toBe('Too far from the market price (256.32).')
+    expect(orderErrorText({ code: 'INVALID_TICK', message: 'trailAmount 0.4256 is not on the 0.01 tick' })).toBe('Use steps of $0.01.')
+  })
+
+  it('humanizes any other server message', () => {
+    expect(humanizeMessage('limitPrice 227.4000 must be > 0')).toBe('limit price 227.40 must be > 0')
+    expect(orderErrorText({ code: 'VALIDATION_FAILED', message: 'qty must be positive' })).toBe('quantity must be positive')
+    expect(orderErrorText({ code: 'INSUFFICIENT_BUYING_POWER', message: '' })).toBe('Not enough buying power')
   })
 })

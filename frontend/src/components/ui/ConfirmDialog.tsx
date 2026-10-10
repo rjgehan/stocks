@@ -17,6 +17,7 @@ export function ConfirmDialog({
   pending,
   typeToConfirm,
   error,
+  confirmDisabled,
 }: {
   open: boolean
   onClose: () => void
@@ -28,6 +29,8 @@ export function ConfirmDialog({
   pending?: boolean
   typeToConfirm?: string
   error?: ReactNode
+  /** Keeps Confirm disabled (an input the caller validates is not acceptable yet). */
+  confirmDisabled?: boolean
 }) {
   const [typed, setTyped] = useState('')
   const ready = !typeToConfirm || typed.trim() === typeToConfirm
@@ -45,7 +48,7 @@ export function ConfirmDialog({
           <Button variant="secondary" size="lg" className="flex-1" onClick={close}>
             Cancel
           </Button>
-          <Button variant={tone} size="lg" className="flex-[1.4]" disabled={!ready || pending} onClick={onConfirm}>
+          <Button variant={tone} size="lg" className="flex-[1.4]" disabled={!ready || pending || confirmDisabled} onClick={onConfirm}>
             {pending ? 'Working…' : confirmLabel}
           </Button>
         </div>

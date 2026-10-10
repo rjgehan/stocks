@@ -2,7 +2,7 @@
 import type { Order, OrderEvent, OrderStatus, OrderType, WaitReason } from '@/lib/api/types'
 import { type Dec, isDecimal } from '@/lib/format/decimal'
 import type { PillTone } from '@/components/ui/Pill'
-import { formatMoney } from '@/lib/format/money'
+import { formatMoney, formatTrailAmount } from '@/lib/format/money'
 import { formatPrice, formatQty } from '@/lib/format/number'
 
 export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
@@ -78,7 +78,7 @@ export function orderSizeLabel(o: Pick<Order, 'notional' | 'qty'>): string {
 
 /** "$1.50" or "2.5%": a trailing stop's trail. */
 export function trailLabel(o: Pick<Order, 'trailAmount' | 'trailPercent'>): string | null {
-  if (o.trailAmount) return `$${formatPrice(o.trailAmount)}`
+  if (o.trailAmount) return formatTrailAmount(o.trailAmount)
   if (o.trailPercent) return `${o.trailPercent}%`
   return null
 }

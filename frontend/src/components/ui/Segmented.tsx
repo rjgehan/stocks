@@ -41,7 +41,8 @@ export function Segmented<T extends string>({ value, options, onChange, label, s
             className={cx(
               'flex-1 whitespace-nowrap rounded-[6px] font-semibold transition-colors duration-150 disabled:opacity-40',
               // §22.3: 44 px touch targets below the tablet breakpoint; compact again from tablet up
-              size === 'sm' ? 'h-11 px-2.5 text-caption tablet:h-7' : 'h-11 px-3 text-body tablet:h-9',
+              // (min-w-11: a one-character option such as the trail's "$" is still 44 px wide on phones)
+              size === 'sm' ? 'h-11 min-w-11 px-2.5 text-caption tablet:h-7 tablet:min-w-0' : 'h-11 min-w-11 px-3 text-body tablet:h-9 tablet:min-w-0',
               selected ? TONES[o.tone ?? 'accent'] : 'text-text-2 hover:text-text-1',
             )}
           >

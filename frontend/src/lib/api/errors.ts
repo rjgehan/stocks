@@ -4,6 +4,7 @@
  * title when present; the `field` maps an order rejection to the ticket input it belongs to (§22.5 "Server error
  * codes map to inline field errors") when the problem carries no `fields`.
  */
+import { formatPrice } from '@/lib/format/number'
 import { isApiError } from './problem'
 
 export interface ErrorCopy {
@@ -113,4 +114,50 @@ export const errorField = (code: string | null | undefined): ErrorCopy['field'] 
 export function errorBody(d: DescribedError): string | undefined {
   const parts = [d.detail, d.hint].filter((p): p is string => Boolean(p))
   return parts.length ? parts.join(' ') : undefined
+}
+
+const FIELD_WORDS: Record<string, string> = {
+  stopPrice: 'stop price',
+  limitPrice: 'limit price',
+  trailAmount: 'trail',
+  trailPercent: 'trail %',
+  qty: 'quantity',
+  notional: 'amount',
+  timeInForce: 'time in force',
+  extendedHours: 'extended hours',
+}
+
+/**
+ * A server validation message made readable for the ticket: request field names in words and prices at their
+ * display scale ("stopPrice 900.0000" → "stop price 900.00").
+ */
+export function humanizeMessage(message: string): string {
+  return message
+    .replace(/\b(stopPrice|limitPrice|trailAmount|trailPercent|qty|notional|timeInForce|extendedHours)\b/g, (m) => FIELD_WORDS[m] ?? m)
+    .replace(/\b\d+\.\d{3,}\b/g, (n) => formatPrice(n))
+}
+
+const NUMBER = '(\\d+(?:\\.\\d+)?)'
+
+/**
+ * The ticket's text for an order validation error (§22.5): friendly copy for the codes players hit with stops and
+ * trails, with the market price formatted ("Buy stops must be above the market (256.33)"), never a Java field name
+ * or a 4-decimal internal price. Works on the problem's message and on a field's short message ("Above 256.3300").
+ */
+export function orderErrorText(e: { code?: string | null; message?: string | null }): string {
+  const msg = e.message ?? ''
+  const ref = new RegExp(`(?:reference|from|^Above|^Below) ${NUMBER}`).exec(msg)?.[1]
+  const at = ref ? ` (${formatPrice(ref)})` : ''
+  switch (e.code) {
+    case 'STOP_PRICE_WRONG_SIDE':
+      return /\bbuy\b|^Above/i.test(msg) ? `Buy stops must be above the market${at}.` : `Sell stops must be below the market${at}.`
+    case 'PRICE_TOO_FAR':
+      return `Too far from the market price${at}.`
+    case 'INVALID_TICK': {
+      const tick = new RegExp(`(?:on the|multiple of) ${NUMBER}`).exec(msg)?.[1]
+      return tick ? `Use steps of $${tick}.` : `${ERROR_COPY.INVALID_TICK!.title}.`
+    }
+    default:
+      return humanizeMessage(msg) || ERROR_COPY[e.code ?? '']?.title || 'Invalid value'
+  }
 }

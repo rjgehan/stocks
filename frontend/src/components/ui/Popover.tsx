@@ -1,9 +1,10 @@
-import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { cx } from './cx'
 
 /**
  * A small anchored popover (menus, formula info). Click outside or Escape closes it; focus returns to the trigger.
- * `renderTrigger` receives the toggle props to spread on its button.
+ * `renderTrigger` receives the toggle props to spread on its button. The panel is kept inside the viewport (8 px
+ * margin): one that would open past an edge is shifted back horizontally.
  */
 export function Popover({
   renderTrigger,
@@ -20,7 +21,20 @@ export function Popover({
 }) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
   const id = useId()
+  // collision handling: measured once per opening, before paint (a style on the node, no re-render)
+  useLayoutEffect(() => {
+    const el = panel.current
+    if (!open || !el) return
+    el.style.transform = ''
+    const r = el.getBoundingClientRect()
+    const margin = 8
+    const right = document.documentElement.clientWidth - margin
+    let dx = r.right > right ? right - r.right : 0
+    if (r.left + dx < margin) dx = margin - r.left
+    if (dx) el.style.transform = `translateX(${Math.round(dx)}px)`
+  }, [open])
   useEffect(() => {
     if (!open) return
     const onDown = (e: PointerEvent) => {
@@ -46,6 +60,7 @@ export function Popover({
       {renderTrigger({ onClick: () => setOpen((o) => !o), 'aria-expanded': open, 'aria-controls': id, 'aria-haspopup': 'true' })}
       {open ? (
         <div
+          ref={panel}
           id={id}
           role="dialog"
           aria-label={label}

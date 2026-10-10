@@ -30,7 +30,8 @@ test('resolve a detected split and skip a merger', async ({ page }) => {
   await expect(dialog.getByLabel('New shares')).toHaveValue('2')
   await expect(dialog.getByText(/Every 1 SOFI share becomes 2/)).toBeVisible()
   const apply = dialog.getByRole('button', { name: 'Apply 2-for-1' })
-  await expect(apply).toBeDisabled() // the audited note is required
+  await expect(apply).toBeDisabled() // the audited note is required, and the field says so
+  await expect(dialog.getByLabel(/^Note \(required, audited\)/)).toBeVisible()
   await dialog.getByLabel(/^Note/).fill('Confirmed on the issuer press release')
   await apply.click()
   const reauth = page.getByRole('dialog', { name: "Confirm it's you" })
@@ -53,6 +54,18 @@ test('resolve a detected split and skip a merger', async ({ page }) => {
   // Both show under their new status.
   await page.getByRole('radiogroup', { name: 'Corporate action status' }).getByRole('radio', { name: 'Applied' }).click()
   await expect(list.locator('li').filter({ hasText: 'SOFI' }).first()).toContainText('by @demo')
+  // the filter is in the URL: a reload keeps it (review fix)
+  await expect(page).toHaveURL(/status=APPLIED/)
+  await page.reload()
+  await expect(page.getByRole('radiogroup', { name: 'Corporate action status' }).getByRole('radio', { name: 'Applied' })).toHaveAttribute('aria-checked', 'true')
+  await expect(list.locator('li').filter({ hasText: 'SOFI' }).first()).toBeVisible()
   await page.getByRole('radiogroup', { name: 'Corporate action status' }).getByRole('radio', { name: 'Skipped' }).click()
   await expect(list.getByText('SIMB', { exact: true })).toBeVisible()
+})
+
+// Review regression: an accrued dividend is part of the equity, so the balances show it until it is paid
+test('the account balances show a dividend receivable', async ({ page }) => {
+  test.skip(!MOCK, 'Needs an accrued dividend (mock mode seeds one)')
+  await open(page, '/account')
+  await expect(page.getByText('Dividends receivable')).toBeVisible()
 })

@@ -16,7 +16,9 @@
  *    shows an ACCRUED (ex-date, counted in equity as a receivable) or VOID (reset before the payable date)
  *    entitlement as a DIVIDEND row with this detail; the PAID dividend is the DIVIDEND ledger row (detail null, or
  *    this detail with `status: "PAID"`). The SPA reads it through `ActivityDetailView` (types.ts), so the generated
- *    `Activity.detail` union does not need to list it until the backend publishes it.
+ *    `Activity.detail` union does not need to list it until the backend publishes it. The Phase 1 backend does NOT
+ *    publish ACCRUED or VOID rows (§18.2): an accrued dividend shows as `Account.dividendsReceivable` in the Balances
+ *    grid and as a notification; only mock mode renders this path today (Phase 2).
  */
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type

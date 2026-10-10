@@ -3,8 +3,9 @@ import { IconMinus, IconPlus } from './icons'
 import { cx } from './cx'
 
 /**
- * A labelled numeric text field with − / + buttons. Values stay strings (decimal-safe). 44 px tall on phones
- * (§22.3 touch targets), 40 px from the tablet breakpoint. `active` outlines the field the price chips will fill.
+ * A labelled numeric text field with − / + buttons. Values stay strings (decimal-safe). On phones the field is 46 px
+ * tall, so inside its 1 px border the − / + buttons are full 44 × 44 px touch targets (§22.3); 40 px from the tablet
+ * breakpoint. `active` outlines the field the price chips will fill.
  */
 export function Stepper({
   label,
@@ -46,7 +47,7 @@ export function Stepper({
       </div>
       <div
         className={cx(
-          'flex h-11 items-center rounded-md border bg-bg-2 transition-colors focus-within:border-accent tablet:h-10',
+          'flex h-[46px] items-center rounded-md border bg-bg-2 transition-colors focus-within:border-accent tablet:h-10',
           error ? 'border-down' : active ? 'border-accent/60' : 'border-border',
           disabled && 'opacity-50',
         )}

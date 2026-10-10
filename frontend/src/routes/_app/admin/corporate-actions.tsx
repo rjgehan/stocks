@@ -14,5 +14,12 @@ export const Route = createFileRoute('/_app/admin/corporate-actions')({
 /** Admin · Corporate actions (§21.3 System "corporate actions needing admin", given its own tab): list and resolve. */
 function CorporateActionsPage() {
   const { status } = Route.useSearch()
-  return <CorporateActions initialFilter={status ?? 'NEEDS_ADMIN'} />
+  const navigate = Route.useNavigate()
+  // the filter lives in the URL, so a reload or Back keeps it
+  return (
+    <CorporateActions
+      filter={status ?? 'NEEDS_ADMIN'}
+      onFilterChange={(next) => void navigate({ search: { status: next === 'NEEDS_ADMIN' ? undefined : next }, replace: true })}
+    />
+  )
 }

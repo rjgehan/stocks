@@ -10,7 +10,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useAccount, useOrderPreview, usePlaceOrder, usePositions } from '@/lib/api/hooks/account'
 import { useAsset, useClock, useRules } from '@/lib/api/hooks/market'
 import { useMe } from '@/lib/api/hooks/identity'
-import { type DescribedError, describeError, errorField } from '@/lib/api/errors'
+import { type DescribedError, describeError, errorField, orderErrorText } from '@/lib/api/errors'
 import { isApiError } from '@/lib/api/problem'
 import type { OrderType, PlaceOrderRequest, Side } from '@/lib/api/types'
 import { useQuote } from '@/lib/realtime/useQuote'
@@ -51,7 +51,7 @@ import {
   showsStop,
   showsTrail,
   stepTrail,
-  stopExplanation,
+  ticketExplanation,
   ticketReducer,
   trailingStopStart,
   withoutQueueDuplicates,
@@ -151,12 +151,22 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
     const out: Record<string, string> = {}
     for (const e of previewErrors) {
       const f = inputFor(e.field, e.code, amountMode)
-      if (f && e.message) out[f] ??= e.message
+      if (f && e.message) out[f] ??= orderErrorText(e)
     }
     return { ...out, ...submitErrors }
   }, [previewErrors, submitErrors, amountMode])
   const placed = new Set(['qty', 'notional', 'limitPrice', 'stopPrice', 'trailAmount', 'trailPercent'])
-  const generalErrors = previewErrors.filter((e) => !placed.has(inputFor(e.field, e.code, amountMode) ?? ''))
+  const session = clock.data?.session
+  const stopSessionNote =
+    session && session !== 'REGULAR' && isStopType(state.type)
+      ? state.type === 'TRAILING_STOP'
+        ? 'Trailing stops can only be placed during regular hours, 9:30–16:00 ET.'
+        : 'Stops only trigger during regular hours (9:30–16:00 ET); this one arms at the next open.'
+      : null
+  // the session note already says it: the server's SESSION_NOT_ALLOWED (and its hint) would repeat it twice more
+  const generalErrors = previewErrors.filter(
+    (e) => !placed.has(inputFor(e.field, e.code, amountMode) ?? '') && !(stopSessionNote && e.code === 'SESSION_NOT_ALLOWED'),
+  )
   // "Fix the highlighted fields" only when an error really sits on an input (not for ENGINE_HALTED, type errors, …)
   const highlighted = previewErrors.length > generalErrors.length
   const gfvRisk = warnings.some((w) => w.code === 'GFV_RISK')
@@ -214,7 +224,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
         const fields: Record<string, string> = {}
         for (const f of e.problem.fields) {
           const input = inputFor(f.field, f.code, amountMode)
-          if (input) fields[input] ??= f.message
+          if (input) fields[input] ??= orderErrorText({ code: f.code ?? e.code, message: f.message })
         }
         const fallback = inputFor(null, e.code, amountMode)
         if (fallback && !fields[fallback] && placed.has(fallback)) fields[fallback] = d.detail ?? d.title
@@ -252,14 +262,13 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const sideLabel = state.side === 'BUY' ? 'Buy' : 'Sell'
   const est = previewData?.estimate
   const trailStart = showsTrail(state.type) ? trailingStopStart(state.side, quote?.last, state.trail, state.trailMode) : null
-  const explanation = isStopType(state.type) ? stopExplanation({ ...request, side: state.side, type: state.type, symbol }) : null
-  const session = clock.data?.session
-  const stopSessionNote =
-    session && session !== 'REGULAR' && isStopType(state.type)
-      ? state.type === 'TRAILING_STOP'
-        ? 'Trailing stops can only be placed during regular hours, 9:30–16:00 ET.'
-        : 'Stops only trigger during regular hours (9:30–16:00 ET); this one arms at the next open.'
-      : null
+  const explanation = ticketExplanation(state, symbol)
+  // a corporate-action hold reports the asset untradable while its quote reads halted (§14)
+  const untradableNote = tradable
+    ? null
+    : quote?.halted
+      ? `${symbol} is on hold while a corporate action (such as a split) is reviewed. Orders open again once it is resolved.`
+      : `${symbol} cannot be traded right now (inactive, or not tradable on this platform).`
   return (
     <div className={cx('flex flex-col', className)}>
       {/* Header: symbol, live last, bid × size, ask × size, quality badge */}
@@ -281,7 +290,12 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
       </div>
 
       <div className="space-y-3 px-4 pb-4">
-        {!tradable ? <p className="rounded-sm bg-warn/10 p-2 text-caption text-warn">{symbol} cannot be traded right now (halted, inactive, or a corporate action under review).</p> : null}
+        {untradableNote ? (
+          <p role="status" className="flex gap-1.5 rounded-sm bg-warn/10 p-2 text-caption text-warn">
+            <IconInfo size={16} className="mt-0.5 shrink-0" />
+            {untradableNote}
+          </p>
+        ) : null}
         <Segmented
           label="Side"
           block
@@ -510,7 +524,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
 
         {generalErrors.map((e) => (
           <div key={`${e.code}-${e.message}`} role="alert" className="rounded-sm bg-down-bg p-2 text-caption text-down">
-            <p>{e.message}</p>
+            <p>{orderErrorText(e)}</p>
             {e.hint ? <p className="text-text-2">{e.hint}</p> : null}
             {e.code === 'FRACTIONAL_MARKET_ONLY' && state.type !== 'MARKET' ? (
               // the common case: selling a fractional position ("All" after an Amount buy) with the default Limit type
@@ -567,10 +581,21 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
           </button>
         )}
 
+        <p className="text-center text-micro text-text-3">Paper trading · simulated fills against real quotes</p>
+      </div>
+
+      {/* The primary action stays in view however long the ticket gets (stop types, estimates, warnings): pinned to the
+          bottom of the scrolling column (desktop) or sheet (phone, tablet). */}
+      <div className="sticky bottom-0 z-10 border-t border-divider bg-bg-1 px-4 py-3">
+        {est && request ? (
+          <p className="mb-1.5 flex justify-between text-caption text-text-3">
+            <span>{amountMode ? 'Estimated shares' : state.side === 'BUY' ? 'Estimated cost' : 'Estimated proceeds'}</span>
+            <span className="font-semibold text-text-1">{amountMode ? `≈ ${formatQty(est.qty)} sh` : `≈ ${formatMoney(est.principal)}`}</span>
+          </p>
+        ) : null}
         <Button variant={state.side === 'BUY' ? 'buy' : 'sell'} size="lg" block disabled={!canSubmit} onClick={onSubmitClick}>
           {place.isPending ? 'Sending…' : `${sideLabel} ${symbol}`}
         </Button>
-        <p className="text-center text-micro text-text-3">Paper trading · simulated fills against real quotes</p>
       </div>
 
       {request && previewData ? (

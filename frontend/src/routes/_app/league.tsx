@@ -52,7 +52,7 @@ function LeaguePage() {
       <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-4 desktop:px-6">
         <div className="hidden items-center gap-2 tablet:flex">
           <h1 className="text-[20px] leading-7 font-bold tracking-tight">League</h1>
-          <MetricInfoPopover />
+          <MetricInfoPopover align="start" />
           <div className="flex-1" />
           <Segmented label="View" size="sm" value={view} onChange={(v) => set({ view: v })} options={[{ value: 'BOARD', label: 'Board' }, { value: 'FEED', label: 'Feed' }]} />
         </div>
@@ -81,7 +81,9 @@ function LeaguePage() {
               {board.data?.asOf ? <span className="ml-auto text-micro text-text-3">Updated {formatTimeEt(board.data.asOf)}</span> : null}
             </div>
             {metric === 'PNL' ? <p className="text-caption text-text-3">Ranking by dollar P&amp;L favours bigger accounts; deposits never count as profit.</p> : null}
-            {board.data ? <ArenaCard board={board.data} /> : null}
+            {/* the arena compares both teams: under a Humans or AI filter its counts and best players would come from one
+                side while the medians (computed over everyone) still cover both, so it shows on All only */}
+            {board.data && kind === 'ALL' ? <ArenaCard board={board.data} /> : null}
             {board.isPending ? (
               <div className="rounded-lg border border-divider bg-bg-1 px-4">
                 <SkeletonRows rows={5} cols={4} />

@@ -37,6 +37,11 @@ test('a buy stop waits for its price, then triggers and fills', async ({ page },
   const row = page.getByRole('list', { name: 'Orders' }).getByRole('listitem').filter({ hasText: `${SYMBOL} · 1 sh · Stop ${stop}` }).first()
   await expect(row).toBeVisible()
   await expect(row).toContainText('waiting for the stop price', { timeout: 10_000 })
+  // phones show the status in the row's second line; the status pills appear from tablet up (review fix: they used
+  // to render anyway and squeeze the row text down to a word)
+  const statusPill = row.getByText(/^(Pending|Working)$/).last()
+  if (vp === 'phone') await expect(statusPill).toBeHidden()
+  else await expect(statusPill).toBeVisible()
   await row.getByRole('link').first().click()
   const panel = page.getByRole('region', { name: 'Stop' })
   await expect(panel).toBeVisible()
@@ -88,4 +93,34 @@ test('a sell trailing stop follows the high and triggers on the pullback', async
   await nudgePrice(page, 'F', -400) // −4%: through the trailing stop
   await expect(toastWith(page, 'Stop triggered: Sell 2 F')).toBeVisible()
   await expect(toastWith(page, /Filled sell 2 F @/)).toBeVisible({ timeout: 10_000 })
+})
+
+// Review regression: the $ trail defaults to the tick of the stock's price ($0.12 on a $12 stock, never $0.1203), so
+// the default ticket is valid and the order is accepted, on the real backend too.
+test('a dollar trailing stop with the default trail is valid on a stock under $100', async ({ page }, testInfo) => {
+  const vp = viewport(testInfo)
+  const symbol = 'F'
+  await open(page, `/stock/${symbol}`)
+  await expect(page.getByRole('heading', { name: symbol, level: 1 })).toBeVisible()
+  const ticket = await openTicket(page, vp, symbol, 'Buy')
+  test.skip(!(await offersOrderType(ticket, 'Trailing Stop')), 'This release does not accept trailing stops yet (GET /rules)')
+  await chooseOrderType(ticket, 'Trailing Stop')
+  await choose(ticket, 'Quantity mode', 'Shares')
+  await choose(ticket, 'Trail type', '$')
+  const trail = ticket.getByLabel('Trail', { exact: true })
+  await expect(trail).toHaveValue(/^\d+\.\d{2}$/)
+  const amount = await trail.inputValue()
+  // the description shows before a quantity is entered
+  await expect(ticket.getByText(new RegExp(`follows ${symbol}'s lowest price \\$${amount.replace('.', '\\.')} above it`))).toBeVisible()
+  await ticket.getByLabel('Shares', { exact: true }).fill('1')
+  await expect(ticket.getByText(/is not on the/)).toHaveCount(0)
+  await submitTicket(page, ticket, symbol, 'Buy')
+  await expect(toastWith(page, `Buy 1 ${symbol} Trailing Stop $${amount} trail`)).toBeVisible()
+  if (!MOCK) {
+    // leave nothing open on the shared backend
+    await page.goto('/account/orders?status=OPEN')
+    const row = page.getByRole('list', { name: 'Orders' }).getByRole('listitem').filter({ hasText: `${symbol} · 1 sh · Trailing Stop $${amount} trail` }).first()
+    await row.getByRole('button', { name: `Cancel buy ${symbol} order` }).click()
+    await expect(toastWith(page, /Cancel(led|.*sent)/)).toBeVisible()
+  }
 })

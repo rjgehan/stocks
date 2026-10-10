@@ -16,11 +16,13 @@ import {
   mul,
   parseUserDecimal,
   roundToTick,
+  roundToTickOf,
   setScale,
   sign,
   sub,
   tickFor,
 } from '@/lib/format/decimal'
+import { formatTrailAmount } from '@/lib/format/money'
 import { formatPrice } from '@/lib/format/number'
 
 export type QtyMode = 'SHARES' | 'AMOUNT'
@@ -150,20 +152,25 @@ export function defaultStopPrice(side: Side, last: Dec | null | undefined): Dec 
   return side === 'BUY' ? roundToTick(mul(last, '1.01'), 'CEILING') : roundToTick(mul(last, '0.99'), 'FLOOR')
 }
 
-/** A trail to start with: 1% (percent mode) or 1% of the last price in dollars, on tick. */
+/**
+ * A trail to start with: 1% (percent mode) or 1% of the last price in dollars, on the tick of the last price (the
+ * server checks a trail amount against the reference price's tick, §11.2 check 16: $0.43 on a $42.56 stock, never
+ * $0.4256).
+ */
 export function defaultTrail(mode: TrailMode, last: Dec | null | undefined): string {
   if (mode === 'PERCENT') return '1'
   if (!last || !isDecimal(last) || sign(last) <= 0) return ''
-  const t = roundToTick(mul(last, '0.01'))
+  const t = roundToTickOf(mul(last, '0.01'), last)
   return sign(t) > 0 ? t : tickFor(last)
 }
 
-/** One step of the trail stepper: a tick in dollars, a tenth of a percent. */
+/** One step of the trail stepper: a tick of the last price in dollars, a tenth of a percent. */
 export function stepTrail(value: string, dir: 1 | -1, mode: TrailMode, last: Dec | null | undefined): string {
   const current = parseUserDecimal(value)
-  const unit = mode === 'PERCENT' ? '0.1' : last && isDecimal(last) ? tickFor(last) : '0.01'
+  const reference = last && isDecimal(last) && sign(last) > 0 ? last : '1'
+  const unit = mode === 'PERCENT' ? '0.1' : tickFor(reference)
   const next = current ? (dir === 1 ? add(current, unit) : sub(current, unit)) : unit
-  return sign(next) > 0 ? (mode === 'PERCENT' ? setScale(next, 1, 'HALF_UP') : roundToTick(next)) : unit
+  return sign(next) > 0 ? (mode === 'PERCENT' ? setScale(next, 1, 'HALF_UP') : roundToTickOf(next, reference)) : unit
 }
 
 /**
@@ -199,7 +206,7 @@ export function stopExplanation(o: {
         ? `When ${o.symbol} trades ${crosses} ${formatPrice(o.stopPrice)}, a limit order to ${verb} at ${formatPrice(o.limitPrice)} ${buy ? 'or lower' : 'or higher'} is placed. It may not fill.`
         : null
     case 'TRAILING_STOP': {
-      const trail = o.trailAmount ? `$${formatPrice(o.trailAmount)}` : o.trailPercent ? `${o.trailPercent}%` : null
+      const trail = o.trailAmount ? formatTrailAmount(o.trailAmount) : o.trailPercent ? `${o.trailPercent}%` : null
       if (!trail) return null
       return buy
         ? `The stop follows ${o.symbol}'s lowest price ${trail} above it; when ${o.symbol} rises to the stop, a market order to buy is sent.`
@@ -208,6 +215,24 @@ export function stopExplanation(o: {
     default:
       return null
   }
+}
+
+/**
+ * The ticket's stop description, built from what the ticket shows (§22.5: choosing a stop type adds it), so it
+ * appears as soon as the stop, limit or trail is set, before a quantity is entered.
+ */
+export function ticketExplanation(s: Pick<TicketState, 'side' | 'type' | 'stopPrice' | 'limitPrice' | 'trail' | 'trailMode'>, symbol: string): string | null {
+  if (!isStopType(s.type)) return null
+  const trail = positive(s.trail)
+  return stopExplanation({
+    side: s.side,
+    type: s.type,
+    symbol,
+    stopPrice: positive(s.stopPrice),
+    limitPrice: positive(s.limitPrice),
+    trailAmount: s.trailMode === 'AMOUNT' ? trail : null,
+    trailPercent: s.trailMode === 'PERCENT' ? trail : null,
+  })
 }
 
 export interface TicketContext {

@@ -95,10 +95,19 @@ export function ResolveDialog({ action, onClose }: { action: CorporateAction | n
       { id: action.id, body: apply ? { resolution: 'APPLY', oldRate: oldRate.trim(), newRate: newRate.trim(), note: note.trim() } : { resolution: 'SKIP', note: note.trim() } },
       {
         onSuccess: (c) => {
+          const confirmedOnly = apply && c.status === 'PENDING'
           toast({
             tone: apply ? 'up' : 'neutral',
-            title: apply ? `${symbol} ${caSummary(c)} applied` : `${symbol} ${CA_TYPE_LABEL[c.type ?? 'FORWARD_SPLIT'].toLowerCase()} skipped`,
-            body: apply ? 'Positions were adjusted and open orders on the symbol cancelled.' : 'The corporate-action hold is released.',
+            title: confirmedOnly
+              ? `${symbol} ${caSummary(c)} confirmed`
+              : apply
+                ? `${symbol} ${caSummary(c)} applied`
+                : `${symbol} ${CA_TYPE_LABEL[c.type ?? 'FORWARD_SPLIT'].toLowerCase()} skipped`,
+            body: confirmedOnly
+              ? `It applies at 03:45 ET on its ex-date${c.exDate ? `, ${formatDateEt(c.exDate)}` : ''}.`
+              : apply
+                ? 'Positions were adjusted and open orders on the symbol cancelled.'
+                : 'The corporate-action hold is released.',
           })
           onClose()
         },
@@ -171,7 +180,7 @@ export function ResolveDialog({ action, onClose }: { action: CorporateAction | n
             {effect ? <p className="rounded-sm bg-accent-bg px-2 py-1.5 text-caption text-text-1">{effect}</p> : null}
             <p className="flex gap-1.5 rounded-sm bg-warn/10 p-2 text-caption text-warn">
               <IconInfo size={16} className="mt-0.5 shrink-0" />
-              Applies as of now to every account holding {symbol}: open {symbol} orders are cancelled and players are notified. This cannot be undone.
+              Applies as of now to the {symbol} shares each account held at the ex-date ({action.exDate ? formatDateEt(action.exDate) : 'its ex-date'}); shares bought since are not changed. Open {symbol} orders entered before the ex-date are cancelled and players are notified. This cannot be undone. Before the ex-date it only confirms the rates: the split then applies at 03:45 ET on the ex-date.
             </p>
           </>
         ) : (
@@ -182,12 +191,13 @@ export function ResolveDialog({ action, onClose }: { action: CorporateAction | n
           </p>
         )}
         <TextAreaField
-          label={`Note (${note.trim().length}/200, audited)`}
+          label={`Note (required, audited) ${note.trim().length}/200`}
           rows={2}
           maxLength={200}
           value={note}
           onChange={(e) => setNote(e.target.value)}
           error={fieldErrors.note}
+          hint={noteOk ? undefined : `A note is required to ${apply ? 'apply' : 'skip'} it; it goes into the audit log.`}
           placeholder={apply ? 'e.g. Confirmed 2-for-1 on the issuer press release' : 'e.g. False positive from the adjusted bars'}
         />
         <p className="flex items-center gap-1.5 text-micro text-text-3">
@@ -204,8 +214,7 @@ export function ResolveDialog({ action, onClose }: { action: CorporateAction | n
 }
 
 /** Admin corporate actions (§14, §21.1, §21.3): newest first, filtered by status; NEEDS_ADMIN rows resolve here. */
-export function CorporateActions({ initialFilter = 'NEEDS_ADMIN' }: { initialFilter?: CorporateActionFilter }) {
-  const [filter, setFilter] = useState<CorporateActionFilter>(initialFilter)
+export function CorporateActions({ filter = 'NEEDS_ADMIN', onFilterChange }: { filter?: CorporateActionFilter; onFilterChange: (f: CorporateActionFilter) => void }) {
   const [resolving, setResolving] = useState<CorporateAction | null>(null)
   const q = useCorporateActions(filter)
   const rows = q.data?.pages.flatMap((p) => p.items ?? []) ?? []
@@ -215,7 +224,7 @@ export function CorporateActions({ initialFilter = 'NEEDS_ADMIN' }: { initialFil
         <h2 className="text-section font-semibold">Corporate actions</h2>
         <div className="flex-1" />
         <div className="scrollbar-none -mx-4 w-[calc(100%+2rem)] overflow-x-auto px-4 tablet:mx-0 tablet:w-auto tablet:px-0">
-          <Segmented label="Corporate action status" size="sm" value={filter} onChange={setFilter} options={FILTERS} />
+          <Segmented label="Corporate action status" size="sm" value={filter} onChange={onFilterChange} options={FILTERS} />
         </div>
       </div>
       <p className="text-caption text-text-3">

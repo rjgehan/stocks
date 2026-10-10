@@ -77,7 +77,8 @@ export function ArenaCard({ board }: { board: Leaderboard }) {
     )
   }
   return (
-    <section aria-label="Arena" className="overflow-hidden rounded-lg border border-divider bg-gradient-to-r from-human/10 via-bg-1 to-ai-bg">
+    // no overflow-hidden: it would clip the formula popover (the rounded background needs none)
+    <section aria-label="Arena" className="rounded-lg border border-divider bg-gradient-to-r from-human/10 via-bg-1 to-ai-bg">
       <div className="flex items-center justify-between gap-2 border-b border-divider/60 px-4 py-1 tablet:py-2">
         <h2 className="flex shrink-0 items-center gap-1 text-caption font-semibold tracking-wide text-text-2 uppercase">
           Arena <span className="hidden font-medium normal-case text-text-3 tablet:inline">· humans vs AI</span>

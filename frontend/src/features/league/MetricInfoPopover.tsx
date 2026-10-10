@@ -88,10 +88,11 @@ export function FormulaPopover({ topic, className, align = 'end' }: { topic: For
 }
 
 /** Every formula behind the board (§16.2, §16.5), so nobody has to guess how deposits are treated. */
-export function MetricInfoPopover() {
+export function MetricInfoPopover({ align = 'end' }: { align?: 'start' | 'end' }) {
   return (
     <Popover
       label="How the league is scored"
+      align={align}
       className="w-[min(380px,calc(100vw-32px))] p-4"
       renderTrigger={(props) => (
         <IconButton label="How the league is scored" size="touch" className="tablet:size-8" {...props}>

@@ -156,6 +156,17 @@ describe('stop tickets (§11.1, §12.7)', () => {
     expect(defaultTrail('AMOUNT', '227.40')).toBe('2.27')
   })
 
+  // Review regression: the $ trail is on the tick of the LAST price (check 16), not of the trail's own size
+  it('keeps a dollar trail on the tick of the last price for stocks under $100', () => {
+    expect(defaultTrail('AMOUNT', '42.56')).toBe('0.43')
+    expect(defaultTrail('AMOUNT', '9.87')).toBe('0.10')
+    expect(defaultTrail('AMOUNT', '0.8537')).toBe('0.0085')
+    expect(stepTrail('0.05', 1, 'AMOUNT', '42.56')).toBe('0.06')
+    expect(stepTrail('0.4256', 1, 'AMOUNT', '42.56')).toBe('0.44')
+    expect(stepTrail('0.10', -1, 'AMOUNT', '9.87')).toBe('0.09')
+    expect(stepTrail('0.0085', 1, 'AMOUNT', '0.8537')).toBe('0.0086')
+  })
+
   it('describes what each stop does', () => {
     expect(stopExplanation({ side: 'SELL', type: 'STOP', symbol: 'AAPL', stopPrice: '220.00' })).toBe('When AAPL trades at or below 220.00, a market order to sell is sent.')
     expect(stopExplanation({ side: 'BUY', type: 'STOP_LIMIT', symbol: 'AAPL', stopPrice: '230.00', limitPrice: '231.00' })).toMatch(/limit order to buy at 231.00 or lower/)
@@ -172,6 +183,26 @@ describe('order labels for stops', async () => {
     expect(orderPriceLabel({ type: 'TRAILING_STOP', stopPrice: '221.70', limitPrice: null, trailAmount: null, trailPercent: '2.5' })).toBe('2.5% trail')
     expect(orderPriceLabel({ type: 'TRAILING_STOP', stopPrice: null, limitPrice: null, trailAmount: '1.50', trailPercent: null })).toBe('$1.50 trail')
     expect(orderPriceLabel({ type: 'MARKET', stopPrice: null, limitPrice: null, trailAmount: null, trailPercent: null })).toBe('')
+  })
+
+  // Review regression: the description shows with the pre-filled prices, before a quantity is entered
+  it('explains a stop from the ticket state, before a quantity', async () => {
+    const { initialTicket: init, ticketExplanation, ticketReducer: reduce } = await import('./ticketState')
+    let t = reduce(init({ side: 'SELL' }), { type: 'orderType', orderType: 'STOP' })
+    expect(ticketExplanation(t, 'SIMG')).toBeNull()
+    t = reduce(t, { type: 'field', field: 'stopPrice', value: '22.77' })
+    expect(t.qty).toBe('')
+    expect(ticketExplanation(t, 'SIMG')).toBe('When SIMG trades at or below 22.77, a market order to sell is sent.')
+    t = reduce(reduce(t, { type: 'orderType', orderType: 'TRAILING_STOP' }), { type: 'field', field: 'trail', value: '0.43' })
+    expect(ticketExplanation(t, 'SIMG')).toMatch(/highest price \$0\.43 below/)
+    expect(ticketExplanation(reduce(t, { type: 'orderType', orderType: 'LIMIT' }), 'SIMG')).toBeNull()
+  })
+
+  // Review regression: a trail amount is money, not a 4-decimal sub-dollar price
+  it('formats trail amounts as money, keeping a real sub-cent trail', () => {
+    expect(orderPriceLabel({ type: 'TRAILING_STOP', stopPrice: null, limitPrice: null, trailAmount: '0.0500', trailPercent: null })).toBe('$0.05 trail')
+    expect(orderPriceLabel({ type: 'TRAILING_STOP', stopPrice: null, limitPrice: null, trailAmount: '0.0085', trailPercent: null })).toBe('$0.0085 trail')
+    expect(stopExplanation({ side: 'SELL', type: 'TRAILING_STOP', symbol: 'SIMF', trailAmount: '0.0500' })).toMatch(/highest price \$0\.05 below/)
   })
 
   it('explains TRIGGERED and TRAIL_UPDATED events and the triggered status', () => {

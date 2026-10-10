@@ -1,5 +1,5 @@
 import type { PlaceOrderRequest, Preview } from '@/lib/api/types'
-import { formatMoney } from '@/lib/format/money'
+import { formatMoney, formatTrailAmount } from '@/lib/format/money'
 import { formatPrice, formatQty } from '@/lib/format/number'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
@@ -32,7 +32,7 @@ export function OrderReviewSheet({
   ]
   if (request.stopPrice) rows.push(['Stop price', formatPrice(request.stopPrice)])
   if (request.limitPrice) rows.push(['Limit price', formatPrice(request.limitPrice)])
-  if (request.trailAmount) rows.push(['Trail', `${formatMoney(request.trailAmount)} ${buy ? 'above the low' : 'below the high'}`])
+  if (request.trailAmount) rows.push(['Trail', `${formatTrailAmount(request.trailAmount)} ${buy ? 'above the low' : 'below the high'}`])
   if (request.trailPercent) rows.push(['Trail', `${request.trailPercent}% ${buy ? 'above the low' : 'below the high'}`])
   rows.push(['Time in force', request.timeInForce === 'GTC' ? 'GTC (60 days)' : 'Day'])
   const explanation = request.type && request.side && isStopType(request.type) ? stopExplanation({ ...request, side: request.side, type: request.type, symbol: request.symbol ?? '' }) : null

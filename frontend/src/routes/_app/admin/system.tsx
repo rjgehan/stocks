@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { IconRefresh } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { CalendarOverrides } from '@/features/admin/CalendarOverrides'
-import { entries, jobTone, unlimited, usageLabel, usagePct } from '@/features/admin/systemStatus'
+import { entries, futureRunKey, jobTone, unlimited, usageLabel, usagePct } from '@/features/admin/systemStatus'
 import type { SystemStatus } from '@/lib/api/types'
 import { toast } from '@/features/notifications/toastStore'
 
@@ -313,6 +313,7 @@ function SystemPage() {
         title={`Run ${jobConfirm ?? ''} now?`}
         confirmLabel="Run job"
         pending={runJob.isPending}
+        confirmDisabled={futureRunKey(runKey)}
         onConfirm={() =>
           jobConfirm &&
           runJob.mutate(
@@ -328,10 +329,14 @@ function SystemPage() {
           )
         }
       >
-        <p>Runs in the background; the outcome shows in the jobs list. Jobs are idempotent, so a duplicate run is harmless.</p>
+        <p>
+          Runs in the background; the outcome shows in the jobs list. A run key that already ran is not run again. Only past occurrences can run: a future key
+          would do tomorrow&apos;s work today (apply a split before its ex-date, pay a dividend early), so the server refuses it.
+        </p>
         <TextField
           label="Run key (optional)"
           hint="Leave empty for the latest past occurrence, e.g. 2026-10-09 for a daily job."
+          error={futureRunKey(runKey) ? 'That date has not come yet: use today or an earlier date.' : undefined}
           value={runKey}
           onChange={(e) => setRunKey(e.target.value)}
           maxLength={40}

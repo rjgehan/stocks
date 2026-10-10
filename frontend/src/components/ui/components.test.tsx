@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Change } from '@/features/market/Change'
 import { QualityBadge } from '@/features/market/QualityBadge'
+import { Popover } from './Popover'
 import { Segmented } from './Segmented'
 
 describe('Change (§22.7: color is never the only signal)', () => {
@@ -55,5 +56,25 @@ describe('Segmented', () => {
     expect(onChange).not.toHaveBeenCalled()
     await user.click(screen.getByRole('radio', { name: 'Buy' }))
     expect(onChange).toHaveBeenCalledWith('BUY')
+  })
+})
+
+// Review regression: the league's formula popovers opened past the viewport edge (left −78 px) and were cut off
+describe('Popover collision handling', () => {
+  it('shifts a panel that would open past an edge back inside the viewport', async () => {
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return (this.getAttribute('role') === 'dialog' ? { left: -78, right: 302, top: 40, bottom: 300, width: 380, height: 260 } : { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 }) as DOMRect
+    })
+    try {
+      render(
+        <Popover label="How the league is scored" renderTrigger={(p) => <button type="button" {...p}>info</button>}>
+          formulas
+        </Popover>,
+      )
+      await userEvent.click(screen.getByRole('button', { name: 'info' }))
+      expect(screen.getByRole('dialog', { name: 'How the league is scored' }).style.transform).toBe('translateX(86px)')
+    } finally {
+      rect.mockRestore()
+    }
   })
 })

@@ -1,3 +1,4 @@
+import { etDatePlusDays } from '@/lib/format/time'
 import type { PillTone } from '@/components/ui/Pill'
 
 /** A budget with no upper bound: the backend sends a negative max (SIM: -1) or Integer.MAX_VALUE. */
@@ -62,4 +63,10 @@ export function entries(map: Record<string, unknown> | null | undefined, flagFai
   return Object.keys(map)
     .sort()
     .map((key) => ({ key, value: render(map[key]), failed: flagFailures && isProbeFailure(key, map[key]) }))
+}
+
+/** A run key whose leading ET date is after `nowMs`'s ET date: the server refuses it (§21.1), so the dialog does too. */
+export function futureRunKey(runKey: string, nowMs: number = Date.now()): boolean {
+  const date = /^\d{4}-\d{2}-\d{2}/.exec(runKey.trim())?.[0]
+  return date != null && date > etDatePlusDays(nowMs)
 }
