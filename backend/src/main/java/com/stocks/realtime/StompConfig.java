@@ -1,6 +1,7 @@
 package com.stocks.realtime;
 
 import com.stocks.config.StocksProperties;
+import com.stocks.realtime.stream.StreamTopicTap;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -59,12 +60,13 @@ public class StompConfig implements WebSocketMessageBrokerConfigurer {
   private final TaskScheduler brokerScheduler;
   private final SubscriptionTracker tracker;
   private final LiveSockets liveSockets;
+  private final StreamTopicTap streamTap;
 
   public StompConfig(StocksProperties properties, CsrfTokenRepository csrfTokenRepository,
                      StompAuthInterceptor authInterceptor,
                      @Qualifier("csrfChannelInterceptor") ChannelInterceptor csrfChannelInterceptor,
                      @Lazy @Qualifier("messageBrokerTaskScheduler") TaskScheduler brokerScheduler,
-                     SubscriptionTracker tracker, LiveSockets liveSockets) {
+                     SubscriptionTracker tracker, LiveSockets liveSockets, StreamTopicTap streamTap) {
     this.properties = properties;
     this.csrfTokenRepository = csrfTokenRepository;
     this.authInterceptor = authInterceptor;
@@ -72,6 +74,7 @@ public class StompConfig implements WebSocketMessageBrokerConfigurer {
     this.brokerScheduler = brokerScheduler;
     this.tracker = tracker;
     this.liveSockets = liveSockets;
+    this.streamTap = streamTap;
   }
 
   /**
@@ -99,6 +102,7 @@ public class StompConfig implements WebSocketMessageBrokerConfigurer {
     registry.setApplicationDestinationPrefixes("/app");
     registry.setUserDestinationPrefix(StompDestinations.USER_PREFIX);
     registry.setPreservePublishOrder(true);
+    registry.configureBrokerChannel().interceptors(streamTap);   // §19.1: broadcast topics → the SSE stream
   }
 
   @Override

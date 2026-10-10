@@ -1,5 +1,7 @@
 package com.stocks.contract;
 
+import com.stocks.contract.agents.ApiAccessRecorder;
+import com.stocks.contract.agents.JournalService;
 import com.stocks.contract.calendar.CalendarAdmin;
 import com.stocks.contract.calendar.MarketCalendar;
 import com.stocks.contract.identity.MeQueries;
@@ -43,7 +45,9 @@ final class ContractServices {
       OrderService.class, AdminOrderService.class, OrderQueries.class, AccountService.class, AccountQueries.class,
       CashTransferService.class, EngineControl.class, CorporateActionQueries.class, CorporateActionService.class,
       // WS4
-      ValuationService.class, LeaderboardService.class, PerformanceQueries.class, WatchlistService.class);
+      ValuationService.class, LeaderboardService.class, PerformanceQueries.class, WatchlistService.class,
+      // WS5, Phase 2 (§17.10, §20.7)
+      ApiAccessRecorder.class, JournalService.class);
 
   private ContractServices() {}
 }

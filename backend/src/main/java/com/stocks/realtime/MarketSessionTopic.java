@@ -95,8 +95,8 @@ public class MarketSessionTopic implements PeriodicTask {
     push.toTopic(StompDestinations.SESSION_TOPIC, dto);
   }
 
-  /** The state at {@code now}; empty while the calendar is a Day-0 stub. */
-  Optional<MarketSessionDto> current(Instant now) {
+  /** The state at {@code now}; empty while the calendar is a Day-0 stub (also the SSE snapshot, §19.1). */
+  public Optional<MarketSessionDto> current(Instant now) {
     try {
       return Optional.of(of(calendar.stateAt(now)));
     } catch (ApiException e) {

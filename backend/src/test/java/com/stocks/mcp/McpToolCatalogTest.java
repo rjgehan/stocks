@@ -79,8 +79,13 @@ class McpToolCatalogTest {
   }
 
   @Test
-  void theCatalogHasThe38ToolsOfSection20Point3AndNoAdminTool() {
-    assertThat(McpToolCatalog.ORDER).hasSize(38).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
-        .endsWith("mark_notifications_read").noneMatch(n -> n.contains("admin"));
+  void theCatalogHasThe40ToolsOfSection20Point3AndNoAdminTool() {
+    // 38 Phase 1 tools, then the Phase 2 journal tools appended (§20.3 #39-#40), so the Phase 1 order never changes
+    assertThat(McpToolCatalog.ORDER).hasSize(40).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
+        .endsWith("mark_notifications_read", "get_player_journal", "add_journal_note")
+        .noneMatch(n -> n.contains("admin"));
+    assertThat(McpToolCatalog.ORDER.get(37)).isEqualTo("mark_notifications_read");
+    assertThat(McpToolCatalog.SCOPES).containsEntry("get_player_journal", Scopes.LEAGUE_READ)
+        .containsEntry("add_journal_note", Scopes.TRADE);
   }
 }

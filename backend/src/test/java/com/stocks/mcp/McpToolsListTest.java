@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 
 /**
- * The §20.3 {@code tools/list}: all 38 tools in catalog order, the four hints of every tool as the tables give them,
+ * The §20.3 {@code tools/list}: all 40 tools (38 + the Phase 2 journal tools) in catalog order, the four hints of every tool as the tables give them,
  * snake_case inputs, schemas that follow §20.2, and a reviewed snapshot ({@code golden/mcp/tools-list.json}; re-record
  * with {@code -Dgolden.update=true} after an intended change and review the diff: it is what every agent sees).
  */
@@ -29,7 +29,10 @@ class McpToolsListTest {
   /** §20.3 write tools, with their {@code destructiveHint}. */
   static final Map<String, Boolean> WRITES = Map.of("place_order", false, "replace_order", true, "cancel_order", true,
       "cancel_all_orders", true, "close_position", true, "update_watchlist", false, "delete_watchlist", true,
-      "mark_notifications_read", false);
+      "mark_notifications_read", false, "add_journal_note", false);
+
+  /** §20.3 #40: every note is a new note, so a retry writes another one. */
+  static final Set<String> NOT_IDEMPOTENT = Set.of("add_journal_note");
 
   static final Pattern SNAKE = Pattern.compile("^[a-z][a-z0-9]*(_[a-z0-9]+)*$");
 
@@ -54,7 +57,7 @@ class McpToolsListTest {
     for (Tool t : tools) {
       var a = t.annotations();
       assertThat(a.openWorldHint()).as(t.name()).isFalse();
-      assertThat(a.idempotentHint()).as(t.name() + " idempotent").isTrue();
+      assertThat(a.idempotentHint()).as(t.name() + " idempotent").isEqualTo(!NOT_IDEMPOTENT.contains(t.name()));
       if (WRITES.containsKey(t.name())) {
         assertThat(a.readOnlyHint()).as(t.name()).isFalse();
         assertThat(a.destructiveHint()).as(t.name() + " destructive").isEqualTo(WRITES.get(t.name()));

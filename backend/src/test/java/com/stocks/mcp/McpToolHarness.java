@@ -9,6 +9,7 @@ import com.stocks.common.id.PublicId;
 import com.stocks.common.time.MutableTimeSource;
 import com.stocks.config.JacksonConfig;
 import com.stocks.config.stubs.NotImplementedStub;
+import com.stocks.contract.agents.JournalService;
 import com.stocks.contract.calendar.MarketCalendar;
 import com.stocks.contract.calendar.SessionState;
 import com.stocks.contract.calendar.TradingDay;
@@ -28,6 +29,7 @@ import com.stocks.contract.trading.OrderService;
 import com.stocks.contract.watchlist.WatchlistService;
 import com.stocks.mcp.tools.AccountIdentityTools;
 import com.stocks.mcp.tools.AccountTools;
+import com.stocks.mcp.tools.JournalTools;
 import com.stocks.mcp.tools.LeagueTools;
 import com.stocks.mcp.tools.MarketTools;
 import com.stocks.mcp.tools.McpToolSet;
@@ -88,6 +90,7 @@ final class McpToolHarness implements AutoCloseable {
   final PlayerQueries players = mock(PlayerQueries.class);
   final WatchlistService watchlists = mock(WatchlistService.class);
   final RateLimitService rateLimits = mock(RateLimitService.class);
+  final JournalService journal = mock(JournalService.class);
   final SubscriptionTracker tracker = new SubscriptionTracker(marketData, time);
   final Fixtures.PlayerRef owner;
   final Fixtures.PlayerRef botPlayer;
@@ -132,7 +135,8 @@ final class McpToolHarness implements AutoCloseable {
         new OrderTools(orderService, orders, accounts),
         new LeagueTools(leaderboard, players, performance),
         new WatchlistTools(watchlists),
-        new NotificationTools(notifications));
+        new NotificationTools(notifications),
+        new JournalTools(journal));
     for (SyncToolSpecification s : McpToolCatalog.specifications(toolSets, MAPPER)) {
       specs.put(s.tool().name(), s);
     }
