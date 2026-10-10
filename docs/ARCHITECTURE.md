@@ -394,12 +394,16 @@ com.stocks
 │   ├── session/     SessionTransitionJob (a ScheduledJob that submits TransitionCmd), DailyMaintenanceJob
 │   └── web/         OrderController, AccountController
 ├── portfolio/                                          [WS4]  config/PerformanceProperties ("stocks.performance"),
-│                                                              ValuationServiceImpl, UnitMathImpl, HoldingsReconstructor,
-│                                                              EodSnapshotJob, IntradaySampler, BenchmarkService, BenchmarkBackfillJob,
-│                                                              PortfolioHistoryService, PerformanceQueriesImpl, MetricsCalculator,
-│                                                              web/PerformanceController
-├── league/                                             [WS4]  LeaderboardServiceImpl, PeriodResolver, Eligibility,
-│                                                              PlayerProfileService, FeedService, FeedEventListener (sole feed_event writer),
+│                                                              ValuationServiceImpl, MarkResolver, HoldingsReconstructor,
+│                                                              EodSnapshotJob, EodValuator, EodSnapshots (anchors), IntradaySampler,
+│                                                              BenchmarkService, BenchmarkBackfillJob, PortfolioHistoryService,
+│                                                              PerformanceQueriesImpl, AccountPerformance, MetricsCalculator,
+│                                                              PeriodResolver, PnlCalendar, RunAnchors, PublicProfileService,
+│                                                              PlayerDirectory, LeagueSettings, web/PerformanceController
+│                                                              (UnitMath is the pure contract class itself, no Impl)
+├── league/                                             [WS4]  LeaderboardServiceImpl (+ 5 s PeriodicTask), LeaderboardComputer,
+│                                                              LeaderboardRowMapper, Eligibility, LeaderboardSnapshotWriter,
+│                                                              FeedService (+ /topic/feed publisher), FeedEventListener (sole feed_event writer),
 │                                                              web/{LeaderboardController, PlayerController, FeedController}
 ├── watchlist/                                          [WS4]  WatchlistServiceImpl, web/WatchlistController
 ├── realtime/                                           [WS5]  StompConfig, StompAuthInterceptor (incl. STOMP CSRF), SubscriptionTracker,
@@ -704,9 +708,26 @@ public interface ValuationService {
   Valuation valueNow(long accountId);
   Map<Long, Valuation> valueAllActive();
 }
-public final class UnitMath {                                     // pure; §16.2
-  public static BigDecimal unitValue(BigDecimal equity, BigDecimal units)       { /* scale 18 HALF_EVEN */ }
-  public static BigDecimal unitsFor(BigDecimal flowAmount, BigDecimal unitValue) { /* scale 18 HALF_EVEN */ }
+/** The unit effect of one contribution flow or run opening (§16.2). WS3 copies it into cash_transfer
+ *  (unit_value, units_delta, unit_series, rebased) and account (units, unit_series). Scale 18. */
+public record UnitFlow(BigDecimal unitValue, BigDecimal unitsDelta, BigDecimal unitsAfter, int unitSeriesAfter,
+                       boolean rebased) {}
+public final class UnitMath {                                     // pure; §16.2; every result scale 18 HALF_EVEN
+  public static BigDecimal unitValue(BigDecimal equity, BigDecimal units);        // IAE if units <= 0
+  public static BigDecimal unitsFor(BigDecimal flowAmount, BigDecimal unitValue);  // IAE if unitValue <= 0
+  /** U(t): UNIT(E / units) while units > 0, else the last applied transfer's U (1 when there is none). */
+  public static BigDecimal unitValueOrLast(BigDecimal equity, BigDecimal units, BigDecimal lastUnitValueOrNull);
+  /** INITIAL transfer (AccountService.openInitialAccount / reset): run 1 at U = 1, units = F₀, series 1; run n+1 at
+   *  the previous run's final U, units = F₀ / U, same series; final U = 0 → rebase (U = 1, series + 1). */
+  public static UnitFlow openRun(BigDecimal startingCash, BigDecimal previousFinalUnitValueOrNull,
+                                 int previousUnitSeries);
+  /** A contribution flow F (DEPOSIT +, WITHDRAWAL −, ADJUSTMENT as CONTRIBUTION ±) at E⁻ (ValuationService.valueNow,
+   *  inside ApplyCashTransfersCmd), all three §16.2 cases: normal (U = E⁻/units⁻; an outflow leaving E⁺ ≤ 0 redeems
+   *  exactly units⁻), emptied account (U = lastUnitValue), wiped out (rebase). The caller has already checked
+   *  |F| ≤ withdrawable; a PNL_CORRECTION never calls it (units_delta = 0). IAE for F = 0 or an outflow from an
+   *  account without units or equity. */
+  public static UnitFlow contribution(BigDecimal flowAmount, BigDecimal equityBefore, BigDecimal unitsBefore,
+                                      int unitSeriesBefore, BigDecimal lastUnitValueOrNull);
 }
 public interface LeaderboardService {
   LeaderboardDto board(LeaderboardPeriod period, LeaderboardMetric metric, KindFilter kind, int limit, Long viewerPlayerId);
@@ -725,9 +746,22 @@ public interface PerformanceQueries {
 
 // ===== com.stocks.contract.watchlist [WS4] =====
 public interface WatchlistService {
-  void seedDefault(long playerId);                                // "My List" with 5 popular tickers (signup, admin create)
+  void seedDefault(long playerId);                                // "My List" with 5 popular tickers (signup, admin create);
+                                                                  // no-op if the player already has a list
   /** NAME_CHANGE: runs inside the CALLER's (engine) transaction. */
   void renameSymbol(String oldSymbol, String newSymbol);
+  // REST /watchlists/** and MCP get_watchlists / update_watchlist / delete_watchlist share these, so a list never
+  // has two shapes. watchlistId is the public id (wlt_…); another player's list is NOT_FOUND. Symbols are trimmed,
+  // upper-cased and de-duplicated; unknown ones are SYMBOL_NOT_FOUND; names are 1–40 chars, unique per player
+  // ignoring case (VALIDATION_FAILED); at most 20 lists per player and 200 symbols per list.
+  List<WatchlistDto> list(long playerId);                         // lists in sort order, symbols in sort order
+  WatchlistDto create(long playerId, String name, List<String> symbolsOrNull);   // appended after the other lists
+  WatchlistDto replace(long playerId, String watchlistId, String name, List<String> symbols);  // array order = sort order
+  void delete(long playerId, String watchlistId);
+  WatchlistDto addSymbol(long playerId, String watchlistId, String symbol);      // appended; idempotent
+  WatchlistDto removeSymbol(long playerId, String watchlistId, String symbol);   // idempotent
+  WatchlistDto upsertByName(long playerId, String name, List<String> add, List<String> remove);  // MCP update_watchlist
+  boolean deleteByName(long playerId, String name);               // MCP delete_watchlist; false if no such list
 }
 ```
 
@@ -2703,7 +2737,7 @@ The job is idempotent: `job_run('EOD_SNAPSHOT', D)` plus MERGE upserts.
 
 ### 16.5 Leaderboard (`LeaderboardService`)
 
-- **Recompute.** A `PeriodicTask` every **5 s**: `ValuationService.valueAllActive()` runs and `(TWR, PnL)` is computed for every period from the per-player anchors (in-memory EOD series, loaded at boot and refreshed after EOD). The result is cached. If anything changed, `{asOf}` is pushed on `/topic/leaderboard`.
+- **Recompute.** A `PeriodicTask` every **5 s** (`LEADERBOARD_RECOMPUTE`, all week: deposits and resets also happen when the market is closed): `ValuationService.valueAllActive()` runs and `(TWR, PnL)` is computed for every period from the per-player anchors. Anchors and the EOD series come from `equity_snapshot` with a handful of grouped queries per recompute (cheap at league size); an anchor day the EOD job has not written yet (first days after a deploy, a missed run before catch-up) is computed on the fly by `EodValuator` and memoized for 10 minutes. The result is cached; `GET /leaderboard` recomputes on demand when the cache is older than the interval (jobs disabled). If anything changed, `{asOf}` is pushed on `/topic/leaderboard`.
 - **Population.** Players with status ACTIVE or FROZEN who have an ACTIVE account. DISABLED players are hidden. Filter: `kind = ALL | HUMAN | AI`. With `league.humanKindExcludesApiTraders=true` (default false), a human with any API-key fill in the window appears under `AI` and `ALL` but not under `HUMAN`.
 - **Sort.** `metric=RETURN` (the default) sorts by TWR descending; `metric=PNL` sorts by P&L descending. The UI warns that ranking by dollar P&L favours larger accounts.
 - **Ties.** Equal within 1e-8: then P&L descending, then the player's first `account.opened_at` ascending, then player id ascending [V moomoo rule].

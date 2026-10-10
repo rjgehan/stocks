@@ -91,17 +91,17 @@
 - [ ] REST: `/orders/**`, `/orders/preview`, `/account`, `/account/positions/**`, `/account/activities`, `/account/executions`, `/account/violations`, `/account/runs`, `/account/reset`
 
 ### WS4: Portfolio and league
-- [ ] `UnitMath` (Day 2) and `ValuationService` (end of week 1; reads through the caller's transaction)
-- [ ] Unit-value accounting golden vectors (§16.2), including the deposit-to-ALL case
-- [ ] Golden vectors for tiny equity, rebase, reset continuity and dividend continuity (§16.2); point-in-time receivable (§16.1)
-- [ ] `HoldingsReconstructor` (forward replay of executions + `position_adjustment`); `EodSnapshotJob` (20:20 ET; `equity_snapshot`, `snapshot_holding`, feed backfill); `IntradaySampler`
-- [ ] SPY total-return benchmark (B = 1 at 2025-12-31, `BenchmarkBackfillJob`, intraday anchors from `spy_mark`), excess return, max drawdown
-- [ ] `LeaderboardService`: per-player series across runs (a reset never erases a loss); periods TODAY, WEEK, MONTH, YTD, SEASON, ALL × metrics RETURN, PNL × kinds ALL, HUMAN, AI; eligibility (5 fills / 2 symbols); ties; Arena; 5 s live recompute; `leaderboard_snapshot` for rank arrows; equity hidden under HIDDEN; `rebased` and `apiTrader` flags
-- [ ] Day P&L (account and position) with the same anchors as the board (`PerformanceQueries.accountPnl`, `positionDayPnl`, name-change mapping)
-- [ ] Player profiles: stats per period, deposits, resets, EOD-weight holdings, delayed trades (rationales only for AI or shared notes; "via API" label)
-- [ ] League feed: FILL, POSITION_CLOSED, NEW_LEADER, RESET, DEPOSIT, JOINED, published after the visibility delay; `FeedEventListener` is the sole writer, idempotent by `source_ref`
-- [ ] Watchlists CRUD; `WatchlistService.seedDefault` and `renameSymbol`
-- [ ] REST: `/leaderboard`, `/players/**`, `/feed`, `/account/history`, `/watchlists/**`
+- [x] `UnitMath` (Day 2) and `ValuationService` (end of week 1; reads through the caller's transaction)
+- [x] Unit-value accounting golden vectors (§16.2), including the deposit-to-ALL case
+- [x] Golden vectors for tiny equity, rebase, reset continuity and dividend continuity (§16.2); point-in-time receivable (§16.1)
+- [x] `HoldingsReconstructor` (forward replay of executions + `position_adjustment`); `EodSnapshotJob` (20:20 ET; `equity_snapshot`, `snapshot_holding`, feed backfill); `IntradaySampler`
+- [x] SPY total-return benchmark (B = 1 at 2025-12-31, `BenchmarkBackfillJob`, intraday anchors from `spy_mark`), excess return, max drawdown
+- [x] `LeaderboardService`: per-player series across runs (a reset never erases a loss); periods TODAY, WEEK, MONTH, YTD, SEASON, ALL × metrics RETURN, PNL × kinds ALL, HUMAN, AI; eligibility (5 fills / 2 symbols); ties; Arena; 5 s live recompute; `leaderboard_snapshot` for rank arrows; equity hidden under HIDDEN; `rebased` and `apiTrader` flags
+- [x] Day P&L (account and position) with the same anchors as the board (`PerformanceQueries.accountPnl`, `positionDayPnl`, name-change mapping)
+- [x] Player profiles: stats per period, deposits, resets, EOD-weight holdings, delayed trades (rationales only for AI or shared notes; "via API" label)
+- [x] League feed: FILL, POSITION_CLOSED, NEW_LEADER, RESET, DEPOSIT, JOINED, published after the visibility delay; `FeedEventListener` is the sole writer, idempotent by `source_ref`
+- [x] Watchlists CRUD; `WatchlistService.seedDefault` and `renameSymbol`
+- [x] REST: `/leaderboard`, `/players/**`, `/feed`, `/account/history`, `/watchlists/**`
 
 ### WS5: Agents and realtime
 - [ ] STOMP `/ws`: session auth, CSRF on CONNECT (raw cookie token, non-masking `csrfChannelInterceptor`), heartbeats, subscription caps, leases (quote and `bars.{SYM}.1Min` → VIEWING, tick → LIST)
