@@ -136,6 +136,38 @@ dc start app
 **Rehearse it once** before the league starts (a Phase 1 exit criterion): restore last night's dump, log in, check
 balances and the leaderboard.
 
+## Players, bots and money (admin console)
+
+Everything here is in the admin console (`/admin`, ARCHITECTURE §21) or its API under `/api/v1/admin` (browser
+session of an ADMIN only; an `Authorization` header is always refused). Writes marked R in §21.1 (creating players,
+freezing, keys, resets, cash transfers, settings, engine halt) ask for the password again when the last check is
+more than 15 minutes old (`POST /api/v1/auth/reauth`).
+
+- **Invite a friend**: Admin → Invites → Create (uses 1–50, valid 1–720 hours) and send the link
+  `https://<host>/join/<code>`. The code is shown once (only its hash is stored); revoke a leaked link at once. The
+  friend picks a handle (`a-z 0-9 _`, 2–32), a display name and a password of at least 10 characters; the account is
+  funded with `league.defaultStartingCash` (Settings) and gets the "My List" watchlist. Signup is limited to 5 per
+  hour per IP.
+- **Add a bot**: Admin → Players → Create, kind AI, model label (e.g. `Claude`). An all-scope API key is issued with
+  it unless "issue key" is off; copy it then (it is never shown again), with the ready-made Claude Code / Claude API /
+  OpenAI Responses / curl snippets, into the agent runner's `STOCKS_CLAUDE_KEY` / `STOCKS_CHATGPT_KEY`. More keys:
+  player detail → API keys. A bot is never an admin (database CHECK) and its key cannot reach `/api/v1/admin`.
+- **A bot or player misbehaves**: Freeze (kill switch). Its sessions end at once, its keys answer `PLAYER_FROZEN` on
+  the next request, the engine cancels its open orders; tick "revoke keys" to make them `API_KEY_REVOKED` instead.
+  Unfreeze restores it. Disable (player → status DISABLED) also hides it from the leaderboard and refuses logins.
+- **Deposit fake money**: Admin → Money. Preview first (per-account cash, withdrawable, equity, marks quality), then
+  apply to one player or to ALL (optionally only humans or only AI) with a memo every player sees. Deposits never
+  change anyone's return (unit-value accounting), so the leaderboard stays fair. Each apply carries an
+  `Idempotency-Key`; retrying with the same key never pays twice.
+- **Forgotten password**: player → Set password (ends their sessions and revokes their keys); tell them the
+  temporary password and ask them to change it under Settings.
+- **Personal API keys** of humans are read-only unless the player is allowed to trade by API (player →
+  "allow API trading"); turning it off removes `trade` from their keys at once.
+- Every action above is in Admin → Audit (filter by category, action, player handle and time).
+
+If the `/admin` console is not deployed yet, the same calls work from a browser session with any HTTP client that
+keeps cookies; the `XSRF-TOKEN` cookie value must be sent as `X-XSRF-TOKEN` on writes.
+
 ## Secrets and accounts
 
 - `DB_PASSWORD`: change it inside PostgreSQL first, then in `.env`, then recreate:

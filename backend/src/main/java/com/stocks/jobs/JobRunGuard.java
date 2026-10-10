@@ -1,8 +1,13 @@
 package com.stocks.jobs;
 
+import com.stocks.audit.AuditCategory;
+import com.stocks.audit.AuditEntry;
+import com.stocks.audit.AuditOutcome;
+import com.stocks.audit.AuditService;
 import com.stocks.common.jdbc.Jdbc;
 import com.stocks.common.time.TimeSource;
 import com.stocks.common.web.Text;
+import com.stocks.contract.security.RequestMeta;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;
@@ -12,6 +17,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -68,6 +74,28 @@ public class JobRunGuard {
     this.time = time;
   }
 
+  private volatile AuditService audit;
+
+  /** §17.7: a failed occurrence also writes a {@code SYSTEM/JOB_FAILED} audit row (when an audit service exists). */
+  @Autowired(required = false)
+  public void setAuditService(AuditService audit) {
+    this.audit = audit;
+  }
+
+  private void auditFailure(String jobName, String runKey, String detail) {
+    AuditService a = audit;
+    if (a == null) {
+      return;
+    }
+    try {
+      a.record(AuditEntry.of(AuditCategory.SYSTEM, "JOB_FAILED", AuditOutcome.ERROR)
+          .withMeta(RequestMeta.system(null)).withTarget("job", jobName).withDetail("runKey", runKey)
+          .withDetail("error", detail));
+    } catch (RuntimeException e) {
+      log.warn("Could not audit the failure of {} [{}]: {}", jobName, runKey, e.toString());
+    }
+  }
+
   /** Runs {@code work} for {@code (jobName, runKey)} unless that occurrence is already done or running. */
   public RunResult run(String jobName, String runKey, Runnable work) {
     validate(jobName, runKey);
@@ -86,6 +114,7 @@ public class JobRunGuard {
         String detail = Text.clip(e.getClass().getSimpleName() + ": " + e.getMessage(), MAX_DETAIL);
         finish(jobName, runKey, Status.FAILED, detail);
         log.error("Job {} [{}] failed", jobName, runKey, e);
+        auditFailure(jobName, runKey, detail);
         return new RunResult(jobName, runKey, Outcome.FAILED, detail);
       }
       finish(jobName, runKey, Status.DONE, null);

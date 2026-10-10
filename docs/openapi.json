@@ -21,6 +21,10 @@
   ],
   "tags": [
     {
+      "description": "League administration (session + ADMIN only, §21)",
+      "name": "admin"
+    },
+    {
       "description": "Browser session login (§17.3)",
       "name": "auth"
     },
@@ -30,6 +34,1514 @@
     }
   ],
   "paths": {
+    "/api/v1/admin/api-keys/{keyId}": {
+      "delete": {
+        "description": "Immediate (the key cache is evicted); the bot then gets API_KEY_REVOKED. Errors: NOT_FOUND.",
+        "operationId": "revoke_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "keyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Revoke an API key",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/audit": {
+      "get": {
+        "description": "category: AUTH, ORDER, MONEY, ADMIN, KEY, ACCOUNT or SYSTEM; action e.g. LOGIN_FAIL; actor a player handle; from/to ISO-8601 instants. Paged with cursor/limit (default 50, max 200).",
+        "operationId": "list_7",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageAuditRow"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Audit rows",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/calendar/overrides": {
+      "get": {
+        "description": "from/to are ET dates (default: today to a year ahead; at most 400 days).",
+        "operationId": "list_5",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CalendarOverride"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Calendar overrides",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Recent password check. closed=true closes the day; otherwise rthCloseAt/postCloseAt shorten it. reason 1-200 characters. Errors: VALIDATION_FAILED.",
+        "operationId": "create_3",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCalendarOverrideRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarOverride"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Close the market or shorten a session on a date",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/calendar/overrides/{date}": {
+      "delete": {
+        "description": "Recent password check. Errors: NOT_FOUND.",
+        "operationId": "delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Remove a calendar override",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/cash-transfers": {
+      "get": {
+        "description": "Newest first; filter by player handle, batch id and time.",
+        "operationId": "list_4",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "handle",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "batchId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageTransferRow"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Cash transfers",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Recent password check and an Idempotency-Key (reuse it to retry; a replay answers the stored result with Idempotent-Replay: true). type DEPOSIT or WITHDRAWAL with a positive amount, or ADJUSTMENT (signed; treatAs CONTRIBUTION or PNL_CORRECTION); memo 1-200 characters. 201 with per-account results; 422 with the results when allOrNothing and an account was skipped. Errors: INSUFFICIENT_WITHDRAWABLE, MARKS_DEGRADED (set acceptDegradedMarks to override), IDEMPOTENCY_KEY_CONFLICT.",
+        "operationId": "apply",
+        "parameters": [
+          {
+            "description": "Unique per transfer; reuse only to retry",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CashTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferBatchResult"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Apply a cash transfer to one player or to ALL",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/cash-transfers/preview": {
+      "post": {
+        "description": "Per affected account: cash, withdrawable, equity before, unit value, worst mark quality, whether it would apply and warnings (ACCOUNT_EQUITY_TOO_LOW, MARKS_DEGRADED). Errors: VALIDATION_FAILED, PLAYER_NOT_FOUND.",
+        "operationId": "preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CashTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashTransferPreview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Preview a cash transfer (no writes)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/corporate-actions": {
+      "get": {
+        "description": "Newest first; filter by status (NEEDS_ADMIN for the ones to resolve).",
+        "operationId": "list_6",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "APPLIED",
+                "SKIPPED",
+                "NEEDS_ADMIN"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageCorporateAction"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Corporate actions",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/corporate-actions/{id}/resolve": {
+      "post": {
+        "description": "Recent password check. Phase 1 applies forward and reverse splits only, with confirmed oldRate/newRate. note 1-200 characters. Errors: CORPORATE_ACTION_NOT_RESOLVABLE, VALIDATION_FAILED.",
+        "operationId": "resolve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveCorporateActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorporateAction"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Apply or skip a corporate action",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/engine/halt": {
+      "post": {
+        "description": "Recent password check. Every engine command then answers ENGINE_HALTED until resumed.",
+        "operationId": "halt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HaltEngineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Halt the trading engine",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/engine/resume": {
+      "post": {
+        "description": "Recent password check. Runs the invariant check first and resumes only if it passes.",
+        "operationId": "resume",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Resume the trading engine",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/invites": {
+      "get": {
+        "description": "Newest first, used-up, expired and revoked ones included.",
+        "operationId": "list_3",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Invite"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Invite links",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "maxUses 1-50, expiresInHours 1-720. Returns the code and the link <public-url>/join/<code> once (only a hash is stored). Errors: VALIDATION_FAILED.",
+        "operationId": "create_2",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInviteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteCreated"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Create an invite link",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/invites/{inviteId}": {
+      "delete": {
+        "description": "Immediate. Errors: NOT_FOUND.",
+        "operationId": "revoke_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "inviteId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Revoke an invite link",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/orders/{orderId}": {
+      "delete": {
+        "description": "Recent password check. Errors: ORDER_NOT_FOUND, ORDER_NOT_CANCELLABLE.",
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Cancel any player's open order",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/players": {
+      "get": {
+        "description": "Sorted by handle, valued live (equity, P&L, return), with open orders, live keys, restriction and last seen.",
+        "operationId": "list_1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "HUMAN",
+                "AI"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "DISABLED",
+                "FROZEN"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminPlayer"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Every player",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Recent password check. Opens the funded CASH account (startingCash, default the league's) and the default watchlist. HUMAN: password required. AI: aiModel required, ownerHandle defaults to you, never an admin, and an all-scope key is issued unless issueKey is false (token shown once). Errors: HANDLE_TAKEN, VALIDATION_FAILED, WEAK_PASSWORD.",
+        "operationId": "create_1",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePlayerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePlayerResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Create a human or AI player",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/players/{handle}": {
+      "get": {
+        "description": "Runs, balances, end-of-day holdings, transfers, API keys and recent audit rows. Never live positions or orders (break-glass only). Errors: PLAYER_NOT_FOUND.",
+        "operationId": "detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPlayerDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "One player",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "description": "Recent password check. Null members stay unchanged. status ACTIVE or DISABLED (disabling ends sessions and freezes the account; FROZEN goes through /freeze); role ADMIN only for a human (ends the player's sessions); apiTradingAllowed false removes 'trade' from their personal keys. You cannot disable or demote yourself. Errors: PLAYER_NOT_FOUND, FORBIDDEN, VALIDATION_FAILED.",
+        "operationId": "update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePlayerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPlayer"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Update a player",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/players/{handle}/api-keys": {
+      "get": {
+        "description": "Newest first, revoked ones included. Never a secret.",
+        "operationId": "list_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyInfo"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A player's API keys",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Recent password check. scopes default to all four for an AI player (the read scopes, plus 'trade' if allowed, for a human); expiresInDays 1-365 or omitted. The token and the Claude Code, Claude API, OpenAI Responses and curl snippets are shown once. Errors: PLAYER_NOT_FOUND, VALIDATION_FAILED, FORBIDDEN_SCOPE.",
+        "operationId": "issue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreated"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Issue an API key for a player",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/players/{handle}/freeze": {
+      "post": {
+        "description": "Recent password check. Status FROZEN at once (sessions ended, caches evicted, keys revoked only with revokeKeys), then the engine cancels open orders and restricts the account. A frozen bot gets PLAYER_FROZEN. reason: 1-80 characters.",
+        "operationId": "freeze",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FreezePlayerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPlayer"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Freeze a player (kill switch)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/players/{handle}/live-view": {
+      "post": {
+        "description": "Recent password check. Writes an audit row and an ADMIN_VIEW entry the player sees in their activity before showing anything. reason: 5-200 characters. Errors: PLAYER_NOT_FOUND, ACCOUNT_NOT_FOUND.",
+        "operationId": "liveView",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPlayerLiveView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Break glass: the player's live positions and open orders",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/players/{handle}/password": {
+      "post": {
+        "description": "Recent password check. Ends their sessions and revokes their API keys. Errors: WEAK_PASSWORD, VALIDATION_FAILED (AI players have no password).",
+        "operationId": "setPassword",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Set a human's password",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/players/{handle}/reset": {
+      "post": {
+        "description": "Recent password check and an Idempotency-Key (1-80 of A-Z a-z 0-9 . _ : -; reuse it to retry). Closes the run at its live value and opens run n+1 at the final unit value, so a reset never erases a loss. startingCash defaults to the league's; memo 1-200 characters. A replay answers the stored result with Idempotent-Replay: true. Errors: IDEMPOTENCY_KEY_CONFLICT, PLAYER_NOT_FOUND, VALIDATION_FAILED.",
+        "operationId": "reset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unique per reset; reuse it only to retry",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Reset a player's account (new run)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/players/{handle}/unfreeze": {
+      "post": {
+        "description": "Recent password check. Status ACTIVE; keys that were not revoked work again; the account's restriction becomes NONE or the recomputed GFV restriction.",
+        "operationId": "unfreeze",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPlayer"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Unfreeze a player",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/settings": {
+      "get": {
+        "operationId": "get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "League settings",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "description": "Partial update; see PUT.",
+        "operationId": "patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Change league settings (same as PUT)",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D). Errors: SETTING_INVALID.",
+        "operationId": "put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Change league settings",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/system": {
+      "get": {
+        "description": "Version, start time, database, engine state and queue, last invariant check, market-data providers (stream usage, REST budget, probe), stale symbols, corporate-action holds, scheduled jobs (last run key and status) and corporate actions waiting for the admin.",
+        "operationId": "system",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "System status",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/system/jobs/{jobName}/run": {
+      "post": {
+        "description": "Recent password check. Starts one occurrence (runKey, default the latest past occurrence) in the background through the job_run guard; an occurrence already DONE does not run again. Watch the result in GET /admin/system. Errors: NOT_FOUND, VALIDATION_FAILED.",
+        "operationId": "runJob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Run a scheduled job now",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/auth/csrf": {
       "get": {
         "description": "Sets the XSRF-TOKEN cookie. Send its raw value as X-XSRF-TOKEN on every unsafe request.",
@@ -58,7 +1570,7 @@
     },
     "/api/v1/auth/login": {
       "post": {
-        "description": "Humans only. Starts a session (stocks_sid cookie), rotates XSRF-TOKEN and returns Me. Errors: BAD_CREDENTIALS, LOGIN_LOCKED, PLAYER_DISABLED.",
+        "description": "Humans only. Starts a session (stocks_sid cookie), rotates XSRF-TOKEN and returns Me. Errors: BAD_CREDENTIALS, LOGIN_LOCKED, PLAYER_DISABLED. Limited to 10 attempts per minute per IP.",
         "operationId": "login",
         "requestBody": {
           "content": {
@@ -124,6 +1636,84 @@
         ]
       }
     },
+    "/api/v1/auth/reauth": {
+      "post": {
+        "description": "Session only. Refreshes the session's authenticatedAt, which @RecentAuth actions (cash transfers, resets, freeze, key issuance, role changes, break-glass view) require to be at most 15 minutes old (RECENT_AUTH_REQUIRED otherwise). Errors: BAD_CREDENTIALS, LOGIN_LOCKED.",
+        "operationId": "reauth",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReauthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Confirm the password again",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/signup": {
+      "post": {
+        "description": "Invite-only. Creates a HUMAN player (handle ^[a-z0-9_]{2,32}$, lower-cased; display name 2-40; password at least 10 characters), opens the CASH account with the league's starting cash and the \"My List\" watchlist, logs the new player in (session cookie, rotated XSRF-TOKEN) and returns Me. Errors: INVITE_INVALID, HANDLE_TAKEN, WEAK_PASSWORD, VALIDATION_FAILED. Limited to 5 per hour per IP.",
+        "operationId": "signup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "security": [],
+        "summary": "Join the league with an invite",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/me": {
       "get": {
         "description": "Session or API key. authMethod and scopes describe this request's credentials.",
@@ -154,11 +1744,2040 @@
         "tags": [
           "me"
         ]
+      },
+      "patch": {
+        "description": "Session only. Null or missing members stay unchanged; preferences merge over the stored ones. Display names: 2-40 of letters, digits, space, _ . -. Errors: VALIDATION_FAILED.",
+        "operationId": "patchMe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Update my display name or preferences",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/api-keys": {
+      "get": {
+        "description": "Session only. Every key, newest first, revoked ones included (revokedAt set). Never returns a secret.",
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyInfo"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "My API keys",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "description": "Session only, recent password check. scopes default to the three read scopes; 'trade' needs the admin's 'allow API trading'. expiresInDays 1-365 or omitted (no expiry). The token is shown once. Errors: VALIDATION_FAILED, FORBIDDEN (AI players), FORBIDDEN_SCOPE, RECENT_AUTH_REQUIRED.",
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreated"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Create a personal API key",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/api-keys/{keyId}": {
+      "delete": {
+        "description": "Session only. Immediate. Errors: NOT_FOUND.",
+        "operationId": "revoke",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "keyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Revoke one of my API keys",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/password": {
+      "post": {
+        "description": "Session only. Verifies the current password, sets the new one (at least 10 characters), rotates this session's id, ends every other session and revokes all of my API keys (§17.3). Errors: BAD_CREDENTIALS, LOGIN_LOCKED, WEAK_PASSWORD.",
+        "operationId": "changePassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Change my password",
+        "tags": [
+          "me"
+        ]
       }
     }
   },
   "components": {
     "schemas": {
+      "Account": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "buyingPower": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "cash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountCash"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dayPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayTradesLast5Days": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "dividendsReceivable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "equity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "gfv": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountGfv"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "longMarketValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "marksQuality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              null
+            ]
+          },
+          "netContributions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "openBuyHolds": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "restriction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NONE",
+              "SETTLED_CASH_ONLY",
+              "LIQUIDATION_ONLY",
+              "FROZEN",
+              null
+            ]
+          },
+          "restrictionReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "restrictionUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "runNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startingCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACTIVE",
+              "CLOSED",
+              null
+            ]
+          },
+          "totalPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "totalReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CASH",
+              "MARGIN",
+              null
+            ]
+          },
+          "unitValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "accountId",
+          "asOf",
+          "buyingPower",
+          "cash",
+          "dayPnl",
+          "dayReturn",
+          "dayTradesLast5Days",
+          "dividendsReceivable",
+          "equity",
+          "gfv",
+          "longMarketValue",
+          "marksQuality",
+          "netContributions",
+          "openBuyHolds",
+          "openedAt",
+          "restriction",
+          "restrictionReason",
+          "restrictionUntil",
+          "runNo",
+          "startingCash",
+          "status",
+          "totalPnl",
+          "totalReturn",
+          "type",
+          "unitValue"
+        ]
+      },
+      "AccountCash": {
+        "type": "object",
+        "properties": {
+          "settled": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "settledAvailable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "total": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "unsettled": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "withdrawable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "settled",
+          "settledAvailable",
+          "total",
+          "unsettled",
+          "withdrawable"
+        ]
+      },
+      "AccountGfv": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "liquidationOnlyAt": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nextExpiry": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "settledCashOnlyAt": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "active",
+          "liquidationOnlyAt",
+          "nextExpiry",
+          "settledCashOnlyAt"
+        ]
+      },
+      "AdminPlayer": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activeKeys": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "aiModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avatarSeed": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "equity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "HUMAN",
+              "AI",
+              null
+            ]
+          },
+          "lastSeenAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "memberSince": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "netContributions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "openOrders": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ownerHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "playerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "resets": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "restriction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NONE",
+              "SETTLED_CASH_ONLY",
+              "LIQUIDATION_ONLY",
+              "FROZEN",
+              null
+            ]
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PLAYER",
+              "ADMIN",
+              null
+            ]
+          },
+          "runNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACTIVE",
+              "DISABLED",
+              "FROZEN",
+              null
+            ]
+          }
+        },
+        "required": [
+          "accountId",
+          "activeKeys",
+          "aiModel",
+          "avatarSeed",
+          "cash",
+          "createdAt",
+          "displayName",
+          "equity",
+          "handle",
+          "kind",
+          "lastSeenAt",
+          "memberSince",
+          "netContributions",
+          "openOrders",
+          "ownerHandle",
+          "playerId",
+          "pnl",
+          "resets",
+          "restriction",
+          "return",
+          "role",
+          "runNo",
+          "status"
+        ]
+      },
+      "AdminPlayerDetail": {
+        "type": "object",
+        "properties": {
+          "apiKeys": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ApiKeyInfo"
+            }
+          },
+          "apiTradingAllowed": {
+            "type": "boolean"
+          },
+          "balances": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Account"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eodHoldings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/EodHolding"
+            }
+          },
+          "holdingsAsOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "player": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminPlayer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recentAudit": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AuditRow"
+            }
+          },
+          "runs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Run"
+            }
+          },
+          "transfers": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TransferRow"
+            }
+          }
+        },
+        "required": [
+          "apiKeys",
+          "apiTradingAllowed",
+          "balances",
+          "eodHoldings",
+          "holdingsAsOf",
+          "player",
+          "recentAudit",
+          "runs",
+          "transfers"
+        ]
+      },
+      "AdminPlayerLiveView": {
+        "type": "object",
+        "properties": {
+          "openOrders": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Order"
+            }
+          },
+          "player": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlayerSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "positions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Position"
+            }
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "viewedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "openOrders",
+          "player",
+          "positions",
+          "reason",
+          "viewedAt"
+        ]
+      },
+      "AdminResetRequest": {
+        "type": "object",
+        "properties": {
+          "memo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "startingCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "memo"
+        ]
+      },
+      "AllTargetRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TransferTargetRequest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kinds": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "HUMAN",
+                    "AI"
+                  ]
+                },
+                "uniqueItems": true
+              }
+            }
+          }
+        ]
+      },
+      "ApiKeyCreated": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApiKeyInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "snippets": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApiKeySnippets"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "snippets",
+          "token"
+        ]
+      },
+      "ApiKeyInfo": {
+        "type": "object",
+        "properties": {
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "keyId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastUsedIp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "createdAt",
+          "expiresAt",
+          "keyId",
+          "lastUsedAt",
+          "lastUsedIp",
+          "name",
+          "revokedAt",
+          "scopes"
+        ]
+      },
+      "ApiKeySnippets": {
+        "type": "object",
+        "properties": {
+          "claudeApi": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "claudeCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "curl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "openaiResponses": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "claudeApi",
+          "claudeCode",
+          "curl",
+          "openaiResponses"
+        ]
+      },
+      "AuditRow": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actorKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "HUMAN",
+              "AI",
+              null
+            ]
+          },
+          "apiKeyId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "WEB",
+              "REST_KEY",
+              "MCP_KEY",
+              "MCP_OAUTH",
+              "SYSTEM",
+              "ADMIN",
+              null
+            ]
+          },
+          "detail": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mcpClient": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mcpTool": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targetType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "action",
+          "actor",
+          "actorKind",
+          "apiKeyId",
+          "category",
+          "channel",
+          "detail",
+          "id",
+          "ip",
+          "mcpClient",
+          "mcpTool",
+          "occurredAt",
+          "outcome",
+          "requestId",
+          "targetId",
+          "targetType"
+        ]
+      },
+      "CalendarOverride": {
+        "type": "object",
+        "properties": {
+          "closed": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "postCloseAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rthCloseAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "closed",
+          "createdAt",
+          "createdBy",
+          "date",
+          "postCloseAt",
+          "reason",
+          "rthCloseAt"
+        ]
+      },
+      "CashTransferPreview": {
+        "type": "object",
+        "properties": {
+          "accounts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TransferPreviewAccount"
+            }
+          },
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CLOSED",
+              "PRE",
+              "REGULAR",
+              "POST",
+              null
+            ]
+          }
+        },
+        "required": [
+          "accounts",
+          "asOf",
+          "session"
+        ]
+      },
+      "CashTransferRequest": {
+        "type": "object",
+        "properties": {
+          "acceptDegradedMarks": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "allOrNothing": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "amount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "memo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AllTargetRequest"
+              },
+              {
+                "$ref": "#/components/schemas/SingleTargetRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "treatAs": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CONTRIBUTION",
+              "PNL_CORRECTION",
+              null
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "INITIAL",
+              "DEPOSIT",
+              "WITHDRAWAL",
+              "ADJUSTMENT",
+              null
+            ]
+          }
+        },
+        "required": [
+          "amount",
+          "memo",
+          "target",
+          "type"
+        ]
+      },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "newPassword": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ]
+      },
+      "CorporateAction": {
+        "type": "object",
+        "properties": {
+          "appliedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "cashRate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "newRate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "newSymbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "oldRate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PROVIDER",
+              "MANUAL",
+              "DETECTED",
+              null
+            ]
+          },
+          "payableDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "recordDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "resolvedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PENDING",
+              "APPLIED",
+              "SKIPPED",
+              "NEEDS_ADMIN",
+              null
+            ]
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CASH_DIVIDEND",
+              "FORWARD_SPLIT",
+              "REVERSE_SPLIT",
+              "NAME_CHANGE",
+              "CASH_MERGER",
+              "STOCK_MERGER",
+              "SPIN_OFF",
+              "DELISTING",
+              null
+            ]
+          }
+        },
+        "required": [
+          "appliedAt",
+          "cashRate",
+          "createdAt",
+          "detail",
+          "exDate",
+          "id",
+          "newRate",
+          "newSymbol",
+          "oldRate",
+          "origin",
+          "payableDate",
+          "recordDate",
+          "resolvedBy",
+          "status",
+          "symbol",
+          "type"
+        ]
+      },
+      "CreateApiKeyRequest": {
+        "type": "object",
+        "properties": {
+          "expiresInDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "CreateCalendarOverrideRequest": {
+        "type": "object",
+        "properties": {
+          "closed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "postCloseAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "rthCloseAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "closed",
+          "date",
+          "reason"
+        ]
+      },
+      "CreateInviteRequest": {
+        "type": "object",
+        "properties": {
+          "expiresInHours": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "maxUses": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          }
+        },
+        "required": [
+          "expiresInHours",
+          "maxUses"
+        ]
+      },
+      "CreatePlayerRequest": {
+        "type": "object",
+        "properties": {
+          "aiModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "issueKey": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "HUMAN",
+              "AI",
+              null
+            ]
+          },
+          "ownerHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startingCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "displayName",
+          "handle",
+          "kind"
+        ]
+      },
+      "CreatePlayerResponse": {
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApiKeyCreated"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "player": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminPlayer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "apiKey",
+          "player"
+        ]
+      },
+      "EodHolding": {
+        "type": "object",
+        "properties": {
+          "mark": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "marketValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "mark",
+          "marketValue",
+          "qty",
+          "symbol"
+        ]
+      },
+      "Execution": {
+        "type": "object",
+        "properties": {
+          "executedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "executionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fees": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Fees"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "liquidity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "TOUCH",
+              "WALK",
+              "RESTING",
+              "PRINT",
+              "OPEN",
+              null
+            ]
+          },
+          "netAmount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "orderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "principal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "realizedPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "refQuote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RefQuote"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "settleDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "BUY",
+              "SELL",
+              null
+            ]
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tradeDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          }
+        },
+        "required": [
+          "executedAt",
+          "executionId",
+          "fees",
+          "liquidity",
+          "netAmount",
+          "orderId",
+          "price",
+          "principal",
+          "qty",
+          "realizedPnl",
+          "refQuote",
+          "settleDate",
+          "side",
+          "symbol",
+          "tradeDate"
+        ]
+      },
+      "Fees": {
+        "type": "object",
+        "properties": {
+          "cat": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "sec": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "taf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "total": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "cat",
+          "sec",
+          "taf",
+          "total"
+        ]
+      },
+      "FreezePlayerRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "revokeKeys": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "HaltEngineRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "Invite": {
+        "type": "object",
+        "properties": {
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "inviteId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maxUses": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "uses": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "inviteId",
+          "maxUses",
+          "revokedAt",
+          "uses"
+        ]
+      },
+      "InviteCreated": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "inviteId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "expiresAt",
+          "inviteId",
+          "url"
+        ]
+      },
+      "LiveViewRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
       "LoginRequest": {
         "type": "object",
         "properties": {
@@ -306,6 +3925,726 @@
           "runNo",
           "scopes",
           "status"
+        ]
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "acceptedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "avgFillPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "WEB",
+              "REST_KEY",
+              "MCP_KEY",
+              "MCP_OAUTH",
+              "SYSTEM",
+              "ADMIN",
+              null
+            ]
+          },
+          "clientOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "collarPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "doneAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "eligibleAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "events": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/OrderEvent"
+            }
+          },
+          "executions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Execution"
+            }
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "extendedHours": {
+            "type": "boolean"
+          },
+          "fees": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "filledPrincipal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "filledQty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "fractional": {
+            "type": "boolean"
+          },
+          "limitPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "notional": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "orderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "receivedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "replacedByOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replacesOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reservedCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "reservedQty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "sessionDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "BUY",
+              "SELL",
+              null
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PENDING",
+              "WORKING",
+              "PARTIALLY_FILLED",
+              "FILLED",
+              "CANCELLED",
+              "EXPIRED",
+              "REPLACED",
+              "REJECTED",
+              null
+            ]
+          },
+          "statusReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stopPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeInForce": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "GTC",
+              null
+            ]
+          },
+          "trailAmount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "trailPercent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "triggered": {
+            "type": "boolean"
+          },
+          "triggeredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "MARKET",
+              "LIMIT",
+              "STOP",
+              "STOP_LIMIT",
+              "TRAILING_STOP",
+              null
+            ]
+          },
+          "waitReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "LATENCY",
+              "QUEUED_FOR_OPEN",
+              "QUEUED_FOR_EXT_OPEN",
+              "SESSION_CLOSED",
+              "NOT_TRIGGERED",
+              "AWAITING_QUOTE",
+              "HALTED",
+              "CORPORATE_ACTION_HOLD",
+              "BEYOND_COLLAR",
+              "LIMIT_NOT_REACHED",
+              null
+            ]
+          },
+          "watermarkPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "acceptedAt",
+          "accountId",
+          "activatedAt",
+          "avgFillPrice",
+          "channel",
+          "clientOrderId",
+          "collarPrice",
+          "doneAt",
+          "eligibleAt",
+          "events",
+          "executions",
+          "expiresAt",
+          "extendedHours",
+          "fees",
+          "filledPrincipal",
+          "filledQty",
+          "fractional",
+          "limitPrice",
+          "notional",
+          "orderId",
+          "qty",
+          "rationale",
+          "receivedAt",
+          "replacedByOrderId",
+          "replacesOrderId",
+          "reservedCash",
+          "reservedQty",
+          "sessionDate",
+          "side",
+          "status",
+          "statusReason",
+          "stopPrice",
+          "symbol",
+          "timeInForce",
+          "trailAmount",
+          "trailPercent",
+          "triggered",
+          "triggeredAt",
+          "type",
+          "waitReason",
+          "watermarkPrice"
+        ]
+      },
+      "OrderEvent": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "detail": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "statusAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PENDING",
+              "WORKING",
+              "PARTIALLY_FILLED",
+              "FILLED",
+              "CANCELLED",
+              "EXPIRED",
+              "REPLACED",
+              "REJECTED",
+              null
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACCEPTED",
+              "QUEUED",
+              "WORKING",
+              "PAUSED",
+              "RESUMED",
+              "TRIGGERED",
+              "TRAIL_UPDATED",
+              "AWAITING_QUOTE",
+              "BEYOND_COLLAR",
+              "PARTIAL_FILL",
+              "FILL",
+              "CANCELLED",
+              "EXPIRED",
+              "REPLACED",
+              "HOLD_ADJUSTED",
+              null
+            ]
+          }
+        },
+        "required": [
+          "at",
+          "detail",
+          "seq",
+          "statusAfter",
+          "type"
+        ]
+      },
+      "PageAuditRow": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/AuditRow"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "PageCorporateAction": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CorporateAction"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "PageTransferRow": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TransferRow"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "PlayerSummary": {
+        "type": "object",
+        "properties": {
+          "aiModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avatarSeed": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "HUMAN",
+              "AI",
+              null
+            ]
+          },
+          "memberSince": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "playerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resets": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "aiModel",
+          "avatarSeed",
+          "displayName",
+          "handle",
+          "kind",
+          "memberSince",
+          "playerId",
+          "resets"
+        ]
+      },
+      "Position": {
+        "type": "object",
+        "properties": {
+          "availableQty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "avgCost": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "costBasis": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "fractionable": {
+            "type": "boolean"
+          },
+          "last": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "mark": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "markQuality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              null
+            ]
+          },
+          "marketValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unrealizedPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "unrealizedReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "weight": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "availableQty",
+          "avgCost",
+          "costBasis",
+          "dayPnl",
+          "dayReturn",
+          "fractionable",
+          "last",
+          "mark",
+          "markQuality",
+          "marketValue",
+          "name",
+          "openedAt",
+          "qty",
+          "symbol",
+          "unrealizedPnl",
+          "unrealizedReturn",
+          "weight"
         ]
       },
       "Preferences": {
@@ -477,6 +4816,1354 @@
         "required": [
           "code",
           "field",
+          "message"
+        ]
+      },
+      "ReauthRequest": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
+      "RefQuote": {
+        "type": "object",
+        "properties": {
+          "ask": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "askSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "bid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "bidSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "clamped": {
+            "type": "boolean"
+          },
+          "confirmedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "quality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              null
+            ]
+          },
+          "quoteAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ask",
+          "askSize",
+          "bid",
+          "bidSize",
+          "clamped",
+          "confirmedAt",
+          "last",
+          "quality",
+          "quoteAt",
+          "source"
+        ]
+      },
+      "ResolveCorporateActionRequest": {
+        "type": "object",
+        "properties": {
+          "newRate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "oldRate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "resolution": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "APPLY",
+              "SKIP",
+              null
+            ]
+          }
+        },
+        "required": [
+          "note",
+          "resolution"
+        ]
+      },
+      "Run": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "finalEquity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "netContributions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "pnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "runNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startingCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACTIVE",
+              "CLOSED",
+              null
+            ]
+          }
+        },
+        "required": [
+          "accountId",
+          "closedAt",
+          "finalEquity",
+          "netContributions",
+          "openedAt",
+          "pnl",
+          "return",
+          "runNo",
+          "startingCash",
+          "status"
+        ]
+      },
+      "RunJobRequest": {
+        "type": "object",
+        "properties": {
+          "runKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SetPasswordRequest": {
+        "type": "object",
+        "properties": {
+          "newPassword": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "newPassword"
+        ]
+      },
+      "Settings": {
+        "type": "object",
+        "properties": {
+          "bots.requireRationale": {
+            "type": "boolean"
+          },
+          "league.allowSelfReset": {
+            "type": "boolean"
+          },
+          "league.defaultStartingCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "league.eligibility.minFills": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "league.eligibility.minSymbols": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "league.humanKindExcludesApiTraders": {
+            "type": "boolean"
+          },
+          "league.seasonStart": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "social.holdingsVisibility": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "EOD_WEIGHTS",
+              "EOD_FULL",
+              "HIDDEN",
+              null
+            ]
+          },
+          "social.showDepositsInFeed": {
+            "type": "boolean"
+          },
+          "social.tradeFeedDelay": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "bots.requireRationale",
+          "league.allowSelfReset",
+          "league.defaultStartingCash",
+          "league.eligibility.minFills",
+          "league.eligibility.minSymbols",
+          "league.humanKindExcludesApiTraders",
+          "league.seasonStart",
+          "social.holdingsVisibility",
+          "social.showDepositsInFeed",
+          "social.tradeFeedDelay"
+        ]
+      },
+      "SignupRequest": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "inviteCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "displayName",
+          "handle",
+          "inviteCode",
+          "password"
+        ]
+      },
+      "SingleTargetRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TransferTargetRequest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "handle": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              }
+            }
+          }
+        ],
+        "required": [
+          "handle"
+        ]
+      },
+      "SystemEngine": {
+        "type": "object",
+        "properties": {
+          "haltReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastCommandAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "queueDepth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "STARTING",
+              "RUNNING",
+              "HALTED",
+              null
+            ]
+          }
+        },
+        "required": [
+          "haltReason",
+          "lastCommandAt",
+          "queueDepth",
+          "status"
+        ]
+      },
+      "SystemInvariants": {
+        "type": "object",
+        "properties": {
+          "failures": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "lastRunAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "failures",
+          "lastRunAt",
+          "ok"
+        ]
+      },
+      "SystemJob": {
+        "type": "object",
+        "properties": {
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastRunKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "detail",
+          "finishedAt",
+          "lastRunKey",
+          "name",
+          "status"
+        ]
+      },
+      "SystemMarketData": {
+        "type": "object",
+        "properties": {
+          "corporateActionHolds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "profile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "providers": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SystemProvider"
+            }
+          },
+          "staleSymbols": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "corporateActionHolds",
+          "profile",
+          "providers",
+          "staleSymbols"
+        ]
+      },
+      "SystemProvider": {
+        "type": "object",
+        "properties": {
+          "capabilities": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastMessageAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "probe": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "restPerMinMax": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "restPerMinUsed": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "streamSymbolsMax": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "streamSymbolsUsed": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "capabilities",
+          "id",
+          "lastMessageAt",
+          "probe",
+          "restPerMinMax",
+          "restPerMinUsed",
+          "state",
+          "streamSymbolsMax",
+          "streamSymbolsUsed"
+        ]
+      },
+      "SystemStatus": {
+        "type": "object",
+        "properties": {
+          "corporateActionsNeedingAdmin": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "db": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SystemEngine"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "invariants": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SystemInvariants"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "jobs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SystemJob"
+            }
+          },
+          "marketData": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SystemMarketData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "corporateActionsNeedingAdmin",
+          "db",
+          "engine",
+          "invariants",
+          "jobs",
+          "marketData",
+          "startedAt",
+          "version"
+        ]
+      },
+      "TransferBatchResult": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "applied": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "batchId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "memo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "results": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TransferResult"
+            }
+          },
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "SINGLE",
+              "ALL",
+              "SYSTEM",
+              null
+            ]
+          },
+          "skipped": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "INITIAL",
+              "DEPOSIT",
+              "WITHDRAWAL",
+              "ADJUSTMENT",
+              null
+            ]
+          }
+        },
+        "required": [
+          "amount",
+          "applied",
+          "batchId",
+          "createdAt",
+          "memo",
+          "results",
+          "scope",
+          "skipped",
+          "type"
+        ]
+      },
+      "TransferPreviewAccount": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "equityBefore": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "marksQuality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              null
+            ]
+          },
+          "skipReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unitValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "warnings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            }
+          },
+          "withdrawable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "worstMarkBasis": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wouldApply": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accountId",
+          "cash",
+          "equityBefore",
+          "handle",
+          "marksQuality",
+          "skipReason",
+          "unitValue",
+          "warnings",
+          "withdrawable",
+          "worstMarkBasis",
+          "wouldApply"
+        ]
+      },
+      "TransferResult": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "amount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "cashAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "equityBefore": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "marksQuality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              null
+            ]
+          },
+          "rebased": {
+            "type": "boolean"
+          },
+          "skipReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "APPLIED",
+              "SKIPPED",
+              null
+            ]
+          },
+          "transferId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unitValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "warnings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            }
+          }
+        },
+        "required": [
+          "accountId",
+          "amount",
+          "cashAfter",
+          "displayName",
+          "equityBefore",
+          "handle",
+          "marksQuality",
+          "rebased",
+          "skipReason",
+          "status",
+          "transferId",
+          "unitValue",
+          "warnings"
+        ]
+      },
+      "TransferRow": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "amount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "batchId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effectiveAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "equityBefore": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isContribution": {
+            "type": "boolean"
+          },
+          "memo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "skipReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "APPLIED",
+              "SKIPPED",
+              null
+            ]
+          },
+          "transferId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "INITIAL",
+              "DEPOSIT",
+              "WITHDRAWAL",
+              "ADJUSTMENT",
+              null
+            ]
+          },
+          "unitValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "accountId",
+          "amount",
+          "batchId",
+          "by",
+          "effectiveAt",
+          "equityBefore",
+          "handle",
+          "isContribution",
+          "memo",
+          "skipReason",
+          "status",
+          "transferId",
+          "type",
+          "unitValue"
+        ]
+      },
+      "TransferTargetRequest": {
+        "discriminator": {
+          "propertyName": "scope"
+        },
+        "properties": {
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope"
+        ]
+      },
+      "UpdateMeRequest": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preferences": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdatePreferencesRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "UpdatePlayerRequest": {
+        "type": "object",
+        "properties": {
+          "aiModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "apiTradingAllowed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PLAYER",
+              "ADMIN",
+              null
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACTIVE",
+              "DISABLED",
+              "FROZEN",
+              null
+            ]
+          }
+        }
+      },
+      "UpdatePreferencesRequest": {
+        "type": "object",
+        "properties": {
+          "confirmOrders": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "defaultOrderType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "LIMIT",
+              "MARKET",
+              null
+            ]
+          },
+          "defaultQtyMode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "SHARES",
+              "AMOUNT",
+              null
+            ]
+          },
+          "defaultTimeInForce": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "GTC",
+              null
+            ]
+          },
+          "theme": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DARK",
+              "LIGHT",
+              "SYSTEM",
+              null
+            ]
+          },
+          "upDown": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "GREEN_UP",
+              "RED_UP",
+              null
+            ]
+          }
+        }
+      },
+      "UpdateSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "bots.requireRationale": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "league.allowSelfReset": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "league.defaultStartingCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "league.eligibility.minFills": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "league.eligibility.minSymbols": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "league.humanKindExcludesApiTraders": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "league.seasonStart": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "social.holdingsVisibility": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "EOD_WEIGHTS",
+              "EOD_FULL",
+              "HIDDEN",
+              null
+            ]
+          },
+          "social.showDepositsInFeed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "social.tradeFeedDelay": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Warning": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
           "message"
         ]
       }
