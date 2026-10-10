@@ -1,14 +1,8 @@
 package com.stocks.config.stubs;
 
-import com.stocks.common.time.TimeSource;
 import com.stocks.config.CommonAutoConfiguration;
-import com.stocks.contract.calendar.CalendarAdmin;
-import com.stocks.contract.calendar.MarketCalendar;
 import com.stocks.contract.identity.PlayerQueries;
 import com.stocks.contract.identity.SettingsService;
-import com.stocks.contract.marketdata.DailyMarkService;
-import com.stocks.contract.marketdata.MarketDataService;
-import com.stocks.contract.marketdata.SplitAdjustments;
 import com.stocks.contract.portfolio.LeaderboardService;
 import com.stocks.contract.portfolio.PerformanceQueries;
 import com.stocks.contract.portfolio.ValuationService;
@@ -63,36 +57,8 @@ public class StubsAutoConfiguration {
   }
 
   // ===== WS2 =====
-
-  @Bean
-  @ConditionalOnMissingBean
-  MarketCalendar marketCalendarStub() {
-    return NotImplementedStub.of(MarketCalendar.class, "WS2");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  CalendarAdmin calendarAdminStub() {
-    return NotImplementedStub.of(CalendarAdmin.class, "WS2");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  MarketDataService noopMarketDataService(TimeSource timeSource) {
-    return new NoopMarketDataService(timeSource);
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  DailyMarkService dailyMarkServiceStub() {
-    return NotImplementedStub.of(DailyMarkService.class, "WS2");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  SplitAdjustments splitAdjustmentsStub() {
-    return NotImplementedStub.of(SplitAdjustments.class, "WS2");
-  }
+  // MarketCalendar, CalendarAdmin, MarketDataService, DailyMarkService and SplitAdjustments are real
+  // (marketdata.config.MarketDataAutoConfiguration). NoopMarketDataService stays as a reusable "nothing known" double.
 
   // ===== WS3 =====
 

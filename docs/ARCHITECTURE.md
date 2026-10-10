@@ -365,16 +365,20 @@ com.stocks
 ├── calendar/                                           [WS2]  DbMarketCalendar, AlwaysOpenCalendar (in-memory only), CalendarAdminImpl,
 │                                                              BundledCalendarLoader, CalendarSyncJob, NyseCalendarGenerator (test/tool)
 ├── marketdata/                                         [WS2]
-│   ├── config/      MarketDataProperties (@ConfigurationProperties "stocks.marketdata")
+│   ├── config/      MarketDataProperties (@ConfigurationProperties "stocks.marketdata"), MarketDataAutoConfiguration
+│   │                (all WS2 beans; @ConditionalOnMissingBean so a test's ScriptedMarketData/calendar wins),
+│   │                MarketDataRuntime (the profile's provider/feed/service graph), MarketDataClockAutoConfiguration
+│   │                (SIM clock modes → TimeSource), ExecQuoteRules (reads WS3's stocks.rules §12.3 keys)
 │   ├── spi/         MarketDataProvider, MarketStream, Capabilities, BarQuery
 │   ├── alpaca/      AlpacaRestClient, AlpacaStreamClient, AlpacaMarketDataProvider, AlpacaCapabilityProbe
 │   ├── finnhub/     FinnhubRestClient, FinnhubStreamClient, FinnhubProvider
 │   ├── sim/         SimulatedMarketDataProvider, SimClockModes, PricePath, ScenarioInjector
-│   ├── core/        MarketDataServiceImpl, QuoteBook, ExecutableQuoteBuilder, SubscriptionBudgetManager, SnapshotPoller,
-│   │                QuoteRefresher, ProviderRateLimiter, BarService, MarkService, SplitAdjustmentsImpl, SplitGuard,
+│   ├── core/        MarketDataServiceImpl, MarketFeed (SimFeed | LiveFeed: the live feed holds the SnapshotPoller
+│   │                and QuoteRefresher loops), QuoteBook, QuoteComposer, ExecutableQuoteBuilder, SubscriptionBudgetManager,
+│   │                ProviderRateLimiter, ProviderHttp, WebSocketStream, BarService, MarkService, SplitAdjustmentsImpl, SplitGuard,
 │   │                AssetService, AssetSyncJob, PrevCloseJob, DailyMarkJob, DailyMarkServiceImpl, MoversService,
 │   │                NewsService, FundamentalsService, StalenessMonitor
-│   ├── mapper/      QuoteDtoMapper, BarDtoMapper, SnapshotDtoMapper, AssetDtoMapper, MoversDtoMapper,
+│   ├── mapper/      QuoteDtoMapper, BarDtoMapper, SnapshotDtoMapper, AssetDtoMapper, MoversDtoMapper, ClockDtoMapper,
 │   │                NewsItemDtoMapper, TradingDayDtoMapper, FundamentalsDtoMapper (used by REST, STOMP and MCP)
 │   └── web/         MarketController, AssetController, QuoteController, BarsController, NewsController
 ├── trading/                                            [WS3]
@@ -1753,7 +1757,7 @@ CLOSED ──04:00──► PRE ──09:30──► REGULAR ──16:00 (13:00)
 - Webull's after-hours end on early-close days is [U]. We use the calendar's `post_close_at` (17:00).
 - **Free-data caveat.** IEX only trades from 08:00 to 17:00 ET, so the live IEX stream is silent from 04:00 to 08:00 and from 17:00 to 20:00. The session clock does not change. Fills in those windows follow the data-quality rules (§12.3), and the UI shows `EXT_HOURS_DATA_GAP`.
 - `tradeDateFor(t)` returns the ET calendar date of `t`. There is no overnight session in Phase 1.
-- **`AlwaysOpenCalendar`** applies only when `stocks.marketdata.sim.always-open=true` (dev and e2e). Every day is a trading day with REGULAR running from 00:00 to 23:59:59 ET, PRE and POST of zero length, and T+1 settlement on weekdays. It is **in-memory only**: it is never written to `trading_day` (its zero-length PRE/POST would violate the table's CHECK), and no code reads `trading_day` with SQL outside `com.stocks.calendar` (§8 portability rules), so nothing silently returns empty in dev. Its EOD job fires after midnight; that is harmless because jobs are keyed by trade date through `MarketCalendar`. Prod refuses to start with it.
+- **`AlwaysOpenCalendar`** applies only when `stocks.marketdata.sim.always-open=true` (dev and e2e). Every day is a trading day with REGULAR running from 00:00 to 23:59:59 ET, PRE and POST of zero length, and T+1 settlement on weekdays. It is **in-memory only**: it is never written to `trading_day` (its zero-length PRE/POST would violate the table's CHECK), and no code reads `trading_day` with SQL outside `com.stocks.calendar` (§8 portability rules), so nothing silently returns empty in dev. Its EOD job fires after midnight; that is harmless because jobs are keyed by trade date through `MarketCalendar`. Prod refuses to start with it (`MarketDataAutoConfiguration` fails the boot when the `prod` profile is active), and `CalendarAdmin.putOverride` answers `VALIDATION_FAILED` while it is active (there is nothing to override). It is used only with profile `simulated`.
 
 ### 9.4 Transition execution
 
@@ -2453,14 +2457,14 @@ Reconciliation runs every 1 s:
 - **Finnhub:** the top `finnhub.max-stream-symbols − 2` by priority among `PINNED`, `ORDER_TRIGGER`, `ORDER_RESTING` and `HOLDING`. During IEX-dark windows, `ORDER_RESTING` EXT orders take precedence.
 - **Hysteresis:** a symbol stays subscribed for at least 60 s unless a higher priority needs its slot. The manager always sends unsubscribes before subscribes, so the total never exceeds the limit (Alpaca error 405).
 
-**`SnapshotPoller`.** Polls `GET /v2/stocks/snapshots?symbols=…&feed=iex` in batches of 100 [VERIFY max]:
+**`SnapshotPoller`** (the `LiveFeed` loop, every 1 s). Polls `GET /v2/stocks/snapshots?symbols=…&feed=iex` in batches of 100 (200 when the probe's 200-symbol call succeeds):
 - every 2 s for non-streamed symbols at `ORDER_*` or `VIEWING`
 - every 10 s for `HOLDING` and `LIST`
 - every 60 s for the movers universe (`universe.csv`), only while REGULAR, PRE or POST
 
-**`QuoteRefresher`.** `requestRefresh(symbol, ORDER_CRITICAL)` calls `quotes/latest` and `trades/latest` for that symbol (at most one in flight per symbol), then updates `QuoteBook` with `observedAt` = response time.
+**`QuoteRefresher`.** `requestRefresh(symbol, ORDER_CRITICAL)` fetches that symbol's snapshot (one call that carries the latest quote **and** trade, instead of `quotes/latest` + `trades/latest`; at most one in flight per symbol, on a virtual thread), then updates `QuoteBook` with `observedAt` = response time. A request-thread read (`quotes()`) fetches symbols not refreshed in the last 10 s (5 min while CLOSED) synchronously, unless a REST failure in the last 30 s opened the circuit breaker; the engine thread never waits on the network.
 
-**`ProviderRateLimiter`** (Bucket4j):
+**`ProviderRateLimiter`** (an in-process token bucket with a monotonic clock; no Bucket4j dependency needed):
 - Alpaca: 180/min, corrected from `X-RateLimit-Remaining`.
 - Finnhub: 55/min and 30/s.
 - Priority classes `ORDER_CRITICAL > ENGINE > UI > BACKGROUND`. `BACKGROUND` is deferred while less than 20% of the budget remains.
@@ -2517,7 +2521,9 @@ It returns `Mark(price, quality, asOf, basis)`. SIM marks are `SIMULATED`. Fallb
 - **`NewsService`:** Alpaca news cached 60 s; fallback Finnhub `company-news`.
 - **`FundamentalsService`:** Finnhub `profile2` and `metric`, cached 24 h.
 - **`PrevCloseJob`:** 04:01 ET (official prior closes), followed by the `SplitGuard` check (§14); the guard repeats at 09:20 ET.
-- **Logo proxy:** Alpaca `/v1beta1/logos/{symbol}?placeholder=true`, cached 7 days in memory, `Cache-Control: max-age=31536000`.
+- **Logo proxy:** Alpaca `/v1beta1/logos/{symbol}?placeholder=true`, cached 7 days in memory, `Cache-Control: max-age=31536000, private` (login-only data). Without a logo source (SIM) or on a provider failure, a deterministic 64×64 placeholder PNG (a colored disc) is served.
+- **`HOLDING_LEASES`** (`PeriodicTask`, 60 s): every held symbol (`position`) gets a `HOLDING` lease `hold:<sym>`; symbols no longer held are released.
+- **WS2 job names (§25):** `ASSET_SYNC`, `CALENDAR_SYNC`, `ALPACA_PROBE` (live profiles only), `PREV_CLOSE` (then `SplitGuard`), `SPLIT_GUARD` (09:20), `DAILY_MARK` (two occurrences per trading day: `<date>:OFFICIAL` at close + 20 min, `<date>` at post-close + 20 min), `DAILY_REMARK` (`<previous date>:REMARK` at 09:00), `MOVERS_REFRESH`, `HOLDING_LEASES`. Live profiles also run the calendar sync, the probe and (when no provider asset rows exist yet) the asset sync once at boot on a background thread, so an unreachable provider never delays the boot.
 
 ### 15.6 Upstream specifics (see the market-data research for full payloads)
 
@@ -2529,7 +2535,7 @@ It returns `Mark(price, quality, asOf, basis)`. SIM marks are `SIMULATED`. Fallb
 | Finnhub REST | `https://finnhub.io/api/v1`, header `X-Finnhub-Token` |
 | Finnhub stream | `wss://ws.finnhub.io?token=…`. Subscribe with `{"type":"subscribe","symbol":"AAPL"}`. Messages: `{"type":"trade","data":[{s,p,t(ms),v,c[]}]}`. Ignore `ping`. |
 | Time | RFC-3339 with nanoseconds, UTC. A daily bar's `t` is midnight ET. |
-| Quote sizes | REST says shares; the WebSocket says "round lots" [VERIFY]. The probe compares them and the adapter normalizes to **shares**. |
+| Quote sizes | REST sizes are **shares** (Alpaca docs: "round lots prior to November 3, 2025"); the stream is documented in round lots. The live feed compares the median REST size with the median raw stream size (≥ 40 samples each) and sets the stream multiplier (×100 when the stream is ~100× smaller, else ×1; default ×100 until decided), shown as `streamQuoteSizeUnit` on `/admin/system`. Everything downstream is in **shares**. |
 
 ### 15.7 SIM provider (`marketdata.sim`)
 
@@ -2555,7 +2561,8 @@ Every price, quote, trade and bar is a **pure function of `(seed, symbol, time)`
 9. **Capabilities.** Everything is supported, consolidated quotes are on, the stream has no symbol limit, and every payload is stamped `quality=SIMULATED`. The UI shows a **SIM** badge.
 
 **Golden tests.**
-- Seed 42, AAPL, 2026-10-09T14:30:00Z gives a fixed bid/ask; record the values at scaffold time.
+- Seed 42, AAPL, 2026-10-09T14:30:00Z gives **bid 250.47 / ask 250.53** (last print 250.48; closes 247.11 on 10-08 and 255.00, the `ref_price`, on 10-09). Recorded with SPY, NVDA and SIMA in `golden/sim/seed42-2026-10-09T1430Z.json`.
+- Daily high/low are sampled from the price path (256 points) plus the half spread, so a 1Min print may exceed them by a few cents (< 0.3%); 1Min bars are exact aggregations of the prints.
 - Live-emitted bars equal `bars()` for the same window (property test).
 
 ### 15.8 Startup capability probe (`AlpacaCapabilityProbe`, results on `/admin/system`)
@@ -2567,9 +2574,9 @@ At boot, and then daily at 03:10 ET, the probe checks:
 - a 200-symbol snapshot (finds the batch maximum)
 - `statuses: ["*"]` on the stream
 - the REST vs WebSocket quote-size unit
-- a 31st subscribe on `/v2/test`, which should return 405
+- a 31st subscribe on `/v2/test`, which should return 405 (**not run in Phase 1**: a second connection on the same key risks error 406 on the live stream; `statuses: ["*"]` is requested on the live stream instead and dropped automatically on 409/410)
 
-On Finnhub it checks the stream symbol cap (subscribe until the provider rejects, capped at 50) and whether extended-hours prints arrive.
+On Finnhub it checks the stream symbol cap (subscribe until the provider rejects, capped at 50) and whether extended-hours prints arrive (**Phase 1 uses the configured `max-stream-symbols` instead of probing**). Also checked: the trading API (`/v2/clock`) and `snapshots` on the configured feed; every result appears under `providers[alpaca].probe` in `MarketDataService.status()`.
 
 Results update `Capabilities` and the routes. For example, movers fall back to `computed`, and the news tab is hidden when there is no source.
 
@@ -2902,15 +2909,15 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | Method and path | Scope | Request → response | Errors |
 |---|---|---|---|
 | `GET /market/clock` | market:read | → `Clock` | |
-| `GET /market/calendar?from&to` (≤ 400 days) | market:read | → `TradingDay[]` | `VALIDATION_FAILED` |
+| `GET /market/calendar?from&to` (≤ 400 days; defaults: today ET, from + 30 days; trading days only) | market:read | → `TradingDay[]` | `VALIDATION_FAILED` |
 | `GET /market/indices` | market:read | → `Quote[]` for SPY, QQQ, DIA, IWM | |
-| `GET /market/movers?list=GAINERS\|LOSERS\|ACTIVES&limit≤50` | market:read | → `Movers` | |
+| `GET /market/movers?list=GAINERS\|LOSERS\|ACTIVES&limit≤50` (defaults GAINERS, 10) | market:read | → `Movers` | `VALIDATION_FAILED` |
 | `GET /assets/search?q&limit≤20` | market:read | → `AssetSummary[]` | |
 | `GET /assets/{symbol}` | market:read | → `Asset` | `SYMBOL_NOT_FOUND` |
 | `GET /assets/{symbol}/logo` | market:read | → `image/png` | |
 | `GET /quotes?symbols=A,B` (≤ 50) | market:read | → `{quotes: Quote[]}`; unknown symbols get `quality=NONE` | |
 | `GET /snapshots/{symbol}` | market:read | → `Snapshot` | `SYMBOL_NOT_FOUND` |
-| `GET /bars/{symbol}?range=1D…ALL` **or** `?timeframe&start&end&limit≤1000`; also `adjustment=RAW\|SPLIT\|ALL` (default SPLIT) and `extendedHours` (default true) | market:read | → `Bars` | `SYMBOL_NOT_FOUND`, `VALIDATION_FAILED` |
+| `GET /bars/{symbol}?range=1D…ALL` **or** `?timeframe&start&end&limit≤1000`; also `adjustment=RAW\|SPLIT\|ALL` (default SPLIT) and `extendedHours` (default true). Neither range nor timeframe → `range=1D`; a timeframe with a range overrides the range's default; range together with start → `VALIDATION_FAILED`; a limit keeps the most recent bars | market:read | → `Bars` | `SYMBOL_NOT_FOUND`, `VALIDATION_FAILED` |
 | `GET /news?symbols&limit≤20&before` | market:read | → `{items: NewsItem[]}` (empty if no source) | |
 | `GET /account` | account:read | → `Account` | |
 | `GET /account/positions` | account:read | → `Position[]` | |
@@ -3001,7 +3008,8 @@ type Notification = { id: string; kind: NotificationKind; title: string; body: s
   createdAt: Ts; readAt: Ts|null };
 
 // ---- market
-type Clock = { now: Ts; nowEt: string; session: SessionType; tradingDate: DateEt|null; sessionEndsAt: Ts|null;
+type Clock = { now: Ts; nowEt: string; session: SessionType; tradingDate: DateEt|null;
+  sessionEndsAt: Ts|null /* null while CLOSED */;
   nextSession: SessionType; nextSessionAt: Ts; nextRegularOpen: Ts; nextRegularClose: Ts; earlyClose: boolean;
   upcomingHolidays: { date: DateEt; name: string }[]; upcomingEarlyCloses: DateEt[];
   feed: { profile: string; quality: DataQuality; status: "LIVE"|"DEGRADED"|"DOWN"; liveIexWindowEt: string|null } };
@@ -4317,7 +4325,7 @@ WS3 owns **`DirectEngineExecutor`** (`src/test/java/com/stocks/trading/engine/te
 | 5 | Stop trigger basis: last trade or bid/ask | consolidated last, falling back to bid/ask | Config and code |
 | 6 | After-hours end on early-close days | 17:00 (calendar) | Alpaca calendar |
 | 7 | Section 31 rate after the FY2027 appropriation; 2027 TAF and CAT rates | current rows in `fee_schedule` | Add an effective-dated row through a migration |
-| 8 | Alpaca quote-size units (REST vs WS) | normalize to shares | Startup probe |
+| 8 | Alpaca quote-size units (REST vs WS) | **Resolved for REST** (docs, 2026-10-10: shares since 2025-11-03); the stream unit is detected at runtime from REST vs stream medians (§15.6) | Live feed size check |
 | 9 | Free access to movers, most-actives, news, `delayed_sip`, `statuses` wildcard; snapshot batch maximum | assume yes, with fallbacks | Startup probe |
 | 10 | Finnhub stream symbol cap; extended-hours prints | 50; yes | Startup probe |
 | 11 | Condition-code tables for eligible prints (Alpaca SIP letters vs Finnhub numeric) | conservative exclusions | Adapter fixture tests |

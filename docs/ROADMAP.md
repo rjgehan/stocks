@@ -54,20 +54,20 @@
 - [ ] `AdminSecurityIT`: every admin route rejects anonymous callers, bot keys, the admin's own key and non-admin sessions
 
 ### WS2: Market data and calendar
-- [ ] `MarketCalendar` with the bundled `xnys-2016-2028.csv` (generator plus the §9.2 golden dates), Alpaca calendar sync, `CalendarAdmin` overrides, and the in-memory `AlwaysOpenCalendar` for dev and e2e
-- [ ] **SIM provider by end of week 1**: deterministic paths, quotes, prints, bars; clock modes; scenarios (halt, gap, blackout, one-sided quote, split, dividend, flash crash)
-- [ ] `QuoteBook` (fan-out through `List<MarketUpdateListener>`), `MarketDataService`, `ExecutableQuoteBuilder` (anti-look-ahead, freshness, quality ladder with tiered IEX spread limits 10/40/150 bps, clamp, synthetic quote); halts only from `statuses`
-- [ ] DTO mappers (`QuoteDtoMapper`, `BarDtoMapper`, …) shared by REST, STOMP and MCP
-- [ ] Alpaca REST: assets, calendar, snapshots, latest quotes and trades, bars, news, movers, most-actives, corporate actions, logos
-- [ ] Alpaca IEX stream: auth, subscribe diffs, 405/406 handling, backoff (90 s after a 406), watchdog, `statuses`
-- [ ] Finnhub: `profile2`, `metric`, `/stock/symbol` types, search; SIP trade stream with heartbeat watchdog
-- [ ] `SubscriptionBudgetManager` (leases, priorities, hysteresis, ≤ 30 Alpaca and about 50 Finnhub symbols), `SnapshotPoller`, `QuoteRefresher`, `ProviderRateLimiter` (180/min with priority classes)
-- [ ] `BarService`: SIP history ≥ 16 minutes old + IEX tail + live aggregation; range defaults; caching
-- [ ] `MarkService` (live marks, split-adjusted fallbacks) and `DailyMarkJob` (16:20 official close; 20:20 day-end marks; re-marking PROVISIONAL rows)
-- [ ] `SplitAdjustments` (`price_adjustment`) and `SplitGuard` (04:01 and 09:20; corporate-action hold)
-- [ ] `AssetSyncJob` (exchanges filter, ETF type, liquidity tiers, search index), `PrevCloseJob`, movers with a computed fallback, news, fundamentals
-- [ ] `AlpacaCapabilityProbe`, with results on `/admin/system`; prod refuses SIM unless overridden
-- [ ] Market REST: `/market/clock|calendar|indices|movers`, `/assets/search|{symbol}|logo`, `/quotes`, `/snapshots`, `/bars`, `/news`
+- [x] `MarketCalendar` with the bundled `xnys-2016-2028.csv` (generator plus the §9.2 golden dates), Alpaca calendar sync, `CalendarAdmin` overrides, and the in-memory `AlwaysOpenCalendar` for dev and e2e
+- [x] **SIM provider by end of week 1**: deterministic paths, quotes, prints, bars; clock modes; scenarios (halt, gap, blackout, one-sided quote, split, dividend, flash crash)
+- [x] `QuoteBook` (fan-out through `List<MarketUpdateListener>`), `MarketDataService`, `ExecutableQuoteBuilder` (anti-look-ahead, freshness, quality ladder with tiered IEX spread limits 10/40/150 bps, clamp, synthetic quote); halts only from `statuses`
+- [x] DTO mappers (`QuoteDtoMapper`, `BarDtoMapper`, …) shared by REST, STOMP and MCP
+- [x] Alpaca REST: assets, calendar, snapshots, latest quotes and trades, bars, news, movers, most-actives, corporate actions, logos
+- [x] Alpaca IEX stream: auth, subscribe diffs, 405/406 handling, backoff (90 s after a 406), watchdog, `statuses`
+- [x] Finnhub: `profile2`, `metric`, `/stock/symbol` types, search; SIP trade stream with heartbeat watchdog
+- [x] `SubscriptionBudgetManager` (leases, priorities, hysteresis, ≤ 30 Alpaca and about 50 Finnhub symbols), `SnapshotPoller`, `QuoteRefresher`, `ProviderRateLimiter` (180/min with priority classes)
+- [x] `BarService`: SIP history ≥ 16 minutes old + IEX tail + live aggregation; range defaults; caching
+- [x] `MarkService` (live marks, split-adjusted fallbacks) and `DailyMarkJob` (16:20 official close; 20:20 day-end marks; re-marking PROVISIONAL rows)
+- [x] `SplitAdjustments` (`price_adjustment`) and `SplitGuard` (04:01 and 09:20; corporate-action hold once WS3's `flagDetectedSplit`/`symbolsOnHold` land)
+- [x] `AssetSyncJob` (exchanges filter, ETF type, liquidity tiers, search index), `PrevCloseJob`, movers with a computed fallback, news, fundamentals
+- [x] `AlpacaCapabilityProbe`, with results on `/admin/system` (via `MarketDataService.status()`; the second-connection stream checks are skipped to avoid 406, §15.8); prod refuses SIM unless overridden
+- [x] Market REST: `/market/clock|calendar|indices|movers`, `/assets/search|{symbol}|logo`, `/quotes`, `/snapshots`, `/bars`, `/news`
 
 ### WS3: Trading core
 - [ ] `TradingEngine`: single thread, bounded queue, one transaction per command, events after commit, sweep, dirty-symbol drain

@@ -1,0 +1,8 @@
+[
+  {"id": "b0b6dd9d-8b9b-48a9-ba46-b9d54906e415", "class": "us_equity", "exchange": "NASDAQ", "symbol": "AAPL", "name": "Apple Inc. Common Stock", "status": "active", "tradable": true, "marginable": true, "maintenance_margin_requirement": 30, "shortable": true, "easy_to_borrow": true, "fractionable": true, "attributes": []},
+  {"id": "4ce9353c-66d1-46c2-898f-fce867ab0247", "class": "us_equity", "exchange": "ARCA", "symbol": "SPY", "name": "SPDR S&P 500 ETF Trust", "status": "active", "tradable": true, "marginable": true, "shortable": true, "easy_to_borrow": true, "fractionable": true},
+  {"id": "1", "class": "us_equity", "exchange": "NYSE", "symbol": "BRK.B", "name": "Berkshire Hathaway Inc. Class B", "status": "active", "tradable": true, "marginable": true, "shortable": true, "easy_to_borrow": true, "fractionable": true},
+  {"id": "2", "class": "us_equity", "exchange": "OTC", "symbol": "TCEHY", "name": "Tencent Holdings ADR", "status": "active", "tradable": true, "marginable": false, "shortable": false, "easy_to_borrow": false, "fractionable": false},
+  {"id": "3", "class": "us_equity", "exchange": "NASDAQ", "symbol": "XYZW", "name": "Not Tradable Corp", "status": "active", "tradable": false, "marginable": false, "shortable": false, "easy_to_borrow": false, "fractionable": false},
+  {"id": "4", "class": "us_equity", "exchange": "NYSE", "symbol": "SMLL", "name": "Small Co", "status": "active", "tradable": true, "marginable": false, "shortable": false, "easy_to_borrow": false, "fractionable": false}
+]

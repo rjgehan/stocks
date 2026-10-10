@@ -1,0 +1,6 @@
+# §15.7 scenario: a 2-for-1 forward split of SIMS; raw prices before the ex-date are twice the adjusted ones (§14).
+type: split
+symbols: [SIMS]
+exDate: 2026-10-14
+oldRate: 1
+newRate: 2

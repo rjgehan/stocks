@@ -1,0 +1,5 @@
+# §15.7 scenario: an overnight gap down of 8% at the open, through any resting stop (§12.7 gap at open).
+type: gap
+symbols: [SIMG]
+dates: [2026-10-12, 2026-10-13, 2026-10-14, 2026-10-15, 2026-10-16]
+gapPct: -0.08

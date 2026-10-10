@@ -1,0 +1,6 @@
+# §15.7 scenario: a V-shaped 10% dip and recovery over 10 minutes (collars, stops, marks).
+type: flash-crash
+symbols: [SIMF]
+time: "14:00"
+duration: PT10M
+depth: 0.10

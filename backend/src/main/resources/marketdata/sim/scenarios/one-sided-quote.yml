@@ -1,0 +1,5 @@
+# §15.7 scenario: the bid disappears (one-sided quote), so rank 1/2 executable quotes are refused (§12.3).
+type: one-sided-quote
+symbols: [SIMO]
+time: "10:15"
+duration: PT15M
