@@ -1,0 +1,4 @@
+{"news": [
+  {"id": 24843171, "headline": "Apple Unveils New Product", "author": "Benzinga Newsdesk", "created_at": "2026-10-09T13:58:10Z", "updated_at": "2026-10-09T13:58:11Z", "summary": "Apple announced ...", "content": "<p>...</p>", "url": "https://www.benzinga.com/news/26/10/24843171/apple", "images": [{"size": "large", "url": "https://cdn.benzinga.com/large.jpg"}, {"size": "thumb", "url": "https://cdn.benzinga.com/thumb.jpg"}], "symbols": ["AAPL"], "source": "benzinga"},
+  {"id": 24843170, "headline": "Markets Open Higher", "author": "Benzinga Newsdesk", "created_at": "2026-10-09T13:31:00Z", "updated_at": "2026-10-09T13:31:00Z", "summary": "", "content": "", "url": "https://www.benzinga.com/news/26/10/24843170/markets", "images": [], "symbols": ["SPY", "QQQ"], "source": "benzinga"}
+], "next_page_token": "MTcyOTA="}

@@ -320,6 +320,13 @@ public abstract class WebSocketStream implements MarketStream {
 
     @Override
     public void onOpen(WebSocket webSocket) {
+      // Messages (the server's greeting) can arrive before buildAsync completes: make the socket usable first, on
+      // the same single-threaded executor that will process them, so a reply is never sent to a null socket.
+      exec.execute(() -> {
+        if (gen == generation && !closed) {
+          socket = webSocket;
+        }
+      });
       webSocket.request(1);
     }
 

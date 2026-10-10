@@ -44,6 +44,7 @@ public class AlpacaStreamClient extends WebSocketStream {
   private final String feed;
   private final Consumer<MarketEvent> sink;
   private volatile long quoteSizeMultiplier = 100;
+  private final SizeSample rawQuoteSizes = new SizeSample(256);
   private volatile boolean statusesWanted;
   private volatile boolean statusesAllowed = true;
   private volatile int symbolLimit = Integer.MAX_VALUE;
@@ -69,6 +70,11 @@ public class AlpacaStreamClient extends WebSocketStream {
 
   public long quoteSizeMultiplier() {
     return quoteSizeMultiplier;
+  }
+
+  /** Raw (unconverted) stream quote sizes seen recently, for the unit check (§15.8). */
+  public SizeSample rawQuoteSizes() {
+    return rawQuoteSizes;
   }
 
   /** Subscribe {@code statuses:["*"]} (halts) once the probe confirms the plan allows it. */
@@ -123,6 +129,8 @@ public class AlpacaStreamClient extends WebSocketStream {
         case "error" -> onError((int) Json.lng(m, "code", 0), Json.str(m, "msg"));
         case "subscription" -> onSubscription(m, now);
         case "q" -> {
+          rawQuoteSizes.add(Json.lng(m, "bs", 0));
+          rawQuoteSizes.add(Json.lng(m, "as", 0));
           Quote q = AlpacaJson.quote(Json.str(m, "S"), m, now, feed, quoteSizeMultiplier);
           if (q != null) {
             sink.accept(new QuoteEvent(q));

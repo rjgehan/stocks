@@ -16,6 +16,8 @@ import com.stocks.contract.marketdata.RefreshPriority;
 import com.stocks.contract.marketdata.model.Bar;
 import com.stocks.contract.marketdata.model.MarketEvent;
 import com.stocks.contract.marketdata.model.Snapshot;
+import com.stocks.marketdata.alpaca.AlpacaStreamClient;
+import com.stocks.marketdata.alpaca.SizeSample;
 import com.stocks.marketdata.config.ExecQuoteRules;
 import com.stocks.marketdata.config.MarketDataProperties;
 import com.stocks.marketdata.spi.ConnectionState;
@@ -94,6 +96,8 @@ public class LiveFeed implements MarketFeed {
   private final Map<String, Object> probe = new ConcurrentHashMap<>();
   private volatile WebSocketStream alpacaStream;
   private volatile WebSocketStream finnhubStream;
+  private final SizeSample restQuoteSizes = new SizeSample(256);
+  private volatile boolean sizeUnitDecided;
   private volatile Instant universePolledAt;
   private volatile Instant lastRestSuccess;
   private volatile Instant lastRestFailure;
@@ -184,8 +188,27 @@ public class LiveFeed implements MarketFeed {
     }
   }
 
+  /**
+   * The §15.8 quote-size unit check: once both sides have enough samples, the stream multiplier is set from the REST
+   * (shares) and stream (raw) medians and published on {@code /admin/system}.
+   */
+  void detectQuoteSizeUnit() {
+    if (sizeUnitDecided || !(alpacaStream instanceof AlpacaStreamClient a)) {
+      return;
+    }
+    long m = SizeSample.multiplier(restQuoteSizes, a.rawQuoteSizes());
+    if (m > 0) {
+      sizeUnitDecided = true;
+      a.setQuoteSizeMultiplier(m);
+      putProbe("streamQuoteSizeUnit", m == 100 ? "round lots (x100)" : "shares (x1)");
+      log.info("Alpaca stream quote sizes are {} (REST median {}, stream median {})",
+          m == 100 ? "round lots" : "shares", restQuoteSizes.median(), a.rawQuoteSizes().median());
+    }
+  }
+
   /** Pushes the budget's choice to the streams (§15.5 reconciliation, every 1 s). */
   void reconcile() {
+    detectQuoteSizeUnit();
     WebSocketStream a = alpacaStream;
     if (a != null) {
       List<String> want = budget.select(alpaca.capabilities().maxStreamSymbols(), null, a.subscriptionTimes());
@@ -258,7 +281,13 @@ public class LiveFeed implements MarketFeed {
       for (String s : symbols) {
         lastPolled.put(s, done);
       }
-      snaps.values().forEach(snap -> book.applySnapshot(snap, done, day, rthClose));
+      snaps.values().forEach(snap -> {
+        if (snap.quote() != null) {
+          restQuoteSizes.add(snap.quote().bidSize());
+          restQuoteSizes.add(snap.quote().askSize());
+        }
+        book.applySnapshot(snap, done, day, rthClose);
+      });
       return snaps;
     } catch (ProviderException e) {
       if (!e.throttled()) {
