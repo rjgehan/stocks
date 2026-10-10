@@ -9,7 +9,7 @@ export const Route = createFileRoute('/_app/account')({
   component: AccountLayout,
 })
 
-/** Account (§22.4): NAV hero with day and total P&L, then Overview · Positions · Orders · Activity · History. */
+/** Account (§22.4): NAV hero with day and total P&L, then Overview · Positions · Orders · Activity · History · Analysis (Phase 2). */
 function AccountLayout() {
   const bp = useBreakpoint()
   const meta = useRouteMeta()
@@ -30,6 +30,7 @@ function AccountLayout() {
             { to: '/account/orders', label: 'Orders' },
             { to: '/account/activity', label: 'Activity' },
             { to: '/account/history', label: 'History' },
+            { to: '/account/analysis', label: 'Analysis' },
           ]}
         />
         <Outlet />

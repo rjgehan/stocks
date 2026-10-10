@@ -14,6 +14,8 @@ export interface MockHooks {
   nudge(symbol: string, bps: number): void
   last(symbol: string): string | null
   emitFeed(kind?: Parameters<MockServer['emitFeed']>[0], handle?: string): string | null
+  /** Phase 2 (§16.11): a bot reacts to the newest feed item; returns the item id. */
+  botReact(handle?: string, reaction?: Parameters<MockServer['botReact']>[1]): string | null
   expireRecentAuth(): void
 }
 
@@ -35,6 +37,7 @@ export function mockServer(): MockServer {
         },
         last: (symbol) => s.market.quote(symbol).last,
         emitFeed: (kind, handle) => s.emitFeed(kind, handle)?.id ?? null,
+        botReact: (handle, reaction) => s.botReact(handle, reaction),
         expireRecentAuth: () => s.expireRecentAuth(),
       }
     }

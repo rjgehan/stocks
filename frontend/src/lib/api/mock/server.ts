@@ -47,7 +47,9 @@ import type {
   Execution,
   Fees,
   FeedItem,
+  FeedReaction,
   Leaderboard,
+  LeaderboardPeriod,
   LeaderboardRow,
   Me,
   MoverList,
@@ -57,10 +59,13 @@ import type {
   OrderUpdateEvent,
   PlaceOrderRequest,
   PlayerProfile,
+  PlayerStats,
   PlayerSummary,
   Position,
   Preview,
   PublicTrade,
+  Reaction,
+  Reactor,
   Rules,
   Run,
   Settings,
@@ -72,6 +77,7 @@ import { MOCK_INDEX_SYMBOLS, MOCK_INVITE_CODE, MOCK_ME_BASE, MOCK_PLAYERS, POPUL
 import { MockMarket, hashString, mulberry32, unitsToDec } from './market'
 import { mockRules } from './rules'
 import { type Lot, type MockOtherPlayer, type MockState, clearState, loadState, saveState } from './state'
+import { groupReactions, mockPlayerStats, mockPnlAnalysis, mockPnlCalendar, mockRace, mockRowStats, setReaction } from './stats'
 
 type Listener = (destination: string, body: unknown) => void
 type Handler = (ctx: Ctx) => Response | Promise<Response>
@@ -476,6 +482,7 @@ export class MockServer {
         player: this.summary(p),
         symbol,
         payload: { side: null, qty: null, price: null, realizedPnl: null, amount: null, period: null, untrusted: { rationale: null, memo: null }, ...payload },
+        reactions: [],
       })
     }
     const bob = byHandle('bob')
@@ -778,6 +785,31 @@ export class MockServer {
       return json(this.page(this.publicTrades(h), url))
     })
     r('GET', '/feed', ({ url }) => json(this.page(this.feed(), url)))
+    // Phase 2 league slice (§16.8–16.11)
+    r('GET', '/league/race', ({ url }) => json(mockRace(this.leaderboard(new URLSearchParams({ period: url.searchParams.get('period') ?? 'WEEK', kind: url.searchParams.get('kind') ?? 'ALL' })), Date.now())))
+    r('GET', '/players/{handle}/stats', ({ params, url }) => {
+      const st = this.stats(params[0]!.toLowerCase(), url.searchParams.get('period') ?? 'ALL')
+      return st ? json(st) : problem(404, 'PLAYER_NOT_FOUND', 'Player not found', `No player @${params[0]}.`)
+    })
+    r('GET', '/account/stats', ({ url }) => json(this.stats(this.s.me.handle, url.searchParams.get('period') ?? 'ALL')))
+    r('GET', '/account/pnl-analysis', ({ url }) =>
+      json(mockPnlAnalysis(url.searchParams.get('range') ?? '1M', { u: this.unitValue(), equity: this.equity(), nc: this.s.nc, openedAtMs: Date.parse(this.s.openedAt), lots: Object.values(this.s.lots), executions: this.s.executions, mark: (sym) => this.mark(sym) }, Date.now())),
+    )
+    r('GET', '/account/pnl-calendar', ({ url }) => {
+      const view = (url.searchParams.get('view') ?? 'DAY').toUpperCase()
+      const month = url.searchParams.get('month') ?? new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }).slice(0, 7)
+      const year = Number(url.searchParams.get('year') ?? month.slice(0, 4))
+      if ((view !== 'DAY' && view !== 'MONTH') || !/^\d{4}-\d{2}$/.test(month) || !Number.isInteger(year)) {
+        return problem(400, 'VALIDATION_FAILED', 'Validation failed', 'view must be DAY or MONTH, month YYYY-MM')
+      }
+      const a = this.account()
+      const deposits = this.s.transfers
+        .filter((t) => t.handle === this.s.me.handle && t.type !== 'INITIAL' && t.status === 'APPLIED' && t.isContribution)
+        .map((t) => ({ date: new Date(Date.parse(t.effectiveAt ?? '')).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }), amount: t.amount ?? '0.00' }))
+      return json(mockPnlCalendar(view, month, year, { openedAtMs: Date.parse(this.s.openedAt), dayPnl: a.dayPnl ?? '0.00', dayReturn: a.dayReturn ?? '0', deposits }, Date.now()))
+    })
+    r('PUT', '/feed/{itemId}/reaction', ({ params, body }) => this.react(params[0]!, (body as { reaction?: string } | null)?.reaction ?? null, true))
+    r('DELETE', '/feed/{itemId}/reaction', ({ params }) => this.react(params[0]!, null, false))
 
     // admin (§21.1): ADMIN role; R routes need a recent password confirmation
     r('GET', '/admin/players', () => this.admin(() => json(this.adminPlayers())))
@@ -2148,6 +2180,7 @@ export class MockServer {
           winRate: r.fills > 0 ? '0.5500' : null,
           topHolding: r.top,
           spark,
+          ...mockRowStats(r.summary.handle!, period, r.fills),
         }
         return row
       })
@@ -2173,6 +2206,54 @@ export class MockServer {
       rows,
       me: rows.find((r) => r.player?.handle === this.s.me.handle) ?? null,
     }
+  }
+
+  // ================================================================ Phase 2 league slice (§16.8–16.11)
+
+  /** A listed player's stats for a period, from the period's board (mock: seeded trade stats). */
+  private stats(handle: string, period: string): PlayerStats | null {
+    const board = this.leaderboard(new URLSearchParams({ period }))
+    const row = board.rows?.find((r) => r.player?.handle === handle)
+    if (!row) return null
+    const ranked = (board.rows ?? []).filter((r) => r.rank != null).length
+    const mine = handle === this.s.me.handle
+    return mockPlayerStats(row, (board.period ?? 'ALL') as LeaderboardPeriod, ranked, Date.now(), mine, mine ? this.s.executions : [])
+  }
+
+  private reactor(handle: string): Reactor | null {
+    if (handle === this.s.me.handle) return { handle, displayName: this.s.me.displayName, kind: 'HUMAN' }
+    const p = this.other(handle)
+    return p && p.status !== 'DISABLED' ? { handle, displayName: p.displayName, kind: p.kind } : null
+  }
+
+  private reactionsOf(itemId: string): FeedReaction[] {
+    return groupReactions(this.s.reactions?.[itemId], (h) => this.reactor(h))
+  }
+
+  /** PUT / DELETE /feed/{itemId}/reaction: one reaction per player per visible item, pushed on /topic/feed. */
+  private react(itemId: string, reaction: string | null, put: boolean): Response {
+    if (!this.feed().some((i) => i.id === itemId)) return problem(404, 'NOT_FOUND', 'Not found', `No feed item '${itemId}'.`)
+    const valid = ['ROCKET', 'FIRE', 'GEM', 'CLAP', 'LAUGH', 'SKULL']
+    if (put && (!reaction || !valid.includes(reaction))) {
+      return problem(400, 'VALIDATION_FAILED', 'Validation failed', 'reaction must be ROCKET, FIRE, GEM, CLAP, LAUGH or SKULL', null, [{ field: 'reaction', code: 'INVALID', message: 'unknown reaction' }])
+    }
+    this.s.reactions ??= {}
+    this.s.reactions[itemId] = setReaction(this.s.reactions[itemId], this.s.me.handle, put ? (reaction as Reaction) : null, Date.now())
+    this.persist()
+    const dto = { itemId, reactions: this.reactionsOf(itemId) }
+    this.publish('/topic/feed', dto)
+    return json(dto)
+  }
+
+  /** A bot reacts to the newest feed item (mock mode's live demo of `/topic/feed` reaction updates). */
+  botReact(handle = 'claude', reaction: Reaction = 'FIRE'): string | null {
+    const item = this.feed()[0]
+    if (!item?.id || !this.reactor(handle)) return null
+    this.s.reactions ??= {}
+    this.s.reactions[item.id] = setReaction(this.s.reactions[item.id], handle, reaction, Date.now())
+    this.persist()
+    this.publish('/topic/feed', { itemId: item.id, reactions: this.reactionsOf(item.id) })
+    return item.id
   }
 
   private publicTrades(handle: string): PublicTrade[] {
@@ -2262,6 +2343,7 @@ export class MockServer {
           player: this.summary(p),
           symbol: t.symbol,
           payload: { side: t.side, qty: t.qty, price: t.price, realizedPnl: t.realizedPnl, amount: null, period: null, untrusted: { rationale: t.untrusted?.rationale ?? null, memo: null } },
+          reactions: [],
         })
       }
     }
@@ -2269,11 +2351,11 @@ export class MockServer {
       for (const t of this.s.transfers.filter((x) => x.type === 'DEPOSIT' && x.status === 'APPLIED')) {
         const p = t.handle === this.s.me.handle ? this.mySummary() : this.other(t.handle ?? '') ? this.summary(this.other(t.handle!)!) : null
         if (!p) continue
-        items.push({ id: `feed_dep_${t.transferId}`, at: t.effectiveAt, kind: 'DEPOSIT', player: p, symbol: null, payload: { side: null, qty: null, price: null, realizedPnl: null, amount: t.amount, period: null, untrusted: { rationale: null, memo: t.memo } } })
+        items.push({ id: `feed_dep_${t.transferId}`, at: t.effectiveAt, kind: 'DEPOSIT', player: p, symbol: null, payload: { side: null, qty: null, price: null, realizedPnl: null, amount: t.amount, period: null, untrusted: { rationale: null, memo: t.memo } }, reactions: [] })
       }
     }
     items.push(...this.s.liveFeed.filter((i) => Date.parse(i.at ?? '') <= Date.now()))
-    return items.sort((a, b) => Date.parse(b.at ?? '') - Date.parse(a.at ?? ''))
+    return items.map((i) => ({ ...i, reactions: this.reactionsOf(i.id ?? '') })).sort((a, b) => Date.parse(b.at ?? '') - Date.parse(a.at ?? ''))
   }
 
   /**
@@ -2306,6 +2388,7 @@ export class MockServer {
           memo: kind === 'DEPOSIT' ? 'Weekly top-up' : null,
         },
       },
+      reactions: [],
     }
     this.s.liveFeed.push(item)
     if (this.s.liveFeed.length > 200) this.s.liveFeed.splice(0, this.s.liveFeed.length - 200)

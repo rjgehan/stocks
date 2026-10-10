@@ -36,6 +36,8 @@ function row(over: Partial<LeaderboardRow> & { handle: string; kind?: 'HUMAN' | 
     winRate: null,
     topHolding: 'NVDA',
     spark: ['1', '1.01', '1.0123'],
+    sharpe: null,
+    profitFactor: null,
     ...rest,
   }
 }
