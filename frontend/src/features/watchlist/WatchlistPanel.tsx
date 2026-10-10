@@ -24,6 +24,8 @@ import { IndexStrip } from '@/features/market/IndexStrip'
 import { SymbolSearch } from '@/features/market/SymbolSearch'
 import { toast } from '@/features/notifications/toastStore'
 import { type PillMode, WatchlistRow } from './WatchlistRow'
+import { type ColumnId, type WatchlistSort, readColumns, readSort, writeColumns, writeSort } from './columns'
+import { ColumnChooser, WatchlistTable } from './WatchlistTable'
 
 export const POPULAR = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN'] as const
 const HOLDINGS = '__holdings__'
@@ -56,6 +58,10 @@ export function WatchlistPanel({ activeSymbol, variant = 'panel' }: { activeSymb
   const [dragOrder, setDragOrder] = useState<string[] | null>(null)
   const [nameDialog, setNameDialog] = useState<null | { mode: 'create' | 'rename'; name: string }>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // §22.10 desktop columns and sorting (the panel variant is the desktop left column)
+  const table = variant === 'panel'
+  const [columns, setColumns] = useState<ColumnId[]>(() => readColumns())
+  const [sort, setSort] = useState<WatchlistSort | null>(() => readSort())
   const addSymbol = useAddToWatchlist()
   const removeSymbol = useRemoveFromWatchlist()
   const update = useUpdateWatchlist()
@@ -133,6 +139,15 @@ export function WatchlistPanel({ activeSymbol, variant = 'panel' }: { activeSymb
       <div className={cx('flex shrink-0 items-center justify-between gap-1 pr-1.5 pl-3', variant === 'panel' ? 'h-11 pr-10' : 'h-12')}>
         {variant === 'panel' ? <h2 className="text-section font-semibold">Watchlist</h2> : <span className="text-caption font-medium text-text-3">{current?.name ?? (isHoldings ? 'Holdings' : '')}</span>}
         <div className="flex items-center">
+          {table ? (
+            <ColumnChooser
+              columns={columns}
+              onChange={(c) => {
+                setColumns(c)
+                writeColumns(c)
+              }}
+            />
+          ) : null}
           {canEdit ? (
             <IconButton label={adding ? 'Close add symbol' : 'Add symbol'} size={touch ? 'touch' : 'sm'} active={adding} onClick={() => setAdding((a) => !a)}>
               <IconPlus size={18} />
@@ -208,7 +223,7 @@ export function WatchlistPanel({ activeSymbol, variant = 'panel' }: { activeSymb
             Done
           </Button>
         </div>
-      ) : (
+      ) : table ? null : (
         <div className="flex h-7 shrink-0 items-center justify-between px-3 text-micro font-medium tracking-wide text-text-3 uppercase">
           <span>Symbol</span>
           <span className="flex items-center gap-6">
@@ -219,7 +234,8 @@ export function WatchlistPanel({ activeSymbol, variant = 'panel' }: { activeSymb
           </span>
         </div>
       )}
-      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+      {/* the desktop table scrolls itself (both ways, with a sticky header and symbol column) */}
+      <div className={cx('min-h-0 flex-1', table && !editing && symbols.length > 0 && !loading ? 'flex flex-col' : 'scrollbar-thin overflow-y-auto')}>
         {loading ? (
           <div className="px-3">
             <SkeletonRows rows={7} cols={3} />
@@ -239,6 +255,22 @@ export function WatchlistPanel({ activeSymbol, variant = 'panel' }: { activeSymb
               }
             />
           )
+        ) : table && !editing ? (
+          <WatchlistTable
+            symbols={symbols}
+            activeSymbol={activeSymbol}
+            columns={columns}
+            sort={sort}
+            onSort={(next) => {
+              setSort(next)
+              writeSort(next)
+            }}
+            onReorder={
+              canEdit && current?.id
+                ? (order) => update.mutate({ id: current.id!, name: current.name ?? 'My List', symbols: order }, { onError: fail('Could not reorder the list') })
+                : null
+            }
+          />
         ) : (
           <div className="divide-y divide-divider" onDragOver={(e) => e.preventDefault()}>
             {(dragOrder ?? symbols).map((s, i, shown) => (

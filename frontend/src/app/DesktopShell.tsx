@@ -4,6 +4,7 @@ import { readLocal, writeLocal } from '@/lib/prefs/local'
 import { IconButton } from '@/components/ui/Button'
 import { IconChevronLeft, IconChevronRight } from '@/components/ui/icons'
 import { Sheet } from '@/components/ui/Sheet'
+import { ResizableAside } from '@/features/watchlist/ResizableAside'
 import { WatchlistPanel } from '@/features/watchlist/WatchlistPanel'
 import { DataSourceFooter } from './DataSourceFooter'
 import { LeftRail } from './LeftRail'
@@ -13,7 +14,8 @@ import { useRouteMeta } from './useRouteMeta'
 
 /**
  * Tablet and desktop shell (§22.3):
- *  - ≥ 1024: 56 px rail · watchlist panel 260 px (300 px ≥ 1440, collapsible) · center (the route).
+ *  - ≥ 1024: 56 px rail · watchlist panel 260 px (300 px ≥ 1440, collapsible, resizable up to 720 px, §22.10) ·
+ *    center (the route).
  *    The stock route adds the ticket column and the bottom dock itself.
  *  - 600–1023: rail · content, with the watchlist as a collapsible left drawer.
  */
@@ -45,14 +47,14 @@ export function DesktopShell({ breakpoint }: { breakpoint: Breakpoint }) {
               </IconButton>
             </div>
           ) : (
-            <aside className="relative w-[260px] shrink-0 border-r border-divider wide:w-[300px]">
+            <ResizableAside wide={breakpoint === 'wide'}>
               <WatchlistPanel activeSymbol={activeSymbol} />
               <div className="absolute top-1.5 right-1.5">
                 <IconButton label="Collapse watchlist" size="sm" onClick={toggleCollapsed}>
                   <IconChevronLeft size={16} />
                 </IconButton>
               </div>
-            </aside>
+            </ResizableAside>
           )
         ) : null}
         <main className="min-w-0 flex-1 overflow-hidden bg-bg-0">
