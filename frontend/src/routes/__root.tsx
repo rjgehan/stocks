@@ -9,8 +9,9 @@ export interface RouterContext {
   queryClient: QueryClient
 }
 
-// Dev-only: never part of the production bundle.
-const QueryDevtools = import.meta.env.DEV
+// Dev-only and opt-in (`VITE_QUERY_DEVTOOLS=1`): never part of the production bundle, and its floating button never
+// covers the phone tab bar or the Buy button during normal development and e2e runs.
+const QueryDevtools = import.meta.env.DEV && import.meta.env.VITE_QUERY_DEVTOOLS === '1'
   ? lazy(() => import('@tanstack/react-query-devtools').then((m) => ({ default: m.ReactQueryDevtools })))
   : null
 

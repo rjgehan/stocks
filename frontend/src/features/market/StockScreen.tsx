@@ -237,7 +237,7 @@ export function StockScreen({ symbol, breakpoint, range, tab, ticket, onRange, o
         </div>
         <BottomDock />
       </div>
-      <aside aria-label="Trade" className="scrollbar-thin flex w-[340px] shrink-0 flex-col overflow-y-auto border-l border-divider bg-bg-1 wide:w-[380px]">
+      <aside aria-label={`Trade ${symbol}`} className="scrollbar-thin flex w-[340px] shrink-0 flex-col overflow-y-auto border-l border-divider bg-bg-1 wide:w-[380px]">
         <TradeTicket key={symbol} symbol={symbol} initialSide={ticket ?? 'BUY'} />
         {breakpoint === 'wide' ? (
           <div className="border-t border-divider px-4 py-3">

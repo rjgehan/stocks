@@ -82,7 +82,8 @@ function Name({ row, me }: { row: LeaderboardRow; me: boolean }) {
  */
 export function LeaderboardTable({ rows, me, metric, myHandle }: { rows: LeaderboardRow[]; me: LeaderboardRow | null; metric: LeaderboardMetric; myHandle?: string | null }) {
   const isMe = (r: LeaderboardRow) => Boolean(myHandle && r.player?.handle === myHandle)
-  const pinned = me && !rows.slice(0, 10).some(isMe) ? me : null
+  // My row is pinned at the bottom when the board does not already list it (§22.4).
+  const pinned = me && !rows.some(isMe) ? me : null
   const shown = rows
 
   const card = (r: LeaderboardRow, pin = false) => (
@@ -145,7 +146,7 @@ export function LeaderboardTable({ rows, me, metric, myHandle }: { rows: Leaderb
           <thead className="text-left text-micro tracking-wide text-text-3 uppercase">
             <tr className="h-9 border-b border-divider">
               <th className="pl-4 font-medium">Rank</th>
-              <th className="font-medium">Player</th>
+              <th className="w-[30%] min-w-52 font-medium">Player</th>
               <th className={cx('px-2 text-right font-medium', metric === 'RETURN' && 'text-text-1')}>Return</th>
               <th className={cx('px-2 text-right font-medium', metric === 'PNL' && 'text-text-1')}>P&amp;L</th>
               <th className="hidden px-2 text-right font-medium desktop:table-cell">vs SPY</th>
