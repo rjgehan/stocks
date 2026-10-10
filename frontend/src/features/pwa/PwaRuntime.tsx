@@ -1,15 +1,13 @@
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useRegisterSW } from 'virtual:pwa-register/react'
-import { API_MOCK, api, unwrap } from '@/lib/api/client'
+import { api, unwrap } from '@/lib/api/client'
 import { useMe } from '@/lib/api/hooks/identity'
 import { queryKeys } from '@/lib/api/queryKeys'
 import { Button } from '@/components/ui/Button'
 import { currentSubscription } from '@/lib/push/pushClient'
 import { syncThisDevice } from '@/lib/push/pushDevice'
-
-/** The service worker runs in production builds only: never on the Vite dev server or in mock mode (§22.10). */
-export const PWA_ENABLED: boolean = import.meta.env.PROD && !API_MOCK
+import { PWA_ENABLED } from './pwaEnabled'
 
 const UPDATE_EVERY_MS = 60 * 60 * 1000
 

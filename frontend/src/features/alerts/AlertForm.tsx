@@ -86,7 +86,7 @@ export function AlertForm({ symbol, live, alert, pending, error, submitLabel, on
       <p className="text-caption text-text-2" data-testid="alert-live">
         {now}
       </p>
-      <div className="grid gap-3 tablet:grid-cols-2">
+      <div className="grid gap-3">
         <div>
           <div className="mb-1 text-caption font-medium text-text-2">Alert on</div>
           <Segmented
@@ -116,7 +116,7 @@ export function AlertForm({ symbol, live, alert, pending, error, submitLabel, on
       </div>
       <TextField
         label={kind === 'PRICE' ? 'Price' : 'Day change (%)'}
-        prefix={kind === 'PRICE' ? '$' : '%'}
+        prefix={kind === 'PRICE' ? '$' : undefined}
         inputMode="decimal"
         autoComplete="off"
         value={input}

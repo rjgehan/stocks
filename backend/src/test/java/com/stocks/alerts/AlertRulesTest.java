@@ -181,6 +181,9 @@ class AlertRulesTest {
     assertThat(AlertRules.body("AAPL", AlertCondition.CHANGE_PCT_GTE, d("0.02"), live, " breakout "))
         .isEqualTo("AAPL is at $230.15 (+2.31% today). Your alert: day change at or above +2.00%. Note: breakout");
     assertThat(AlertRules.money(d("0.4256"))).isEqualTo("$0.4256");
+    assertThat(AlertRules.money(d("99991"))).isEqualTo("$99,991.00");
+    assertThat(AlertRules.money(d("1234567.5"))).isEqualTo("$1,234,567.50");
+    assertThat(AlertRules.title("BRK.A", AlertCondition.PRICE_LTE, d("700000"))).isEqualTo("BRK.A ≤ $700,000.00");
     assertThat(AlertRules.percent(BigDecimal.ZERO)).isEqualTo("0.00%");
   }
 }

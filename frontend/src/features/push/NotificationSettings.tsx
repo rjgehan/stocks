@@ -12,6 +12,7 @@ import { Pill } from '@/components/ui/Pill'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { IconBell, IconTrash } from '@/components/ui/icons'
 import { toast } from '@/features/notifications/toastStore'
+import { PWA_ENABLED } from '@/features/pwa/pwaEnabled'
 import { type PushSupport, detectSupport, deviceEnv } from '@/lib/push/pushClient'
 import { type DeviceStatus, disableThisDevice, enableThisDevice, syncThisDevice } from '@/lib/push/pushDevice'
 
@@ -67,7 +68,11 @@ export function NotificationSettings() {
   const remove = useDeletePushDevice()
   const test = useTestPush()
   const qc = useQueryClient()
-  const support = useMemo(() => detectSupport(deviceEnv()), [])
+  const support = useMemo<PushSupport>(() => {
+    const detected = detectSupport(deviceEnv())
+    // the dev server and mock builds register no service worker: nothing could subscribe
+    return detected === 'supported' && !PWA_ENABLED ? 'unsupported' : detected
+  }, [])
   const permission = typeof Notification === 'undefined' ? 'default' : Notification.permission
   const [status, setStatus] = useDeviceStatus(settings.data, me?.playerId, support)
   const [busy, setBusy] = useState(false)
@@ -135,9 +140,14 @@ export function NotificationSettings() {
       </section>
 
       <section className="rounded-lg border border-divider bg-bg-1 px-4 py-2" aria-labelledby="push-categories">
-        <h2 id="push-categories" className="pt-2 pb-1 text-section font-semibold">
-          What to send
-        </h2>
+        <div className="flex items-baseline justify-between gap-2 pt-2 pb-1">
+          <h2 id="push-categories" className="text-section font-semibold">
+            What to send
+          </h2>
+          <span role="status" className="text-caption text-text-3">
+            {prefs.isPending ? 'Saving…' : prefs.isSuccess ? 'Saved' : ''}
+          </span>
+        </div>
         <p className="pb-1 text-caption text-text-3">For every device where push is on. The bell in the app always shows everything.</p>
         <div className="divide-y divide-divider">
           {CATEGORIES.map((c) => (
@@ -252,7 +262,13 @@ export function DeviceMessage({
     )
   }
   if (support === 'unsupported') {
-    return <p className="text-body text-text-2">This browser cannot receive push notifications. Try Chrome, Edge, Firefox or Safari on a computer or Android phone, or the installed app on iPhone.</p>
+    return (
+      <p className="text-body text-text-2">
+        {PWA_ENABLED
+          ? 'This browser cannot receive push notifications. Try Chrome, Edge, Firefox or Safari on a computer or Android phone, or the installed app on iPhone.'
+          : 'Push notifications need the production app: this development build has no service worker.'}
+      </p>
+    )
   }
   if (permission === 'denied') {
     return <p className="text-body text-text-2">Notifications are blocked for this site. Allow them in your browser&apos;s site settings, then come back here.</p>

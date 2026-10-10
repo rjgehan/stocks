@@ -3,7 +3,7 @@
  * PRICE_*, a FRACTION for CHANGE_PCT_* (like `Quote.changePct`), while the form shows a change in PERCENT. The
  * conversions are exact (`shift`), never through `number`.
  */
-import { type Dec, compare, div, gte, isDecimal, lte, parseUserDecimal, roundToTick, shift, sign, stripTrailingZeros, sub } from '@/lib/format/decimal'
+import { type Dec, compare, div, gte, isDecimal, lte, mul, parseUserDecimal, roundToTick, shift, sign, stripTrailingZeros, sub } from '@/lib/format/decimal'
 import { formatPct, formatPrice } from '@/lib/format/number'
 import type { Alert, AlertCondition, Quote } from '@/lib/api/types'
 
@@ -79,10 +79,14 @@ export function liveView(quote: Quote | null | undefined): LiveView {
   return { price: quote.last ?? null, changePct: quote.changePct ?? null }
 }
 
-/** A sensible starting threshold: the live price (on tick) for price alerts, ±5% for change alerts. */
+/**
+ * A sensible starting threshold that does not fire at once: 5% above or below the live price (on tick) for price
+ * alerts, ±5% for change alerts.
+ */
 export function defaultInput(condition: AlertCondition, live: LiveView): string {
   if (!isPrice(condition)) return isAbove(condition) ? '5' : '-5'
-  return live.price && isDecimal(live.price) ? roundToTick(live.price) : ''
+  if (!live.price || !isDecimal(live.price)) return ''
+  return roundToTick(mul(live.price, isAbove(condition) ? '1.05' : '0.95'), isAbove(condition) ? 'UP' : 'DOWN')
 }
 
 /** True when the condition already holds on the live line: the alert would fire on the next live update. */
@@ -165,7 +169,7 @@ export function statusLine(a: Alert): string {
   switch (a.status) {
     case 'ACTIVE':
       if (a.repeat && !a.armed) return `Fired ${a.triggerCount}× · re-arms after the price moves back`
-      return a.repeat && a.triggerCount > 0 ? `Active · fired ${a.triggerCount}×` : 'Active'
+      return a.repeat && a.triggerCount > 0 ? `Watching again · fired ${a.triggerCount}×` : 'Watching the live price'
     case 'PAUSED':
       return 'Paused'
     case 'TRIGGERED':

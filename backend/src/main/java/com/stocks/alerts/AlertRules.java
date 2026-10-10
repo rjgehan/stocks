@@ -178,14 +178,23 @@ public final class AlertRules {
 
   // ------------------------------------------------------------------------------------------- text
 
-  /** {@code $230.00}, or 4 decimals below $1. */
+  /** {@code $230.00}, {@code $1,234.50} (§22.7), or 4 decimals below $1. */
   public static String money(BigDecimal price) {
     if (price == null) {
       return "--";
     }
     int scale = price.abs().compareTo(BigDecimal.ONE) < 0 ? 4 : 2;
     String s = price.abs().setScale(scale, RoundingMode.HALF_EVEN).toPlainString();
-    return (price.signum() < 0 ? MINUS : "") + "$" + s;
+    int dot = s.indexOf('.');
+    String integer = dot < 0 ? s : s.substring(0, dot);
+    StringBuilder grouped = new StringBuilder();
+    for (int i = 0; i < integer.length(); i++) {
+      if (i > 0 && (integer.length() - i) % 3 == 0) {
+        grouped.append(',');
+      }
+      grouped.append(integer.charAt(i));
+    }
+    return (price.signum() < 0 ? MINUS : "") + "$" + grouped + (dot < 0 ? "" : s.substring(dot));
   }
 
   /** A fraction as a signed percentage: {@code 0.0231} → {@code +2.31%}, {@code -0.03} → {@code −3.00%}. */

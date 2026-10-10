@@ -55,9 +55,10 @@ describe('price alert form (§19.1, §22.10)', () => {
     expect(thresholdError('CHANGE_PCT_GTE', 'x')).toBe('Enter a number.')
   })
 
-  it('starts from the live price, or ±5% for a change', () => {
+  it('starts 5% away from the live price, or at ±5% for a change, so a new alert does not fire at once', () => {
     const live = liveView(quote({}))
-    expect(defaultInput('PRICE_GTE', live)).toBe('229.40')
+    expect(defaultInput('PRICE_GTE', live)).toBe('240.87')
+    expect(defaultInput('PRICE_LTE', live)).toBe('217.93')
     expect(defaultInput('CHANGE_PCT_GTE', live)).toBe('5')
     expect(defaultInput('CHANGE_PCT_LTE', live)).toBe('-5')
     expect(defaultInput('PRICE_LTE', { price: null, changePct: null })).toBe('')
