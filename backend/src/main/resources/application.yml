@@ -142,3 +142,27 @@ stocks:
     intraday-retention-days: 14
     benchmark-symbol: SPY
     leaderboard-refresh: 5s
+  alerts:                                   # Phase 2, §19.1 (alerts.AlertProperties; the same defaults live there)
+    enabled: true
+    max-active-per-player: 50
+    max-stored-per-player: 500
+    max-price-age: 15m                      # an older print is not a live price
+    rearm-band: 0.005                       # repeating alerts re-arm 0.5% (or 0.5 pp) back past the threshold
+    cooldown: 15m                           # minimum time between two firings of one repeating alert
+    evaluate-every: 250ms
+    retention: 90d                          # TRIGGERED/EXPIRED alerts are deleted after this
+  push:                                     # Phase 2, §19.2 (push.PushProperties; the same defaults live there)
+    enabled: true
+    # Empty: the key pair is generated on first boot and kept in push_vapid_key. The env variables
+    # STOCKS_PUSH_VAPID_PUBLIC_KEY / _PRIVATE_KEY / _SUBJECT override these (both keys or neither).
+    vapid: { public-key: '', private-key: '', subject: '' }
+    allowed-endpoint-hosts: [ fcm.googleapis.com, android.googleapis.com, updates.push.services.mozilla.com,
+                              '*.push.services.mozilla.com', web.push.apple.com, '*.push.apple.com', '*.notify.windows.com' ]
+    allow-insecure-endpoints: false         # tests only: http and any host (a local fake push service)
+    dry-run: false                          # the e2e profile: encrypt and sign, send nothing
+    threads: 4
+    queue-capacity: 1000
+    connect-timeout: 5s
+    request-timeout: 10s
+    max-attempts: 3
+    max-devices-per-player: 10
