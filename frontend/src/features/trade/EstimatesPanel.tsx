@@ -1,7 +1,10 @@
 import type { Preview } from '@/lib/api/types'
+import { isDecimal, isZero } from '@/lib/format/decimal'
 import { formatMoney } from '@/lib/format/money'
 import { formatPrice, formatQty } from '@/lib/format/number'
+import { formatTimeEt } from '@/lib/format/time'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { QualityBadge } from '@/features/market/QualityBadge'
 
 function Row({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) {
   return (
@@ -12,35 +15,49 @@ function Row({ label, value, strong }: { label: string; value: React.ReactNode; 
   )
 }
 
-/** Estimates from POST /orders/preview (§22.5): price, qty for notional, principal, fees, hold, BP before → after. */
+/** Estimates from POST /orders/preview (§22.5): price, qty for notional, principal, fees, hold, BP before → after, session note. */
 export function EstimatesPanel({ preview, loading, notional }: { preview: Preview | undefined; loading: boolean; notional: boolean }) {
   const est = preview?.estimate
   if (!preview && loading) {
     return (
-      <div className="space-y-2 py-1">
+      <div className="space-y-2 py-1" aria-label="Loading estimate">
         <Skeleton className="h-3.5 w-full" />
         <Skeleton className="h-3.5 w-4/5" />
         <Skeleton className="h-3.5 w-3/5" />
       </div>
     )
   }
-  if (!est) return null
+  if (!preview) return null
+  if (!est) {
+    return preview.valid ? null : <p className="py-1 text-caption text-text-3">Fix the highlighted fields to see the estimate.</p>
+  }
   const fees = est.fees
+  const hold = est.hold && isDecimal(est.hold) && !isZero(est.hold) ? est.hold : null
   return (
     <dl className="text-table">
-      <Row label="Est. price" value={formatPrice(est.price)} />
+      <Row
+        label="Est. price"
+        value={
+          <span className="inline-flex items-center gap-1.5">
+            {formatPrice(est.price)}
+            <QualityBadge quality={est.quoteQuality === 'REALTIME_SINGLE_VENUE' ? null : est.quoteQuality} />
+          </span>
+        }
+      />
       {notional ? <Row label="Est. shares" value={formatQty(est.qty)} /> : null}
       <Row label="Est. principal" value={formatMoney(est.principal)} />
       <Row
         label="Fees"
         value={
-          <span title={`SEC ${formatMoney(fees.sec)} · TAF ${formatMoney(fees.taf)} · CAT ${formatMoney(fees.cat)}`}>
-            {formatMoney(fees.total)}
-            <span className="ml-1 text-micro text-text-3">SEC {fees.sec} · TAF {fees.taf} · CAT {fees.cat}</span>
+          <span title={`SEC ${formatMoney(fees?.sec)} · TAF ${formatMoney(fees?.taf)} · CAT ${formatMoney(fees?.cat)}`}>
+            {formatMoney(fees?.total)}
+            <span className="ml-1 text-micro text-text-3">
+              SEC {fees?.sec ?? '--'} · TAF {fees?.taf ?? '--'} · CAT {fees?.cat ?? '--'}
+            </span>
           </span>
         }
       />
-      {est.hold !== '0.00' ? <Row label="Hold" value={formatMoney(est.hold)} /> : null}
+      {hold ? <Row label="Cash held" value={formatMoney(hold)} /> : null}
       <Row
         label="Buying power"
         strong
@@ -50,6 +67,7 @@ export function EstimatesPanel({ preview, loading, notional }: { preview: Previe
           </>
         }
       />
+      {est.quoteAsOf ? <p className="pt-0.5 text-right text-micro text-text-3">Quote {formatTimeEt(est.quoteAsOf)}</p> : null}
       {preview.sessionNote ? <p className="pt-1 text-caption text-session-ext">{preview.sessionNote}</p> : null}
     </dl>
   )

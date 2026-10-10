@@ -3,7 +3,7 @@
  * rendered as §18.3 `Quote`, `Tick` and `Bars` DTOs with decimal strings. Quality is always SIMULATED.
  */
 import { type Dec, div, fromInteger, shift } from '../../format/decimal'
-import type { Bar, Bars, ChartRange, Quote, Tick } from '../types'
+import type { Bar, Bars, ChartRange, MoverItem, MoverList, Quote, Tick, Timeframe } from '../types'
 import { MOCK_UNIVERSE, type MockSymbol } from './data'
 
 const UNITS_PER_DOLLAR = 10_000
@@ -53,7 +53,7 @@ interface SymbolState {
   lastAt: number
 }
 
-const RANGE_SPEC: Record<ChartRange, { timeframe: string; count: number; stepMs: number }> = {
+const RANGE_SPEC: Record<ChartRange, { timeframe: Timeframe; count: number; stepMs: number }> = {
   '1D': { timeframe: '1Min', count: 390, stepMs: 60_000 },
   '5D': { timeframe: '15Min', count: 130, stepMs: 15 * 60_000 },
   '1M': { timeframe: '1Hour', count: 154, stepMs: 60 * 60_000 },
@@ -180,6 +180,20 @@ export class MockMarket {
       asOf: q.asOf,
       quality: q.quality,
     }
+  }
+
+  /** Gainers / losers / most active among the stocks (ETFs excluded), from the live random walks. */
+  movers(list: MoverList, limit: number): MoverItem[] {
+    const rows = [...this.states.values()]
+      .filter((s) => s.meta.type !== 'ETF')
+      .map((s) => {
+        const q = this.quote(s.meta.symbol)
+        return { symbol: s.meta.symbol, name: s.meta.name, price: q.last, change: q.change, changePct: q.changePct, volume: q.volume, move: s.last / s.meta.prevClose }
+      })
+    if (list === 'GAINERS') rows.sort((a, b) => b.move - a.move)
+    else if (list === 'LOSERS') rows.sort((a, b) => a.move - b.move)
+    else rows.sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
+    return rows.slice(0, limit).map(({ move: _move, ...item }) => item)
   }
 
   bars(symbol: string, range: ChartRange): Bars {

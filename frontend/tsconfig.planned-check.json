@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "noEmit": true, "strict": true, "skipLibCheck": false, "types": [], "module": "ESNext", "moduleResolution": "bundler", "target": "ES2022", "lib": ["ES2023"] },
+  "files": ["src/lib/api/planned.d.ts", "src/lib/api/schema.d.ts", "src/lib/api/contract.ts"]
+}

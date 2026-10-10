@@ -116,7 +116,7 @@ describe('api client: problem details (§6.5)', () => {
     const { transport } = fakeServer(() => json(422, problem, 'application/problem+json'))
     const api = createApiClient({ baseUrl: BASE, transport })
     const err = await unwrap(
-      api.POST('/api/v1/orders', { body: { symbol: 'AAPL', side: 'BUY', type: 'MARKET', qty: '1' } }),
+      api.POST('/api/v1/orders', { body: { clientOrderId: 'web-test-1', symbol: 'AAPL', side: 'BUY', type: 'MARKET', qty: '1' } }),
     ).catch((e: unknown) => e)
     expect(isApiError(err)).toBe(true)
     const e = err as ApiError

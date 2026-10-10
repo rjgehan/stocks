@@ -8,7 +8,7 @@ export interface MockSymbol {
   symbol: string
   name: string
   exchange: string
-  type: AssetSummary['type']
+  type: NonNullable<AssetSummary['type']>
   fractionable: boolean
   /** previous close in ten-thousandths of a dollar */
   prevClose: number
@@ -36,6 +36,17 @@ export const MOCK_UNIVERSE: MockSymbol[] = [
   { symbol: 'AMZN', name: 'Amazon.com, Inc.', exchange: 'NASDAQ', type: 'COMMON_STOCK', fractionable: true, prevClose: 2_211_800, openBps: 44, vol: 1.1, marketCap: '2360000000000', peTtm: '33.95', week52High: '242.5200', week52Low: '161.3800', industry: 'Retail', adv: 41_000_000 },
   { symbol: 'META', name: 'Meta Platforms, Inc.', exchange: 'NASDAQ', type: 'COMMON_STOCK', fractionable: true, prevClose: 7_124_500, openBps: 66, vol: 1.3, marketCap: '1790000000000', peTtm: '27.41', week52High: '796.2500', week52Low: '479.8000', industry: 'Interactive Media', adv: 12_000_000 },
   { symbol: 'AMD', name: 'Advanced Micro Devices, Inc.', exchange: 'NASDAQ', type: 'COMMON_STOCK', fractionable: true, prevClose: 1_650_200, openBps: -73, vol: 1.9, marketCap: '268000000000', peTtm: '96.10', week52High: '186.6500', week52Low: '76.4800', industry: 'Semiconductors', adv: 47_000_000 },
+  { symbol: 'GOOGL', name: 'Alphabet Inc. Class A', exchange: 'NASDAQ', type: 'COMMON_STOCK', fractionable: true, prevClose: 2_451_200, openBps: 21, vol: 1.1, marketCap: '2970000000000', peTtm: '26.20', week52High: '256.0000', week52Low: '142.6600', industry: 'Interactive Media', adv: 33_000_000 },
+  { symbol: 'NFLX', name: 'Netflix, Inc.', exchange: 'NASDAQ', type: 'COMMON_STOCK', fractionable: true, prevClose: 12_041_000, openBps: -52, vol: 1.4, marketCap: '512000000000', peTtm: '51.30', week52High: '1341.1500', week52Low: '677.8800', industry: 'Entertainment', adv: 3_900_000 },
+  { symbol: 'JPM', name: 'JPMorgan Chase & Co.', exchange: 'NYSE', type: 'COMMON_STOCK', fractionable: true, prevClose: 3_067_800, openBps: 12, vol: 0.7, marketCap: '843000000000', peTtm: '15.40', week52High: '318.0100', week52Low: '202.1600', industry: 'Banks', adv: 9_200_000 },
+  { symbol: 'KO', name: 'The Coca-Cola Company', exchange: 'NYSE', type: 'COMMON_STOCK', fractionable: true, prevClose: 682_300, openBps: -9, vol: 0.4, marketCap: '294000000000', peTtm: '24.10', week52High: '74.3800', week52Low: '60.6200', industry: 'Beverages', adv: 14_000_000 },
+  { symbol: 'DIS', name: 'The Walt Disney Company', exchange: 'NYSE', type: 'COMMON_STOCK', fractionable: true, prevClose: 1_132_500, openBps: 34, vol: 0.9, marketCap: '204000000000', peTtm: '18.70', week52High: '124.6900', week52Low: '80.1000', industry: 'Entertainment', adv: 8_700_000 },
+  { symbol: 'COIN', name: 'Coinbase Global, Inc.', exchange: 'NASDAQ', type: 'COMMON_STOCK', fractionable: true, prevClose: 3_384_000, openBps: 240, vol: 3, marketCap: '86000000000', peTtm: '31.80', week52High: '444.6500', week52Low: '142.5800', industry: 'Financial Services', adv: 11_000_000 },
+  { symbol: 'PLTR', name: 'Palantir Technologies Inc.', exchange: 'NASDAQ', type: 'COMMON_STOCK', fractionable: true, prevClose: 1_793_400, openBps: 160, vol: 2.6, marketCap: '424000000000', peTtm: '590.00', week52High: '207.5200', week52Low: '41.6200', industry: 'Software', adv: 64_000_000 },
+  { symbol: 'F', name: 'Ford Motor Company', exchange: 'NYSE', type: 'COMMON_STOCK', fractionable: true, prevClose: 118_400, openBps: -35, vol: 1.2, marketCap: '47000000000', peTtm: '14.20', week52High: '12.4600', week52Low: '8.4400', industry: 'Automobiles', adv: 58_000_000 },
+  { symbol: 'SOFI', name: 'SoFi Technologies, Inc.', exchange: 'NASDAQ', type: 'COMMON_STOCK', fractionable: true, prevClose: 262_100, openBps: 88, vol: 2.2, marketCap: '29000000000', peTtm: '53.10', week52High: '29.5000', week52Low: '8.6000', industry: 'Financial Services', adv: 70_000_000 },
+  { symbol: 'BRK.B', name: 'Berkshire Hathaway Inc. Class B', exchange: 'NYSE', type: 'COMMON_STOCK', fractionable: true, prevClose: 4_891_200, openBps: 4, vol: 0.4, marketCap: '1050000000000', peTtm: '16.80', week52High: '542.0700', week52Low: '440.1000', industry: 'Insurance', adv: 4_100_000 },
+  { symbol: 'XYZW', name: 'Whole-Share Only Corp (mock, not fractionable)', exchange: 'NYSE', type: 'COMMON_STOCK', fractionable: false, prevClose: 412_200, openBps: 12, vol: 1, marketCap: '3100000000', peTtm: '12.40', week52High: '48.2000', week52Low: '30.1000', industry: 'Industrials', adv: 900_000 },
   { symbol: 'SIMA', name: 'Sim Alpha Corp (test symbol)', exchange: 'SIM', type: 'COMMON_STOCK', fractionable: true, prevClose: 4_212, openBps: 300, vol: 3, marketCap: null, peTtm: null, week52High: '0.9800', week52Low: '0.2100', industry: null, adv: 4_000_000 },
 ]
 
@@ -57,10 +68,17 @@ export const MOCK_ME_BASE = {
   createdAt: '2026-10-01T13:00:00.000Z',
 }
 
+/**
+ * The other league members. `u` is their current unit value (TWR = U − 1 since the season start, §16.2) and
+ * `nc` their net contributions; equity = units × U, so a deposit raises units and equity but never U.
+ */
 export const MOCK_PLAYERS = [
-  { handle: 'claude', displayName: 'Claude', kind: 'AI' as const, aiModel: 'Claude', ret: '0.0412', pnl: '20.60', fills: 14, symbols: 6, top: 'NVDA' },
-  { handle: 'alice', displayName: 'Alice', kind: 'HUMAN' as const, aiModel: null, ret: '0.0275', pnl: '13.75', fills: 9, symbols: 4, top: 'AAPL' },
-  { handle: 'chatgpt', displayName: 'ChatGPT', kind: 'AI' as const, aiModel: 'GPT', ret: '0.0108', pnl: '5.40', fills: 11, symbols: 5, top: 'MSFT' },
-  { handle: 'demo', displayName: 'Demo Player', kind: 'HUMAN' as const, aiModel: null, ret: '0.0031', pnl: '1.55', fills: 1, symbols: 1, top: 'NVDA' },
-  { handle: 'bob', displayName: 'Bob', kind: 'HUMAN' as const, aiModel: null, ret: '-0.0164', pnl: '-8.20', fills: 6, symbols: 3, top: 'TSLA' },
+  { handle: 'claude', displayName: 'Claude', kind: 'AI' as const, aiModel: 'Claude', u: '1.0412', nc: '500.00', fills: 14, symbols: 6, top: 'NVDA', owner: 'demo' },
+  { handle: 'alice', displayName: 'Alice', kind: 'HUMAN' as const, aiModel: null, u: '1.0275', nc: '500.00', fills: 9, symbols: 4, top: 'AAPL', owner: null },
+  { handle: 'chatgpt', displayName: 'ChatGPT', kind: 'AI' as const, aiModel: 'GPT', u: '1.0108', nc: '500.00', fills: 11, symbols: 5, top: 'MSFT', owner: 'demo' },
+  { handle: 'bob', displayName: 'Bob', kind: 'HUMAN' as const, aiModel: null, u: '0.9836', nc: '500.00', fills: 6, symbols: 3, top: 'TSLA', owner: null },
+  { handle: 'carol', displayName: 'Carol', kind: 'HUMAN' as const, aiModel: null, u: '1.0021', nc: '500.00', fills: 3, symbols: 1, top: 'SPY', owner: null },
 ]
+
+/** An always-valid invite for trying the signup flow in mock mode: /join/welcome-friends */
+export const MOCK_INVITE_CODE = 'welcome-friends'

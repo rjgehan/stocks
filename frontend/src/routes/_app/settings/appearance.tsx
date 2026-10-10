@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useUpdatePreferences } from '@/lib/api/hooks/identity'
 import { type ThemePref, type UpDownPref, useThemeStore } from '@/lib/theme/theme'
 import { Segmented } from '@/components/ui/Segmented'
 import { SettingsHeader } from '@/features/settings/SettingsHeader'
@@ -8,9 +9,10 @@ export const Route = createFileRoute('/_app/settings/appearance')({
   component: AppearanceSettings,
 })
 
-/** Theme (Dark default / Light / System) and up/down colors (green-up / red-up), §22.4 and §22.8. */
+/** Theme (Dark default / Light / System) and up/down colors (green-up / red-up), §22.4 and §22.8; saved per device and to your profile. */
 function AppearanceSettings() {
   const { theme, upDown, setTheme, setUpDown } = useThemeStore()
+  const update = useUpdatePreferences()
   return (
     <div className="space-y-4">
       <SettingsHeader title="Appearance" />
@@ -23,7 +25,10 @@ function AppearanceSettings() {
           <Segmented<ThemePref>
             label="Theme"
             value={theme}
-            onChange={setTheme}
+            onChange={(t) => {
+              setTheme(t)
+              update.mutate({ theme: t })
+            }}
             options={[
               { value: 'DARK', label: 'Dark' },
               { value: 'LIGHT', label: 'Light' },
@@ -41,7 +46,10 @@ function AppearanceSettings() {
           <Segmented<UpDownPref>
             label="Up and down colors"
             value={upDown}
-            onChange={setUpDown}
+            onChange={(u) => {
+              setUpDown(u)
+              update.mutate({ upDown: u })
+            }}
             options={[
               { value: 'GREEN_UP', label: 'Green up' },
               { value: 'RED_UP', label: 'Red up' },

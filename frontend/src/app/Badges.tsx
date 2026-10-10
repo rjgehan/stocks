@@ -10,13 +10,23 @@ export function PaperBadge() {
   )
 }
 
-/** Shown when market data is SIMULATED (§15.7, §22.3). */
+/** Shown when market data is SIMULATED (§15.7, §22.3), or when the feed is degraded or down. */
 export function SimBadge() {
   const { data } = useClock()
-  if (data?.feed.quality !== 'SIMULATED') return null
-  return (
-    <Pill tone="ai" title="Simulated market data: prices are not real">
-      SIM
-    </Pill>
-  )
+  const feed = data?.feed
+  if (feed?.quality === 'SIMULATED') {
+    return (
+      <Pill tone="ai" title="Simulated market data: prices are not real">
+        SIM
+      </Pill>
+    )
+  }
+  if (feed?.status === 'DEGRADED' || feed?.status === 'DOWN') {
+    return (
+      <Pill tone="warn" title={feed.status === 'DOWN' ? 'Market data is down: prices may be stale' : 'Market data is degraded: some prices may be delayed'}>
+        {feed.status === 'DOWN' ? 'Data down' : 'Data degraded'}
+      </Pill>
+    )
+  }
+  return null
 }

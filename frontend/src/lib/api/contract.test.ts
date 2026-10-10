@@ -13,14 +13,24 @@ describe('contract merge (generated schema.d.ts wins, planned.d.ts fills the gap
   })
 
   it('keeps planned methods and paths the backend does not serve yet', () => {
-    expectTypeOf<ClientPathsWithMethod<ApiClient, 'patch'>>().toEqualTypeOf<'/api/v1/me'>()
+    expectTypeOf<'/api/v1/me'>().toExtend<ClientPathsWithMethod<ApiClient, 'patch'>>()
     expectTypeOf<'/api/v1/orders'>().toExtend<ClientPathsWithMethod<ApiClient, 'post'>>()
     expectTypeOf<'/api/v1/me'>().toExtend<ClientPathsWithMethod<ApiClient, 'get'>>()
-    expectTypeOf<Schemas['Order']['symbol']>().toEqualTypeOf<string>()
+    expectTypeOf<'/api/v1/admin/cash-transfers'>().toExtend<ClientPathsWithMethod<ApiClient, 'post'>>()
+    expectTypeOf<'/api/v1/watchlists/{id}/symbols/{symbol}'>().toExtend<ClientPathsWithMethod<ApiClient, 'delete'>>()
+  })
+
+  it('planned response shapes follow §18 rule 2 (non-primitive members are nullable, primitives are not)', () => {
+    expectTypeOf<Schemas['Order']['symbol']>().toEqualTypeOf<string | null>()
+    expectTypeOf<Schemas['Order']['extendedHours']>().toEqualTypeOf<boolean>()
+    expectTypeOf<Schemas['Account']['runNo']>().toEqualTypeOf<number>()
+    expectTypeOf<Schemas['Quote']['bidSize']>().toEqualTypeOf<number | null>()
+    expectTypeOf<Schemas['LeaderboardRow']['return']>().toEqualTypeOf<string | null>()
   })
 
   it('does not invent methods', () => {
     expectTypeOf<'/api/v1/me'>().not.toExtend<ClientPathsWithMethod<ApiClient, 'post'>>()
     expectTypeOf<'/api/v1/auth/csrf'>().not.toExtend<ClientPathsWithMethod<ApiClient, 'post'>>()
+    expectTypeOf<'/api/v1/account'>().not.toExtend<ClientPathsWithMethod<ApiClient, 'delete'>>()
   })
 })

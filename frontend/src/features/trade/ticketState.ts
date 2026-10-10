@@ -68,7 +68,7 @@ export function initialTicket(options: { side?: Side; preferences?: Preferences 
     stopPrice: '',
     trail: '',
     trailMode: 'AMOUNT',
-    tif: p?.defaultTimeInForce ?? 'DAY',
+    tif: (p?.defaultOrderType ?? 'LIMIT') === 'MARKET' ? 'DAY' : (p?.defaultTimeInForce ?? 'DAY'),
     extendedHours: false,
     note: '',
     shareNote: false,
@@ -85,7 +85,7 @@ export function ticketReducer(s: TicketState, a: TicketAction): TicketState {
     case 'orderType': {
       const next: TicketState = { ...s, type: a.orderType }
       if (a.orderType !== 'LIMIT') next.extendedHours = false
-      if (a.orderType === 'TRAILING_STOP') next.tif = 'DAY'
+      if (a.orderType === 'TRAILING_STOP' || a.orderType === 'MARKET') next.tif = 'DAY'
       if (a.orderType !== 'MARKET' && s.qtyMode === 'AMOUNT') next.qtyMode = 'SHARES'
       return next
     }
@@ -112,7 +112,8 @@ export function ticketReducer(s: TicketState, a: TicketAction): TicketState {
   }
 }
 
-export const gtcAllowed = (s: Pick<TicketState, 'type' | 'qtyMode'>): boolean => s.type !== 'TRAILING_STOP' && s.qtyMode !== 'AMOUNT'
+/** §11.1: MARKET and TRAILING_STOP are Day only; dollar (notional) orders are Day only too. */
+export const gtcAllowed = (s: Pick<TicketState, 'type' | 'qtyMode'>): boolean => s.type !== 'TRAILING_STOP' && s.type !== 'MARKET' && s.qtyMode !== 'AMOUNT'
 export const extAllowed = (s: Pick<TicketState, 'type'>): boolean => s.type === 'LIMIT'
 export const showsLimit = (t: OrderType): boolean => t === 'LIMIT' || t === 'STOP_LIMIT'
 export const showsStop = (t: OrderType): boolean => t === 'STOP' || t === 'STOP_LIMIT'
