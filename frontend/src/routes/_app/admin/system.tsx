@@ -114,14 +114,11 @@ function SystemPage() {
   const halted = engine?.status === 'HALTED'
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 text-caption text-text-2">
-        <span>
-          Version <span className="font-mono text-text-1">{s.version}</span>
-        </span>
-        <span>· started {formatDateTimeEt(s.startedAt)}</span>
-        <span>· database {s.db}</span>
-        <span className="flex-1" />
-        <Button size="sm" variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
+      <div className="flex items-center gap-2 text-caption text-text-2">
+        <p className="min-w-0 flex-1">
+          Version <span className="font-mono text-text-1">{s.version}</span> · started {formatDateTimeEt(s.startedAt)} · database {s.db}
+        </p>
+        <Button size="sm" variant="ghost" className="shrink-0" onClick={() => void refetch()} disabled={isFetching}>
           <IconRefresh size={16} /> Refresh
         </Button>
       </div>
@@ -186,7 +183,39 @@ function SystemPage() {
         </Card>
       </div>
       <Card title="Market data" aside={<span className="font-mono text-caption text-text-2">{s.marketData?.profile}</span>}>
-        <div className="overflow-x-auto">
+        {/* phones: one card per provider (§22.3 tables become cards) */}
+        <ul className="space-y-2 tablet:hidden" aria-label="Providers">
+          {(s.marketData?.providers ?? []).map((p) => (
+            <li key={p.id} className="rounded-md border border-divider p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold">{p.id}</span>
+                <Pill tone={p.state === 'LIVE' || p.state === 'CONNECTED' ? 'up' : p.state === 'DISABLED' ? 'flat' : 'warn'}>{p.state}</Pill>
+              </div>
+              <dl className="mt-2 space-y-1 text-caption">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-text-2">Stream symbols</dt>
+                  <dd>
+                    <Usage used={p.streamSymbolsUsed} max={p.streamSymbolsMax} />
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-text-2">REST / min</dt>
+                  <dd>
+                    <Usage used={p.restPerMinUsed} max={p.restPerMinMax} />
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-text-2">Last message</dt>
+                  <dd className="text-text-3">{formatDateTimeEt(p.lastMessageAt)}</dd>
+                </div>
+              </dl>
+              <div className="mt-2">
+                <ProviderDetails provider={p} />
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden overflow-x-auto tablet:block">
           <table className="w-full text-table">
             <thead className="text-left text-micro tracking-wide text-text-3 uppercase">
               <tr className="h-8 border-b border-divider">
