@@ -5,7 +5,7 @@ import { type Execution, type Order, type OrderEvent, isOpenStatus } from '@/lib
 import { abs, div, isDecimal, sign, sub } from '@/lib/format/decimal'
 import { useQuote } from '@/lib/realtime/useQuote'
 import { formatMoney } from '@/lib/format/money'
-import { formatInteger, formatPct, formatPrice, formatQty, moneyDirection } from '@/lib/format/number'
+import { formatDecimal, formatInteger, formatPct, formatPrice, formatQty, moneyDirection, priceScale } from '@/lib/format/number'
 import { formatDateEt, formatDateTimeEt } from '@/lib/format/time'
 import { PushedHeader } from '@/app/PushedHeader'
 import { useBreakpoint } from '@/app/useBreakpoint'
@@ -152,7 +152,7 @@ function StopPanel({ o }: { o: Order }) {
             {formatPrice(last)}
             {distance ? (
               <span className="ml-1.5 text-caption text-text-3">
-                {formatPrice(abs(distance))} ({formatPct(distancePct ? abs(distancePct) : null, { signed: false })}) {sign(distance) >= 0 ? 'above' : 'below'} the stop
+                {formatDecimal(abs(distance), { scale: priceScale(last) })} ({formatPct(distancePct ? abs(distancePct) : null, { signed: false })}) {sign(distance) >= 0 ? 'above' : 'below'} the stop
               </span>
             ) : null}
           </Field>
