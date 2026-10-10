@@ -9,6 +9,8 @@ export interface RecordedRequest {
   path: string;
   headers: IncomingHttpHeaders;
   body: any;
+  /** Date.now() when the request arrived. */
+  receivedAt: number;
 }
 
 export interface Reply {
@@ -34,6 +36,7 @@ export class ScriptedLlmServer {
 
   async start(): Promise<this> {
     this.server = createServer((req, res) => {
+      const receivedAt = Date.now();
       const chunks: Buffer[] = [];
       req.on('data', (c: Buffer) => chunks.push(c));
       req.on('end', () => {
@@ -49,6 +52,7 @@ export class ScriptedLlmServer {
           path: (req.url ?? '').split('?')[0] ?? '',
           headers: req.headers,
           body,
+          receivedAt,
         };
         this.requests.push(recorded);
         let reply: Reply;

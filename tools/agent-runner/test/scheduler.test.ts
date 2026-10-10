@@ -29,18 +29,18 @@ async function fakes(delayMs: number): Promise<{ claude: ScriptedLlmServer; gpt:
 
 describe('scheduler', () => {
   it('starts both bots in the same minute, concurrently', async () => {
-    const { claude, gpt } = await fakes(300);
+    const { claude, gpt } = await fakes(1000);
     const config = testConfig({ dataDir, anthropicUrl: claude.url, openaiUrl: gpt.url });
     const deps = testDeps(config, fakeMcp({}).connect);
-    const t0 = Date.now();
     const slot = nextSlot(new Date('2026-10-12T13:00:00Z'), config.schedule);
     const results = await runSlot(config.bots, deps, slot);
     expect(results.map((r) => [r.bot, r.status])).toEqual([
       ['claude', 'completed'],
       ['chatgpt', 'completed'],
     ]);
-    // Sequential runs would take at least 600 ms.
-    expect(Date.now() - t0).toBeLessThan(590);
+    // Each fake answers after 1 s: run one after the other, the second bot's first request would come >= 1 s later.
+    const first = [claude.calls[0]?.receivedAt ?? 0, gpt.calls[0]?.receivedAt ?? 0];
+    expect(Math.abs((first[0] ?? 0) - (first[1] ?? 0))).toBeLessThan(800);
     expect(deps.sink.text).toContain('trigger=schedule@09:45');
   });
 
