@@ -124,7 +124,8 @@ class OrderHandler {
         o.extendedHours(), ev.acceptance().waitReason(), ev.result().reservedCash(), ev.result().reservedQty(),
         ev.expiry().sessionDate(), receivedAt, now, eligibleAt, ev.expiry().expiresAt(),
         replacing == null ? null : replacing.id(), origin.channel(), origin.apiKeyId(), origin.oauthClientId(),
-        origin.mcpClient(), origin.clientIp(), o.rationale(), rationalePublic, stop, trailAmount, trailPercent));
+        origin.mcpClient(), origin.clientIp(), o.rationale(), rationalePublic, stop, trailAmount, trailPercent,
+        o.doNotReduce(), null));
     Map<String, Object> detail = new LinkedHashMap<>();
     detail.put("channel", origin.channel().name());
     detail.put("eligibleAt", eligibleAt.toString());
@@ -257,7 +258,8 @@ class OrderHandler {
     return new NormalizedOrder(clientOrderId, old.symbol(), old.side(), old.type(),
         req.qty() != null ? req.qty() : old.qty(), null,
         req.limitPrice() != null ? req.limitPrice() : old.limitPrice(), stop, trailAmount, trailPercent, tif, ext,
-        req.rationale() != null ? req.rationale().trim() : old.rationale(), old.rationalePublic(), Set.of());
+        req.rationale() != null ? req.rationale().trim() : old.rationale(), old.rationalePublic(), Set.of(),
+        req.doNotReduce() != null ? req.doNotReduce() : old.doNotReduce());
   }
 
   // ------------------------------------------------------------------------------------------- cancel

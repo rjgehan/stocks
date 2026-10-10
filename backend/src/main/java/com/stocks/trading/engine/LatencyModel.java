@@ -22,6 +22,16 @@ public class LatencyModel {
     this.props = props;
   }
 
+  /**
+   * §11.10: how long a user cancel of {@code orderPublicId} takes, {@code base + (hash64(seed, order, "cancel") mod
+   * (jitterMax + 1))} ms; {@code requestNo} varies the jitter if the same order is cancelled again.
+   */
+  public Duration cancelLatency(String orderPublicId, int requestNo, Duration base, Duration jitterMax) {
+    long range = jitterMax.toMillis() + 1;
+    long jitter = Math.floorMod(hash64(props.seed(), orderPublicId + ":cancel", requestNo), range);
+    return base.plusMillis(jitter);
+  }
+
   public Duration latency(String orderPublicId, int activationNo) {
     long min = props.latencyJitterMin().toMillis();
     long range = props.latencyJitterMax().toMillis() - min + 1;

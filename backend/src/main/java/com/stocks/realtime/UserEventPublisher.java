@@ -329,13 +329,7 @@ public class UserEventPublisher implements DisposableBean {
     if (o.executions() == null && o.events() == null) {
       return o;
     }
-    return new OrderDto(o.orderId(), o.clientOrderId(), o.accountId(), o.symbol(), o.side(), o.type(), o.qty(),
-        o.notional(), o.fractional(), o.limitPrice(), o.stopPrice(), o.trailAmount(), o.trailPercent(),
-        o.watermarkPrice(), o.collarPrice(), o.timeInForce(), o.extendedHours(), o.status(), o.waitReason(),
-        o.statusReason(), o.triggered(), o.filledQty(), o.filledPrincipal(), o.avgFillPrice(), o.fees(),
-        o.reservedCash(), o.reservedQty(), o.sessionDate(), o.receivedAt(), o.acceptedAt(), o.eligibleAt(),
-        o.activatedAt(), o.triggeredAt(), o.expiresAt(), o.doneAt(), o.replacesOrderId(), o.replacedByOrderId(),
-        o.channel(), o.rationale(), null, null);
+    return o.withDetail(null, null);
   }
 
   // ------------------------------------------------------------------------------------------- account pushes
@@ -409,6 +403,8 @@ public class UserEventPublisher implements DisposableBean {
         case CORPORATE_ACTION -> "a corporate action (split or symbol change) affected the stock";
         case INSUFFICIENT_BUYING_POWER_AT_EXECUTION -> "not enough buying power when it executed";
         case DUST -> "the quantity rounded below the minimum (0.00001 shares)";
+        case OCO_FILLED -> "the other order of its one-cancels-other pair executed";
+        case PARENT_NOT_FILLED -> "its entry order ended without a fill";
         case USER, REPLACED_BY_USER -> "you cancelled it";
       };
     } catch (IllegalArgumentException e) {

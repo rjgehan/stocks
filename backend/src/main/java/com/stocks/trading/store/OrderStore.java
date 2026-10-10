@@ -4,6 +4,8 @@ import com.stocks.common.domain.Channel;
 import com.stocks.common.domain.DataQuality;
 import com.stocks.common.domain.Liquidity;
 import com.stocks.common.domain.OrderEventType;
+import com.stocks.common.domain.OrderGroupRole;
+import com.stocks.common.domain.OrderGroupType;
 import com.stocks.common.domain.OrderStatus;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.Side;
@@ -44,11 +46,15 @@ public class OrderStore {
              o.filled_principal, o.avg_fill_price, o.fees_total, o.reserved_cash, o.reserved_qty, o.session_date,
              o.received_at, o.accepted_at, o.eligible_at, o.activated_at, o.triggered_at, o.last_fill_at,
              o.expires_at, o.done_at, r1.public_id AS replaces_public_id, r2.public_id AS replaced_by_public_id,
-             o.channel, o.api_key_id, o.rationale, o.rationale_public
+             o.channel, o.api_key_id, o.rationale, o.rationale_public, o.group_id, g.public_id AS group_public_id,
+             g.group_type, o.group_role, o.parent_order_id, p.public_id AS parent_public_id, o.held, o.do_not_reduce,
+             o.cancel_requested_at, o.cancel_effective_at
         FROM trade_order o
         JOIN account a ON a.id = o.account_id
         LEFT JOIN trade_order r1 ON r1.id = o.replaces_order_id
         LEFT JOIN trade_order r2 ON r2.id = o.replaced_by_order_id
+        LEFT JOIN order_group g ON g.id = o.group_id
+        LEFT JOIN trade_order p ON p.id = o.parent_order_id
       """;
 
   private static final String SELECT_EXECUTION = """
@@ -89,6 +95,12 @@ public class OrderStore {
   /** Every open order, oldest first (engine bootstrap). */
   public List<OrderRow> open() {
     return jdbc.sql(SELECT_ORDER + " WHERE o.status IN " + OPEN_STATUSES + " ORDER BY o.eligible_at, o.id")
+        .query(OrderStore::order).list();
+  }
+
+  /** The legs of an order group, oldest first, REPLACED ones included (§11.9). */
+  public List<OrderRow> legs(long groupId) {
+    return jdbc.sql(SELECT_ORDER + " WHERE o.group_id = ? ORDER BY o.id").param(groupId)
         .query(OrderStore::order).list();
   }
 
@@ -255,7 +267,15 @@ public class OrderStore {
         Jdbc.instant(rs, "triggered_at"), Jdbc.instant(rs, "last_fill_at"), Jdbc.instant(rs, "expires_at"),
         Jdbc.instant(rs, "done_at"), rs.getString("replaces_public_id"), rs.getString("replaced_by_public_id"),
         Channel.valueOf(rs.getString("channel")), Jdbc.longOrNull(rs, "api_key_id"), rs.getString("rationale"),
-        rs.getBoolean("rationale_public"));
+        rs.getBoolean("rationale_public"), Jdbc.longOrNull(rs, "group_id"), rs.getString("group_public_id"),
+        enumOrNull(OrderGroupType.class, rs.getString("group_type")),
+        enumOrNull(OrderGroupRole.class, rs.getString("group_role")), Jdbc.longOrNull(rs, "parent_order_id"),
+        rs.getString("parent_public_id"), rs.getBoolean("held"), rs.getBoolean("do_not_reduce"),
+        Jdbc.instant(rs, "cancel_requested_at"), Jdbc.instant(rs, "cancel_effective_at"));
+  }
+
+  private static <E extends Enum<E>> E enumOrNull(Class<E> type, String value) {
+    return value == null ? null : Enum.valueOf(type, value);
   }
 
   static ExecutionRow execution(ResultSet rs, int n) throws SQLException {

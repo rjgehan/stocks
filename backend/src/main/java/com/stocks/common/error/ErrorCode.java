@@ -66,6 +66,8 @@ public enum ErrorCode {
   TOO_MANY_OPEN_ORDERS(422, "Too many open orders"),
   GFV_ACK_REQUIRED(422, "Good-faith violation acknowledgement required"),
   MARKET_DATA_UNAVAILABLE(422, "Market data unavailable"),
+  /** Phase 2 (§11.9): a group order's shape or its bracket price rules. */
+  ORDER_GROUP_INVALID(422, "Invalid order group"),
 
   // 422 (other)
   INSUFFICIENT_WITHDRAWABLE(422, "Insufficient withdrawable cash"),

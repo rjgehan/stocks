@@ -3418,7 +3418,7 @@ Content-Type: application/json
     "eligibleAt": "2026-10-09T14:31:02.729Z", "activatedAt": null, "triggeredAt": null,
     "expiresAt": "2026-10-09T20:00:00.000Z", "doneAt": null, "replacesOrderId": null, "replacedByOrderId": null,
     "channel": "REST_KEY", "rationale": "Momentum after guidance raise; …",
-    "executions": null, "events": null },
+    "executions": null, "events": null, "group": null, "doNotReduce": false, "cancelRequestedAt": null },
   "estimate": { "price": "131.2000", "qty": "0.95274", "principal": "125.00",
     "fees": { "sec": "0.00", "taf": "0.00", "cat": "0.00", "total": "0.00" }, "hold": "125.00",
     "quoteAsOf": "2026-10-09T14:31:01.904Z", "quoteQuality": "REALTIME_SINGLE_VENUE" },

@@ -30,6 +30,8 @@ public final class OrderStateMachine {
     for (OrderStatus terminal : EnumSet.of(FILLED, CANCELLED, EXPIRED, REPLACED, OrderStatus.REJECTED)) {
       ALLOWED.put(terminal, EnumSet.noneOf(OrderStatus.class));
     }
+    // an API status only (§11.10): never stored, so no stored transition starts or ends there
+    ALLOWED.put(OrderStatus.PENDING_CANCEL, EnumSet.noneOf(OrderStatus.class));
   }
 
   private OrderStateMachine() {}
@@ -46,9 +48,9 @@ public final class OrderStateMachine {
     return to;
   }
 
-  /** PENDING, WORKING or PARTIALLY_FILLED. */
+  /** PENDING, WORKING or PARTIALLY_FILLED (stored), or the API status PENDING_CANCEL (§11.10). */
   public static boolean isOpen(OrderStatus s) {
-    return s == PENDING || s == WORKING || s == PARTIALLY_FILLED;
+    return s.isOpen();
   }
 
   public static boolean isTerminal(OrderStatus s) {

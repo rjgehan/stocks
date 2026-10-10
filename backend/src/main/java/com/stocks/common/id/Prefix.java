@@ -16,6 +16,8 @@ public enum Prefix {
   CORPORATE_ACTION("cac"),
   NOTIFICATION("ntf"),
   ACCOUNT_EVENT("aev"),
+  /** Phase 2 group orders (§11.9). */
+  ORDER_GROUP("grp"),
   /** Server-generated {@code X-Request-Id} values (§6.6); never stored as a row id. */
   REQUEST("req");
 

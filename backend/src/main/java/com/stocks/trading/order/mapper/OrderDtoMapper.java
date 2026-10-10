@@ -3,6 +3,7 @@ package com.stocks.trading.order.mapper;
 import com.stocks.contract.trading.dto.ExecutionDto;
 import com.stocks.contract.trading.dto.OrderDto;
 import com.stocks.contract.trading.dto.OrderEventDto;
+import com.stocks.contract.trading.dto.OrderGroupRefDto;
 import com.stocks.trading.order.OrderValidator;
 import com.stocks.trading.store.OrderEventRow;
 import com.stocks.trading.store.OrderRow;
@@ -36,11 +37,21 @@ public class OrderDtoMapper {
     List<OrderEventDto> ev = events == null ? null : events.stream().map(this::event).toList();
     return new OrderDto(r.publicId(), r.clientOrderId(), r.accountPublicId(), r.symbol(), r.side(), r.type(),
         OrderValidator.qtyOut(r.qty()), r.notional(), r.fractional(), r.limitPrice(), r.stopPrice(), r.trailAmount(),
-        r.trailPercent(), r.watermarkPrice(), r.collarPrice(), r.timeInForce(), r.extendedHours(), r.status(),
+        r.trailPercent(), r.watermarkPrice(), r.collarPrice(), r.timeInForce(), r.extendedHours(), r.apiStatus(),
         r.waitReason(), r.statusReason(), r.triggered(), OrderValidator.qtyOut(r.filledQty()), r.filledPrincipal(),
         r.avgFillPrice(), r.feesTotal(), r.reservedCash(), OrderValidator.qtyOut(r.reservedQty()), r.sessionDate(),
         r.receivedAt(), r.acceptedAt(), r.eligibleAt(), r.activatedAt(), r.triggeredAt(), r.expiresAt(), r.doneAt(),
-        r.replacesPublicId(), r.replacedByPublicId(), r.channel(), r.rationale(), executions, ev);
+        r.replacesPublicId(), r.replacedByPublicId(), r.channel(), r.rationale(), executions, ev, group(r),
+        r.doNotReduce(), r.cancelRequestedAt());
+  }
+
+  /** §11.9: the leg's group, or null for a single order. */
+  static OrderGroupRefDto group(OrderRow r) {
+    if (!r.inGroup()) {
+      return null;
+    }
+    return new OrderGroupRefDto(r.groupPublicId(), r.groupType(), r.groupRole(), r.parentPublicId(),
+        r.held() && r.isOpen());
   }
 
   OrderEventDto event(OrderEventRow e) {

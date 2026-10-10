@@ -44,7 +44,7 @@ class OrderStateMachineTest {
   @Test
   void openAndTerminal() {
     assertThat(EnumSet.allOf(OrderStatus.class).stream().filter(OrderStateMachine::isOpen))
-        .containsExactlyInAnyOrder(PENDING, WORKING, PARTIALLY_FILLED);
+        .containsExactlyInAnyOrder(PENDING, WORKING, PARTIALLY_FILLED, OrderStatus.PENDING_CANCEL);
     assertThat(OrderStateMachine.isTerminal(FILLED)).isTrue();
     assertThat(OrderStateMachine.isTerminal(REJECTED)).isTrue();
     assertThat(OrderStateMachine.isTerminal(WORKING)).isFalse();
