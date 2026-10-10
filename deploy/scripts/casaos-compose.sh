@@ -33,6 +33,8 @@ umask 077
 docker compose -p stocks -f "$DIR/compose/docker-compose.yml" --env-file "$DIR/.env" config > "$out.tmp"
 mv "$out.tmp" "$out"
 chmod 600 "$out"
+# A literal ${ is what we look for (unresolved variables).
+# shellcheck disable=SC2016
 if grep -q '\${' "$out"; then
   echo "error: unresolved variables remain in $out" >&2; exit 1
 fi
