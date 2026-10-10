@@ -5,7 +5,8 @@
 > (realtime). The player rulebook is [`rules.md`](rules.md); bots read the same rules live with `get_rules`.
 
 **Endpoint:** `https://stocks.gehan.cloud/mcp` (MCP Streamable HTTP, stateless, protocol `2025-11-25`).
-**Auth:** `Authorization: Bearer stk_<keyId>_<secret>` on every request.
+**Auth:** `Authorization: Bearer stk_<keyId>_<secret>` on every request, or an OAuth access token from the
+claude.ai / ChatGPT connector sign-in (2.9).
 
 ---
 
@@ -266,7 +267,8 @@ curl -s https://stocks.gehan.cloud/api/v1/orders -H "Authorization: Bearer $STOC
 
 The transport requires `Accept` with **both** `application/json` and `text/event-stream` (otherwise 400); responses
 are plain JSON (no SSE, no `Mcp-Session-Id`). `GET /mcp` answers 405, and a request without a key answers 401 with
-`WWW-Authenticate: Bearer realm="stocks"`.
+`WWW-Authenticate: Bearer realm="stocks", resource_metadata="https://stocks.gehan.cloud/.well-known/oauth-protected-resource/mcp"`
+(how OAuth clients discover the sign-in, 2.9).
 
 ```sh
 mcp() { curl -s https://stocks.gehan.cloud/mcp -H "Authorization: Bearer $STOCKS_KEY" \
@@ -288,12 +290,67 @@ Choose transport "Streamable HTTP", URL `https://stocks.gehan.cloud/mcp`, and ad
 refuses browser requests from other origins (`Origin`, when present, must be the app's own URL), while server-side
 clients send no `Origin`.
 
-### 2.9 Routes that are not available in Phase 1
+### 2.9 claude.ai and ChatGPT connectors (OAuth, Phase 2)
 
-| Client | Why |
+The claude.ai custom connector (web, desktop and mobile apps) and the ChatGPT developer-mode connector call `/mcp`
+from their vendors' clouds and sign in with **OAuth 2.1** (ARCHITECTURE §17.9): no API key is pasted anywhere.
+You sign in to stocks in the browser and choose **which player the connector acts as**: one of your AI bots
+(players whose owner is you, e.g. `claude`) or yourself. A bot gets all four scopes; acting as yourself, `trade`
+needs "API trading" from the admin (like a personal key). A connector never gets admin powers, even yours, and its
+trades are labeled "via API". Revoke it any time in **Settings → Connected apps** (it stops on its next request).
+
+**Before the first connector (once, as the owner).**
+
+1. Deploy a build that has OAuth (Watchtower does it after the merge). Check from any machine:
+   `curl -s https://stocks.gehan.cloud/.well-known/oauth-protected-resource/mcp` prints JSON whose `resource` is
+   `https://stocks.gehan.cloud/mcp`, and `curl -si https://stocks.gehan.cloud/mcp | grep -i www-authenticate`
+   shows `resource_metadata="https://stocks.gehan.cloud/.well-known/oauth-protected-resource/mcp"`. Nothing to add
+   to `.env`: the signing key is generated on first boot and stored encrypted in the database.
+2. Cloudflare (docs/deploy.md §8): no challenge, Access policy or cache on `/oauth2/*` and `/.well-known/*` (the
+   vendors fetch them from their clouds); Bot Fight Mode off; AI Crawl Control "Agent" category allowed.
+3. Only a bot's owner can connect it. Bots belong to the admin who created them unless another owner was chosen
+   at creation (Admin → Players shows the owner), so connect the league bots signed in as the admin.
+
+**claude.ai (Claude web, desktop and mobile).**
+
+1. claude.ai → **Settings → Connectors → Add custom connector** (Team and Enterprise: an Owner adds it under
+   Organization settings → Connectors).
+2. Name `stocks`, remote MCP server URL `https://stocks.gehan.cloud/mcp`. Leave *Advanced settings* (OAuth client
+   ID and secret) **empty**: Claude identifies itself with its client ID metadata document
+   (`https://claude.ai/oauth/mcp-oauth-client-metadata`). Click **Add**.
+3. Click **Connect**. A browser tab opens stocks: sign in if asked, then on **Connect Claude** pick *Act as*
+   **Claude (@claude)** (or Myself), keep or untick permissions, and click **Allow**. The tab returns to claude.ai
+   (`https://claude.ai/api/mcp/auth_callback`) and the connector shows as connected.
+4. In a chat, enable `stocks` in the tools menu and ask, for example: "Use stocks: call get_rules and whoami, then
+   show my account." Tokens refresh by themselves; after 30 days without use, click Connect again.
+
+**ChatGPT (developer mode).**
+
+1. chatgpt.com → **Settings → Apps & Connectors → Advanced settings → Developer mode: on** (on some accounts the
+   toggle is under Settings → Security; Business/Enterprise workspaces need an admin to allow it).
+2. **Settings → Apps & Connectors → Create**: name `stocks`, a description (e.g. "Paper-trading league: quotes,
+   my account, orders"), MCP server URL `https://stocks.gehan.cloud/mcp`, authentication **OAuth**. Leave client ID
+   and secret empty (ChatGPT uses its client ID metadata document, or registers itself), tick "I trust this
+   application", and click **Create**.
+3. ChatGPT opens stocks: sign in, pick *Act as* **ChatGPT (@chatgpt)** (or Myself) and click **Allow**. You return
+   to ChatGPT (`https://chatgpt.com/connector_platform_oauth_redirect`, or a `/connector/oauth/<id>` URL, both
+   allowed).
+4. In a chat: **+ → More → Developer mode → stocks**, then ask as above. ChatGPT asks before running write tools.
+
+**Claude Code without a key.** `claude mcp add --transport http stocks https://stocks.gehan.cloud/mcp`, then in
+Claude Code run `/mcp` → `stocks` → **Authenticate**. The browser consent works the same; the redirect goes to
+`http://localhost:<port>/callback` on your machine, so the consent screen warns that it is a local app. Headless
+runs (`claude -p`) still need an API key (2.2).
+
+**If it fails.** "Couldn't reach the MCP server": the `curl` checks of step 1 above, then Cloudflare. A
+`/oauth/error?error=invalid_client` page: the vendor's client metadata could not be fetched or names a redirect URI
+this server does not allow (`stocks.oauth.redirect-allowlist`). "Authorization failed" after Allow: the clock or
+the public URL (`APP_PUBLIC_URL` must be exactly `https://stocks.gehan.cloud`). Every grant, refresh and revocation
+is in Admin → Audit (`OAUTH_GRANT`, `OAUTH_TOKEN`, `OAUTH_REFRESH`, `OAUTH_REVOKE`, `OAUTH_REFRESH_REUSE`).
+
+| Other route | Status |
 |---|---|
-| claude.ai custom connector | Optional: add a custom connector with URL `https://stocks.gehan.cloud/mcp`, authentication "No sign-in" and the **Request headers** setting `Authorization: Bearer stk_…`. That setting is in beta and not on every account [VERIFY]; otherwise this route needs the Phase 2 OAuth server (§17.9). |
-| ChatGPT app (developer-mode connector) | Accepts only OAuth or no authentication, so there is no API-key route; it needs the Phase 2 OAuth server. The league's ChatGPT bot uses the Responses API (2.4) or the agent runner instead. |
+| claude.ai custom connector with a static API key | Optional: authentication "No sign-in" plus the **Request headers** setting `Authorization: Bearer stk_…`. That setting is in beta and not on every account; prefer OAuth above. |
 | Custom GPT Actions | Not built: they are being retired (scheduled for Dec 11, 2026 [U]). |
 
 ## 3. Conventions every client should know
