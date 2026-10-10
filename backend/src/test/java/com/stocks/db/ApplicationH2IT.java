@@ -108,9 +108,12 @@ class ApplicationH2IT extends SchemaContract {
     assertThat(properties.security().loginLockout()).isEqualTo(Duration.ofMinutes(15));
     assertThat(properties.security().recentAuth()).isEqualTo(Duration.ofMinutes(15));
     assertThat(properties.security().extraWsOrigins()).isEmpty();
-    assertThat(properties.ratelimit().writesPerMin()).isEqualTo(20);
-    assertThat(properties.ratelimit().writesPerDay()).isEqualTo(300);
-    assertThat(properties.ratelimit().anonPerMinIp()).isEqualTo(300);
+    // the test profile lifts every bucket (fixed clock, one IP); the defaults are checked in ProfileFilesTest
+    assertThat(properties.ratelimit().enabled()).isTrue();
+    assertThat(properties.ratelimit().writesPerMin()).isEqualTo(100000);
+    assertThat(properties.ratelimit().anonPerMinIp()).isEqualTo(100000);
+    assertThat(properties.security().apiKeyCacheTtl()).isZero();
+    assertThat(properties.security().playerStatusCacheTtl()).isZero();
     assertThat(environment.getProperty("stocks.version")).isNotBlank().doesNotContain("@");
     assertThat(environment.getProperty("spring.ai.mcp.server.version")).isEqualTo(environment.getProperty("stocks.version"));
   }

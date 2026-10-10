@@ -24,11 +24,13 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * The dev demo league ({@code stocks.bootstrap.seed-demo=true}, profile {@code dev}, §23.2): humans {@code alice} and
- * {@code bob} (password {@code password123!}) and the AI players {@code claude} and {@code chatgpt}, owned by the
- * bootstrap admin, each with an all-scope API key. Idempotent: it creates only what is missing, so deleting
- * {@code backend/.data/} costs nothing. Credentials go to {@code .data/dev-keys.txt} (relative to the working
- * directory, next to the dev H2 file); a bot key is printed there once, when it is issued.
+ * The dev demo league ({@code stocks.bootstrap.seed-demo=true}, profile {@code dev}, §23.2): humans {@code alice},
+ * {@code bob} and {@code carol} (password {@code password123!}), the AI players {@code claude} and {@code chatgpt},
+ * owned by the bootstrap admin, each with an all-scope API key, and a reusable invite link (50 uses, 30 days) to try
+ * the signup flow. Every player gets the league's starting cash and the default watchlist through
+ * {@link AccountProvisioner}. Idempotent: it creates only what is missing, so deleting {@code backend/.data/} costs
+ * nothing. Credentials go to {@code .data/dev-keys.txt} (relative to the working directory, next to the dev H2 file);
+ * a bot key or an invite code is printed there once, when it is issued.
  */
 @Component
 @Order(20)
@@ -44,29 +46,36 @@ public class DemoSeeder implements ApplicationRunner {
 
   record Bot(String handle, String displayName, String aiModel) {}
 
-  static final List<Human> HUMANS = List.of(new Human("alice", "Alice"), new Human("bob", "Bob"));
+  static final List<Human> HUMANS = List.of(new Human("alice", "Alice"), new Human("bob", "Bob"),
+      new Human("carol", "Carol"));
+  static final int INVITE_USES = 50;
+  static final int INVITE_HOURS = 720;
   static final List<Bot> BOTS = List.of(new Bot("claude", "Claude", "Claude"), new Bot("chatgpt", "ChatGPT", "ChatGPT"));
 
   private final PlayerService players;
   private final ApiKeyService apiKeys;
   private final AccountProvisioner accounts;
   private final BootstrapAdminRunner bootstrap;
+  private final InviteService invites;
   private final StocksProperties properties;
   private final TimeSource time;
   private final Path keysFile;
 
   @Autowired
   public DemoSeeder(PlayerService players, ApiKeyService apiKeys, AccountProvisioner accounts,
-                    BootstrapAdminRunner bootstrap, StocksProperties properties, TimeSource time) {
-    this(players, apiKeys, accounts, bootstrap, properties, time, KEYS_FILE);
+                    BootstrapAdminRunner bootstrap, InviteService invites, StocksProperties properties,
+                    TimeSource time) {
+    this(players, apiKeys, accounts, bootstrap, invites, properties, time, KEYS_FILE);
   }
 
   DemoSeeder(PlayerService players, ApiKeyService apiKeys, AccountProvisioner accounts,
-             BootstrapAdminRunner bootstrap, StocksProperties properties, TimeSource time, Path keysFile) {
+             BootstrapAdminRunner bootstrap, InviteService invites, StocksProperties properties, TimeSource time,
+             Path keysFile) {
     this.players = players;
     this.apiKeys = apiKeys;
     this.accounts = accounts;
     this.bootstrap = bootstrap;
+    this.invites = invites;
     this.properties = properties;
     this.time = time;
     this.keysFile = keysFile;
@@ -109,6 +118,10 @@ public class DemoSeeder implements ApplicationRunner {
           lines.add(b.handle() + " (AI) API key: " + key.token());
         }
       }
+    }
+    if (admin.isPresent() && !invites.anyUsable()) {
+      var invite = invites.create(INVITE_USES, INVITE_HOURS, admin.get().id());
+      lines.add("invite link (" + INVITE_USES + " uses, until " + invite.expiresAt() + "): " + invite.url());
     }
     if (!lines.isEmpty()) {
       write(lines, admin);

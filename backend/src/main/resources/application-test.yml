@@ -20,6 +20,22 @@ stocks:
   security:
     api-key-pepper: test-pepper-not-secret-0123456789abcdef
     password-hash-cost: 4                   # bcrypt's minimum: keeps login tests fast (prod uses 12)
+    # Fixtures change api_key and player rows directly (bypassing the evicting services), so tests read them fresh.
+    api-key-cache-ttl: 0s
+    player-status-cache-ttl: 0s
+  # The fixed test clock never refills a bucket, and every MockMvc request comes from 127.0.0.1: generous limits
+  # keep unrelated suites clear of 429s. RateLimitIT tightens them again to test the limiter itself.
+  ratelimit:
+    key-reads-per-min: 100000
+    key-reads-burst: 100000
+    web-reads-per-min: 100000
+    heavy-reads-per-min-key: 100000
+    heavy-reads-per-min-web: 100000
+    writes-per-min: 100000                  # OrderGate's bucket: engine suites place many orders at one instant
+    writes-per-day: 100000
+    login-per-min-ip: 100000
+    signup-per-hour-ip: 100000
+    anon-per-min-ip: 100000
   engine:
     seed: test-seed
   marketdata:

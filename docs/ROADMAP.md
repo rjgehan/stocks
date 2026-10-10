@@ -34,24 +34,25 @@
 ## Phase 1: MVP, the playable league (target: about 5 weeks, milestones M0–M4)
 
 ### WS1: Platform, identity and admin
-- [ ] Human auth: JSON login and logout, Spring Session JDBC, `__Host-` cookie, CSRF (SPA mode), lockout, per-IP login limit
-- [ ] Invite-only signup (`/auth/signup`) that funds a $500 account and seeds the "My List" watchlist
-- [ ] API keys `stk_<id>_<secret>`: HMAC with pepper, scopes, 60 s cache, revoke, `last_used_*`; personal keys for humans (session + `@RecentAuth`, read-only unless the admin allows API trading, revoked on password change)
-- [ ] Bearer filter (key path ignores cookies); `/mcp` returns 401 with `WWW-Authenticate`
-- [ ] Per-player Bucket4j rate limits (reads, heavy reads, writes 20/min and 300/day) with headers and 429 + `Retry-After`; `RateLimitService` (write bucket charged only by `OrderGate`, replays free)
-- [ ] `RequestMeta` bounds client strings; `X-Request-Id` validated or regenerated; `audit_log.request_id` 64
-- [ ] `AdminSessionOnlyFilter` (403 on any `Authorization` header), `@RecentAuth` plus `/auth/reauth`
-- [ ] `AuditService` and `audit_log`, covering every category in §17.7
-- [ ] `SettingsService` (`app_setting`) with the §23.4 defaults; `STARTING_CASH_DEFAULT` seeds `league.defaultStartingCash`
-- [ ] Bootstrap admin from env vars; idempotent dev demo seed (admin `admin-dev-123`, alice, bob, claude, chatgpt, with keys written to `backend/.data/dev-keys.txt`)
-- [ ] Admin REST (§21.1): players (create human or AI + key; detail; break-glass live view; disable; freeze/unfreeze with optional key revocation; promote human; allow API trading), keys, invites, **cash transfers (preview; single and ALL; memo; `Idempotency-Key` checked inside the engine; mark-quality gate)**, resets, admin order cancel, settings, audit, system, engine halt/resume (`EngineControl`), calendar overrides (`CalendarAdmin`), corporate actions (list, resolve)
-- [ ] Freeze/disable step 1 (status, sessions, caches, optional key revocation, `PlayerStatusChanged`) then `AccountService.restrict` (§10.5)
-- [ ] `SingleInstanceGuard` (PG advisory lock or H2 lease with dead-PID takeover; throws instead of exiting; disabled in tests), `JobScheduler` (job SPI, registry), `JobRunGuard`, `CatchUpRunner` (catch-up policies), `StartupGate`
-- [ ] `TestClockController` (`@Profile("test")`, prod fail-fast) for e2e
-- [ ] Security headers, cache headers, SPA fallback, forwarded headers (§24.3)
+- [x] Human auth: JSON login and logout, Spring Session JDBC, `__Host-` cookie, CSRF (SPA mode), lockout, per-IP login limit
+- [x] Invite-only signup (`/auth/signup`) that funds a $500 account and seeds the "My List" watchlist (through the WS3 `AccountService` / WS4 `WatchlistService` contracts; `AccountBackfillRunner` opens missing accounts at boot)
+- [x] API keys `stk_<id>_<secret>`: HMAC with pepper, scopes, 60 s cache, revoke, `last_used_*`; personal keys for humans (session + `@RecentAuth`, read-only unless the admin allows API trading, revoked on password change)
+- [x] Bearer filter (key path ignores cookies); `/mcp` returns 401 with `WWW-Authenticate`
+- [x] Per-player Bucket4j rate limits (reads, heavy reads, writes 20/min and 300/day) with headers and 429 + `Retry-After`; `RateLimitService` (write bucket charged only by `OrderGate`, replays free)
+- [x] `RequestMeta` bounds client strings; `X-Request-Id` validated or regenerated; `audit_log.request_id` 64
+- [x] `AdminSessionOnlyFilter` (403 on any `Authorization` header), `@RecentAuth` plus `/auth/reauth`
+- [x] `AuditService` and `audit_log`, covering every category in §17.7 (ORDER rows are WS3's `OrderGate`)
+- [x] `SettingsService` (`app_setting`) with the §23.4 defaults; `STARTING_CASH_DEFAULT` seeds `league.defaultStartingCash`
+- [x] Bootstrap admin from env vars; idempotent dev demo seed (admin `admin-dev-123`, alice, bob, claude, chatgpt, with keys written to `backend/.data/dev-keys.txt`)
+- [x] Admin REST (§21.1): players (create human or AI + key; detail; break-glass live view; disable; freeze/unfreeze with optional key revocation; promote human; allow API trading), keys, invites, **cash transfers (preview; single and ALL; memo; `Idempotency-Key` checked inside the engine; mark-quality gate)**, resets, admin order cancel, settings, audit, system, engine halt/resume (`EngineControl`), calendar overrides (`CalendarAdmin`), corporate actions (list, resolve)
+- [x] Freeze/disable step 1 (status, sessions, caches, optional key revocation, `PlayerStatusChanged`) then `AccountService.restrict` (§10.5)
+- [x] `SingleInstanceGuard` (PG advisory lock or H2 lease with dead-PID takeover; throws instead of exiting; disabled in tests), `JobScheduler` (job SPI, registry), `JobRunGuard`, `CatchUpRunner` (catch-up policies), `StartupGate`
+- [x] `TestClockController` (`@Profile("test")`, prod fail-fast) for e2e
+- [x] Security headers, cache headers, SPA fallback, forwarded headers (§24.3)
 - [ ] First real deploy to the owner's CasaOS server through `release.yml` (docs/deploy.md: GHCR access, runner as a systemd service, `/DATA/AppData/stocks/.env`, `DEPLOY_ENABLED`), the Cloudflare Tunnel route to `stocks-app:8080` with WebSockets, a deliberate failed deploy that rolls back, and the runbook kept current as Phase 1 features land (engine halt, invariants, provider 406, restore; "delete `backend/.data/` after the V1 squash")
-- [ ] OpenAPI rules (§18): BigDecimal as decimal strings, required + nullable record components, wire-value enums, `Dto` suffix stripped
-- [ ] `AdminSecurityIT`: every admin route rejects anonymous callers, bot keys, the admin's own key and non-admin sessions
+- [x] OpenAPI rules (§18): BigDecimal as decimal strings, required + nullable record components, wire-value enums, `Dto` suffix stripped
+- [x] `AdminSecurityIT`: every admin route rejects anonymous callers, bot keys, the admin's own key and non-admin sessions
+- [x] Housekeeping job (§25, 02:00 ET); `eventsExecutor` (§5.3) and the engine-event audit listener
 
 ### WS2: Market data and calendar
 - [x] `MarketCalendar` with the bundled `xnys-2016-2028.csv` (generator plus the §9.2 golden dates), Alpaca calendar sync, `CalendarAdmin` overrides, and the in-memory `AlwaysOpenCalendar` for dev and e2e

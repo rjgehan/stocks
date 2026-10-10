@@ -32,7 +32,8 @@ public final class EmbeddedPg {
   public static synchronized EmbeddedPostgres server() {
     if (server == null) {
       try {
-        server = EmbeddedPostgres.builder().start();
+        // Every cached Spring context and every TestDb holds a small pool: lift PG's default of 100 clients.
+        server = EmbeddedPostgres.builder().setServerConfig("max_connections", "300").start();
       } catch (IOException e) {
         throw new UncheckedIOException("Could not start embedded PostgreSQL", e);
       }

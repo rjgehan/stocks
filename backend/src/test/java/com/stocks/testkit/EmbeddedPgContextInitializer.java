@@ -28,6 +28,9 @@ public class EmbeddedPgContextInitializer
         "spring.datasource.username", EmbeddedPg.USER,
         "spring.datasource.password", EmbeddedPg.PASSWORD,
         "spring.datasource.driver-class-name", "org.postgresql.Driver",
+        // the context cache keeps several contexts (and their pools) alive at once: keep each pool small
+        "spring.datasource.hikari.maximum-pool-size", "8",
+        "spring.datasource.hikari.minimum-idle", "1",
         "stocks.test.pg.database", database)));
   }
 }

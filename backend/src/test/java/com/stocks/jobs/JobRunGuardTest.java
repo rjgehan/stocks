@@ -69,6 +69,31 @@ class JobRunGuardTest {
   }
 
   @Test
+  void aFailureIsAuditedAsSystemJobFailed() {
+    guard.setAuditService(new com.stocks.audit.AuditService(db.jdbc(), time,
+        com.stocks.config.JacksonConfig.newMapper()));
+    guard.run("ASSET_SYNC", "2026-10-09", () -> {
+      throw new IllegalStateException("upstream 503");
+    });
+    guard.run("ASSET_SYNC", "2026-10-10", () -> { });
+    assertThat(db.jdbc().sql("SELECT category || '/' || action || '/' || outcome || '/' || target_id FROM audit_log")
+        .query(String.class).list()).containsExactly("SYSTEM/JOB_FAILED/ERROR/ASSET_SYNC");
+  }
+
+  @Test
+  void latestReturnsTheNewestRunAndHoldsNoConnection() {
+    guard.run("HOUSEKEEPING", "2026-10-08", () -> { });
+    time.advance(Duration.ofDays(1));
+    guard.run("HOUSEKEEPING", "2026-10-09", () -> { });
+    for (int i = 0; i < 25; i++) { // more calls than the pool has connections
+      assertThat(guard.latest("HOUSEKEEPING").orElseThrow().runKey()).isEqualTo("2026-10-09");
+      assertThat(guard.latest("NEVER_RAN")).isEmpty();
+    }
+    assertThat(((com.zaxxer.hikari.HikariDataSource) db.dataSource()).getHikariPoolMXBean().getActiveConnections())
+        .as("connections still checked out").isZero();
+  }
+
+  @Test
   void aRunningRowLeftByACrashedProcessIsTakenOver() {
     db.jdbc().sql("INSERT INTO job_run (job_name, run_key, status, started_at) VALUES (?, ?, 'RUNNING', ?)")
         .params("SESSION_TRANSITION", "2026-10-09:RTH_OPEN", Jdbc.ts(TestTimes.START.minusSeconds(3600))).update();

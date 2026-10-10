@@ -63,7 +63,10 @@ stocks:
     recent-auth: 15m
     extra-ws-origins: []                    # dev adds http://localhost:5173
     password-hash-cost: 12                  # bcrypt cost (§17.3); the test profile lowers it for speed
+    api-key-cache-ttl: 60s                  # §17.2 key cache (revocation evicts at once); 0 = off
+    player-status-cache-ttl: 60s            # §5.3 PlayerQueries.status cache (admin changes evict at once)
   ratelimit:
+    enabled: true                           # false turns off the read and per-IP buckets (not OrderGate's writes)
     key-reads-per-min: 120
     key-reads-burst: 30
     web-reads-per-min: 600

@@ -18,7 +18,7 @@ import com.zaxxer.hikari.HikariDataSource;
  * new JobRunGuard(db.jdbc(), TestTimes.clock()) ...
  * }</pre>
  */
-public record TestDb(DataSource dataSource, JdbcClient jdbc, String vendor) {
+public record TestDb(DataSource dataSource, JdbcClient jdbc, String vendor) implements AutoCloseable {
 
   public static final String H2 = "h2";
   public static final String POSTGRESQL = "postgresql";
@@ -48,7 +48,10 @@ public record TestDb(DataSource dataSource, JdbcClient jdbc, String vendor) {
     config.setUsername(user);
     config.setPassword(password);
     config.setMaximumPoolSize(10);
-    config.setMinimumIdle(1);
+    // H2 needs the migrating connection kept (see above); on PostgreSQL an idle pool must not pin a server slot
+    // forever, since most tests never close their TestDb
+    config.setMinimumIdle(url.startsWith("jdbc:h2:") ? 1 : 0);
+    config.setIdleTimeout(10_000);
     config.setPoolName("testdb-" + POOLS.incrementAndGet());
     return new HikariDataSource(config);
   }
@@ -67,5 +70,13 @@ public record TestDb(DataSource dataSource, JdbcClient jdbc, String vendor) {
 
   public boolean isPostgres() {
     return POSTGRESQL.equals(vendor);
+  }
+
+  /** Closes the pool (the database itself stays until the JVM's embedded server stops). */
+  @Override
+  public void close() {
+    if (dataSource instanceof HikariDataSource h) {
+      h.close();
+    }
   }
 }

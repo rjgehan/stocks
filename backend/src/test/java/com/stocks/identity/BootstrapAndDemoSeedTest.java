@@ -111,12 +111,17 @@ class BootstrapAndDemoSeedTest {
   void theDemoSeedIsIdempotentAndItsBotKeysWork(@TempDir Path dir) throws Exception {
     StocksProperties props = TestProperties.stocks("stocks.bootstrap.admin-handle", "admin",
         "stocks.bootstrap.admin-password", "admin-dev-123", "stocks.bootstrap.seed-demo", "true");
-    ApiKeyService apiKeys = new ApiKeyService(db.jdbc(), time, props);
+    ApiKeyAuthenticationProvider provider = new ApiKeyAuthenticationProvider(db.jdbc(), time, props,
+        new PlayerQueriesImpl(db.jdbc(), props));
+    ApiKeyService apiKeys = new ApiKeyService(db.jdbc(), time, props, provider);
+    InviteService invites = new InviteService(db.jdbc(), time, new PublicId(time), props);
     Path keys = dir.resolve(".data/dev-keys.txt");
-    DemoSeeder seeder = new DemoSeeder(players, apiKeys, accounts, runner(props), props, time, keys);
+    DemoSeeder seeder = new DemoSeeder(players, apiKeys, accounts, runner(props), invites, props, time, keys);
 
     List<String> first = seeder.seed();
-    assertThat(first).hasSize(4);
+    assertThat(first).hasSize(6); // alice, bob, carol, claude's key, chatgpt's key, the invite link
+    assertThat(players.byHandle("carol")).isPresent();
+    assertThat(invites.anyUsable()).isTrue();
     assertThat(players.byHandle("alice")).get().extracting(PlayerRecord::kind).isEqualTo(PlayerKind.HUMAN);
     assertThat(players.byHandle("claude")).get().satisfies(p -> {
       assertThat(p.kind()).isEqualTo(PlayerKind.AI);
@@ -125,15 +130,15 @@ class BootstrapAndDemoSeedTest {
     });
     String file = Files.readString(keys);
     assertThat(file).contains("admin (ADMIN) / admin-dev-123").contains("alice / password123!")
-        .contains("claude (AI) API key: stk_").contains("chatgpt (AI) API key: stk_");
+        .contains("claude (AI) API key: stk_").contains("chatgpt (AI) API key: stk_")
+        .containsPattern("invite link \\(50 uses, until [^)]+\\): http://localhost:5173/join/[a-z2-7]{20}");
 
     assertThat(seeder.seed()).as("second run creates nothing").isEmpty();
     assertThat(Files.readString(keys)).isEqualTo(file);
 
     String token = first.stream().filter(l -> l.startsWith("claude")).findFirst().orElseThrow()
         .replaceAll(".*API key: ", "");
-    var auth = new ApiKeyAuthenticationProvider(db.jdbc(), time, props)
-        .authenticate(new ApiKeyAuthenticationToken(token));
+    var auth = provider.authenticate(new ApiKeyAuthenticationToken(token));
     PlayerPrincipal p = (PlayerPrincipal) auth.getPrincipal();
     assertThat(p.handle()).isEqualTo("claude");
     assertThat(p.authMethod()).isEqualTo(AuthMethod.API_KEY);

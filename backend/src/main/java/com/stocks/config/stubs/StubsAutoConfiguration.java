@@ -1,12 +1,9 @@
 package com.stocks.config.stubs;
 
 import com.stocks.config.CommonAutoConfiguration;
-import com.stocks.contract.identity.PlayerQueries;
-import com.stocks.contract.identity.SettingsService;
 import com.stocks.contract.portfolio.LeaderboardService;
 import com.stocks.contract.portfolio.PerformanceQueries;
 import com.stocks.contract.portfolio.ValuationService;
-import com.stocks.contract.security.RateLimitService;
 import com.stocks.contract.trading.CorporateActionQueries;
 import com.stocks.contract.trading.CorporateActionService;
 import com.stocks.contract.watchlist.WatchlistService;
@@ -29,25 +26,7 @@ import org.springframework.context.annotation.Bean;
 @AutoConfiguration(after = CommonAutoConfiguration.class)
 public class StubsAutoConfiguration {
 
-  // ===== WS1 =====
-
-  @Bean
-  @ConditionalOnMissingBean
-  RateLimitService rateLimitServiceStub() {
-    return NotImplementedStub.of(RateLimitService.class, "WS1");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  SettingsService settingsServiceStub() {
-    return NotImplementedStub.of(SettingsService.class, "WS1");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  PlayerQueries playerQueriesStub() {
-    return NotImplementedStub.of(PlayerQueries.class, "WS1");
-  }
+  // ===== WS1: none left (RateLimitServiceImpl, SettingsServiceImpl, PlayerQueriesImpl, MeService) =====
 
   // ===== WS2 =====
   // MarketCalendar, CalendarAdmin, MarketDataService, DailyMarkService and SplitAdjustments are real

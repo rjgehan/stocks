@@ -57,7 +57,12 @@ public record StocksProperties(
       @DefaultValue List<String> extraWsOrigins,
       /* bcrypt cost for new password hashes (§17.3: 12). The test profile lowers it to keep suites fast;
          existing hashes verify at whatever cost they were made with. */
-      @DefaultValue("12") int passwordHashCost) {
+      @DefaultValue("12") int passwordHashCost,
+      /* §17.2: API-key rows are cached this long (revocation evicts at once). 0 = no cache (the test profile, whose
+         fixtures change rows behind the services' back). */
+      @DefaultValue("60s") Duration apiKeyCacheTtl,
+      /* §5.3 PlayerQueries.status: cached this long; AdminPlayerService evicts synchronously on every change. */
+      @DefaultValue("60s") Duration playerStatusCacheTtl) {
 
     /** True when an API-key pepper is configured. */
     public boolean hasApiKeyPepper() {
@@ -65,8 +70,13 @@ public record StocksProperties(
     }
   }
 
-  /** {@code stocks.ratelimit} (§17.5): per player, shared across all of a player's keys and channels. */
+  /**
+   * {@code stocks.ratelimit} (§17.5): per player, shared across all of a player's keys and channels; before
+   * authentication, per client IP. {@code enabled=false} turns the read and per-IP buckets off (the order-write
+   * bucket that {@code OrderGate} charges stays on).
+   */
   public record RateLimit(
+      @DefaultValue("true") boolean enabled,
       @DefaultValue("120") int keyReadsPerMin,
       @DefaultValue("30") int keyReadsBurst,
       @DefaultValue("600") int webReadsPerMin,

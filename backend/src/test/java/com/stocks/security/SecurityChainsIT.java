@@ -8,7 +8,9 @@ import com.jayway.jsonpath.JsonPath;
 import com.stocks.common.time.MutableTimeSource;
 import com.stocks.common.web.RequestIds;
 import com.stocks.config.StocksProperties;
+import com.stocks.config.stubs.ContractStub;
 import com.stocks.contract.security.Scopes;
+import com.stocks.contract.trading.AccountService;
 import com.stocks.testkit.Fixtures;
 import com.stocks.testkit.WebSession;
 import jakarta.servlet.http.Cookie;
@@ -46,6 +48,7 @@ class SecurityChainsIT {
   @Autowired JdbcClient jdbc;
   @Autowired MutableTimeSource time;
   @Autowired StocksProperties properties;
+  @Autowired AccountService accountService;
 
   Fixtures fx;
   String pepper;
@@ -124,7 +127,12 @@ class SecurityChainsIT {
     MvcResult me = s.perform(get("/api/v1/me"));
     assertThat(me.getResponse().getStatus()).isEqualTo(200);
     assertThat((String) JsonPath.read(WebSession.contentOf(me), "$.handle")).isEqualTo(alice.handle());
-    assertThat((Object) JsonPath.read(WebSession.contentOf(me), "$.accountId")).isNull();
+    String accountId = JsonPath.read(WebSession.contentOf(me), "$.accountId");
+    if (accountService instanceof ContractStub) {
+      assertThat(accountId).as("no account while WS3 is a Day-0 stub").isNull();
+    } else {
+      assertThat(accountId).as("the login self-heal opened run 1 (§17.3)").startsWith("acc_");
+    }
     assertThat((String) JsonPath.read(WebSession.contentOf(me), "$.preferences.theme")).isEqualTo("DARK");
   }
 
