@@ -1092,6 +1092,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/connected-apps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My connected apps
+         * @description Session only. The live OAuth grants you approved (claude.ai, ChatGPT, Claude Code, ...), newest first, with the player each acts as and its scopes.
+         */
+        get: operations["connectedApps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/connected-apps/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Disconnect an app
+         * @description Session only, CSRF. Revokes the grant at once: its refresh token stops working and its access tokens are refused on the next request. Errors: NOT_FOUND.
+         */
+        delete: operations["disconnectApp"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/notifications": {
         parameters: {
             query?: never;
@@ -1126,6 +1166,30 @@ export interface paths {
          * @description Exactly one of ids (up to 200 notification ids) and all=true. Ids that are not yours or already read are ignored.
          */
         post: operations["markRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/oauth/requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An OAuth authorization request waiting for my consent
+         * @description Session only. The consent screen of a claude.ai / ChatGPT connector: the client, its redirect host, the requested scopes and the 'Act as' choices (your active AI bots, then yourself) with the scopes each may get. Errors: NOT_FOUND (unknown, used or expired; requests live 15 minutes), FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED.
+         */
+        get: operations["oauthRequest"];
+        put?: never;
+        /**
+         * Approve or deny an OAuth authorization request
+         * @description Session only, CSRF. approve=true needs actAs (a handle from the request's actors) and optionally scopes (default: every requested scope the actor may get). Answers the URL to send the browser to: the client's redirect URI with code, state and iss, or error=access_denied. The request is used up either way. Errors: NOT_FOUND, VALIDATION_FAILED, FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED.
+         */
+        post: operations["decideOAuthRequest"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1902,6 +1966,17 @@ export interface components {
             clientOrderId: string | null;
             rationale?: string | null;
         };
+        ConnectedApp: {
+            actAs: components["schemas"]["PlayerSummary"] | null;
+            client: components["schemas"]["OAuthClientInfo"] | null;
+            /** Format: date-time */
+            createdAt: string | null;
+            grantId: string | null;
+            /** Format: date-time */
+            lastUsedAt: string | null;
+            redirectHost: string | null;
+            scopes: string[] | null;
+        };
         CorporateAction: {
             /** Format: date-time */
             appliedAt: string | null;
@@ -2308,6 +2383,37 @@ export interface components {
             /** Format: date-time */
             readAt: string | null;
             title: string | null;
+        };
+        OAuthActor: {
+            allowedScopes: string[] | null;
+            player: components["schemas"]["PlayerSummary"] | null;
+            self: boolean;
+        };
+        OAuthClientInfo: {
+            clientId: string | null;
+            host: string | null;
+            /** @enum {string|null} */
+            kind: "CIMD" | "DCR" | null;
+            name: string | null;
+        };
+        OAuthConsent: {
+            actors: components["schemas"]["OAuthActor"][] | null;
+            client: components["schemas"]["OAuthClientInfo"] | null;
+            /** Format: date-time */
+            expiresAt: string | null;
+            loopbackRedirect: boolean;
+            redirectHost: string | null;
+            redirectUri: string | null;
+            requestId: string | null;
+            requestedScopes: string[] | null;
+        };
+        OAuthDecisionRequest: {
+            actAs?: string | null;
+            approve: boolean | null;
+            scopes?: string[] | null;
+        };
+        OAuthRedirect: {
+            redirectUrl: string | null;
         };
         Order: {
             /** Format: date-time */
@@ -5334,6 +5440,64 @@ export interface operations {
             };
         };
     };
+    connectedApps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedApp"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    disconnectApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     list_7: {
         parameters: {
             query?: {
@@ -5389,6 +5553,72 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    oauthRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthConsent"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    decideOAuthRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthRedirect"];
+                };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
             default: {

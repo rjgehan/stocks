@@ -47,7 +47,7 @@ public class MyOAuthController {
           + "host, the requested scopes and the 'Act as' choices (your active AI bots, then yourself) with the scopes "
           + "each may get. Errors: NOT_FOUND (unknown, used or expired; requests live 15 minutes), FORBIDDEN, "
           + "PLAYER_FROZEN, PLAYER_DISABLED.")
-  public OAuthConsentDto request(@PathVariable String requestId) {
+  public OAuthConsentDto oauthRequest(@PathVariable String requestId) {
     return consent.view(requestId, CurrentPlayer.require());
   }
 
@@ -57,7 +57,7 @@ public class MyOAuthController {
           + "scopes (default: every requested scope the actor may get). Answers the URL to send the browser to: the "
           + "client's redirect URI with code, state and iss, or error=access_denied. The request is used up either way. "
           + "Errors: NOT_FOUND, VALIDATION_FAILED, FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED.")
-  public OAuthRedirectDto decide(@PathVariable String requestId, @Valid @RequestBody OAuthDecisionRequest body,
+  public OAuthRedirectDto decideOAuthRequest(@PathVariable String requestId, @Valid @RequestBody OAuthDecisionRequest body,
                                  HttpServletRequest request) {
     PlayerPrincipal who = CurrentPlayer.require();
     return consent.decide(requestId, body, who, OAuthRequests.meta(request, Channel.WEB, null));
@@ -76,7 +76,7 @@ public class MyOAuthController {
   @Operation(summary = "Disconnect an app",
       description = "Session only, CSRF. Revokes the grant at once: its refresh token stops working and its access "
           + "tokens are refused on the next request. Errors: NOT_FOUND.")
-  public void revoke(@PathVariable String grantId, HttpServletRequest request) {
+  public void disconnectApp(@PathVariable String grantId, HttpServletRequest request) {
     PlayerPrincipal who = CurrentPlayer.require();
     grants.revokeByUser(grantId, who, OAuthRequests.meta(request, Channel.WEB, null));
   }

@@ -38,3 +38,5 @@ excluded:
   /api/v1/market/indices: get_quotes with SPY, QQQ, DIA, IWM
   /api/v1/account/positions/{symbol}: get_positions
   /api/v1/orders/by-client-id/{clientOrderId}: get_order with client_order_id
+  /api/v1/me/oauth/requests/{requestId}: session only (the human's OAuth consent screen, §17.9.3)
+  /api/v1/me/connected-apps: session only (the human's OAuth grants, §17.9.1)

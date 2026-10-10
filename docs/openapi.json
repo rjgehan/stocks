@@ -3081,6 +3081,76 @@
         ]
       }
     },
+    "/api/v1/me/connected-apps": {
+      "get": {
+        "description": "Session only. The live OAuth grants you approved (claude.ai, ChatGPT, Claude Code, ...), newest first, with the player each acts as and its scopes.",
+        "operationId": "connectedApps",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectedApp"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "My connected apps",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/connected-apps/{grantId}": {
+      "delete": {
+        "description": "Session only, CSRF. Revokes the grant at once: its refresh token stops working and its access tokens are refused on the next request. Errors: NOT_FOUND.",
+        "operationId": "disconnectApp",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Disconnect an app",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/me/notifications": {
       "get": {
         "description": "Newest first. unreadOnly keeps unread ones; page with the opaque nextCursor (§6.6).",
@@ -3176,6 +3246,98 @@
         "summary": "Mark notifications read",
         "tags": [
           "notifications"
+        ]
+      }
+    },
+    "/api/v1/me/oauth/requests/{requestId}": {
+      "get": {
+        "description": "Session only. The consent screen of a claude.ai / ChatGPT connector: the client, its redirect host, the requested scopes and the 'Act as' choices (your active AI bots, then yourself) with the scopes each may get. Errors: NOT_FOUND (unknown, used or expired; requests live 15 minutes), FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED.",
+        "operationId": "oauthRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthConsent"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "An OAuth authorization request waiting for my consent",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "description": "Session only, CSRF. approve=true needs actAs (a handle from the request's actors) and optionally scopes (default: every requested scope the actor may get). Answers the URL to send the browser to: the client's redirect URI with code, state and iss, or error=access_denied. The request is used up either way. Errors: NOT_FOUND, VALIDATION_FAILED, FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED.",
+        "operationId": "decideOAuthRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthRedirect"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Approve or deny an OAuth authorization request",
+        "tags": [
+          "me"
         ]
       }
     },
@@ -6345,6 +6507,75 @@
           "clientOrderId"
         ]
       },
+      "ConnectedApp": {
+        "type": "object",
+        "properties": {
+          "actAs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlayerSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "client": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthClientInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "grantId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "redirectHost": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "actAs",
+          "client",
+          "createdAt",
+          "grantId",
+          "lastUsedAt",
+          "redirectHost",
+          "scopes"
+        ]
+      },
       "CorporateAction": {
         "type": "object",
         "properties": {
@@ -8324,6 +8555,192 @@
           "payload",
           "readAt",
           "title"
+        ]
+      },
+      "OAuthActor": {
+        "type": "object",
+        "properties": {
+          "allowedScopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "player": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlayerSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "self": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "allowedScopes",
+          "player",
+          "self"
+        ]
+      },
+      "OAuthClientInfo": {
+        "type": "object",
+        "properties": {
+          "clientId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "host": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CIMD",
+              "DCR",
+              null
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "clientId",
+          "host",
+          "kind",
+          "name"
+        ]
+      },
+      "OAuthConsent": {
+        "type": "object",
+        "properties": {
+          "actors": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/OAuthActor"
+            }
+          },
+          "client": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthClientInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "loopbackRedirect": {
+            "type": "boolean"
+          },
+          "redirectHost": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "redirectUri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestedScopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "actors",
+          "client",
+          "expiresAt",
+          "loopbackRedirect",
+          "redirectHost",
+          "redirectUri",
+          "requestId",
+          "requestedScopes"
+        ]
+      },
+      "OAuthDecisionRequest": {
+        "type": "object",
+        "properties": {
+          "actAs": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approve": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "approve"
+        ]
+      },
+      "OAuthRedirect": {
+        "type": "object",
+        "properties": {
+          "redirectUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "redirectUrl"
         ]
       },
       "Order": {
