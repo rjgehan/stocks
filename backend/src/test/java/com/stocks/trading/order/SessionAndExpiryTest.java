@@ -92,6 +92,28 @@ class SessionAndExpiryTest {
   }
 
   @Test
+  void stopsAndStopLimitsQueueForTheOpenAndTrailingStopsAreRefusedOutsideRegularHours() {
+    for (OrderType type : new OrderType[] {OrderType.STOP, OrderType.STOP_LIMIT}) {
+      var pre = accept(type, false, TimeInForce.DAY, et("2026-10-09", "05:00"));
+      assertThat(pre.waitReason()).as("%s in PRE", type).isEqualTo(WaitReason.QUEUED_FOR_OPEN);
+      assertThat(pre.eligibleBase()).isEqualTo(et("2026-10-09", "09:30"));
+      var post = accept(type, false, TimeInForce.GTC, et("2026-10-09", "17:00"));
+      assertThat(post.eligibleBase()).as("%s in POST", type).isEqualTo(et("2026-10-12", "09:30"));
+      assertThat(post.warnings()).extracting(w -> w.code()).contains(WarningCode.QUEUED_FOR_OPEN.name(),
+          WarningCode.WILL_PAUSE_OUTSIDE_SESSION.name());
+      assertThat(accept(type, false, TimeInForce.DAY, et("2026-10-09", "10:00")).waitReason())
+          .isEqualTo(WaitReason.LATENCY);
+    }
+    for (Instant at : new Instant[] {et("2026-10-09", "05:00"), et("2026-10-09", "16:30"), et("2026-10-10", "11:00")}) {
+      assertThatThrownBy(() -> accept(OrderType.TRAILING_STOP, false, TimeInForce.DAY, at))
+          .isInstanceOfSatisfying(ApiException.class,
+              e -> assertThat(e.code()).isEqualTo(ErrorCode.SESSION_NOT_ALLOWED));
+    }
+    // stops never work outside REGULAR: their window is the plain one
+    assertThat(SessionOrderMatrix.windowOpen(false, SessionType.POST)).isFalse();
+  }
+
+  @Test
   void windows() {
     assertThat(SessionOrderMatrix.windowOpen(false, SessionType.REGULAR)).isTrue();
     assertThat(SessionOrderMatrix.windowOpen(false, SessionType.PRE)).isFalse();
@@ -131,6 +153,16 @@ class SessionAndExpiryTest {
     // Wed 10-07 + 60 = Sun 12-06 → the trading day on or before it, Fri 12-04
     var weekend = ExpiryCalculator.compute(cal, rules, et("2026-10-07", "10:00"), false, TimeInForce.GTC);
     assertThat(weekend.expiresAt()).isEqualTo(et("2026-12-04", "16:00"));
+  }
+
+  @Test
+  void stopExpiryFollowsTheRegularSessionAndTrailingStopsEndOnTheEarlyClose() {
+    // a GTC stop entered after the close: next session date, 60 days, regular close (stops are never EXT)
+    var gtc = ExpiryCalculator.compute(cal, rules, et("2026-10-09", "17:00"), false, TimeInForce.GTC);
+    assertThat(gtc.sessionDate()).isEqualTo(LocalDate.of(2026, 10, 12));
+    assertThat(gtc.expiresAt()).isEqualTo(et("2026-12-08", "16:00"));
+    var trailing = ExpiryCalculator.compute(cal, rules, et("2026-11-27", "10:00"), false, TimeInForce.DAY);
+    assertThat(trailing.expiresAt()).isEqualTo(et("2026-11-27", "13:00"));
   }
 
   @Test
