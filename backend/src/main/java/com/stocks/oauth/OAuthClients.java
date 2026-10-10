@@ -1,9 +1,15 @@
 package com.stocks.oauth;
 
+import com.stocks.contract.oauth.dto.OAuthClientKind;
 import com.stocks.oauth.cimd.CimdClients;
 import com.stocks.oauth.cimd.ClientIdUrls;
+import java.net.URI;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
@@ -12,6 +18,7 @@ import org.springframework.stereotype.Component;
  * (RFC 6749 §2.3, OAuth 2.1 §2.4): public clients send only {@code client_id}; DCR confidential clients use HTTP
  * Basic or {@code client_secret} in the form (either is accepted, the secret compared in constant time against its
  * SHA-256). A {@code client_assertion} (ChatGPT's {@code private_key_jwt}) is ignored: that method is not advertised.
+ * CIMD documents are fetched at {@code /oauth2/authorize} only, never at the token or revocation endpoint.
  */
 @Component
 public class OAuthClients {
@@ -78,12 +85,24 @@ public class OAuthClients {
   }
 
   /**
-   * Resolves and authenticates the calling client.
+   * Authenticates the client calling the token or revocation endpoint. A CIMD client is a public client whose
+   * {@code client_id} only has to be a well-formed client-identifier URL here: its document is <b>not</b> fetched
+   * (the code or refresh token is bound to that exact {@code client_id}, PKCE and rotation protect it), so a refresh
+   * never depends on the vendor's document host being up, and anonymous token requests cannot trigger fetches.
    *
    * @throws OAuthException {@code invalid_client} (401)
    */
   public OAuthClient authenticate(Credentials credentials) {
-    OAuthClient client = resolve(credentials.clientId());
+    String clientId = credentials.clientId();
+    if (ClientIdUrls.looksLikeUrl(clientId)) {
+      if (!properties.cimd().enabled() || ClientIdUrls.problem(clientId) != null) {
+        throw new OAuthException(OAuthException.INVALID_CLIENT, "Unknown client_id.");
+      }
+      String host = URI.create(clientId).getHost().toLowerCase(Locale.ROOT);
+      return new OAuthClient(clientId, OAuthClientKind.CIMD, host, host, List.of(),
+          Set.of(OAuthClient.GRANT_CODE, OAuthClient.GRANT_REFRESH), OAuthClient.AUTH_NONE, null);
+    }
+    OAuthClient client = resolve(clientId);
     if (client.isPublic()) {
       return client; // PKCE (and the refresh token itself) protect public clients
     }
@@ -96,7 +115,7 @@ public class OAuthClients {
 
   private static String urlDecode(String s) {
     try {
-      return java.net.URLDecoder.decode(s, StandardCharsets.UTF_8);
+      return URLDecoder.decode(s, StandardCharsets.UTF_8);
     } catch (IllegalArgumentException e) {
       throw new OAuthException(OAuthException.INVALID_CLIENT, "Malformed Basic credentials.");
     }

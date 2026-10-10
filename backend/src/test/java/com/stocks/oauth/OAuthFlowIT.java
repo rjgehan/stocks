@@ -332,7 +332,10 @@ class OAuthFlowIT {
   void refreshRotatesAndReuseRevokesTheGrant() throws Exception {
     JsonNode first = claude.connect(aliceSession, bot.handle(), null);
     String r1 = first.get("refresh_token").asString();
+    cimd.clear();
+    int fetches = Documents.FETCHES.get();
     JsonNode second = body(claude.refresh(r1));
+    assertThat(Documents.FETCHES.get()).as("the token endpoint never fetches a CIMD document").isEqualTo(fetches);
     String r2 = second.get("refresh_token").asString();
     assertThat(r2).isNotEqualTo(r1).startsWith("ort_");
     assertThat(jwtClaims(second.get("access_token").asString()).get("sub").asString()).isEqualTo(bot.publicId());
