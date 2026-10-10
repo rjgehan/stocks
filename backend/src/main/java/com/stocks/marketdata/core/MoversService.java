@@ -37,17 +37,19 @@ public class MoversService implements PeriodicTask {
   private final MarketCalendar calendar;
   private final TimeSource time;
   private final Supplier<Boolean> screenerAvailable;
+  private final QuoteSplitAdjuster splitAdjuster;
   private final Cache<MoverList, Movers> cache = Caffeine.newBuilder().expireAfterWrite(Duration.ofSeconds(60))
       .build();
 
   public MoversService(MarketDataProvider provider, MarketFeed feed, AssetService assets, MarketCalendar calendar,
-                       TimeSource time, Supplier<Boolean> screenerAvailable) {
+                       TimeSource time, Supplier<Boolean> screenerAvailable, QuoteSplitAdjuster splitAdjuster) {
     this.provider = provider;
     this.feed = feed;
     this.assets = assets;
     this.calendar = calendar;
     this.time = time;
     this.screenerAvailable = screenerAvailable;
+    this.splitAdjuster = splitAdjuster;
   }
 
   @Override
@@ -98,7 +100,7 @@ public class MoversService implements PeriodicTask {
     Map<String, QuoteView> quotes = feed.quotes(symbols);   // at most 50: one snapshot call
     List<Mover> items = new ArrayList<>();
     for (Mover mv : m.items()) {
-      QuoteView q = quotes.get(mv.symbol());
+      QuoteView q = splitAdjuster.adjust(quotes.get(mv.symbol()));   // §14: a split is not a 50% move
       if (q != null && q.last() != null) {
         items.add(new Mover(mv.symbol(), q.last(), q.change(), q.changePct(), mv.volume()));
       }
@@ -112,7 +114,8 @@ public class MoversService implements PeriodicTask {
         .map(Universe.Entry::symbol).toList();
     Map<String, QuoteView> quotes = feed.peek(symbols);
     List<Mover> all = new ArrayList<>();
-    for (QuoteView q : quotes.values()) {
+    for (QuoteView raw : quotes.values()) {
+      QuoteView q = splitAdjuster.adjust(raw);                        // §14: a split is not a 50% move
       if (q.last() != null && q.changePct() != null) {
         all.add(new Mover(q.symbol(), q.last(), q.change(), q.changePct(), q.volume()));
       }

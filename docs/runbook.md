@@ -145,8 +145,9 @@ trading days (pays accrued dividends whose payable date has come). Each affected
 activity row; none of it moves the leaderboard.
 
 **Needs admin.** Mergers, spin-offs and delistings (Phase 1 has no tool for them), a split without valid rates, a
-split that was reported after its ex-date's pre-open, and a split that the split guard detected in the bars (04:01
-and 09:20 ET) become `NEEDS_ADMIN`. Connected admins get an alert, and the System page shows the count. **A split in
+split that was reported after its ex-date's pre-open (also when the app was down at 02:30 and came back after 04:00
+ET on the ex-date, before it had seen the split), and a split that the split guard detected in the bars (04:01 and
+09:20 ET) become `NEEDS_ADMIN`. Connected admins get an alert, and the System page shows the count. **A split in
 `NEEDS_ADMIN` puts the symbol on hold**: its orders wait with `CORPORATE_ACTION_HOLD`, new orders get
 `SYMBOL_NOT_TRADABLE`, and positions are valued at the last pre-split close. Resolve it the same morning:
 

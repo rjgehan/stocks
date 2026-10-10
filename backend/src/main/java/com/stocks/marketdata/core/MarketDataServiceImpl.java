@@ -38,7 +38,8 @@ import java.util.TreeSet;
 /**
  * The {@link MarketDataService} (§5.3, §15.5): one facade over the feed ({@link SimFeed} or {@link LiveFeed}), assets,
  * bars, marks, movers, news, fundamentals and the subscription budget. Symbols are normalized to upper case. A symbol
- * under a corporate-action hold (§14) is reported halted and gets no executable quote.
+ * under a corporate-action hold (§14) is reported halted and gets no executable quote; quotes are split-adjusted
+ * ({@link QuoteSplitAdjuster}).
  */
 public class MarketDataServiceImpl implements MarketDataService {
 
@@ -54,6 +55,7 @@ public class MarketDataServiceImpl implements MarketDataService {
   private final DailyMarkRepository dailyMarks;
   private final SplitAdjustments splits;
   private final CorporateActionHolds holds;
+  private final QuoteSplitAdjuster splitAdjuster;
   private final MarketCalendar calendar;
   private final TimeSource time;
   private final PointInTimeMarket sim;
@@ -61,7 +63,8 @@ public class MarketDataServiceImpl implements MarketDataService {
   public MarketDataServiceImpl(String profile, MarketFeed feed, AssetService assets, BarService bars, MarkService marks,
                                MoversService movers, NewsService news, FundamentalsService fundamentals,
                                SubscriptionBudgetManager budget, DailyMarkRepository dailyMarks,
-                               SplitAdjustments splits, CorporateActionHolds holds, MarketCalendar calendar,
+                               SplitAdjustments splits, CorporateActionHolds holds,
+                               QuoteSplitAdjuster splitAdjuster, MarketCalendar calendar,
                                TimeSource time, PointInTimeMarket simOrNull) {
     this.profile = profile;
     this.feed = feed;
@@ -75,6 +78,7 @@ public class MarketDataServiceImpl implements MarketDataService {
     this.dailyMarks = dailyMarks;
     this.splits = splits;
     this.holds = holds;
+    this.splitAdjuster = splitAdjuster;
     this.calendar = calendar;
     this.time = time;
     this.sim = simOrNull;
@@ -109,7 +113,7 @@ public class MarketDataServiceImpl implements MarketDataService {
     if (s == null || s.isEmpty()) {
       return QuoteView.none(s, profile);
     }
-    return withHold(feed.quote(s));
+    return withHold(splitAdjuster.adjust(feed.quote(s)));
   }
 
   @Override
@@ -122,7 +126,7 @@ public class MarketDataServiceImpl implements MarketDataService {
       }
     }
     Map<String, QuoteView> out = new LinkedHashMap<>();
-    feed.quotes(wanted).forEach((k, v) -> out.put(k, withHold(v)));
+    feed.quotes(wanted).forEach((k, v) -> out.put(k, withHold(splitAdjuster.adjust(v))));
     return out;
   }
 

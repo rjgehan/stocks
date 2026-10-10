@@ -137,4 +137,24 @@ class MarkServiceTest {
     assertThat(m.quality()).isEqualTo(DataQuality.SIMULATED);
     assertThat(m.basis()).isEqualTo(MarkBasis.SIMULATED);
   }
+
+  /**
+   * Integration smoke regression: after the 03:45 ET split of SIMS (2-for-1) and before its first post-split print,
+   * the SIM's last print is Tuesday's raw price; marking 2 shares at it showed +100% on the live board.
+   */
+  @Test
+  void simMarksFromBeforeAnAppliedSplitAreAdjusted() {
+    LocalDate ex = LocalDate.of(2026, 10, 14);
+    time.set(Instant.parse("2026-10-14T07:50:00Z"));                              // Wed 03:50 ET, CLOSED
+    splits.record("SIMS", ex, BigDecimal.ONE, BigDecimal.TWO, 1);
+    Instant tuesdayClose = Instant.parse("2026-10-13T20:00:00Z");
+    when(feed.markInputs("SIMS")).thenReturn(new MarketFeed.MarkInputs(null, tuesdayClose, null,
+        trade("108.47", tuesdayClose, true), Map.of(), true));
+    assertThat(service.mark("SIMS").price()).isEqualByComparingTo("54.235");
+    Instant wednesday = Instant.parse("2026-10-14T13:31:00Z");                     // the first post-split print
+    time.set(wednesday);
+    when(feed.markInputs("SIMS")).thenReturn(new MarketFeed.MarkInputs(null, wednesday, null,
+        trade("54.40", wednesday, true), Map.of(), true));
+    assertThat(service.mark("SIMS").price()).isEqualByComparingTo("54.40");
+  }
 }

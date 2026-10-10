@@ -180,6 +180,7 @@ function deps(env: Record<string, string>, sink: MemorySink): RunnerDeps {
 }
 
 interface RestOrder {
+  orderId: string;
   clientOrderId: string;
   symbol: string;
   side: string;
@@ -189,6 +190,18 @@ interface RestOrder {
   channel: string;
   rationale: string | null;
   status: string;
+}
+
+/**
+ * Cancels the order the scripted run placed, so a reused backend (STOCKS_E2E_URL) does not keep its buying power
+ * held: a second run against the same database would otherwise fail with INSUFFICIENT_BUYING_POWER.
+ */
+async function cancelOrder(key: string, orderId: string): Promise<void> {
+  const res = await fetch(`${baseUrl}/api/v1/orders/${encodeURIComponent(orderId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  expect([200, 202, 204]).toContain(res.status);
 }
 
 async function orderByClientId(key: string, clientOrderId: string): Promise<RestOrder> {
@@ -269,34 +282,36 @@ describe('agent runner against the real stocks MCP server', () => {
     ]);
     expect(readFileSync(s.logPath!, 'utf8')).not.toContain(keys.claude);
     expect(sink.text).not.toContain(keys.claude);
+    await cancelOrder(keys.claude, order.orderId);
     process.stdout.write(`${sink.text}`);
   });
 
   it('runs a scripted ChatGPT session through the Responses API the same way', async () => {
+    // NVDA, not MSFT: one MSFT share (about $527 in the SIM) can exceed the bot's $500 of buying power
     const clientOrderId = `chatgpt-e2e-${Date.now()}`;
     let limit = '';
     let placed = '';
     const llm = await openaiServer([
-      () => openaiReply([fnCall('c1', 'get_market_clock', {}), fnCall('c2', 'get_quotes', { symbols: ['MSFT'] })]),
+      () => openaiReply([fnCall('c1', 'get_market_clock', {}), fnCall('c2', 'get_quotes', { symbols: ['NVDA'] })]),
       (req) => {
         limit = limitFrom(openaiResult(req, 'c2'));
         return openaiReply([
           fnCall('c3', 'place_order', {
             client_order_id: clientOrderId,
-            symbol: 'MSFT',
+            symbol: 'NVDA',
             side: 'BUY',
             type: 'LIMIT',
             qty: '1',
             limit_price: limit,
-            rationale: 'E2E: first MSFT lot below the market.',
+            rationale: 'E2E: first NVDA lot below the market.',
           }),
         ]);
       },
       (req) => {
         placed = openaiResult(req, 'c3');
-        return openaiReply([fnCall('c4', 'save_notes', { text: `MSFT limit ${limit} working (${clientOrderId}).` })]);
+        return openaiReply([fnCall('c4', 'save_notes', { text: `NVDA limit ${limit} working (${clientOrderId}).` })]);
       },
-      () => openaiReply([message('One MSFT limit order placed; notes saved.')]),
+      () => openaiReply([message('One NVDA limit order placed; notes saved.')]),
     ]).start();
     servers.push(llm);
     const sink = new MemorySink();
@@ -311,8 +326,8 @@ describe('agent runner against the real stocks MCP server', () => {
     expect(JSON.parse(placed)).toMatchObject({ order: { clientOrderId }, replayed: false });
     expect(llm.calls[1]?.body.previous_response_id).toMatch(/^resp_fake_/);
     const order = await orderByClientId(keys.chatgpt, clientOrderId);
-    expect(order).toMatchObject({ clientOrderId, symbol: 'MSFT', side: 'BUY', type: 'LIMIT', channel: 'MCP_KEY' });
-    expect(order.rationale).toBe('E2E: first MSFT lot below the market.');
+    expect(order).toMatchObject({ clientOrderId, symbol: 'NVDA', side: 'BUY', type: 'LIMIT', channel: 'MCP_KEY' });
+    expect(order.rationale).toBe('E2E: first NVDA lot below the market.');
     expect(readFileSync(join(dataDir, 'chatgpt', 'notes.md'), 'utf8')).toContain(clientOrderId);
     // A bot key only sees its own orders.
     const other = await fetch(`${baseUrl}/api/v1/orders/by-client-id/${clientOrderId}`, {
@@ -320,6 +335,7 @@ describe('agent runner against the real stocks MCP server', () => {
     });
     expect(other.status).toBe(404);
     expect(sink.text).not.toContain(keys.chatgpt);
+    await cancelOrder(keys.chatgpt, order.orderId);
     process.stdout.write(`${sink.text}`);
   });
 });

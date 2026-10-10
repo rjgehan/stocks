@@ -123,6 +123,14 @@ class RepositoriesTest {
     assertThatThrownBy(() -> splits.record("X", ex, BigDecimal.ZERO, BigDecimal.ONE, 1))
         .isInstanceOf(IllegalArgumentException.class);
     time.advance(Duration.ofSeconds(1));
+    // a split written by another writer is seen after the TTL, or at once after invalidate() (an applied split)
+    db.jdbc().sql("""
+            INSERT INTO price_adjustment (symbol, ex_date, old_rate, new_rate, corporate_action_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)""")
+        .params("LATE", ex, BigDecimal.ONE, BigDecimal.TWO, 10L, com.stocks.common.jdbc.Jdbc.ts(time.now())).update();
+    assertThat(splits.adjust("LATE", new BigDecimal("10.00"), ex.minusDays(1), ex)).isEqualByComparingTo("10.00");
+    splits.invalidate();
+    assertThat(splits.adjust("LATE", new BigDecimal("10.00"), ex.minusDays(1), ex)).isEqualByComparingTo("5.00");
   }
 
   @Test

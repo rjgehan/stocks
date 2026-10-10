@@ -160,6 +160,12 @@ public class MarketDataAutoConfiguration {
     return (symbols, from, to) -> runtime.primary().corporateActions(symbols, from, to);
   }
 
+  /** Drops the hold and split-adjustment caches when a corporate action is applied or flagged (§14). */
+  @Bean
+  CorporateActionCacheListener corporateActionCacheListener(MarketDataRuntime runtime) {
+    return new CorporateActionCacheListener(runtime);
+  }
+
   /**
    * Starts the feed once every singleton exists (phase −100: before {@code StartupGate} opens the engine and before
    * the web server), attaching every {@link MarketUpdateListener} bean; live profiles then probe Alpaca and sync

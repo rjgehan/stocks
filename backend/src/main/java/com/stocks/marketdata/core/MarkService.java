@@ -31,8 +31,8 @@ import java.util.function.Predicate;
  *   <tr><td>CLOSED</td><td>1. {@code day_end_mark} of the last trading day · 2. last trade</td></tr>
  * </table>
  * Fallbacks dated before an applied split's ex-date are split-adjusted (§14). A symbol under a corporate-action hold
- * is marked at its last pre-ex-date {@code day_end_mark}, unadjusted, quality {@code STALE}. SIM marks are
- * {@code SIMULATED}.
+ * is marked at its last pre-ex-date {@code day_end_mark}, unadjusted, quality {@code STALE}. SIM marks are the last
+ * SIM print, split-adjusted like the fallbacks, quality {@code SIMULATED}.
  */
 public class MarkService {
 
@@ -74,7 +74,9 @@ public class MarkService {
     if (in.simulated()) {
       Trade t = in.lastTrade();
       if (t != null) {
-        return new Mark(t.price(), DataQuality.SIMULATED, t.ts(), MarkBasis.SIMULATED);
+        // a SIM print from before an applied split's ex-date (03:45 until the first post-split print) is raw (§14)
+        return new Mark(splits.adjust(symbol, t.price(), Et.date(t.ts()), today), DataQuality.SIMULATED, t.ts(),
+            MarkBasis.SIMULATED);
       }
       return new Mark(null, DataQuality.NONE, null, null);
     }

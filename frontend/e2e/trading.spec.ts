@@ -61,11 +61,13 @@ test('place a resting limit order and cancel it', async ({ page }, testInfo) => 
   const ticket = await openTicket(page, vp, SYMBOL, 'Buy')
   await chooseOrderType(ticket, 'Limit')
   await choose(ticket, 'Quantity mode', 'Shares')
-  // 3% under the bid: it rests (no fat-finger warning, which starts at 5%)
+  // 3% under the bid: it rests (no fat-finger warning, which starts at 5%). The three viewports trade one account in
+  // parallel, so each takes its own cent: two equal limits made the Cancelled list match two rows (strict mode).
   const bidLabel = await ticket.getByRole('button', { name: /^Use the bid price/ }).getAttribute('aria-label')
   const bid = Number(bidLabel?.match(/([\d,]+\.\d+)/)?.[1]?.replaceAll(',', ''))
   expect(bid).toBeGreaterThan(0)
-  const limit = (Math.floor(bid * 0.97 * 100) / 100).toFixed(2)
+  const cents = Math.floor(bid * 0.97 * 100) - (['phone', 'tablet', 'desktop'] as const).indexOf(vp)
+  const limit = (cents / 100).toFixed(2)
   await ticket.getByLabel('Limit price', { exact: true }).fill(limit)
   await ticket.getByLabel('Shares', { exact: true }).fill('1')
   await choose(ticket, 'Time in force', 'GTC')

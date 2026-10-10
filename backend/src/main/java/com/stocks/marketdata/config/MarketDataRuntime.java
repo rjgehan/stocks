@@ -17,6 +17,7 @@ import com.stocks.marketdata.core.AssetService;
 import com.stocks.marketdata.core.AssetSync;
 import com.stocks.marketdata.core.BarService;
 import com.stocks.marketdata.core.CorporateActionHolds;
+import com.stocks.marketdata.core.QuoteSplitAdjuster;
 import com.stocks.marketdata.core.DailyMarkRepository;
 import com.stocks.marketdata.core.DailyMarkServiceImpl;
 import com.stocks.marketdata.core.FundamentalsService;
@@ -191,14 +192,15 @@ public final class MarketDataRuntime implements AutoCloseable {
     this.bars = new BarService(primary, !props.simulated(), feed, calendar, time);
     this.marks = new MarkService(feed, calendar, time, dailyMarks, splits, holds::onHold, rules.regularConfirmed(),
         rules.extConfirmed());
+    QuoteSplitAdjuster splitAdjuster = new QuoteSplitAdjuster(splits, calendar, time);
     this.movers = new MoversService(primary, feed, assets, calendar, time,
-        () -> probe == null || probe.screenerAvailable());
+        () -> probe == null || probe.screenerAvailable(), splitAdjuster);
     this.assetSync = new AssetSync(assets, primary, finnhub, props.simulated(), seed, tracked, calendar, time);
     this.dailyMarkService = new DailyMarkServiceImpl(primary, sim, feed, dailyMarks, calendar, time);
     this.splitGuard = new SplitGuard(primary, props.simulated() ? null : "sip", tracked,
         splits instanceof SplitAdjustmentsImpl impl ? impl : null, external.splitFlagger(), calendar, time);
     this.service = new MarketDataServiceImpl(props.profile(), feed, assets, bars, marks, movers, news, fundamentals,
-        budget, dailyMarks, splits, holds, calendar, time, sim);
+        budget, dailyMarks, splits, holds, splitAdjuster, calendar, time, sim);
     log.info("Market data: profile={} feed={} finnhub={} alpaca={}", props.profile(),
         props.simulated() ? "SIM" : props.effectiveFeed(), finnhub != null ? "on" : "off",
         props.simulated() ? "-" : props.alpaca());
@@ -293,6 +295,17 @@ public final class MarketDataRuntime implements AutoCloseable {
   }
 
   // ------------------------------------------------------------------------------------------- accessors
+
+  /**
+   * A corporate action was applied or flagged (§14): drop the hold and split-adjustment caches so every reader sees
+   * the committed state at once instead of after their TTL.
+   */
+  public void corporateActionsChanged() {
+    holds.invalidate();
+    if (splits instanceof SplitAdjustmentsImpl impl) {
+      impl.invalidate();
+    }
+  }
 
   public MarketDataProperties props() {
     return props;

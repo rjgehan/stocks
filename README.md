@@ -70,7 +70,7 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 | Market data: live Alpaca (IEX) and Finnhub in production; a deterministic simulator for development and tests | Works |
 | Web app: Webull-style UI on phone, tablet and desktop, live quotes and charts, watchlists, notifications, admin console | Works |
 | AI players: MCP server with 38 tools, REST API with OpenAPI, the agent runner that drives the Claude and ChatGPT bots on a schedule with daily cost caps | Works (live bot runs need the owner's LLM keys) |
-| Tests | 1,328 backend tests on H2 and on PostgreSQL, 117 frontend unit tests, Playwright end-to-end on three viewports, agent-runner tests against fake LLM APIs |
+| Tests | 1,334 backend tests on H2 and on PostgreSQL, 117 frontend unit tests, Playwright end-to-end on three viewports, agent-runner tests against fake LLM APIs |
 | Delivery: CI, multi-arch image on GHCR, Watchtower on a CasaOS home server behind a Cloudflare Tunnel | Live |
 
 Next: the go-live checklist that needs the owner (bot keys on the server, Cloudflare settings checked from outside,
