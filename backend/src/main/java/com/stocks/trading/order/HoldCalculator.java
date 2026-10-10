@@ -69,7 +69,7 @@ public class HoldCalculator {
 
   /** {@code HOLD(qty × price + estFees(qty))}. */
   public BigDecimal holdFor(BigDecimal qty, BigDecimal price, LocalDate tradeDate) {
-    BigDecimal principal = Rounding.PRINCIPAL.multiply(qty, price);
+    BigDecimal principal = Rounding.PRINCIPAL_BUY.multiply(qty, price);
     BigDecimal est = fees.estimate(Side.BUY, qty, principal, tradeDate).total();
     return Rounding.HOLD.apply(qty.multiply(price).add(est));
   }

@@ -1,9 +1,12 @@
 package com.stocks.security;
 
+import com.stocks.common.events.SessionIdChanged;
+import com.stocks.common.events.SessionsRevoked;
 import com.stocks.contract.security.PlayerPrincipal;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
@@ -17,24 +20,30 @@ import org.springframework.stereotype.Component;
  * password. Login rotates the session id (fixation), stores the {@link PlayerAuthenticationToken} in the Spring
  * Session JDBC session ({@code stocks_sid}, {@code __Host-stocks_sid} in prod) and issues a fresh {@code XSRF-TOKEN}
  * cookie, so the SPA's next unsafe request already has the rotated token. Logout invalidates the session and also
- * rotates the CSRF cookie.
+ * rotates the CSRF cookie, and closes the WebSockets the session opened ({@link SessionsRevoked}).
  */
 @Component
 public class SessionLogin {
 
   private final SecurityContextRepository contextRepository;
   private final CsrfTokenRepository csrfTokens;
+  private final ApplicationEventPublisher events;
   private final SecurityContextHolderStrategy contexts = SecurityContextHolder.getContextHolderStrategy();
 
-  public SessionLogin(SecurityContextRepository contextRepository, CsrfTokenRepository csrfTokens) {
+  public SessionLogin(SecurityContextRepository contextRepository, CsrfTokenRepository csrfTokens,
+                      ApplicationEventPublisher events) {
     this.contextRepository = contextRepository;
     this.csrfTokens = csrfTokens;
+    this.events = events;
   }
 
   /** Authenticates the current request and session as {@code principal} (authMethod SESSION). */
   public void establish(PlayerPrincipal principal, HttpServletRequest request, HttpServletResponse response) {
-    if (request.getSession(false) != null) {
-      request.changeSessionId();
+    HttpSession existing = request.getSession(false);
+    if (existing != null) {
+      String old = existing.getId();
+      String renewed = request.changeSessionId();
+      events.publishEvent(new SessionIdChanged(old, renewed));
     }
     SecurityContext context = contexts.createEmptyContext();
     context.setAuthentication(new PlayerAuthenticationToken(principal));
@@ -59,7 +68,9 @@ public class SessionLogin {
     contexts.clearContext();
     HttpSession session = request.getSession(false);
     if (session != null) {
+      String id = session.getId();
       session.invalidate();
+      events.publishEvent(SessionsRevoked.one(null, id));
     }
     rotateCsrf(request, response);
   }

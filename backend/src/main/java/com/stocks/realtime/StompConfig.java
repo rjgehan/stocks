@@ -29,7 +29,9 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
  *   <li><b>Handshake</b>: chain 3 ({@code SecurityConfig.wsChain}) admits only an authenticated session; the
  *       {@code Origin} must be {@code stocks.public-url} or one of {@code stocks.security.extra-ws-origins} (dev adds
  *       {@code http://localhost:5173}); a request without {@code Origin} (not a browser) is allowed. The CSRF token of
- *       the handshake is remembered for the CONNECT check ({@link StompCsrf}).</li>
+ *       the handshake is remembered for the CONNECT check ({@link StompCsrf}), and so is the HTTP session id, so
+ *       {@link LiveSockets} can close the socket when that session ends (password change, logout, freeze,
+ *       disable, role change, expiry).</li>
  *   <li><b>Broker</b>: Spring's simple in-memory broker, prefixes {@code /topic} and {@code /queue}, application
  *       prefix {@code /app}, user prefix {@code /user}; heartbeats 10 s / 10 s (under Cloudflare's ~100 s idle
  *       limit), on Spring's {@code messageBrokerTaskScheduler}.</li>
@@ -56,18 +58,20 @@ public class StompConfig implements WebSocketMessageBrokerConfigurer {
   private final ChannelInterceptor csrfChannelInterceptor;
   private final TaskScheduler brokerScheduler;
   private final SubscriptionTracker tracker;
+  private final LiveSockets liveSockets;
 
   public StompConfig(StocksProperties properties, CsrfTokenRepository csrfTokenRepository,
                      StompAuthInterceptor authInterceptor,
                      @Qualifier("csrfChannelInterceptor") ChannelInterceptor csrfChannelInterceptor,
                      @Lazy @Qualifier("messageBrokerTaskScheduler") TaskScheduler brokerScheduler,
-                     SubscriptionTracker tracker) {
+                     SubscriptionTracker tracker, LiveSockets liveSockets) {
     this.properties = properties;
     this.csrfTokenRepository = csrfTokenRepository;
     this.authInterceptor = authInterceptor;
     this.csrfChannelInterceptor = csrfChannelInterceptor;
     this.brokerScheduler = brokerScheduler;
     this.tracker = tracker;
+    this.liveSockets = liveSockets;
   }
 
   /**
@@ -83,7 +87,7 @@ public class StompConfig implements WebSocketMessageBrokerConfigurer {
   public void registerStompEndpoints(StompEndpointRegistry registry) {
     registry.addEndpoint(ENDPOINT)
         .setAllowedOrigins(allowedOrigins(properties).toArray(String[]::new))
-        .addInterceptors(StompCsrf.handshake(csrfTokenRepository));
+        .addInterceptors(StompCsrf.handshake(csrfTokenRepository), LiveSockets.handshakeInterceptor());
     registry.setPreserveReceiveOrder(true);
   }
 
@@ -106,7 +110,8 @@ public class StompConfig implements WebSocketMessageBrokerConfigurer {
   public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
     registration.setMessageSizeLimit(MAX_INBOUND_FRAME_BYTES)
         .setSendTimeLimit(15_000)
-        .setSendBufferSizeLimit(512 * 1024);
+        .setSendBufferSizeLimit(512 * 1024)
+        .addDecoratorFactory(liveSockets::decorate);   // closes the sockets of ended sessions (§17.3)
   }
 
   /** A socket closed without a DISCONNECT frame: release its subscriptions and leases. */

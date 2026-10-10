@@ -17,9 +17,13 @@ class RoundingTest {
   @ParameterizedTest(name = "{0}({1}) = {2}")
   @CsvSource({
       // policy,          exact,          expected
-      "PRINCIPAL,         227.415,        227.42",
-      "PRINCIPAL,         227.414999,     227.41",
-      "PRINCIPAL,         0.005,          0.01",
+      "PRINCIPAL_BUY,     227.415,        227.42",
+      "PRINCIPAL_BUY,     227.410001,     227.42",
+      "PRINCIPAL_BUY,     0.00499,        0.01",
+      "PRINCIPAL_BUY,     227.41,         227.41",
+      "PRINCIPAL_SELL,    227.419999,     227.41",
+      "PRINCIPAL_SELL,    0.00499,        0.00",
+      "PRINCIPAL_SELL,    227.41,         227.41",
       "NOTIONAL_QTY,      2.198789999,    2.19878",
       "NOTIONAL_QTY,      0.000009,       0.00000",
       "HOLD,              231.951,        231.96",
@@ -95,7 +99,12 @@ class RoundingTest {
   @Test
   void divideAndMultiplyNameTheirPolicy() {
     assertThat(Rounding.NOTIONAL_QTY.divide(d("498.97"), d("227.41"))).isEqualTo(d("2.19414"));
-    assertThat(Rounding.PRINCIPAL.multiply(d("2.19414"), d("227.41"))).isEqualTo(d("498.97"));
+    assertThat(Rounding.PRINCIPAL_BUY.multiply(d("2.19414"), d("227.41"))).isEqualTo(d("498.97"));
+    // §6.2: principal rounds against the player, so a 0.00001 x 499.00 buy costs a cent, never nothing
+    assertThat(Rounding.principal(com.stocks.common.domain.Side.BUY, d("0.00001"), d("499.00"))).isEqualTo(d("0.01"));
+    assertThat(Rounding.principal(com.stocks.common.domain.Side.SELL, d("0.00001"), d("499.00")))
+        .isEqualTo(d("0.00"));
+    assertThat(Rounding.principal(com.stocks.common.domain.Side.BUY, d("1"), d("0.5049"))).isEqualTo(d("0.51"));
     assertThat(Rounding.UNIT.divide(d("1"), d("3"))).isEqualTo(d("0.333333333333333333"));
     assertThatThrownBy(() -> Rounding.TICK_DOWN.divide(d("1"), d("3")))
         .isInstanceOf(UnsupportedOperationException.class);

@@ -37,10 +37,15 @@ class FeeCalculatorTest {
 
   @Test
   void sellFiveDollarsNotional() {
-    Fees f = fees.estimate(Side.SELL, d("0.02198"), d("5.00"), OCT_9);
+    // §13 golden: $5.00 at a bid of 227.41 → qty floor5(5.00 / 227.41) = 0.02198; principal FLOOR(4.99847) = 4.99
+    BigDecimal qty = Rounding.NOTIONAL_QTY.divide(d("5.00"), d("227.41"));
+    BigDecimal principal = Rounding.principal(Side.SELL, qty, d("227.41"));
+    assertThat(qty).isEqualByComparingTo("0.02198");
+    assertThat(principal).isEqualByComparingTo("4.99");
+    Fees f = fees.estimate(Side.SELL, qty, principal, OCT_9);
     assertThat(f.sec()).isEqualByComparingTo("0.01");
     assertThat(f.cat()).isEqualByComparingTo("0.00");
-    assertThat(d("5.00").subtract(f.total())).isEqualByComparingTo("4.99");
+    assertThat(principal.subtract(f.total())).isEqualByComparingTo("4.98");
   }
 
   @Test
@@ -126,7 +131,7 @@ class FeeCalculatorTest {
     BigDecimal catSum = BigDecimal.ZERO;
     for (int k = 0; k < fills; k++) {
       BigDecimal q = BigDecimal.valueOf(sharesPerFill);
-      BigDecimal p = Rounding.PRINCIPAL.multiply(q, price);
+      BigDecimal p = Rounding.PRINCIPAL_SELL.multiply(q, price);
       Fees f = fees.forExecution(Side.SELL, JAN_4_2027, qty, principal, q, p);
       assertThat(f.sec().signum()).isGreaterThanOrEqualTo(0);
       secSum = secSum.add(f.sec());

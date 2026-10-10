@@ -60,6 +60,8 @@ public class EngineCore {
 
   private static final Logger log = LoggerFactory.getLogger(EngineCore.class);
   static final Duration RE_EVALUATE = Duration.ofSeconds(1);
+  /** Prefix of the halt reason after a failed bootstrap (shown on /admin/system). */
+  static final String BOOTSTRAP_FAILED = "Bootstrap failed: ";
 
   private final TransactionTemplate tx;
   private final ApplicationEventPublisher publisher;
@@ -106,22 +108,35 @@ public class EngineCore {
 
   // ------------------------------------------------------------------------------------------- bootstrap
 
-  /** §12.9 steps 4 and 6: invariants, then the open orders and their leases. Idempotent. */
+  /**
+   * §12.9 steps 4 and 6: invariants, then the open orders and their leases. Idempotent. If it throws (the database is
+   * unreachable at boot, for example) the engine is HALTED with a {@code Bootstrap failed} reason, so orders are
+   * refused instead of reserving buying power that nothing would ever release; {@link EngineRunner} retries with
+   * backoff, and an admin resume retries it first.
+   */
   public synchronized void bootstrap() {
     EngineThread.assertCurrent();
     if (bootstrapped) {
       return;
     }
-    index.clear();
-    for (OrderRow r : orderStore.open()) {
-      orders.track(r);
-    }
-    InvariantResult result = invariants.check();
-    lastInvariants = result;
-    if (result.ok()) {
-      state = EngineState.RUNNING;
-    } else {
-      halt("Invariants failed at boot: " + result.failures().get(0));
+    try {
+      index.clear();
+      for (OrderRow r : orderStore.open()) {
+        orders.track(r);
+      }
+      InvariantResult result = invariants.check();
+      lastInvariants = result;
+      if (result.ok()) {
+        state = EngineState.RUNNING;
+        haltReason = null;
+      } else {
+        halt("Invariants failed at boot: " + result.failures().get(0));
+      }
+    } catch (RuntimeException e) {
+      index.clear();
+      lastError = e.getClass().getSimpleName() + ": " + e.getMessage();
+      halt(BOOTSTRAP_FAILED + lastError);
+      throw e;
     }
     bootstrapped = true;
     log.info("Engine {} with {} open orders", state, index.size());
@@ -143,6 +158,11 @@ public class EngineCore {
       throw ApiException.of(ErrorCode.ENGINE_HALTED, "The trading engine is halted"
               + (haltReason == null ? "." : ": " + haltReason))
           .withHint("An admin must resume the engine; read-only endpoints keep working.").withRetryAfter(60);
+    }
+    if (state == EngineState.STARTING && !cmd.allowedWhileHalted()) {
+      // not bootstrapped yet: nothing would ever activate, fill or expire the order
+      throw ApiException.of(ErrorCode.ENGINE_HALTED, "The trading engine is starting.")
+          .withHint("Retry in a few seconds.").withRetryAfter(5);
     }
     if (cmd instanceof SweepCmd) {
       sweep();
@@ -183,6 +203,16 @@ public class EngineCore {
         yield status(0);
       }
       case ResumeEngineCmd c -> {
+        if (!bootstrapped) {
+          // a failed boot: reload the open orders first, which also runs the invariants and sets the state
+          try {
+            bootstrap();
+          } catch (RuntimeException e) {
+            throw ApiException.of(ErrorCode.ENGINE_HALTED, "The engine could not bootstrap: " + lastError)
+                .withHint("Check the database and the logs, then resume again.").withRetryAfter(60);
+          }
+          yield status(0);
+        }
         InvariantResult r = checkInvariants();
         if (r.ok()) {
           state = EngineState.RUNNING;

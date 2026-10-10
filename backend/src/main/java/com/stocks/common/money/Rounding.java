@@ -1,5 +1,6 @@
 package com.stocks.common.money;
 
+import com.stocks.common.domain.Side;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Objects;
@@ -12,7 +13,10 @@ import java.util.Objects;
  * <table>
  *   <caption>Policies</caption>
  *   <tr><th>Policy</th><th>Rule</th><th>Used for</th></tr>
- *   <tr><td>PRINCIPAL</td><td>HALF_UP to cents</td><td>execution principal ({@code qty × price})</td></tr>
+ *   <tr><td>PRINCIPAL_BUY</td><td>CEILING to cents</td><td>BUY execution principal ({@code qty × price}): the
+ *       buyer never pays less than the exact value</td></tr>
+ *   <tr><td>PRINCIPAL_SELL</td><td>FLOOR to cents</td><td>SELL execution principal: the seller never receives more
+ *       than the exact value</td></tr>
  *   <tr><td>NOTIONAL_QTY</td><td>FLOOR to 5 dp</td><td>{@code floor5((notional − estFees) / price)}</td></tr>
  *   <tr><td>HOLD</td><td>CEILING to cents</td><td>buying-power holds</td></tr>
  *   <tr><td>FEE_CEIL / FEE_HALF_UP / FEE_SUBCENT_ZERO</td><td>§13</td><td>fees</td></tr>
@@ -25,7 +29,10 @@ import java.util.Objects;
  * </table>
  */
 public enum Rounding {
-  PRINCIPAL(2, RoundingMode.HALF_UP),
+  /** BUY principal: rounded against the buyer, so a trade can never be worth more than it cost. */
+  PRINCIPAL_BUY(2, RoundingMode.CEILING),
+  /** SELL principal: rounded against the seller, so a sale never pays more than the shares were worth. */
+  PRINCIPAL_SELL(2, RoundingMode.FLOOR),
   NOTIONAL_QTY(5, RoundingMode.FLOOR),
   HOLD(2, RoundingMode.CEILING),
   /** SEC Section 31: any positive amount is at least $0.01. */
@@ -94,9 +101,17 @@ public enum Rounding {
     return dividend.divide(divisor, scale, mode);
   }
 
-  /** {@code a × b}, rounded under this policy (e.g. {@code PRINCIPAL.multiply(qty, price)}). */
+  /** {@code a × b}, rounded under this policy (e.g. {@code PRINCIPAL_BUY.multiply(qty, price)}). */
   public BigDecimal multiply(BigDecimal a, BigDecimal b) {
     return apply(a.multiply(b));
+  }
+
+  /**
+   * Execution principal {@code qty × price} to cents, rounded against the player (§6.2): CEILING for a BUY,
+   * FLOOR for a SELL. Round-tripping at one price can therefore never create cash.
+   */
+  public static BigDecimal principal(Side side, BigDecimal qty, BigDecimal price) {
+    return (Objects.requireNonNull(side, "side") == Side.BUY ? PRINCIPAL_BUY : PRINCIPAL_SELL).multiply(qty, price);
   }
 
   /** Split quantity per lot: {@code (qty × newRate).divide(oldRate, 5, FLOOR)}; never {@code newRate / oldRate}. */

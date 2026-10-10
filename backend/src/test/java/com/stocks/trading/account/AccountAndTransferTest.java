@@ -174,6 +174,41 @@ class AccountAndTransferTest extends TradingTestBase {
     assertThat(activities(p)).first().satisfies(x -> assertThat(x.type()).isEqualTo(ActivityType.ADJUSTMENT));
   }
 
+  /**
+   * Review regression: an account emptied by a full withdrawal holds zero units. A PnL correction into it used to add
+   * equity no unit value could show, and a later withdrawal then computed negative units and failed the whole batch on
+   * ck_account_units_nonneg (INTERNAL_ERROR). Both now skip with NO_UNITS; a contribution inflow still applies. Runs
+   * on PostgreSQL too under -Ppg-it. The ALL-scope half is {@link TransferToAllTest}.
+   */
+  @Test
+  void anAccountWithoutUnitsSkipsOutflowsAndPnlCorrectionsButTakesDeposits() {
+    Player p = human();
+    long admin = admin();
+    assertThat(transfers.apply(single(p, TransferType.WITHDRAWAL, "500.00", "cash out"), null, admin).applied())
+        .isEqualTo(1);
+    assertThat(units(p)).isEqualByComparingTo("0");
+
+    CashTransferCommand correction = new CashTransferCommand(TransferScope.SINGLE, p.handle(), Set.of(),
+        TransferType.ADJUSTMENT, new BigDecimal("10.00"), AdjustmentTreatment.PNL_CORRECTION, "fix", false, false);
+    assertThat(transfers.preview(correction).accounts()).singleElement().satisfies(x -> {
+      assertThat(x.wouldApply()).isFalse();
+      assertThat(x.skipReason()).isEqualTo(TransferPlanner.SKIP_NO_UNITS);
+    });
+    TransferBatchResultDto c = transfers.apply(correction, null, admin);
+    assertThat(c.applied()).isZero();
+    assertThat(c.results()).singleElement().satisfies(x -> {
+      assertThat(x.status()).isEqualTo(TransferStatus.SKIPPED);
+      assertThat(x.skipReason()).isEqualTo("NO_UNITS");
+    });
+    assertThat(account(p).cash().total()).isEqualByComparingTo("0.00");
+
+    // a deposit mints units again at the last transfer's unit value
+    assertThat(transfers.apply(single(p, TransferType.DEPOSIT, "20.00", "back in"), null, admin).applied())
+        .isEqualTo(1);
+    assertThat(units(p)).isEqualByComparingTo("20");
+    assertThat(account(p).equity()).isEqualByComparingTo("20.00");
+  }
+
   @Test
   void transfersAreIdempotentPerKey() {
     Player p = human();

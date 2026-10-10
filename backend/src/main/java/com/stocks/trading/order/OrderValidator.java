@@ -172,6 +172,19 @@ public class OrderValidator {
                 + min.toPlainString() + ".")
             .withField("notional", ErrorCode.NOTIONAL_TOO_SMALL, "At least " + min.toPlainString());
       }
+    } else if (buy && fractional && o.qty() != null) {
+      // §11.1: the $1.00 buy minimum also binds a fractional quantity, valued at the touch (else the reference)
+      QuoteView q14 = in.market().quote();
+      BigDecimal px = q14 == null ? null : positive(q14.ask());
+      px = px != null ? px : positive(in.market().reference());
+      BigDecimal min = rules.fractional().minBuyNotional();
+      if (px != null && o.qty().multiply(px).compareTo(min) < 0) {
+        throw ApiException.of(ErrorCode.NOTIONAL_TOO_SMALL, "A fractional buy must be worth at least $"
+                + min.toPlainString() + "; " + display(o.qty()) + " " + o.symbol() + " is about $"
+                + Rounding.PRINCIPAL_BUY.multiply(o.qty(), px).toPlainString() + ".")
+            .withHint("Buy a larger quantity, or send a notional of at least \"" + min.toPlainString() + "\".")
+            .withField("qty", ErrorCode.NOTIONAL_TOO_SMALL, "Worth at least $" + min.toPlainString());
+      }
     }
 
     // 15: prices required / allowed by type
@@ -356,7 +369,7 @@ public class OrderValidator {
     BigDecimal principal = null;
     Fees f = Fees.ZERO;
     if (qty != null && price != null) {
-      principal = Rounding.PRINCIPAL.multiply(qty, price);
+      principal = Rounding.principal(o.side(), qty, price);
       f = fees.estimate(o.side(), qty, principal, tradeDate);
     }
     return new EstimateDto(price == null ? null : Prices.normalize(price.setScale(Prices.SCALE, RoundingMode.HALF_UP)),
@@ -370,7 +383,7 @@ public class OrderValidator {
    */
   public BigDecimal notionalBuyQty(BigDecimal notional, BigDecimal price, LocalDate tradeDate) {
     BigDecimal q0 = Rounding.NOTIONAL_QTY.divide(notional, price);
-    BigDecimal est = fees.estimate(Side.BUY, q0, Rounding.PRINCIPAL.multiply(q0, price), tradeDate).total();
+    BigDecimal est = fees.estimate(Side.BUY, q0, Rounding.PRINCIPAL_BUY.multiply(q0, price), tradeDate).total();
     return Rounding.NOTIONAL_QTY.divide(notional.subtract(est), price).max(Qty.ZERO);
   }
 

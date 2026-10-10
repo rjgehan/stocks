@@ -204,7 +204,7 @@ public final class Fixtures {
     asset(symbol);
     BigDecimal q = new BigDecimal(qty);
     BigDecimal p = new BigDecimal(price);
-    BigDecimal principal = Rounding.PRINCIPAL.multiply(q, p);
+    BigDecimal principal = Rounding.PRINCIPAL_BUY.multiply(q, p);
     Instant now = time.now();
     LocalDate today = time.todayEt();
     LocalDate settle = today.plusDays(1);

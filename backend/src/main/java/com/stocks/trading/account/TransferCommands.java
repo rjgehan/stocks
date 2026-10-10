@@ -124,8 +124,11 @@ public class TransferCommands {
         tx.publish(new AccountChanged(p.account().id(), p.player().id(), "TRANSFER", now));
       } else {
         skipped++;
-        skippedFields.add(new ProblemField(p.player().handle(), ErrorCode.INSUFFICIENT_WITHDRAWABLE.name(),
-            "Withdrawable $" + p.balances().withdrawable().toPlainString()));
+        skippedFields.add(TransferPlanner.SKIP_NO_UNITS.equals(p.skipReason())
+            ? new ProblemField(p.player().handle(), TransferPlanner.SKIP_NO_UNITS,
+                "The account holds no units (emptied by a full withdrawal); deposit into it first")
+            : new ProblemField(p.player().handle(), ErrorCode.INSUFFICIENT_WITHDRAWABLE.name(),
+                "Withdrawable $" + p.balances().withdrawable().toPlainString()));
       }
       results.add(new TransferResultDto(xfr, p.player().handle(), p.player().displayName(), p.account().publicId(),
           apply ? TransferStatus.APPLIED : TransferStatus.SKIPPED, p.skipReason(), p.amount(), equity, p.unitValue(),
@@ -134,7 +137,7 @@ public class TransferCommands {
     // 6. all-or-nothing rolls the whole batch back
     if (cmd.allOrNothing() && skipped > 0) {
       throw ApiException.of(ErrorCode.INSUFFICIENT_WITHDRAWABLE, skipped + " of " + plan.accounts().size()
-              + " accounts cannot cover the withdrawal; nothing was applied (allOrNothing).")
+              + " accounts cannot take this transfer; nothing was applied (allOrNothing).")
           .withFields(skippedFields);
     }
     transfers.setBatchCounts(batchId, applied, skipped);

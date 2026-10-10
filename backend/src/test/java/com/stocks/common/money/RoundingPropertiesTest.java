@@ -12,12 +12,17 @@ import net.jqwik.api.constraints.Scale;
 class RoundingPropertiesTest {
 
   @Property(tries = 500)
-  void holdNeverUnderReservesAndPrincipalIsWithinHalfACent(
+  void holdNeverUnderReservesAndPrincipalRoundsAgainstThePlayer(
       @ForAll @BigRange(min = "0.00001", max = "200000") @Scale(5) BigDecimal qty,
       @ForAll @BigRange(min = "0.0001", max = "100000") @Scale(4) BigDecimal price) {
     BigDecimal exact = qty.multiply(price);
     assertThat(Rounding.HOLD.apply(exact)).isGreaterThanOrEqualTo(exact);
-    assertThat(Rounding.PRINCIPAL.apply(exact).subtract(exact).abs()).isLessThanOrEqualTo(new BigDecimal("0.005"));
+    BigDecimal buy = Rounding.PRINCIPAL_BUY.apply(exact);
+    BigDecimal sell = Rounding.PRINCIPAL_SELL.apply(exact);
+    // §6.2: a buyer never pays less, and a seller never receives more, than the exact value (within a cent)
+    assertThat(buy).isGreaterThanOrEqualTo(exact).isLessThan(exact.add(new BigDecimal("0.01")));
+    assertThat(sell).isLessThanOrEqualTo(exact).isGreaterThan(exact.subtract(new BigDecimal("0.01")));
+    assertThat(buy).isGreaterThanOrEqualTo(sell);
   }
 
   @Property(tries = 500)

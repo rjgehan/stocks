@@ -117,7 +117,7 @@ public class PostingService {
       BigDecimal qty = leg.qty();
       BigDecimal price = leg.price();
       BigDecimal[] sums = orders.sameDaySums(order.id(), tradeDate);
-      BigDecimal principal = Rounding.PRINCIPAL.multiply(qty, price);
+      BigDecimal principal = Rounding.principal(order.side(), qty, price);
       Fees f = fees.forExecution(order.side(), tradeDate, sums[0], sums[1], qty, principal);
 
       if (order.isBuy()) {
@@ -128,7 +128,7 @@ public class PostingService {
           if (qty.signum() <= 0) {
             break;
           }
-          principal = Rounding.PRINCIPAL.multiply(qty, price);
+          principal = Rounding.principal(order.side(), qty, price);
           f = fees.forExecution(order.side(), tradeDate, sums[0], sums[1], qty, principal);
         }
       } else {
@@ -140,7 +140,7 @@ public class PostingService {
           if (qty.signum() <= 0) {
             break;
           }
-          principal = Rounding.PRINCIPAL.multiply(qty, price);
+          principal = Rounding.principal(order.side(), qty, price);
           f = fees.forExecution(order.side(), tradeDate, sums[0], sums[1], qty, principal);
         }
       }
@@ -241,7 +241,7 @@ public class PostingService {
     int scale = order.fractional() ? Qty.SCALE : 0;
     BigDecimal qty = allowed.max(BigDecimal.ZERO).divide(price, scale, RoundingMode.FLOOR);
     while (qty.signum() > 0) {
-      BigDecimal principal = Rounding.PRINCIPAL.multiply(qty, price);
+      BigDecimal principal = Rounding.principal(order.side(), qty, price);
       Fees f = fees.forExecution(order.side(), tradeDate, sums[0], sums[1], qty, principal);
       if (principal.add(f.total()).compareTo(allowed) <= 0) {
         return Qty.normalize(qty);

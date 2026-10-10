@@ -33,6 +33,8 @@ public class EngineRunner implements TradingEngine, MarketUpdateListener, SmartL
   public static final int PHASE = -100;
   private static final int BATCH = 100;
   private static final long DRAIN_MILLIS = 10_000;
+  static final long BOOTSTRAP_BACKOFF_MIN_NANOS = TimeUnit.SECONDS.toNanos(1);
+  static final long BOOTSTRAP_BACKOFF_MAX_NANOS = TimeUnit.SECONDS.toNanos(60);
 
   private record Envelope(EngineCommand cmd, CompletableFuture<Object> future) {}
 
@@ -74,7 +76,11 @@ public class EngineRunner implements TradingEngine, MarketUpdateListener, SmartL
       try {
         return CompletableFuture.completedFuture(EngineThread.runAsEngine(() -> {
           if (!core.isBootstrapped()) {
-            core.bootstrap();
+            try {
+              core.bootstrap();
+            } catch (RuntimeException e) {
+              log.error("Engine bootstrap failed", e);   // HALTED now: execute refuses all but admin commands
+            }
           }
           return core.execute(cmd);
         }));
@@ -154,14 +160,21 @@ public class EngineRunner implements TradingEngine, MarketUpdateListener, SmartL
 
   private void loop() {
     EngineThread.markCurrentThread();
-    try {
-      core.bootstrap();
-    } catch (RuntimeException e) {
-      log.error("Engine bootstrap failed", e);
-    }
     long interval = props.sweepInterval().toNanos();
     long nextSweep = System.nanoTime();
+    long nextBootstrap = System.nanoTime();
+    long backoff = BOOTSTRAP_BACKOFF_MIN_NANOS;
     while (running) {
+      // §12.9: a failed bootstrap leaves the engine HALTED; retry with backoff until it loads the open orders
+      if (!core.isBootstrapped() && System.nanoTime() - nextBootstrap >= 0) {
+        try {
+          core.bootstrap();
+        } catch (RuntimeException e) {
+          log.error("Engine bootstrap failed; retrying in {} s", TimeUnit.NANOSECONDS.toSeconds(backoff), e);
+          nextBootstrap = System.nanoTime() + backoff;
+          backoff = Math.min(backoff * 2, BOOTSTRAP_BACKOFF_MAX_NANOS);
+        }
+      }
       try {
         Envelope env = queue.poll(props.sweepInterval().toMillis(), TimeUnit.MILLISECONDS);
         int n = 0;

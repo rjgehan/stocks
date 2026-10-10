@@ -84,6 +84,8 @@ class StompIT {
   @Autowired SubscriptionTracker tracker;
   @Autowired MarketDataService marketData;
   @Autowired JsonMapper jsonMapper;
+  @Autowired com.stocks.security.PlayerSessions playerSessions;
+  @Autowired LiveSockets liveSockets;
 
   ThreadPoolTaskScheduler heartbeats;
   WebSocketStompClient stomp;
@@ -206,6 +208,89 @@ class StompIT {
       connect(alice, alice.xsrf());
     }
     assertThat(connectError(alice, alice.xsrf())).contains("RATE_LIMITED");
+  }
+
+  /**
+   * Review regression (§17.3): a password change ended the other HTTP sessions, but a socket opened by one of them
+   * stayed connected and kept receiving the player's private pushes. Now it is closed; the caller's socket stays.
+   */
+  @Test
+  void aPasswordChangeClosesTheSocketsOfTheOtherSessions() throws Exception {
+    Fixtures.PlayerRef alice = fx.human("victim" + SEQ.incrementAndGet());
+    Browser attacker = loginAs(alice);
+    Browser owner = loginAs(alice);
+    Client spy = connect(attacker, attacker.xsrf());
+    Client mine = connect(owner, owner.xsrf());
+    spy.subscribe("/user/queue/orders");
+    mine.subscribe("/user/queue/orders");
+    awaitSubscribers("/user/queue/orders", 2);
+
+    HttpClient http = HttpClient.newBuilder().cookieHandler(owner.cookies()).build();
+    HttpResponse<String> pw = http.send(HttpRequest.newBuilder(URI.create(base() + "/api/v1/me/password"))
+        .header("Content-Type", "application/json").header("X-XSRF-TOKEN", owner.xsrf())
+        .POST(HttpRequest.BodyPublishers.ofString("{\"currentPassword\":\"" + Fixtures.PASSWORD
+            + "\",\"newPassword\":\"brand-new-password-1\"}", StandardCharsets.UTF_8)).build(),
+        HttpResponse.BodyHandlers.ofString());
+    assertThat(pw.statusCode()).as(pw.body()).isEqualTo(204);
+
+    awaitClosed(spy);
+    assertThat(mine.session.isConnected()).as("the caller's own socket stays").isTrue();
+    assertThat(push.toPlayer(alice.id(), "/queue/orders", Map.of("secret", "after-pw-change"))).isTrue();
+    assertThat(mine.next("/user/queue/orders")).contains("after-pw-change");
+    assertThat(spy.poll("/user/queue/orders", 300)).as("the ended session gets nothing").isNull();
+  }
+
+  /** §10.5: freeze, disable, role change and admin password reset delete every session; their sockets close too. */
+  @Test
+  void deletingEverySessionOfAPlayerClosesTheirSockets() throws Exception {
+    Fixtures.PlayerRef bob = fx.human("revoked" + SEQ.incrementAndGet());
+    Browser phone = loginAs(bob);
+    Browser desktop = loginAs(bob);
+    Client a = connect(phone, phone.xsrf());
+    Client b = connect(desktop, desktop.xsrf());
+    a.subscribe("/user/queue/notifications");
+    b.subscribe("/user/queue/notifications");
+    awaitSubscribers("/user/queue/notifications", 2);
+    assertThat(playerSessions.deleteAll(bob.publicId())).isEqualTo(2);
+    awaitClosed(a);
+    awaitClosed(b);
+    for (int i = 0; i < 100 && push.isConnected(bob.id()); i++) {
+      Thread.sleep(20);
+    }
+    assertThat(push.isConnected(bob.id())).isFalse();
+  }
+
+  /** Logout closes the socket of that session only, and the sweep closes sockets whose session expired. */
+  @Test
+  void logoutClosesThatSessionsSocketAndTheSweepClosesExpiredOnes() throws Exception {
+    Fixtures.PlayerRef carol = fx.human("logout" + SEQ.incrementAndGet());
+    Browser phone = loginAs(carol);
+    Browser desktop = loginAs(carol);
+    Client a = connect(phone, phone.xsrf());
+    Client b = connect(desktop, desktop.xsrf());
+    HttpClient http = HttpClient.newBuilder().cookieHandler(phone.cookies()).build();
+    HttpResponse<String> out = http.send(HttpRequest.newBuilder(URI.create(base() + "/api/v1/auth/logout"))
+        .header("X-XSRF-TOKEN", phone.xsrf()).POST(HttpRequest.BodyPublishers.noBody()).build(),
+        HttpResponse.BodyHandlers.ofString());
+    assertThat(out.statusCode()).as(out.body()).isEqualTo(204);
+    awaitClosed(a);
+    assertThat(b.session.isConnected()).isTrue();
+
+    // the desktop's session row disappears by another path (expiry): the sweep closes its socket
+    jdbc.sql("DELETE FROM SPRING_SESSION WHERE PRINCIPAL_NAME = ?").param(carol.publicId()).update();
+    assertThat(liveSockets.sweep()).isGreaterThanOrEqualTo(1);
+    awaitClosed(b);
+  }
+
+  String base() {
+    return "http://127.0.0.1:" + port;
+  }
+
+  void awaitClosed(Client c) throws InterruptedException {
+    for (int i = 0; i < 150 && c.session.isConnected(); i++) {
+      Thread.sleep(20);
+    }
+    assertThat(c.session.isConnected()).as("the socket was closed by the server").isFalse();
   }
 
   // ------------------------------------------------------------------------------------------- helpers

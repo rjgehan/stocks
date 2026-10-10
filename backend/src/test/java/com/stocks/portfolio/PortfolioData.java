@@ -151,8 +151,8 @@ public final class PortfolioData {
     fx.asset(symbol);
     BigDecimal q = new BigDecimal(qty);
     BigDecimal p = new BigDecimal(price);
-    BigDecimal principal = Rounding.PRINCIPAL.multiply(q, p);
     boolean buy = "BUY".equals(side);
+    BigDecimal principal = (buy ? Rounding.PRINCIPAL_BUY : Rounding.PRINCIPAL_SELL).multiply(q, p);
     Instant now = time.now();
     LocalDate today = time.todayEt();
     BigDecimal realized = null;

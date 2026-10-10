@@ -831,7 +831,7 @@ public record SessionChanged(SessionState state) {}
 
 | Policy | Rule | Used for |
 |---|---|---|
-| `PRINCIPAL` | HALF_UP to cents of exact `qty × price` | Execution principal |
+| `PRINCIPAL_BUY` / `PRINCIPAL_SELL` | CEILING (BUY) / FLOOR (SELL) to cents of exact `qty × price`, i.e. **always against the player** (`Rounding.principal(side, qty, price)`). A buy never costs less than the shares are worth (so it is never $0.00), and a round trip at one price can never create cash. The notional all-in guarantee still holds: `notional − estFees` is whole cents and `qty × price ≤` it, so `CEILING(qty × price) ≤ notional − estFees`. | Execution principal, estimates, holds |
 | `NOTIONAL_QTY` | FLOOR to 5 dp | `qty = floor5((notional − estFees) / price)`, which guarantees principal + fees ≤ notional |
 | `HOLD` | CEILING to cents | Buying-power holds |
 | `FEE_CEIL` / `FEE_HALF_UP` / `FEE_SUBCENT_ZERO` | §13 | Fees |
@@ -1252,7 +1252,7 @@ CREATE TABLE cash_transfer (                          -- every external flow, in
   amount           NUMERIC(19,2)  NOT NULL CHECK (amount <> 0),   -- signed: + into the account, − out
   is_contribution  BOOLEAN        NOT NULL,           -- FALSE only for ADJUSTMENT treated as PNL_CORRECTION
   status           VARCHAR(8)     NOT NULL CHECK (status IN ('APPLIED','SKIPPED')),
-  skip_reason      VARCHAR(40),                       -- INSUFFICIENT_WITHDRAWABLE | PLAYER_INACTIVE
+  skip_reason      VARCHAR(40),                       -- INSUFFICIENT_WITHDRAWABLE | NO_UNITS | PLAYER_INACTIVE
   memo             VARCHAR(200)   NOT NULL,
   equity_before    NUMERIC(19,2),                     -- E⁻ valued at effective_at (NULL for INITIAL)
   unit_value       NUMERIC(38,18),                    -- U at the flow (INITIAL: 1 for run 1, else prior run's final U)
@@ -1365,7 +1365,7 @@ CREATE TABLE execution (                              -- append-only
   side             VARCHAR(4)    NOT NULL CHECK (side IN ('BUY','SELL')),
   qty              NUMERIC(18,5) NOT NULL CHECK (qty > 0),
   price            NUMERIC(19,4) NOT NULL CHECK (price > 0),
-  principal        NUMERIC(19,2) NOT NULL CHECK (principal >= 0),
+  principal        NUMERIC(19,2) NOT NULL CHECK (principal >= 0),   -- + V1_3_01: CHECK (side = 'SELL' OR principal > 0)
   fee_sec          NUMERIC(19,2) NOT NULL DEFAULT 0 CHECK (fee_sec >= 0),
   fee_taf          NUMERIC(19,2) NOT NULL DEFAULT 0 CHECK (fee_taf >= 0),
   fee_cat          NUMERIC(19,2) NOT NULL DEFAULT 0 CHECK (fee_cat >= 0),
@@ -1947,7 +1947,7 @@ What a frozen or disabled bot sees is fixed by the authentication outcome order 
 **Fractional and notional rules** (D7):
 - The symbol must be `fractionable`.
 - The order must be `MARKET` with `DAY` and `extendedHours=false`.
-- **Buy** minimum notional is **$1.00** [U: $1 vs $5]. **Sell** minimum notional is $0.01. Minimum qty is 0.00001.
+- **Buy** minimum notional is **$1.00** [U: $1 vs $5]. It also binds a **fractional-quantity** buy, valued at the ask (else the reference price): check 14 rejects `qty × price < $1.00` with `NOTIONAL_TOO_SMALL` on `qty`. **Sell** minimum notional is $0.01. Minimum qty is 0.00001.
 - Fractional and notional orders **cannot be replaced** (`FRACTIONAL_NOT_REPLACEABLE`); cancel and resubmit instead [V].
 - A notional **buy is all-in**: `qty = NOTIONAL_QTY((notional − estCAT(q0)) / price)`, where `q0 = floor5(notional / price)`. Principal plus fees is therefore ≤ notional, and a $500 account can go all in with `notional: "500.00"`.
 - A notional **sell** computes `qty = min(available, floor5(notional / bid))`.
@@ -1977,7 +1977,7 @@ Checks run in the row order below; the first failure wins. The numbers are stabl
 | 11 | Validator | Fractional or notional on an ineligible symbol | `NOT_FRACTIONABLE` |
 | 12 | Validator | Fractional or notional on the wrong type | `FRACTIONAL_MARKET_ONLY` |
 | 13 | Validator | Fractional or notional with GTC or EXT | `FRACTIONAL_DAY_ONLY` |
-| 14 | Validator | Notional below the minimum | `NOTIONAL_TOO_SMALL` |
+| 14 | Validator | Notional below the minimum, or a fractional-quantity BUY worth less than the buy minimum at the ask (else the reference) | `NOTIONAL_TOO_SMALL` |
 | 15 | Validator | Prices required by type: `limitPrice` for LIMIT and STOP_LIMIT; `stopPrice` for STOP and STOP_LIMIT; a trail for TRAILING_STOP. A price field not used by the type gives `PRICE_NOT_ALLOWED`. | `LIMIT_PRICE_REQUIRED`, `STOP_PRICE_REQUIRED`, `TRAIL_REQUIRED`, `PRICE_NOT_ALLOWED` |
 | 16 | Validator | Prices on tick | `INVALID_TICK` |
 | 17 | Validator | `extendedHours=true` with a type other than LIMIT | `EXT_HOURS_LIMIT_ONLY` |
@@ -2308,7 +2308,7 @@ for each fee row r applicable to (side, trade_date of this execution):
 | Case | Expected |
 |---|---|
 | Sell 1,000 shares at $50.00 on 2026-10-09 | SEC $1.03 · TAF $0.00 · CAT $0.003 → $0.00 · **total $1.03** |
-| Sell $5.00 notional of AAPL on 2026-10-09 | SEC $0.01 · CAT $0.00 · net $4.99 |
+| Sell $5.00 notional of AAPL at a $227.41 bid on 2026-10-09 | qty 0.02198 · principal FLOOR(4.99847) = $4.99 · SEC $0.01 · CAT $0.00 · net **$4.98** |
 | 10 partial sells of 100 shares at $50 in one order on 2026-10-09 | SEC charges 0.11, 0.10, 0.10, 0.11, 0.10, 0.10, 0.11, 0.10, 0.10, 0.10 (cumulative CEIL_CENT of 0.103·k: 0.11, 0.21, 0.31, 0.42, …, 1.03) summing to **$1.03**, not $1.10 |
 | Sell 100,000 shares at $10 on 2027-01-04 | SEC $20.60 · TAF $19.50 → capped **$9.79** · CAT $0.30 |
 | Buy 4,000 shares on 2026-10-09 | CAT $0.012 → **$0.01** |
@@ -2674,6 +2674,7 @@ The cash is ALWAYS applied (a WITHDRAWAL needs |F| ≤ withdrawable, else SKIPPE
     units⁻ > 0, E⁻ > 0   (normal):   U = UNIT(E⁻ / units⁻);  units_delta = UNIT(F / U)
     units⁻ = 0           (emptied by a full withdrawal; no performance since):
                                       U = unit_value of the account's last APPLIED transfer;  units_delta = UNIT(F / U)
+                                      inflows only: an outflow, or a PNL_CORRECTION, is SKIPPED with NO_UNITS (§21.2)
     units⁻ > 0, E⁻ = 0.00 (wiped out by performance):  REBASE
                                       U = 1;  units_delta = F − units⁻ (so units⁺ = F and I4 holds);
                                       unit_series += 1;  cash_transfer.rebased = true
@@ -3530,7 +3531,7 @@ type SystemStatus = { version: string; startedAt: Ts; db: "postgresql"|"h2";
 4. **Mark quality gate.** For each account holding positions, compute the worst mark used. If any is `STALE` or `NONE`, or any uses basis `PREV_CLOSE` while the session is not CLOSED, the batch is rejected with `422 MARKS_DEGRADED` (listing the accounts and symbols) unless `acceptDegradedMarks=true`. Reason: E⁻ fixes the unit value at which units are minted, and a mispriced U dilutes or inflates the account's return **permanently**. The Money page explains the safe windows: during RTH, or after the 20:20 ET day-end marks exist (CLOSED marks are `day_end_mark`). The 17:00–20:00 window, when IEX is dark, usually needs the override.
 5. For each account:
    - Compute E⁻ and U per §16.2, including the empty and rebase cases. **There is no minimum equity**: contribution flows are always applied.
-   - Validate: a WITHDRAWAL or negative ADJUSTMENT must satisfy `|amount| ≤ withdrawable`, otherwise skip with `INSUFFICIENT_WITHDRAWABLE`.
+   - Validate: a WITHDRAWAL or negative ADJUSTMENT must satisfy `|amount| ≤ withdrawable`, otherwise skip with `INSUFFICIENT_WITHDRAWABLE`. An account with `units = 0` (emptied by a full withdrawal) skips any outflow and any `PNL_CORRECTION` with `NO_UNITS`: an outflow would redeem units it does not hold, and a correction would add equity no unit value can show. A contribution inflow still applies (it mints units at the last transfer's U). The unit math is `UnitMath.contribution`, the single implementation of §16.2.
    - Insert the `cash_transfer` row (APPLIED or SKIPPED; `unit_value`, `units_delta`, `unit_series`, `rebased`, `marks_quality`, `spy_mark`). If applied, insert the `cash_ledger` row (settled immediately, key `XFER:<id>`) and update `cash_balance`, `net_contributions`, `units` and `unit_series`.
 6. If `allOrNothing` and anything was skipped: roll back and return 422 with the per-account results.
 7. Insert the `idempotency_record` row with the response (same transaction).

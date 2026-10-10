@@ -16,6 +16,7 @@ import com.stocks.common.web.Text;
 import com.stocks.contract.marketdata.Mark;
 import com.stocks.contract.marketdata.MarkBasis;
 import com.stocks.contract.marketdata.MarketDataService;
+import com.stocks.contract.portfolio.UnitFlow;
 import com.stocks.contract.portfolio.UnitMath;
 import com.stocks.contract.portfolio.Valuation;
 import com.stocks.contract.trading.Balances;
@@ -44,6 +45,11 @@ import org.springframework.stereotype.Component;
 public class TransferPlanner {
 
   public static final String SKIP_INSUFFICIENT_WITHDRAWABLE = "INSUFFICIENT_WITHDRAWABLE";
+  /**
+   * The account holds no units (emptied by a full withdrawal): an outflow or a PnL correction cannot apply (§16.2).
+   * A contribution inflow still applies and mints units at the last transfer's unit value.
+   */
+  public static final String SKIP_NO_UNITS = "NO_UNITS";
 
   /** One target account and what the flow does to it. {@code amount} is signed (+ into the account). */
   public record Planned(PlayerRow player, AccountRow account, BigDecimal amount, boolean contribution,
@@ -166,25 +172,27 @@ public class TransferPlanner {
     if (flow.signum() < 0 && flow.negate().compareTo(b.withdrawable()) > 0) {
       apply = false;
       skip = SKIP_INSUFFICIENT_WITHDRAWABLE;
+    } else if (unitsBefore.signum() == 0 && (!contribution || flow.signum() < 0)) {
+      // An account emptied by a full withdrawal holds no units: an outflow would redeem units it does not have
+      // (ck_account_units_nonneg), and a PnL correction would add equity that no unit value can ever show.
+      apply = false;
+      skip = SKIP_NO_UNITS;
     }
-    if (unitsBefore.signum() > 0 && equity.signum() > 0) {
+    BigDecimal lastU = unitsBefore.signum() == 0
+        ? accounts.lastTransferUnitValue(acc.id()).orElse(BigDecimal.ONE.setScale(18)) : null;
+    if (contribution && apply) {
+      // §16.2, one implementation: normal, empty account, wipe-out rebase and the full-withdrawal clamp
+      UnitFlow f = UnitMath.contribution(flow, equity, unitsBefore, series, lastU);
+      u = f.unitValue();
+      delta = f.unitsDelta();
+      series = f.unitSeriesAfter();
+      rebased = f.rebased();
+    } else if (unitsBefore.signum() > 0 && equity.signum() > 0) {
       u = UnitMath.unitValue(equity, unitsBefore);
-      if (contribution && apply) {
-        delta = equity.add(flow).signum() == 0 ? unitsBefore.negate() : UnitMath.unitsFor(flow, u);
-      }
     } else if (unitsBefore.signum() == 0) {
-      u = accounts.lastTransferUnitValue(acc.id()).orElse(BigDecimal.ONE.setScale(18));
-      if (contribution && apply) {
-        delta = UnitMath.unitsFor(flow, u);
-      }
+      u = lastU;
     } else {
-      // wiped out by performance: a contribution rebases the series (§16.2)
-      u = BigDecimal.ONE.setScale(18);
-      if (contribution && apply && flow.signum() > 0) {
-        delta = flow.subtract(unitsBefore).setScale(18);
-        series = series + 1;
-        rebased = true;
-      }
+      u = BigDecimal.ONE.setScale(18);   // wiped out by performance
     }
     return new Planned(p, acc, flow, contribution, b, v, u, delta, series, rebased, apply, skip, worst, worstBasis,
         List.copyOf(warnings), degraded, List.copyOf(degradedSymbols));
