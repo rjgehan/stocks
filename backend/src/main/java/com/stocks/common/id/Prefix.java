@@ -16,6 +16,10 @@ public enum Prefix {
   CORPORATE_ACTION("cac"),
   NOTIFICATION("ntf"),
   ACCOUNT_EVENT("aev"),
+  /** Phase 2: price_alert (§19.1). */
+  ALERT("alr"),
+  /** Phase 2: push_subscription, one browser subscription (§19.2). */
+  PUSH_SUBSCRIPTION("psh"),
   /** Server-generated {@code X-Request-Id} values (§6.6); never stored as a row id. */
   REQUEST("req");
 

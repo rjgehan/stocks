@@ -75,6 +75,8 @@ public enum ErrorCode {
   WEAK_PASSWORD(422, "Weak password"),
   SETTING_INVALID(422, "Invalid setting"),
   CORPORATE_ACTION_NOT_RESOLVABLE(422, "Corporate action not resolvable"),
+  /** Phase 2 (§19.1): the player already has the maximum number of ACTIVE or PAUSED alerts. */
+  TOO_MANY_ALERTS(422, "Too many alerts"),
 
   // 429
   RATE_LIMITED(429, "Rate limited"),
@@ -90,7 +92,9 @@ public enum ErrorCode {
   ENGINE_BUSY(503, "Engine busy"),
   ENGINE_TIMEOUT(503, "Engine timeout"),
   ENGINE_HALTED(503, "Engine halted"),
-  PROVIDER_UNAVAILABLE(503, "Market data provider unavailable");
+  PROVIDER_UNAVAILABLE(503, "Market data provider unavailable"),
+  /** Phase 2 (§19.2): Web Push is switched off or has no usable VAPID key. */
+  PUSH_UNAVAILABLE(503, "Web Push unavailable");
 
   private final int status;
   private final String title;
