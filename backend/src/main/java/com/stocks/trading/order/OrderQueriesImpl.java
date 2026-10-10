@@ -8,9 +8,12 @@ import com.stocks.contract.trading.OrderFilter;
 import com.stocks.contract.trading.OrderQueries;
 import com.stocks.contract.trading.dto.ExecutionDto;
 import com.stocks.contract.trading.dto.OrderDto;
+import com.stocks.contract.trading.dto.OrderGroupDto;
 import com.stocks.trading.order.mapper.ExecutionDtoMapper;
 import com.stocks.trading.order.mapper.OrderDtoMapper;
+import com.stocks.trading.order.mapper.OrderGroupDtoMapper;
 import com.stocks.trading.store.ExecutionRow;
+import com.stocks.trading.store.OrderGroupStore;
 import com.stocks.trading.store.OrderRow;
 import com.stocks.trading.store.OrderStore;
 import java.util.List;
@@ -23,10 +26,20 @@ public class OrderQueriesImpl implements OrderQueries {
 
   private final OrderStore orders;
   private final OrderDtoMapper mapper;
+  private final OrderGroupStore groups;
+  private final OrderGroupDtoMapper groupMapper;
 
-  public OrderQueriesImpl(OrderStore orders, OrderDtoMapper mapper) {
+  public OrderQueriesImpl(OrderStore orders, OrderDtoMapper mapper, OrderGroupStore groups,
+                          OrderGroupDtoMapper groupMapper) {
     this.orders = orders;
     this.mapper = mapper;
+    this.groups = groups;
+    this.groupMapper = groupMapper;
+  }
+
+  @Override
+  public Optional<OrderGroupDto> group(long accountId, String groupId) {
+    return groups.byPublicId(accountId, groupId).map(g -> groupMapper.toDto(g, orders.legs(g.id())));
   }
 
   @Override

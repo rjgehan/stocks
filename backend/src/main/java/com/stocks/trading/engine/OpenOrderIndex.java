@@ -40,6 +40,8 @@ public final class OpenOrderIndex {
     volatile Instant expiresAt;
     volatile WaitReason waitReason;
     volatile boolean hasRested;
+    /** §11.10: when a requested user cancel takes effect (null: none requested). */
+    volatile Instant cancelEffectiveAt;
     Instant lastEvaluatedAt;
     long printCursor;
     boolean reopenPending;
@@ -70,6 +72,7 @@ public final class OpenOrderIndex {
       this.expiresAt = r.expiresAt();
       this.waitReason = r.waitReason();
       this.hasRested = r.hasRested();
+      this.cancelEffectiveAt = r.cancelEffectiveAt();
     }
 
     public long id() {

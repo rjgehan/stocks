@@ -15,12 +15,12 @@ import com.stocks.common.jdbc.Jdbc;
 import com.stocks.common.money.Money;
 import com.stocks.common.money.Prices;
 import com.stocks.common.money.Qty;
-import com.stocks.contract.marketdata.LeasePriority;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.model.Asset;
 import com.stocks.contract.trading.dto.OrderDto;
 import com.stocks.contract.trading.dto.PlaceOrderResponse;
 import com.stocks.contract.trading.dto.ReplaceOrderRequest;
+import com.stocks.trading.config.RulesProperties;
 import com.stocks.trading.engine.EngineCommand.CancelAllCmd;
 import com.stocks.trading.engine.EngineCommand.CancelOrderCmd;
 import com.stocks.trading.engine.EngineCommand.PlaceOrderCmd;
@@ -70,10 +70,14 @@ class OrderHandler {
   private final JdbcClient jdbc;
   private final JsonMapper json;
   private final OrderReplay replays;
+  private final OrderTracker tracker;
+  private final GroupHandler groups;
+  private final RulesProperties rules;
 
   OrderHandler(OrderStore orders, AccountStore accounts, OrderWriter writer, OrderEvaluation evaluation,
                LatencyModel latency, TradingClock clock, PublicId publicIds, MarketDataService marketData,
-               OrderDtoMapper mapper, OpenOrderIndex index, JdbcClient jdbc, JsonMapper json, OrderReplay replays) {
+               OrderDtoMapper mapper, OpenOrderIndex index, JdbcClient jdbc, JsonMapper json, OrderReplay replays,
+               OrderTracker tracker, GroupHandler groups, RulesProperties rules) {
     this.orders = orders;
     this.accounts = accounts;
     this.writer = writer;
@@ -87,6 +91,9 @@ class OrderHandler {
     this.jdbc = jdbc;
     this.json = json;
     this.replays = replays;
+    this.tracker = tracker;
+    this.groups = groups;
+    this.rules = rules;
   }
 
   // ------------------------------------------------------------------------------------------- place
@@ -146,35 +153,16 @@ class OrderHandler {
   }
 
   /**
-   * After commit: index the order and lease its symbol so market data keeps it fresh (§12.2, §15.5): an armed stop
-   * holds an {@code ORDER_TRIGGER} lease (it needs prints), everything else {@code ORDER_RESTING}.
+   * After commit: index the order and lease its symbol so market data keeps it fresh (§12.2, §15.5); a held group
+   * child is not indexed until its entry releases it (§11.9). See {@link OrderTracker}.
    */
   void track(OrderRow row) {
-    OpenOrderIndex.Entry e = index.put(row);
-    if (OrderTypes.isStop(row.type()) && e.trigger == null) {
-      e.trigger = TriggerEvaluator.stateFor(row, clock.now());
-    }
-    if (e.lease == null) {
-      LeasePriority priority = OrderTypes.isStop(row.type()) && !row.triggered() ? LeasePriority.ORDER_TRIGGER
-          : LeasePriority.ORDER_RESTING;
-      try {
-        e.lease = marketData.lease(row.symbol(), priority, "order:" + row.publicId());
-      } catch (RuntimeException ignored) {
-        e.lease = null;   // market data unavailable: evaluation requests refreshes instead
-      }
-    }
+    tracker.track(row);
   }
 
   /** After commit: forget a terminal order and release its lease. */
   void untrack(long orderId) {
-    OpenOrderIndex.Entry e = index.remove(orderId);
-    if (e != null && e.lease != null) {
-      try {
-        e.lease.close();
-      } catch (RuntimeException ignored) {
-        // best effort
-      }
-    }
+    tracker.untrack(orderId);
   }
 
   /**
@@ -216,6 +204,11 @@ class OrderHandler {
     String hash = RequestHasher.hash(replacement);
     if (existing.isPresent()) {
       return replays.replay(existing.get(), hash);
+    }
+    if (old.cancelPending()) {
+      throw ApiException.of(ErrorCode.ORDER_NOT_REPLACEABLE, "Order " + old.publicId()
+              + " has a pending cancel and cannot be replaced.")
+          .withHint("Wait for the cancel to complete, then place a new order.");
     }
     if (!(old.status() == OrderStatus.PENDING || old.status() == OrderStatus.WORKING)
         || old.filledQty().signum() > 0) {
@@ -275,7 +268,7 @@ class OrderHandler {
       throw ApiException.of(ErrorCode.ORDER_NOT_CANCELLABLE, "Order " + r.publicId() + " is " + r.status()
           + " and cannot be cancelled.");
     }
-    cancelOpen(r, cmd.reason(), cmd.actorPlayerId(), clock.now(), tx);
+    cancelOrRequest(r, cmd.reason(), cmd.actorPlayerId(), clock.now(), tx);
     return mapper.toDto(orders.byId(r.id()).orElseThrow());
   }
 
@@ -283,14 +276,67 @@ class OrderHandler {
     List<OrderDto> out = new ArrayList<>();
     Instant now = clock.now();
     for (OrderRow r : orders.openByAccount(cmd.accountId(), cmd.symbolOrNull())) {
-      cancelOpen(r, cmd.reason(), cmd.actorPlayerId(), now, tx);
+      cancelOrRequest(r, cmd.reason(), cmd.actorPlayerId(), now, tx);
       out.add(mapper.toDto(orders.byId(r.id()).orElseThrow()));
     }
     return out;
   }
 
-  /** Cancels one open order and releases its holds (§11.6); used by user, admin, freeze and reset. */
-  void cancelOpen(OrderRow r, CancelReason reason, long actorPlayerId, Instant now, EngineTx tx) {
+  /**
+   * A cancel of an open order: immediate (§11.6), or, with cancel latency on (§11.10), a user cancel of a working
+   * order is requested and takes effect after the latency ({@code PENDING_CANCEL}); a repeated request changes
+   * nothing.
+   */
+  void cancelOrRequest(OrderRow r, CancelReason reason, long actorPlayerId, Instant now, EngineTx tx) {
+    OrderRow fresh = orders.byId(r.id()).orElse(r);
+    if (!fresh.isOpen()) {
+      return;
+    }
+    if (reason == CancelReason.USER && cancelLatencyApplies(fresh)) {
+      if (fresh.cancelRequestedAt() == null) {
+        requestCancel(fresh, now, tx);
+      }
+      return;
+    }
+    cancelOpen(fresh, reason, actorPlayerId, now, tx);
+  }
+
+  /** §11.10: on, and the order works (PENDING orders and held group children cancel at once). */
+  boolean cancelLatencyApplies(OrderRow r) {
+    return rules.cancelLatency().enabled() && !r.held()
+        && (r.status() == OrderStatus.WORKING || r.status() == OrderStatus.PARTIALLY_FILLED);
+  }
+
+  /** §11.10: the cancel takes effect at {@code now + base + jitter}; until then the order can still fill. */
+  private void requestCancel(OrderRow r, Instant now, EngineTx tx) {
+    var cl = rules.cancelLatency();
+    Instant effectiveAt = now.plus(latency.cancelLatency(r.publicId(), 0, cl.base(), cl.jitterMax()));
+    writer.requestCancel(r.id(), now, effectiveAt);
+    writer.event(r.id(), OrderEventType.CANCEL_REQUESTED, OrderStatus.PENDING_CANCEL, now,
+        json.writeValueAsString(Map.of("effectiveAt", effectiveAt.toString())));
+    tx.publish(new OrderChanged(r.accountId(), r.playerId(), r.publicId(), OrderEventType.CANCEL_REQUESTED,
+        OrderStatus.PENDING_CANCEL, now));
+    tx.afterCommit(() -> {
+      OpenOrderIndex.Entry e = index.get(r.id());
+      if (e != null) {
+        e.cancelEffectiveAt = effectiveAt;
+      }
+    });
+  }
+
+  /**
+   * Cancels one open order and releases its holds (§11.6); used by user, admin, freeze, reset and corporate actions.
+   * An order that is no longer open (a loop over orders a group rule already cancelled) is left alone. A group leg
+   * then applies the §11.9 rules (its children, its OCO sibling, the pair's reservation).
+   */
+  void cancelOpen(OrderRow r0, CancelReason reason, long actorPlayerId, Instant now, EngineTx tx) {
+    OrderRow r = orders.byId(r0.id()).orElse(r0);
+    if (!r.isOpen()) {
+      return;
+    }
+    if (r.inGroup()) {
+      groups.beforeTerminal(r);
+    }
     OrderStateMachine.transition(r.status(), OrderStatus.CANCELLED);
     writer.finish(r.id(), OrderStatus.CANCELLED, reason.name(), now);
     writer.event(r.id(), OrderEventType.CANCELLED, OrderStatus.CANCELLED, now,
@@ -300,6 +346,9 @@ class OrderHandler {
     tx.publish(new OrderChanged(r.accountId(), r.playerId(), r.publicId(), OrderEventType.CANCELLED,
         OrderStatus.CANCELLED, now));
     tx.publish(new AccountChanged(r.accountId(), r.playerId(), "ORDER_CANCELLED", now));
+    if (r.inGroup()) {
+      groups.afterChange(r, false, reason, now, tx);
+    }
   }
 
   // ------------------------------------------------------------------------------------------- helpers

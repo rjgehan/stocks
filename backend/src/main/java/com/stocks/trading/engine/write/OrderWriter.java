@@ -205,14 +205,14 @@ public class OrderWriter {
         .params(Jdbc.ts(requestedAt), Jdbc.ts(effectiveAt), orderId).update();
   }
 
-  /** §14 FINRA 5330: reduced limit and stop prices (null keeps a column) and the recomputed buy hold. */
+  /**
+   * §14 FINRA 5330: the order's limit and stop prices after an ex-dividend reduction (pass the current value of a price
+   * that does not change) and its buy hold (never above the previous one).
+   */
   public void adjustPrices(long orderId, BigDecimal limitPrice, BigDecimal stopPrice, BigDecimal reservedCash) {
     EngineThread.assertCurrent();
-    jdbc.sql("""
-            UPDATE trade_order SET limit_price = COALESCE(CAST(? AS NUMERIC(19,4)), limit_price),
-                   stop_price = COALESCE(CAST(? AS NUMERIC(19,4)), stop_price),
-                   reserved_cash = ?, version = version + 1
-             WHERE id = ?""")
+    jdbc.sql("UPDATE trade_order SET limit_price = ?, stop_price = ?, reserved_cash = ?, version = version + 1"
+            + " WHERE id = ?")
         .params(Jdbc.decimalParam(limitPrice), Jdbc.decimalParam(stopPrice), reservedCash, orderId).update();
   }
 
@@ -239,27 +239,34 @@ public class OrderWriter {
         .params(reservedCash, reservedQty, orderId).update();
   }
 
-  /** §11.9: a child trimmed to its finished entry's filled quantity; FILLED when it already sold that much. */
-  public void trim(long orderId, BigDecimal qty, OrderStatus status, Instant doneAtOrNull) {
+  /**
+   * §11.9: a child whose finished entry bought no more than the child already sold: trimmed to that quantity and
+   * FILLED, holding nothing.
+   */
+  public void filledByTrim(long orderId, BigDecimal qty, Instant doneAt) {
     EngineThread.assertCurrent();
-    boolean done = doneAtOrNull != null;
     jdbc.sql("""
-            UPDATE trade_order SET qty = ?, status = ?, done_at = ?,
-                   reserved_cash = CASE WHEN CAST(? AS BOOLEAN) THEN 0 ELSE reserved_cash END,
-                   reserved_qty = CASE WHEN CAST(? AS BOOLEAN) THEN 0 ELSE reserved_qty END,
-                   wait_reason = CASE WHEN CAST(? AS BOOLEAN) THEN NULL ELSE wait_reason END, version = version + 1
+            UPDATE trade_order SET qty = ?, status = 'FILLED', done_at = ?, reserved_cash = 0, reserved_qty = 0,
+                   wait_reason = NULL, held = FALSE, version = version + 1
              WHERE id = ?""")
-        .params(qty, status.name(), Jdbc.tsParam(doneAtOrNull), done, done, done, orderId).update();
+        .params(qty, Jdbc.ts(doneAt), orderId).update();
   }
 
-  /** §11.9: children follow a replaced entry; a group's legs follow the group's quantity. */
+  /** §11.9: a held child follows its group's time in force (a group replace). */
+  public void setTimeInForce(long orderId, TimeInForce tif) {
+    EngineThread.assertCurrent();
+    jdbc.sql("UPDATE trade_order SET time_in_force = ?, version = version + 1 WHERE id = ?")
+        .params(tif.name(), orderId).update();
+  }
+
+  /** §11.9: children follow a replaced entry. */
   public void relinkParent(long childId, long parentOrderId) {
     EngineThread.assertCurrent();
     jdbc.sql("UPDATE trade_order SET parent_order_id = ?, version = version + 1 WHERE id = ?")
         .params(parentOrderId, childId).update();
   }
 
-  /** A held child's quantity follows a replaced entry's (§11.9). */
+  /** A child's quantity follows its group (§11.9): a replaced entry's, or the finished entry's filled quantity. */
   public void setQty(long orderId, BigDecimal qty) {
     EngineThread.assertCurrent();
     jdbc.sql("UPDATE trade_order SET qty = ?, version = version + 1 WHERE id = ?").params(qty, orderId).update();

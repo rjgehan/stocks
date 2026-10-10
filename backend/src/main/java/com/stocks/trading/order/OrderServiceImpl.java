@@ -17,10 +17,15 @@ import com.stocks.contract.security.PlayerPrincipal;
 import com.stocks.contract.security.RequestMeta;
 import com.stocks.contract.trading.AccountQueries;
 import com.stocks.contract.trading.OrderService;
+import com.stocks.contract.trading.dto.GroupPreviewDto;
 import com.stocks.contract.trading.dto.OrderDto;
+import com.stocks.contract.trading.dto.OrderGroupDto;
+import com.stocks.contract.trading.dto.PlaceOrderGroupRequest;
+import com.stocks.contract.trading.dto.PlaceOrderGroupResponse;
 import com.stocks.contract.trading.dto.PlaceOrderRequest;
 import com.stocks.contract.trading.dto.PlaceOrderResponse;
 import com.stocks.contract.trading.dto.PreviewDto;
+import com.stocks.contract.trading.dto.ReplaceOrderGroupRequest;
 import com.stocks.contract.trading.dto.ReplaceOrderRequest;
 import com.stocks.trading.engine.EngineCalls;
 import com.stocks.trading.engine.EngineCommand;
@@ -54,10 +59,11 @@ public class OrderServiceImpl implements OrderService {
   private final OrderContext context;
   private final TradingClock clock;
   private final AuditService audit;
+  private final GroupOrderService groups;
 
   public OrderServiceImpl(OrderGate gate, EngineCalls engine, AccountQueries accountQueries, AccountStore accounts,
                           OrderStore orders, OrderReplay replays, OrderEvaluation evaluation, OrderContext context,
-                          TradingClock clock, AuditService audit) {
+                          TradingClock clock, AuditService audit, GroupOrderService groups) {
     this.gate = gate;
     this.engine = engine;
     this.accountQueries = accountQueries;
@@ -68,6 +74,7 @@ public class OrderServiceImpl implements OrderService {
     this.context = context;
     this.clock = clock;
     this.audit = audit;
+    this.groups = groups;
   }
 
   @Override
@@ -207,6 +214,29 @@ public class OrderServiceImpl implements OrderService {
         OrderValidator.qtyOut(available), null, null, null, null, null, TimeInForce.DAY, false, rationale, null,
         Set.of());
     return place(who, req, meta);
+  }
+
+  // ------------------------------------------------------------------------------------------- groups (§11.9)
+
+  @Override
+  public PlaceOrderGroupResponse placeGroup(PlayerPrincipal who, PlaceOrderGroupRequest req, RequestMeta meta) {
+    return groups.place(who, req, meta);
+  }
+
+  @Override
+  public GroupPreviewDto previewGroup(PlayerPrincipal who, PlaceOrderGroupRequest req) {
+    return groups.preview(who, req);
+  }
+
+  @Override
+  public PlaceOrderGroupResponse replaceGroup(PlayerPrincipal who, String groupId, ReplaceOrderGroupRequest req,
+                                              RequestMeta meta) {
+    return groups.replace(who, groupId, req, meta);
+  }
+
+  @Override
+  public OrderGroupDto cancelGroup(PlayerPrincipal who, String groupId, RequestMeta meta) {
+    return groups.cancel(who, groupId, meta);
   }
 
   private String sessionNote(NormalizedOrder o, Instant now) {

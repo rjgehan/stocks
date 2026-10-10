@@ -62,6 +62,15 @@ public class OrderEvaluation {
    * length is still checked.
    */
   public Evaluated evaluate(AccountRow acc, PlayerKind kind, NormalizedOrder o, Instant now, boolean preview) {
+    return evaluate(acc, kind, o, now, preview, 0);
+  }
+
+  /**
+   * One live leg of a group (§11.9): as a single order, except that check 22 also counts the group's other
+   * {@code extraOpenOrders} legs ({@code open + legs ≤ maxOpenOrders}).
+   */
+  public Evaluated evaluate(AccountRow acc, PlayerKind kind, NormalizedOrder o, Instant now, boolean preview,
+                            int extraOpenOrders) {
     OrderValidator.requireShape(o);
     SessionState session = clock.session(now);
     SessionOrderMatrix.Acceptance acceptance;
@@ -80,7 +89,7 @@ public class OrderEvaluation {
     var expiry = ExpiryCalculator.compute(clock.calendar(), rules, now, o.extendedHours(), o.timeInForce());
     LocalDate today = Et.date(now);
     var market = context.market(o.symbol(), today);
-    var snapshot = context.account(acc, o.symbol(), today, -1);
+    var snapshot = withExtraOpen(context.account(acc, o.symbol(), today, -1), extraOpenOrders);
     boolean gfvRisk = false;
     if (o.side() == Side.SELL && snapshot.positionQty() != null && market.asset() != null) {
       BigDecimal available = snapshot.positionQty().subtract(snapshot.reservedSellQty()).max(Qty.ZERO);
@@ -91,5 +100,33 @@ public class OrderEvaluation {
     var result = validator.validate(new OrderValidator.Input(o, kind, requireRationale, market, snapshot, acceptance,
         expiry.sessionDate(), gfvRisk, Money.ZERO, now, sessionRejection));
     return new Evaluated(acceptance, expiry, result, market);
+  }
+
+  /**
+   * A held group child (§11.9): checks 7–20 against the group's {@code entryPrice} as the reference (a stop loss must
+   * be below the entry, not below today's market), nothing reserved. Its acceptance and expiry are provisional: both
+   * are computed again when its entry releases it.
+   */
+  public Evaluated evaluateHeldChild(AccountRow acc, PlayerKind kind, NormalizedOrder o, Instant now, boolean preview,
+                                     BigDecimal entryPrice) {
+    OrderValidator.requireShape(o);
+    var expiry = ExpiryCalculator.compute(clock.calendar(), rules, now, false, o.timeInForce());
+    LocalDate today = Et.date(now);
+    var live = context.market(o.symbol(), today);
+    var market = new OrderValidator.MarketSnapshot(live.asset(), live.corporateActionHold(), live.quote(), entryPrice);
+    var snapshot = context.account(acc, o.symbol(), today, -1);
+    var acceptance = new SessionOrderMatrix.Acceptance(now, WaitReason.AWAITING_PARENT, false, List.of());
+    boolean requireRationale = !preview && settings.botsRequireRationale();
+    var result = validator.validateHeldChild(new OrderValidator.Input(o, kind, requireRationale, market, snapshot,
+        acceptance, expiry.sessionDate(), false, Money.ZERO, now, null));
+    return new Evaluated(acceptance, expiry, result, live);
+  }
+
+  private static OrderValidator.AccountSnapshot withExtraOpen(OrderValidator.AccountSnapshot s, int extra) {
+    if (extra == 0) {
+      return s;
+    }
+    return new OrderValidator.AccountSnapshot(s.accountId(), s.restriction(), s.balances(), s.openOrders() + extra,
+        s.positionQty(), s.reservedSellQty());
   }
 }

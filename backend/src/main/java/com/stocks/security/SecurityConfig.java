@@ -201,7 +201,12 @@ public class SecurityConfig {
                 "/api/v1/bars/**", "/api/v1/news", "/api/v1/rules")
                 .access(RouteAuthorization.scope(Scopes.MARKET_READ))
             // §18.2 trade (preview is account:read)
-            .requestMatchers(HttpMethod.POST, "/api/v1/orders/preview")
+            .requestMatchers(HttpMethod.POST, "/api/v1/orders/preview", "/api/v1/order-groups/preview")
+                .access(RouteAuthorization.scope(Scopes.ACCOUNT_READ))
+            .requestMatchers(HttpMethod.POST, "/api/v1/order-groups").access(RouteAuthorization.scope(Scopes.TRADE))
+            .requestMatchers(HttpMethod.PATCH, "/api/v1/order-groups/*").access(RouteAuthorization.scope(Scopes.TRADE))
+            .requestMatchers(HttpMethod.DELETE, "/api/v1/order-groups/*").access(RouteAuthorization.scope(Scopes.TRADE))
+            .requestMatchers(HttpMethod.GET, "/api/v1/order-groups/*")
                 .access(RouteAuthorization.scope(Scopes.ACCOUNT_READ))
             .requestMatchers(HttpMethod.POST, "/api/v1/orders", "/api/v1/account/positions/*/close",
                 "/api/v1/watchlists", "/api/v1/watchlists/**")

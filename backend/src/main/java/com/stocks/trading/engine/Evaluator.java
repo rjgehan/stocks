@@ -61,11 +61,13 @@ class Evaluator {
   private final OrderHandler handler;
   private final TriggerEvaluator triggers;
   private final JsonMapper json;
+  private final GroupHandler groups;
   private final Map<String, Instant> lastRefresh = new HashMap<>();
 
   Evaluator(OrderStore orders, AccountStore accounts, OrderWriter writer, PostingService posting,
             MarketDataService marketData, OrderValidator validator, LatencyModel latency, TradingClock clock,
-            RulesProperties rules, OrderHandler handler, TriggerEvaluator triggers, JsonMapper json) {
+            RulesProperties rules, OrderHandler handler, TriggerEvaluator triggers, JsonMapper json,
+            GroupHandler groups) {
     this.orders = orders;
     this.accounts = accounts;
     this.writer = writer;
@@ -78,6 +80,7 @@ class Evaluator {
     this.handler = handler;
     this.triggers = triggers;
     this.json = json;
+    this.groups = groups;
   }
 
   /** The order's window: REGULAR, plus PRE/POST for extended-hours limits (§11.3), optionally only 08:00–17:00. */
@@ -98,6 +101,9 @@ class Evaluator {
       return false;
     }
     OrderStateMachine.transition(r.status(), OrderStatus.EXPIRED);
+    if (r.inGroup()) {
+      groups.beforeTerminal(r);
+    }
     String reason = r.timeInForce() + " expiry";
     writer.finish(r.id(), OrderStatus.EXPIRED, reason, now);
     writer.event(r.id(), OrderEventType.EXPIRED, OrderStatus.EXPIRED, now,
@@ -106,6 +112,9 @@ class Evaluator {
     tx.publish(new OrderChanged(r.accountId(), r.playerId(), r.publicId(), OrderEventType.EXPIRED,
         OrderStatus.EXPIRED, now));
     tx.publish(new AccountChanged(r.accountId(), r.playerId(), "ORDER_EXPIRED", now));
+    if (r.inGroup()) {
+      groups.afterChange(r, false, null, now, tx);
+    }
     return true;
   }
 
@@ -118,6 +127,10 @@ class Evaluator {
     OrderRow r = orders.byId(e.id).orElse(null);
     if (r == null || !r.isOpen()) {
       tx.afterCommit(() -> handler.untrack(e.id));
+      return Optional.empty();
+    }
+    if (r.cancelRequestedAt() != null && !now.isBefore(r.cancelEffectiveAt())) {
+      handler.cancelOpen(r, CancelReason.USER, r.playerId(), now, tx);   // the requested cancel takes effect (§11.10)
       return Optional.empty();
     }
     if (expireIfDue(r, now, tx)) {
@@ -187,6 +200,10 @@ class Evaluator {
       e.printCursor = printCursorAfter;
     });
 
+    if (r.parentOrderId() != null && groups.working(r).signum() <= 0) {
+      setWait(r, WaitReason.AWAITING_PARENT, null, tx, now);   // a child with nothing bought to sell yet (§11.9)
+      return;
+    }
     if (marketData.isHalted(r.symbol())) {
       // a NEEDS_ADMIN split also reads as halted (§14): name the wait after the corporate-action hold then
       WaitReason why = orders.onCorporateActionHold(r.symbol(), Et.date(now)) ? WaitReason.CORPORATE_ACTION_HOLD
@@ -211,6 +228,9 @@ class Evaluator {
     }
     ExecQuote q = quote.orElse(null);
     BigDecimal remaining = remainingFor(r, q, now);
+    if (remaining != null && r.parentOrderId() != null) {
+      remaining = remaining.min(groups.working(r));           // a child works what its entry bought (§11.9)
+    }
     if (remaining != null && remaining.compareTo(rules.fractional().minQty()) < 0) {
       handler.cancelOpen(r, CancelReason.DUST, 0, now, tx);
       return;
@@ -237,8 +257,15 @@ class Evaluator {
       e.awaitingQuoteNoted = false;
     });
     OrderRow current = orders.byId(r.id()).orElseThrow();
+    if (current.inGroup() && !d.legs().isEmpty()) {
+      current = groups.prepareFill(current);                    // the OCO pair's reservation moves here (§11.9)
+    }
     PostingService.Outcome outcome = d.legs().isEmpty() ? null
         : posting.post(current, d.legs(), q != null ? q : syntheticRef(current, d), now, tx);
+    if (outcome != null && current.inGroup()) {
+      groups.afterChange(current, outcome.executions() > 0,
+          outcome.cancelledRemainder() ? CancelReason.INSUFFICIENT_BUYING_POWER_AT_EXECUTION : null, now, tx);
+    }
     if (outcome != null && OrderStateMachine.isTerminal(outcome.status())) {
       tx.afterCommit(() -> handler.untrack(e.id));
       return;

@@ -42,17 +42,6 @@ public record RulesProperties(Integer gtcDays, Integer maxOpenOrders, BigDecimal
     cancelLatency = cancelLatency == null ? new CancelLatency(null, null, null) : cancelLatency;
   }
 
-  /** The Phase 1 shape (no cancel latency: off). */
-  public RulesProperties(Integer gtcDays, Integer maxOpenOrders, BigDecimal maxOrderQty, BigDecimal marketCollarPct,
-                         BigDecimal holdPctRegular, BigDecimal holdPctQueued, BigDecimal fatFingerWarnPct,
-                         BigDecimal priceTooFarPct, Map<LiquidityTier, Integer> tierSpreadBps,
-                         Map<LiquidityTier, Integer> iexMaxSpreadBps, IexClamp iexClamp, Freshness freshness,
-                         Fractional fractional, Gfv gfv, Pdt pdt, ExtHours extHours, Fill fill) {
-    this(gtcDays, maxOpenOrders, maxOrderQty, marketCollarPct, holdPctRegular, holdPctQueued, fatFingerWarnPct,
-        priceTooFarPct, tierSpreadBps, iexMaxSpreadBps, iexClamp, freshness, fractional, gfv, pdt, extHours, fill,
-        null);
-  }
-
   /** The defaults of §23.1. */
   public static RulesProperties defaults() {
     return new RulesProperties(null, null, null, null, null, null, null, null, null, null, null, null, null, null,
