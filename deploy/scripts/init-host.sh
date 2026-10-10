@@ -86,7 +86,13 @@ install -m 0755 "$BACKUP_SCRIPT" "$DIR/scripts/pg_backup.sh"
 echo "   scripts/pg_backup.sh installed"
 
 if [[ -f "$DIR/.env" ]]; then
-  echo "   .env exists: only empty keys are filled"
+  echo "   .env exists: only empty or missing keys are filled"
+  added=""
+  while IFS= read -r line; do # append keys that a newer .env.example added, with their example values
+    k="${line%%=*}"
+    if ! grep -qE "^${k}=" "$DIR/.env"; then printf '%s\n' "$line" >> "$DIR/.env"; added="$added $k"; fi
+  done < <(grep -E '^[A-Z][A-Z0-9_]*=' "$ENV_EXAMPLE")
+  if [[ -n "$added" ]]; then echo "   added missing keys:$added"; fi
 else
   install -m 0600 "$ENV_EXAMPLE" "$DIR/.env"
   echo "   .env created from $(basename "$ENV_EXAMPLE")"
@@ -96,8 +102,12 @@ set_key "$DIR/.env" DB_PASSWORD "$(rand_hex 24)"
 set_key "$DIR/.env" API_KEY_PEPPER "$(rand_b64 48)"
 set_key "$DIR/.env" ENGINE_SEED "$(rand_hex 32)"
 if [[ -n "$IMAGE" ]]; then
-  awk -v v="$IMAGE" '/^STOCKS_IMAGE=/ { print "STOCKS_IMAGE=" v; next } { print }' "$DIR/.env" > "$DIR/.env.tmp" \
-    && cat "$DIR/.env.tmp" > "$DIR/.env" && rm -f "$DIR/.env.tmp"
+  if grep -qE '^STOCKS_IMAGE=' "$DIR/.env"; then
+    awk -v v="$IMAGE" '/^STOCKS_IMAGE=/ { print "STOCKS_IMAGE=" v; next } { print }' "$DIR/.env" > "$DIR/.env.tmp" \
+      && cat "$DIR/.env.tmp" > "$DIR/.env" && rm -f "$DIR/.env.tmp"
+  else
+    echo "STOCKS_IMAGE=$IMAGE" >> "$DIR/.env"
+  fi
 fi
 if [[ -n "$URL" ]]; then
   host="${URL#https://}"; host="${host%%/*}"
