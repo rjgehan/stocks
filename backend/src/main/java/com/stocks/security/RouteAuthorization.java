@@ -1,10 +1,13 @@
 package com.stocks.security;
 
 import com.stocks.common.domain.AuthMethod;
+import com.stocks.common.domain.PlayerStatus;
+import com.stocks.contract.identity.PlayerQueries;
 import com.stocks.contract.security.PlayerPrincipal;
 import java.io.Serial;
 import java.util.function.Supplier;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.authorization.AuthorityAuthorizationManager;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.authorization.AuthorizationResult;
@@ -67,6 +70,27 @@ public final class RouteAuthorization {
   /** A browser session that also holds {@code scope} (sessions hold every scope, so only the session part bites). */
   public static AuthorizationManager<RequestAuthorizationContext> sessionWithScope(String scope) {
     return (auth, ctx) -> decide(auth, scope, true);
+  }
+
+  /**
+   * Chain 1 (§17.1): {@code ROLE_ADMIN} (a human admin on a browser session) whose player is still ACTIVE. A FROZEN
+   * human may log in to look (§17.3), but a frozen admin never acts as one, so the kill switch also holds for an admin
+   * and cannot be undone by its target. The status comes from {@link PlayerQueries#status}'s cache, which every
+   * status change evicts synchronously (§10.5).
+   */
+  public static AuthorizationManager<RequestAuthorizationContext> activeAdmin(PlayerQueries players) {
+    AuthorityAuthorizationManager<RequestAuthorizationContext> admin = AuthorityAuthorizationManager.hasRole("ADMIN");
+    return (supplier, ctx) -> {
+      AuthorizationResult role = admin.authorize(supplier, ctx);
+      if (role == null || !role.isGranted()) {
+        return role;
+      }
+      if (supplier.get().getPrincipal() instanceof PlayerPrincipal p
+          && players.status(p.playerId()) != PlayerStatus.ACTIVE) {
+        return new AuthorizationDecision(false);
+      }
+      return GRANTED;
+    };
   }
 
   static AuthorizationResult decide(Supplier<? extends Authentication> supplier, String scope, boolean sessionOnly) {

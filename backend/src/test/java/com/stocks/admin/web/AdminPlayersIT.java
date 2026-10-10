@@ -190,6 +190,25 @@ class AdminPlayersIT extends ContractMocksWebTest {
   }
 
   @Test
+  void aFrozenAdminMayLookButNeverActAsAdmin() {
+    Fixtures.PlayerRef deputy = fx.admin(handle("deputy"));
+    MvcResult frozen = send(root, post("/api/v1/admin/players/" + deputy.handle() + "/freeze"),
+        "{\"reason\":\"compromised\"}");
+    assertThat(status(frozen)).as(body(frozen)).isEqualTo(200);
+    WebSession d = WebSession.login(mvc, deputy.handle(), Fixtures.PASSWORD);
+    assertThat(status(d.perform(get("/api/v1/me")))).as("a frozen human may log in and look").isEqualTo(200);
+    MvcResult list = d.perform(get("/api/v1/admin/players"));
+    assertThat(status(list)).isEqualTo(403);
+    assertThat(code(list)).isEqualTo("FORBIDDEN");
+    assertThat(code(send(d, post("/api/v1/admin/players/" + deputy.handle() + "/unfreeze"), "{}")))
+        .isEqualTo("FORBIDDEN");
+
+    send(root, post("/api/v1/admin/players/" + deputy.handle() + "/unfreeze"), "{}");
+    assertThat(status(d.perform(get("/api/v1/admin/players")))).as("unfrozen: the same session works again")
+        .isEqualTo(200);
+  }
+
+  @Test
   void theEngineStepRunsAfterThePlayerStepCommitted() {
     Fixtures.PlayerRef p = fx.human(handle("order"));
     String[] statusSeenByEngine = {null};

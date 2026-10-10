@@ -147,11 +147,11 @@ public class SecurityConfig {
   @Bean
   @Order(1)
   SecurityFilterChain adminChain(HttpSecurity http, ProblemWriter problems, CookieCsrfTokenRepository csrf,
-                                 SecurityContextRepository contexts) throws Exception {
+                                 SecurityContextRepository contexts, PlayerQueries players) throws Exception {
     SecurityErrors errors = new SecurityErrors(problems, false, request -> false);
     http.securityMatcher("/api/v1/admin/**")
         .addFilterBefore(new AdminSessionOnlyFilter(problems), SecurityContextHolderFilter.class)
-        .authorizeHttpRequests(a -> a.anyRequest().hasRole("ADMIN"))
+        .authorizeHttpRequests(a -> a.anyRequest().access(RouteAuthorization.activeAdmin(players)))
         .csrf(c -> c.spa().csrfTokenRepository(csrf));
     common(http, errors, contexts, true);
     return http.build();
