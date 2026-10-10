@@ -64,3 +64,27 @@ export function formatSessionStartEt(ts: string | null | undefined, nowMs: numbe
   const sameDay = ymdEt.format(d) === ymdEt.format(new Date(nowMs))
   return sameDay ? `${timeEt.format(d)} ET` : `${weekdayEt.format(d)} ${timeEt.format(d)} ET`
 }
+
+const hhmmEt = new Intl.DateTimeFormat('en-US', { timeZone: MARKET_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+
+/**
+ * An ET wall-clock time on an ET date → the ISO instant ("2026-11-27", "13:00" → "2026-11-27T18:00:00.000Z"),
+ * whichever of EST/EDT applies that day. Null for malformed input.
+ */
+export function etWallTimeToIso(date: string, time: string): string | null {
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  const tm = /^(\d{2}):(\d{2})$/.exec(time)
+  if (!dm || !tm) return null
+  const [y, mo, d] = [Number(dm[1]), Number(dm[2]), Number(dm[3])]
+  const [h, mi] = [Number(tm[1]), Number(tm[2])]
+  for (const offsetH of [4, 5]) {
+    const ms = Date.UTC(y, mo - 1, d, h + offsetH, mi)
+    if (hhmmEt.format(new Date(ms)) === time) return new Date(ms).toISOString()
+  }
+  return null
+}
+
+/** Today's ET date ("2026-10-09") for `nowMs`, plus `days` calendar days. */
+export function etDatePlusDays(nowMs: number, days = 0): string {
+  return ymdEt.format(new Date(nowMs + days * 86_400_000))
+}

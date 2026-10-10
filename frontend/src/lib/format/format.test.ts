@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { formatMoney, formatMoneyCompact } from './money'
 import { abbreviate, arrow, direction, formatChange, formatInteger, formatPct, formatPrice, formatQty } from './number'
-import { formatCountdown, formatDateEt, formatSessionStartEt, formatTimeEt, serverNowMs } from './time'
+import { etWallTimeToIso, formatCountdown, formatDateEt, formatSessionStartEt, formatTimeEt, serverNowMs } from './time'
 
 const MINUS = '−'
 
@@ -102,5 +102,18 @@ describe('time (ET)', () => {
     // 03:00Z on Oct 10 is still Friday evening in New York
     expect(formatSessionStartEt('2026-10-10T01:00:00Z', Date.parse('2026-10-10T03:00:00Z'))).toBe('9:00 PM ET')
     expect(formatSessionStartEt(null, fridayEvening)).toBe('--')
+  })
+})
+
+describe('etWallTimeToIso (calendar overrides are entered in ET)', () => {
+  it('uses EST in winter and EDT in summer', () => {
+    expect(etWallTimeToIso('2026-11-27', '13:00')).toBe('2026-11-27T18:00:00.000Z')
+    expect(etWallTimeToIso('2026-07-02', '13:00')).toBe('2026-07-02T17:00:00.000Z')
+    expect(etWallTimeToIso('2026-12-24', '17:00')).toBe('2026-12-24T22:00:00.000Z')
+  })
+
+  it('rejects malformed input', () => {
+    expect(etWallTimeToIso('2026-7-2', '13:00')).toBeNull()
+    expect(etWallTimeToIso('2026-07-02', '1pm')).toBeNull()
   })
 })

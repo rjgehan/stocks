@@ -11,6 +11,7 @@ import { Pill } from '@/components/ui/Pill'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { IconRefresh } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
+import { CalendarOverrides } from '@/features/admin/CalendarOverrides'
 import { toast } from '@/features/notifications/toastStore'
 
 export const Route = createFileRoute('/_app/admin/system')({
@@ -43,7 +44,7 @@ function Usage({ used, max }: { used: number; max: number }) {
   )
 }
 
-/** Admin · System (§21.3): engine state and queue, invariants, market-data providers and budgets, jobs with "Run now", halt and resume. */
+/** Admin · System (§21.3): engine state and queue, invariants, market-data providers and budgets, jobs with "Run now", halt and resume, calendar overrides. */
 function SystemPage() {
   const { data: s, isPending, isError, refetch, isFetching } = useSystemStatus()
   const runJob = useRunJob()
@@ -178,6 +179,7 @@ function SystemPage() {
           ))}
         </ul>
       </Card>
+      <CalendarOverrides />
 
       <ConfirmDialog
         open={haltOpen}

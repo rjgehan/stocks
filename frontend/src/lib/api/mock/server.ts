@@ -36,6 +36,7 @@ import type {
   ApiKeyCreated,
   Asset,
   AuditRow,
+  CalendarOverride,
   ChartRange,
   Clock,
   Estimate,
@@ -652,6 +653,46 @@ export class MockServer {
         this.s.engineHalted = reason
         this.audit('ADMIN', 'ENGINE_HALT', 'OK', this.s.me.handle, 'engine', null)
         return json(this.system())
+      }, true),
+    )
+    r('GET', '/admin/calendar/overrides', ({ url }) =>
+      this.admin(() => {
+        const from = url.searchParams.get('from') ?? '0000-01-01'
+        const to = url.searchParams.get('to') ?? '9999-12-31'
+        const rows = (this.s.calendarOverrides ?? []).filter((o) => o.date! >= from && o.date! <= to).sort((a, b) => a.date!.localeCompare(b.date!))
+        return json(rows)
+      }),
+    )
+    r('POST', '/admin/calendar/overrides', ({ body }) =>
+      this.admin(() => {
+        const b = (body ?? {}) as { date?: string; closed?: boolean | null; rthCloseAt?: string | null; postCloseAt?: string | null; reason?: string }
+        const fields: FieldErr[] = []
+        if (!b.date || !/^\d{4}-\d{2}-\d{2}$/.test(b.date)) fields.push({ field: 'date', code: 'NotNull', message: 'Pick a date.' })
+        if (b.closed == null) fields.push({ field: 'closed', code: 'NotNull', message: 'Closed or early close?' })
+        if (!b.reason?.trim()) fields.push({ field: 'reason', code: 'NotBlank', message: 'Give a reason.' })
+        if (b.closed === false && !b.rthCloseAt) fields.push({ field: 'rthCloseAt', code: 'NotNull', message: 'An early close needs the regular-session close time.' })
+        if (fields.length) return problem(400, 'VALIDATION_FAILED', 'Validation failed', fields[0]!.message, null, fields)
+        const row: CalendarOverride = {
+          date: b.date!,
+          closed: Boolean(b.closed),
+          rthCloseAt: b.closed ? null : (b.rthCloseAt ?? null),
+          postCloseAt: b.closed ? null : (b.postCloseAt ?? null),
+          reason: b.reason!.trim(),
+          createdBy: this.s.me.handle,
+          createdAt: iso(),
+        }
+        this.s.calendarOverrides = [...(this.s.calendarOverrides ?? []).filter((o) => o.date !== row.date), row]
+        this.audit('ADMIN', 'CALENDAR_OVERRIDE', 'OK', this.s.me.handle, 'calendar', row.date)
+        return json(row, 201)
+      }, true),
+    )
+    r('DELETE', '/admin/calendar/overrides/{date}', ({ params }) =>
+      this.admin(() => {
+        const list = this.s.calendarOverrides ?? []
+        if (!list.some((o) => o.date === params[0])) return problem(404, 'NOT_FOUND', 'Not found', `No override on ${params[0]}.`)
+        this.s.calendarOverrides = list.filter((o) => o.date !== params[0])
+        this.audit('ADMIN', 'CALENDAR_OVERRIDE_DELETE', 'OK', this.s.me.handle, 'calendar', params[0] ?? null)
+        return noContent()
       }, true),
     )
     r('POST', '/admin/engine/resume', () =>

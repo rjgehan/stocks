@@ -271,6 +271,11 @@ export interface paths {
     "/api/v1/admin/engine/halt": Item<{ post: Send<NoParams, S["HaltEngineRequest"], S["SystemStatus"]> }>;
     "/api/v1/admin/engine/resume": Item<{ post: SendNoBody<NoParams, S["SystemStatus"]> }>;
     "/api/v1/admin/orders/{orderId}": Item<{ delete: SendNoBody<PathP<{ orderId: string }>, S["Order"]> }>;
+    "/api/v1/admin/calendar/overrides": Item<{
+        get: Get<Query<{ from?: string; to?: string }>, S["CalendarOverride"][]>;
+        post: Send<NoParams, S["CreateCalendarOverrideRequest"], S["CalendarOverride"], 201>;
+    }>;
+    "/api/v1/admin/calendar/overrides/{date}": Item<{ delete: DeleteNoContent<PathP<{ date: string }>> }>;
 }
 
 export type webhooks = Record<string, never>;
@@ -1005,6 +1010,23 @@ export interface components {
             marketData: S["SystemMarketData"] | null;
             jobs: S["SystemJob"][] | null;
             corporateActionsNeedingAdmin: number;
+        };
+        // §21.1 calendar overrides (WS2 CalendarAdmin, served by WS1's admin controller)
+        CalendarOverride: {
+            date: string | null;
+            closed: boolean;
+            rthCloseAt: string | null;
+            postCloseAt: string | null;
+            reason: string | null;
+            createdBy: string | null;
+            createdAt: string | null;
+        };
+        CreateCalendarOverrideRequest: {
+            date: string | null;
+            closed: boolean | null;
+            rthCloseAt?: string | null;
+            postCloseAt?: string | null;
+            reason: string | null;
         };
         HaltEngineRequest: { reason: string | null };
         RunJobRequest: { runKey?: string | null };

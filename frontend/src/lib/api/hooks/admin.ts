@@ -6,7 +6,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { api, unwrap } from '../client'
 import { queryKeys } from '../queryKeys'
 import { withRecentAuth } from '../reauth'
-import type { CashTransferBody, CashTransferRequest, CreatePlayerRequest, PlayerKind, UpdateSettingsRequest } from '../types'
+import type { CashTransferBody, CashTransferRequest, CreateCalendarOverrideRequest, CreatePlayerRequest, PlayerKind, UpdateSettingsRequest } from '../types'
 
 const K = {
   players: queryKeys.admin('players'),
@@ -17,6 +17,7 @@ const K = {
   invites: queryKeys.admin('invites'),
   audit: (filter: Record<string, unknown>) => queryKeys.admin('audit', filter),
   system: queryKeys.admin('system'),
+  calendar: queryKeys.admin('calendar'),
 }
 export const adminKeys = K
 
@@ -288,3 +289,36 @@ export function useResumeEngine() {
 }
 
 export const ALL_KINDS: readonly PlayerKind[] = ['HUMAN', 'AI']
+
+// ---------------------------------------------------------------- calendar overrides (§21.1, R for writes)
+
+/** Overrides from `from` to `to` (ET dates, ≤ 400 days). */
+export function useCalendarOverrides(from: string, to: string) {
+  return useQuery({
+    queryKey: [...K.calendar, from, to],
+    queryFn: () => unwrap(api.GET('/api/v1/admin/calendar/overrides', { params: { query: { from, to } } })),
+    staleTime: 60_000,
+  })
+}
+
+export function useCreateCalendarOverride() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: CreateCalendarOverrideRequest) => withRecentAuth(() => unwrap(api.POST('/api/v1/admin/calendar/overrides', { body }))),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: K.calendar })
+      void qc.invalidateQueries({ queryKey: queryKeys.clock })
+    },
+  })
+}
+
+export function useDeleteCalendarOverride() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (date: string) => withRecentAuth(() => unwrap(api.DELETE('/api/v1/admin/calendar/overrides/{date}', { params: { path: { date } } }))),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: K.calendar })
+      void qc.invalidateQueries({ queryKey: queryKeys.clock })
+    },
+  })
+}

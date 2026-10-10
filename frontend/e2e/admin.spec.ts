@@ -51,7 +51,7 @@ test('deposit to all players with a memo', async ({ page }) => {
   }
 })
 
-test('create an invite and copy its link', async ({ page }) => {
+test('create an invite; a friend signs up with its link', async ({ page }, testInfo) => {
   await open(page, '/admin/invites')
   await page.getByRole('button', { name: 'Create link' }).click()
   const link = page.getByLabel('Invite link', { exact: true })
@@ -59,10 +59,25 @@ test('create an invite and copy its link', async ({ page }) => {
   await expect(link).toHaveText(/^https?:\/\/\S+\/(join\/|signup\?invite=)\S+$/)
   await expect(page.getByRole('button', { name: 'Copy Invite link' })).toBeVisible()
 
-  // The link opens the signup form with the code filled in.
+  // The link opens the signup form with the code filled in; the friend creates an account and lands in the app
+  // with the league's starting cash.
   const url = new URL((await link.textContent())!)
+  await page.context().clearCookies()
   await page.goto(url.pathname + url.search)
   await expect(page.getByRole('heading', { name: 'Join the league' })).toBeVisible()
+  const handle = `friend${Date.now() % 100_000}`
+  await page.getByLabel('Handle').fill(handle)
+  await page.getByLabel('Display name').fill('Friend')
+  await page.getByLabel('Password', { exact: true }).fill('a long enough password')
+  await page.getByLabel('Confirm password').fill('a long enough password')
+  await page.getByRole('button', { name: 'Create account' }).click()
+  await expect(page.getByRole('navigation', { name: 'Main' }).or(page.getByRole('button', { name: 'Back', exact: true })).first()).toBeVisible({ timeout: 20_000 })
+  await page.goto('/account')
+  const nc = page.getByTitle('Starting cash plus deposits minus withdrawals')
+  await expect(nc).toContainText('Net contributions')
+  await expect(nc).toContainText(/\$\d/)
+  await page.goto('/settings')
+  if (testInfo.project.name !== 'phone') await expect(page.getByText(`Signed in as @${handle}`)).toBeVisible()
 })
 
 test('create an AI player and see its API key once', async ({ page }) => {
@@ -87,4 +102,25 @@ test('create an AI player and see its API key once', async ({ page }) => {
   await done.click()
   await expect(reveal).toBeHidden()
   await expect(page.getByRole('table').or(page.getByRole('list')).getByText(`@${handle}`).first()).toBeVisible()
+})
+
+test('add and delete a market calendar override', async ({ page }) => {
+  await open(page, '/admin/system')
+  const panel = page.getByRole('region', { name: 'Calendar overrides' })
+  await expect(panel).toBeVisible()
+  // A day well in the future, so the override never touches the session under test.
+  const day = new Date(Date.now() + 200 * 86_400_000)
+  day.setUTCDate(day.getUTCDate() + ((8 - day.getUTCDay()) % 7)) // next Monday
+  const date = day.toISOString().slice(0, 10)
+  await panel.getByLabel('Date (ET)').fill(date)
+  await panel.getByRole('radiogroup', { name: 'Override kind' }).getByRole('radio', { name: 'Early close' }).click()
+  await panel.getByLabel('Regular session closes (ET)').fill('13:00')
+  await panel.getByLabel('Reason (audited)').fill('e2e early close')
+  await panel.getByRole('button', { name: 'Add override' }).click()
+  const row = panel.getByRole('list', { name: 'Overrides' }).getByRole('listitem').filter({ hasText: 'e2e early close' })
+  await expect(row).toBeVisible()
+  await expect(row).toContainText('Early close 1:00 PM ET')
+  await row.getByRole('button', { name: /^Delete the override/ }).click()
+  await page.getByRole('dialog', { name: /^Delete the override/ }).getByRole('button', { name: 'Delete' }).click()
+  await expect(row).toBeHidden()
 })

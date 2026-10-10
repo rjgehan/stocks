@@ -8,6 +8,7 @@ import type {
   Activity,
   ApiKeyInfo,
   AuditRow,
+  CalendarOverride,
   Execution,
   Invite,
   Notification,
@@ -95,6 +96,8 @@ export interface MockState {
   /** Idempotency-Key → serialized response (§17.6) */
   idempotency: Record<string, { hash: string; body: unknown }>
   engineHalted: string | null
+  /** §21.1 admin calendar overrides (optional: states saved by older mock builds lack it) */
+  calendarOverrides?: CalendarOverride[]
   /** epoch ms of the last password confirmation (`@RecentAuth`, 15 min) */
   reauthAt: number
   seq: number
