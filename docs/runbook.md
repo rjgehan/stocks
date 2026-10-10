@@ -154,7 +154,9 @@ more than 15 minutes old (`POST /api/v1/auth/reauth`).
   player detail → API keys. A bot is never an admin (database CHECK) and its key cannot reach `/api/v1/admin`.
 - **A bot or player misbehaves**: Freeze (kill switch). Its sessions end at once, its keys answer `PLAYER_FROZEN` on
   the next request, the engine cancels its open orders; tick "revoke keys" to make them `API_KEY_REVOKED` instead.
-  Unfreeze restores it. Disable (player → status DISABLED) also hides it from the leaderboard and refuses logins.
+  Unfreeze restores it (a DISABLED player is re-enabled with status ACTIVE instead). A frozen admin can still log in
+  and look but cannot use the admin console until another admin unfreezes them; nobody can freeze or unfreeze
+  themselves. Disable (player → status DISABLED) also hides it from the leaderboard and refuses logins.
 - **Deposit fake money**: Admin → Money. Preview first (per-account cash, withdrawable, equity, marks quality), then
   apply to one player or to ALL (optionally only humans or only AI) with a memo every player sees. Deposits never
   change anyone's return (unit-value accounting), so the leaderboard stays fair. Each apply carries an
