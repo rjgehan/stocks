@@ -147,6 +147,16 @@ class LeagueStatsTest {
         .containsExactly(d("0"), d("0.01"), d("0.02"), d("0.03"));
     assertThat(week.benchmark().ret()).isEqualByComparingTo("0.03");
     assertThat(week.periodStart()).isEqualTo(Instant.parse("2026-10-03T00:00:00Z"));    // Fri 20:00 ET
+    // pinned (golden performance/race_deposit.json): every line's normalized points and SPY's
+    java.util.Map<String, Object> golden = new java.util.LinkedHashMap<>();
+    golden.put("description", "§16.9 race chart, WEEK: alice and carol hold one stock each; bob holds carol's stock "
+        + "and receives a $1,000 deposit on Tuesday at U = 1.08. Lines are U(t) / U(a) - 1: bob's line follows "
+        + "carol's through the deposit (TWR unaffected); only Wednesday's drop is diluted by the idle cash.");
+    for (RaceSeriesDto s : week.series()) {
+      golden.put(s.player().handle(), s.points().stream().map(p -> p.t() + " " + p.ret().toPlainString()).toList());
+    }
+    golden.put("SPY", week.benchmark().points().stream().map(p -> p.t() + " " + p.ret().toPlainString()).toList());
+    com.stocks.testkit.GoldenFiles.assertMatches("performance", "race_deposit", golden);
 
     // kinds and the cache (same board → same chart)
     assertThat(lk.stats.race(LeaderboardPeriod.WEEK, KindFilter.ALL)).isSameAs(week);
