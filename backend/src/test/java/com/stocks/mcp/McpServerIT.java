@@ -353,6 +353,55 @@ class McpServerIT {
     assertThat(r.headers().firstValue(RequestIds.HEADER)).hasValue("it-req-42");
   }
 
+  static String initialize(String clientName, String version, String title) {
+    return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\","
+        + "\"capabilities\":{},\"clientInfo\":{\"name\":\"" + clientName + "\",\"version\":\"" + version + "\""
+        + (title == null ? "" : ",\"title\":\"" + title + "\"") + "}}}";
+  }
+
+  @Test
+  void theLastInitializeNamesTheClientOfLaterCallsAndIsAudited() throws Exception {
+    // §20.1: no X-Stocks-Client header, so later calls with this key carry the clientInfo of its initialize
+    HttpResponse<String> init = post(botKey, initialize("claude-code", "2.1.0", "Claude Code"),
+        Map.of("User-Agent", "node"));
+    assertThat(init.statusCode()).isEqualTo(200);
+    assertThat(jsonMapper.readTree(init.body()).get("result").get("protocolVersion").asString())
+        .isEqualTo("2025-11-25");
+
+    JsonNode ctx = jsonMapper.readTree(post(botKey, call(PROBE), Map.of("User-Agent", "node")).body())
+        .get("result").get("structuredContent");
+    assertThat(ctx.get("mcpClient").asString()).isEqualTo("claude-code/2.1.0");
+    // the header still wins
+    JsonNode withHeader = jsonMapper.readTree(post(botKey, call(PROBE),
+        Map.of(McpClientNames.HEADER, "agent-runner/claude")).body()).get("result").get("structuredContent");
+    assertThat(withHeader.get("mcpClient").asString()).isEqualTo("agent-runner/claude");
+
+    List<String> row = jdbc.sql("""
+            SELECT category, outcome, channel, mcp_client, detail
+              FROM audit_log WHERE action = 'MCP_INITIALIZE' AND actor_player_id = ?""")
+        .param(bot.id())
+        .query((rs, n) -> List.of(rs.getString("category"), rs.getString("outcome"), rs.getString("channel"),
+            rs.getString("mcp_client"), rs.getString("detail")))
+        .single();
+    assertThat(row.subList(0, 4)).containsExactly("AUTH", "OK", "MCP_KEY", "claude-code/2.1.0");
+    JsonNode detail = jsonMapper.readTree(row.get(4));
+    assertThat(detail.get("clientInfo").get("name").asString()).isEqualTo("claude-code");
+    assertThat(detail.get("clientInfo").get("title").asString()).isEqualTo("Claude Code");
+    assertThat(detail.get("protocolVersion").asString()).isEqualTo("2025-11-25");
+  }
+
+  @Test
+  void largeBodiesStreamThroughUninspected() throws Exception {
+    String huge = "x".repeat(McpInitializeCapture.MAX_BODY + 10);
+    HttpResponse<String> init = post(botKey, initialize("big-client", "1", huge), Map.of());
+    assertThat(init.statusCode()).isEqualTo(200);
+    assertThat(jsonMapper.readTree(init.body()).get("result").get("serverInfo").get("name").asString())
+        .isEqualTo("stocks");
+    JsonNode ctx = jsonMapper.readTree(post(botKey, call(PROBE), Map.of("User-Agent", "ua/1")).body())
+        .get("result").get("structuredContent");
+    assertThat(ctx.get("mcpClient").asString()).as("not remembered").isEqualTo("ua/1");
+  }
+
   @Test
   void rawWhoamiIsBootJsonDecimalsAsStringsAndNullsPresent() throws Exception {
     HttpResponse<String> r = post(botKey, call("whoami"), Map.of());
