@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { describeError, errorBody } from '@/lib/api/errors'
 import { useHaltEngine, useResumeEngine, useRunJob, useSystemStatus } from '@/lib/api/hooks/admin'
 import { formatDateTimeEt } from '@/lib/format/time'
@@ -178,7 +178,11 @@ function SystemPage() {
           ) : (
             <p className="mt-1 text-caption text-text-3">Cash, positions, lots and units all reconcile.</p>
           )}
-          {s.corporateActionsNeedingAdmin ? <p className="mt-2 text-caption text-warn">{s.corporateActionsNeedingAdmin} corporate action(s) need a decision.</p> : null}
+          {s.corporateActionsNeedingAdmin ? (
+            <Link to="/admin/corporate-actions" className="mt-2 inline-flex min-h-11 items-center gap-1 text-caption font-semibold text-warn hover:underline tablet:min-h-0">
+              {s.corporateActionsNeedingAdmin} corporate action{s.corporateActionsNeedingAdmin === 1 ? '' : 's'} need{s.corporateActionsNeedingAdmin === 1 ? 's' : ''} a decision →
+            </Link>
+          ) : null}
         </Card>
       </div>
       <Card title="Market data" aside={<span className="font-mono text-caption text-text-2">{s.marketData?.profile}</span>}>
@@ -220,7 +224,14 @@ function SystemPage() {
           </table>
         </div>
         {(s.marketData?.staleSymbols ?? []).length ? <p className="mt-2 text-caption text-warn">Stale: {(s.marketData?.staleSymbols ?? []).join(', ')}</p> : null}
-        {(s.marketData?.corporateActionHolds ?? []).length ? <p className="mt-1 text-caption text-warn">On corporate-action hold: {(s.marketData?.corporateActionHolds ?? []).join(', ')}</p> : null}
+        {(s.marketData?.corporateActionHolds ?? []).length ? (
+          <p className="mt-1 text-caption text-warn">
+            On corporate-action hold: {(s.marketData?.corporateActionHolds ?? []).join(', ')} ·{' '}
+            <Link to="/admin/corporate-actions" className="font-semibold underline">
+              resolve
+            </Link>
+          </p>
+        ) : null}
       </Card>
       <Card title="Jobs">
         <ul className="divide-y divide-divider">

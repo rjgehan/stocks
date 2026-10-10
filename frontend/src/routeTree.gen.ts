@@ -27,6 +27,7 @@ import { Route as AppAccountHistoryRouteImport } from './routes/_app/account/his
 import { Route as AppAccountPositionsRouteImport } from './routes/_app/account/positions'
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
 import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
+import { Route as AppAdminCorporateActionsRouteImport } from './routes/_app/admin/corporate-actions'
 import { Route as AppAdminInvitesRouteImport } from './routes/_app/admin/invites'
 import { Route as AppAdminMoneyRouteImport } from './routes/_app/admin/money'
 import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin/settings'
@@ -132,6 +133,12 @@ const AppAdminAuditRoute = AppAdminAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => AppAdminRouteRoute,
 } as any)
+const AppAdminCorporateActionsRoute =
+  AppAdminCorporateActionsRouteImport.update({
+    id: '/corporate-actions',
+    path: '/corporate-actions',
+    getParentRoute: () => AppAdminRouteRoute,
+  } as any)
 const AppAdminInvitesRoute = AppAdminInvitesRouteImport.update({
   id: '/invites',
   path: '/invites',
@@ -224,6 +231,7 @@ export interface FileRoutesByFullPath {
   '/account/history': typeof AppAccountHistoryRoute
   '/account/positions': typeof AppAccountPositionsRoute
   '/admin/audit': typeof AppAdminAuditRoute
+  '/admin/corporate-actions': typeof AppAdminCorporateActionsRoute
   '/admin/invites': typeof AppAdminInvitesRoute
   '/admin/money': typeof AppAdminMoneyRoute
   '/admin/settings': typeof AppAdminSettingsRoute
@@ -255,6 +263,7 @@ export interface FileRoutesByTo {
   '/account/history': typeof AppAccountHistoryRoute
   '/account/positions': typeof AppAccountPositionsRoute
   '/admin/audit': typeof AppAdminAuditRoute
+  '/admin/corporate-actions': typeof AppAdminCorporateActionsRoute
   '/admin/invites': typeof AppAdminInvitesRoute
   '/admin/money': typeof AppAdminMoneyRoute
   '/admin/settings': typeof AppAdminSettingsRoute
@@ -291,6 +300,7 @@ export interface FileRoutesById {
   '/_app/account/history': typeof AppAccountHistoryRoute
   '/_app/account/positions': typeof AppAccountPositionsRoute
   '/_app/admin/audit': typeof AppAdminAuditRoute
+  '/_app/admin/corporate-actions': typeof AppAdminCorporateActionsRoute
   '/_app/admin/invites': typeof AppAdminInvitesRoute
   '/_app/admin/money': typeof AppAdminMoneyRoute
   '/_app/admin/settings': typeof AppAdminSettingsRoute
@@ -327,6 +337,7 @@ export interface FileRouteTypes {
     | '/account/history'
     | '/account/positions'
     | '/admin/audit'
+    | '/admin/corporate-actions'
     | '/admin/invites'
     | '/admin/money'
     | '/admin/settings'
@@ -358,6 +369,7 @@ export interface FileRouteTypes {
     | '/account/history'
     | '/account/positions'
     | '/admin/audit'
+    | '/admin/corporate-actions'
     | '/admin/invites'
     | '/admin/money'
     | '/admin/settings'
@@ -393,6 +405,7 @@ export interface FileRouteTypes {
     | '/_app/account/history'
     | '/_app/account/positions'
     | '/_app/admin/audit'
+    | '/_app/admin/corporate-actions'
     | '/_app/admin/invites'
     | '/_app/admin/money'
     | '/_app/admin/settings'
@@ -547,6 +560,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminAuditRouteImport
       parentRoute: typeof AppAdminRouteRoute
     }
+    '/_app/admin/corporate-actions': {
+      id: '/_app/admin/corporate-actions'
+      path: '/corporate-actions'
+      fullPath: '/admin/corporate-actions'
+      preLoaderRoute: typeof AppAdminCorporateActionsRouteImport
+      parentRoute: typeof AppAdminRouteRoute
+    }
     '/_app/admin/invites': {
       id: '/_app/admin/invites'
       path: '/invites'
@@ -679,6 +699,7 @@ const AppAccountRouteRouteWithChildren = AppAccountRouteRoute._addFileChildren(
 
 interface AppAdminRouteRouteChildren {
   AppAdminAuditRoute: typeof AppAdminAuditRoute
+  AppAdminCorporateActionsRoute: typeof AppAdminCorporateActionsRoute
   AppAdminInvitesRoute: typeof AppAdminInvitesRoute
   AppAdminMoneyRoute: typeof AppAdminMoneyRoute
   AppAdminSettingsRoute: typeof AppAdminSettingsRoute
@@ -690,6 +711,7 @@ interface AppAdminRouteRouteChildren {
 
 const AppAdminRouteRouteChildren: AppAdminRouteRouteChildren = {
   AppAdminAuditRoute: AppAdminAuditRoute,
+  AppAdminCorporateActionsRoute: AppAdminCorporateActionsRoute,
   AppAdminInvitesRoute: AppAdminInvitesRoute,
   AppAdminMoneyRoute: AppAdminMoneyRoute,
   AppAdminSettingsRoute: AppAdminSettingsRoute,
