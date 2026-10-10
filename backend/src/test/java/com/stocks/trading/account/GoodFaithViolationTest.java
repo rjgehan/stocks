@@ -116,6 +116,48 @@ class GoodFaithViolationTest extends TradingTestBase {
             e -> assertThat(e.code()).isEqualTo(ErrorCode.GFV_ACK_REQUIRED));
   }
 
+  @Test
+  void threeActiveViolationsRestrictTheAccountToSettledCash() {
+    Player p = human();
+    String a = symbol();
+    trade(p, a, Side.BUY, "4", "100.00");                    // settled cash pays 400
+    trade(p, a, Side.SELL, "4", "100.00");                   // 399.99 unsettled until Tue 10/13
+    trade(p, symbol(), Side.BUY, "1", "100.00");             // the last 100 of settled cash
+    String c = symbol();
+    String d = symbol();
+    String e = symbol();
+    for (String s : java.util.List.of(c, d, e)) {
+      trade(p, s, Side.BUY, "1", "50.00");                   // each funded by unsettled proceeds
+    }
+    time.set(et("2026-10-12T10:00:00"));
+    for (String s : java.util.List.of(c, d, e)) {
+      tradeAcknowledged(p, s, "1", "50.00");
+    }
+    var acc = account(p);
+    assertThat(acc.gfv().active()).isEqualTo(3);
+    assertThat(acc.restriction()).isEqualTo(com.stocks.common.domain.AccountRestriction.SETTLED_CASH_ONLY);
+    assertThat(acc.restrictionUntil()).isAfter(time.now().plus(Duration.ofDays(89)));
+    var bal = accountQueries.balances(p.accountId(), LocalDate.of(2026, 10, 12));
+    assertThat(bal.buyingPower()).as("settled available only").isEqualByComparingTo(
+        bal.settledAvailable().max(BigDecimal.ZERO).subtract(bal.openBuyHolds()).max(BigDecimal.ZERO));
+    assertThat(bal.buyingPower()).isLessThan(bal.cashTotal());
+    assertThat(accountQueries.activities(p.accountId(),
+        new ActivityFilter(Set.of(ActivityType.RESTRICTION), null, null), null, 10).items()).hasSize(1);
+  }
+
+  private void tradeAcknowledged(Player p, String s, String qty, String price) {
+    String ask = new BigDecimal(price).add(new BigDecimal("0.02")).toPlainString();
+    quote(s, price, 1000, ask, 1000);
+    OrderDto o = place(p, new PlaceOrderRequest(cid(), s, Side.SELL, com.stocks.common.domain.OrderType.MARKET,
+        new BigDecimal(qty), null, null, null, null, null, com.stocks.common.domain.TimeInForce.DAY, false, "x", null,
+        Set.of("GFV_RISK"))).order();
+    time.advance(Duration.ofSeconds(1));
+    quote(s, price, 1000, ask, 1000);
+    step();
+    assertThat(order(p, o.orderId()).status()).isEqualTo(OrderStatus.FILLED);
+    time.advance(Duration.ofSeconds(1));
+  }
+
   /** A MARKET order filled at {@code price} (bid = ask − 0.02 for buys; the sell fills at the bid = price). */
   private void trade(Player p, String s, Side side, String qty, String price) {
     BigDecimal px = new BigDecimal(price);
