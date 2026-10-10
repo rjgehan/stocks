@@ -180,7 +180,11 @@ async function serve(
 
   if (config.bots.length === 0) {
     logger.warn('no bot is configured, so nothing will run; set the keys and models in .env (docs/agents.md §2.5)');
+    // Stay up (a container that exits would be restarted in a loop) until SIGTERM. A pending promise alone does not
+    // keep Node running, so hold a timer.
+    const keepAlive = setInterval(() => undefined, 3_600_000);
     await new Promise<void>((resolve) => shutdownController.signal.addEventListener('abort', () => resolve()));
+    clearInterval(keepAlive);
     return 0;
   }
   await runSchedule(config.bots, deps);

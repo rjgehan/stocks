@@ -3,6 +3,7 @@
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { JsonSchemaValidator, jsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/types.js';
 import { MCP_CALL_TIMEOUT_MS } from './config.js';
 import type { JsonObject, McpToolInfo } from './tools.js';
 
@@ -70,6 +71,18 @@ export function runnerError(code: string, message: string, hint: string): ToolOu
   };
 }
 
+/**
+ * Accepts every structured result without client-side checks. The stocks server already validates each result
+ * against its own output schema before sending it (§20.1), the model reads the text block either way, and the SDK's
+ * default Ajv validator would compile all 38 output schemas per run and warn on stdout about the custom
+ * `format: "decimal"` for every money field.
+ */
+export const trustServerOutput: jsonSchemaValidator = {
+  getValidator<T>(): JsonSchemaValidator<T> {
+    return (input: unknown) => ({ valid: true, data: input as T, errorMessage: undefined });
+  },
+};
+
 export const connectMcp: ConnectMcp = async (opts) => {
   const transport = new StreamableHTTPClientTransport(new URL(opts.url), {
     requestInit: {
@@ -79,7 +92,10 @@ export const connectMcp: ConnectMcp = async (opts) => {
       },
     },
   });
-  const client = new Client({ name: 'stocks-agent-runner', version: opts.version }, { capabilities: {} });
+  const client = new Client(
+    { name: 'stocks-agent-runner', version: opts.version },
+    { capabilities: {}, jsonSchemaValidator: trustServerOutput },
+  );
   await client.connect(transport, { signal: opts.signal, timeout: MCP_CALL_TIMEOUT_MS });
   const tools: McpToolInfo[] = [];
   let cursor: string | undefined;
