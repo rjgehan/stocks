@@ -14,6 +14,7 @@ export interface MockHooks {
   nudge(symbol: string, bps: number): void
   last(symbol: string): string | null
   emitFeed(kind?: Parameters<MockServer['emitFeed']>[0], handle?: string): string | null
+  expireRecentAuth(): void
 }
 
 declare global {
@@ -34,6 +35,7 @@ export function mockServer(): MockServer {
         },
         last: (symbol) => s.market.quote(symbol).last,
         emitFeed: (kind, handle) => s.emitFeed(kind, handle)?.id ?? null,
+        expireRecentAuth: () => s.expireRecentAuth(),
       }
     }
   }

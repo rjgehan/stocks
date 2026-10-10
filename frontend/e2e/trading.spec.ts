@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { MOCK, choose, open, openTicket, searchAndOpen, submitLogin, submitTicket, toastWith, viewport } from './support/app'
+import { MOCK, choose, chooseOrderType, open, openTicket, orderTypePicker, searchAndOpen, submitLogin, submitTicket, toastWith, viewport } from './support/app'
 
 /**
  * Phase 1 M1 scenarios (§26) at all three viewports: sign out and back in, search, a $25 dollar-amount market buy
@@ -36,7 +36,7 @@ test('search, buy $25 of a stock, and see the position', async ({ page }, testIn
   const ticket = await openTicket(page, vp, SYMBOL, 'Buy')
   await choose(ticket, 'Quantity mode', 'Amount ($)')
   // Dollar orders are market, day, regular hours only (§22.5)
-  await expect(ticket.getByRole('radiogroup', { name: 'Order type' }).getByRole('radio', { name: 'Market' })).toHaveAttribute('aria-checked', 'true')
+  await expect(orderTypePicker(ticket).locator('option:checked')).toHaveText('Market')
   await ticket.getByLabel('Amount', { exact: true }).fill('25')
   await expect(ticket.getByText(/Est\. shares|≈ [\d.]+ sh/).first()).toBeVisible({ timeout: 10_000 })
   await submitTicket(page, ticket, SYMBOL, 'Buy')
@@ -59,7 +59,7 @@ test('place a resting limit order and cancel it', async ({ page }, testInfo) => 
   await expect(page.getByRole('heading', { name: SYMBOL, level: 1 })).toBeVisible()
 
   const ticket = await openTicket(page, vp, SYMBOL, 'Buy')
-  await choose(ticket, 'Order type', 'Limit')
+  await chooseOrderType(ticket, 'Limit')
   await choose(ticket, 'Quantity mode', 'Shares')
   // 3% under the bid: it rests (no fat-finger warning, which starts at 5%)
   const bidLabel = await ticket.getByRole('button', { name: /^Use the bid price/ }).getAttribute('aria-label')

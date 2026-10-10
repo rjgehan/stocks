@@ -193,8 +193,21 @@ export class MockServer {
     } catch {
       /* no storage */
     }
-    this.s = loadState() ?? this.seed()
+    const saved = loadState()
+    this.s = saved ?? this.seed()
     this.registerRoutes()
+    if (saved) this.resumeEngine()
+  }
+
+  /**
+   * After a page reload the timers of the previous page are gone: re-arm them, the way the real engine reloads its
+   * open orders at boot (§12.9). Pending orders activate, triggered stops go on to fill.
+   */
+  private resumeEngine(): void {
+    for (const o of this.s.orders) {
+      if (o.status === 'PENDING') setTimeout(() => this.activate(o.orderId!), 300 + Math.random() * 300)
+      else if (o.status === 'WORKING' && o.triggered && o.waitReason === 'LATENCY') setTimeout(() => this.workTriggered(o.orderId!), 300 + Math.random() * 300)
+    }
   }
 
   // ================================================================ seed
@@ -482,6 +495,12 @@ export class MockServer {
 
   private publish(destination: string, body: unknown): void {
     for (const l of this.listeners) l(destination, body)
+  }
+
+  /** Test hook: forget the last password confirmation, so the next `@RecentAuth` write asks for it (§17.1). */
+  expireRecentAuth(): void {
+    this.s.reauthAt = 0
+    this.persist()
   }
 
   /** Symbols with a working order: the fake market keeps stepping them so stops and limits work off screen. */

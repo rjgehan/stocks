@@ -96,6 +96,22 @@ export async function choose(scope: Locator, group: string, option: string): Pro
   await expect(radio).toHaveAttribute('aria-checked', 'true')
 }
 
+/** The ticket's order-type picker (a select listing the types `GET /rules` publishes, §22.5). */
+export const orderTypePicker = (ticket: Locator): Locator => ticket.getByLabel('Order type', { exact: true })
+
+/** Picks an order type by its label ("Market", "Limit", "Stop", "Stop Limit", "Trailing Stop"). */
+export async function chooseOrderType(ticket: Locator, label: string): Promise<void> {
+  const picker = orderTypePicker(ticket)
+  await picker.selectOption({ label })
+  await expect(picker.locator('option:checked')).toHaveText(label)
+}
+
+/** Whether this release accepts an order type (the ticket only offers what `GET /rules` publishes). */
+export async function offersOrderType(ticket: Locator, label: string): Promise<boolean> {
+  await expect(orderTypePicker(ticket)).toBeVisible()
+  return (await orderTypePicker(ticket).locator('option', { hasText: new RegExp(`^${label}$`) }).count()) > 0
+}
+
 /**
  * Submits the ticket: waits for a valid preview (the button is disabled until then, §22.5), presses it, and
  * confirms in the review dialog when order confirmation is on (the default).
