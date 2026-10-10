@@ -4,7 +4,8 @@
  * (tick steppers + Bid/Mid/Ask/Last chips for the price last focused) · trail ($ | %) · Shares | Amount ($) with
  * 25%/50%/Max · TIF (per the order matrix) · Extended hours · live preview (debounced 250 ms) · warnings with the GFV
  * acknowledgement · note with "Share note publicly" · submit (disabled until the preview is valid) · review dialog ·
- * result toast. Server rejections (§7.2 codes) map to inline field errors or a banner.
+ * result toast. Server rejections (§7.2 codes) map to inline field errors or a banner. Phase 2: a Simple · Advanced
+ * switch (when `GET /rules` lists `orders.groups`) swaps the body for the group-order ticket (`advanced/`, §11.9).
  */
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useAccount, useOrderPreview, usePlaceOrder, usePositions } from '@/lib/api/hooks/account'
@@ -31,6 +32,7 @@ import { QualityBadge } from '@/features/market/QualityBadge'
 import { toast } from '@/features/notifications/toastStore'
 import { EstimatesPanel } from './EstimatesPanel'
 import { OrderReviewSheet } from './OrderReviewSheet'
+import { AdvancedTicket } from './advanced/AdvancedTicket'
 import {
   BASE_ORDER_TYPES,
   amountHint,
@@ -95,6 +97,10 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const [submitErrors, setSubmitErrors] = useState<Record<string, string>>({})
   const [banner, setBanner] = useState<DescribedError | null>(null)
   const place = usePlaceOrder()
+  // Phase 2 group orders (§11.9): offered when the rulebook lists them
+  const groupRules = rules.data?.orders?.groups ?? []
+  const [ticketMode, setTicketMode] = useState<'SIMPLE' | 'ADVANCED'>('SIMPLE')
+  const advanced = ticketMode === 'ADVANCED' && groupRules.length > 0
 
   useEffect(() => dispatch({ type: 'side', side: initialSide }), [initialSide])
 
@@ -269,25 +275,58 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
     : quote?.halted
       ? `${symbol} is on hold while a corporate action (such as a split) is reviewed. Orders open again once it is resolved.`
       : `${symbol} cannot be traded right now (inactive, or not tradable on this platform).`
+  const modeSwitch = groupRules.length ? (
+    <Segmented
+      label="Ticket mode"
+      block
+      size="sm"
+      value={advanced ? 'ADVANCED' : 'SIMPLE'}
+      onChange={setTicketMode}
+      options={[
+        { value: 'SIMPLE', label: 'Simple' },
+        { value: 'ADVANCED', label: 'Advanced', title: 'Bracket, OCO, OTO and OTOCO orders' },
+      ]}
+    />
+  ) : null
+  const header = (
+    <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-section font-semibold">{symbol}</span>
+          <QualityBadge quality={quote?.quality} />
+        </div>
+        <div className="text-caption text-text-3">
+          Bid <span className="font-medium text-text-1">{formatPrice(quote?.bid)}</span> × {formatInteger(quote?.bidSize)}
+          <span className="mx-1.5 text-text-3">·</span>
+          Ask <span className="font-medium text-text-1">{formatPrice(quote?.ask)}</span> × {formatInteger(quote?.askSize)}
+        </div>
+      </div>
+      <span className="text-[20px] leading-7 font-semibold" aria-label={`Last ${formatPrice(quote?.last)}`}>
+        {formatPrice(quote?.last)}
+      </span>
+    </div>
+  )
+  if (advanced) {
+    return (
+      <div className={cx('flex flex-col', className)}>
+        {header}
+        <div className="space-y-3 px-4 pb-1">
+          {modeSwitch}
+          {untradableNote ? (
+            <p role="status" className="flex gap-1.5 rounded-sm bg-warn/10 p-2 text-caption text-warn">
+              <IconInfo size={16} className="mt-0.5 shrink-0" />
+              {untradableNote}
+            </p>
+          ) : null}
+          <AdvancedTicket symbol={symbol} groups={groupRules} confirmOrders={confirmOrders} onDone={onDone} />
+        </div>
+      </div>
+    )
+  }
   return (
     <div className={cx('flex flex-col', className)}>
       {/* Header: symbol, live last, bid × size, ask × size, quality badge */}
-      <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-section font-semibold">{symbol}</span>
-            <QualityBadge quality={quote?.quality} />
-          </div>
-          <div className="text-caption text-text-3">
-            Bid <span className="font-medium text-text-1">{formatPrice(quote?.bid)}</span> × {formatInteger(quote?.bidSize)}
-            <span className="mx-1.5 text-text-3">·</span>
-            Ask <span className="font-medium text-text-1">{formatPrice(quote?.ask)}</span> × {formatInteger(quote?.askSize)}
-          </div>
-        </div>
-        <span className="text-[20px] leading-7 font-semibold" aria-label={`Last ${formatPrice(quote?.last)}`}>
-          {formatPrice(quote?.last)}
-        </span>
-      </div>
+      {header}
 
       <div className="space-y-3 px-4 pb-4">
         {untradableNote ? (
@@ -296,6 +335,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             {untradableNote}
           </p>
         ) : null}
+        {modeSwitch}
         <Segmented
           label="Side"
           block

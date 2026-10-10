@@ -12,6 +12,8 @@ import { Pill } from '@/components/ui/Pill'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
 import { toast } from '@/features/notifications/toastStore'
+import { GroupChip } from '@/features/groups/GroupChip'
+import { heldLabel } from '@/features/groups/groupLabels'
 import { ORDER_TYPE_LABEL, STATUS_LABEL, STATUS_TONE, isArmedStop, orderPriceLabel, orderSizeLabel, statusLine } from './orderLabels'
 
 export type OrderView = 'OPEN' | 'FILLED' | 'CANCELLED' | 'ALL'
@@ -58,9 +60,10 @@ export function OrderRow({ o, onCancel, cancelling, showDate }: { o: Order; onCa
           {orderPriceLabel(o) ? ` ${orderPriceLabel(o)}` : ''}
           {o.timeInForce === 'GTC' ? ' · GTC' : ''}
           {o.extendedHours ? ' · Ext' : ''}
+          <GroupChip group={o.group} />
         </div>
         <div className="line-clamp-2 text-caption text-text-3 break-words tablet:line-clamp-1">
-          {o.status === 'FILLED' || o.status === 'PARTIALLY_FILLED' ? `Filled ${formatQty(o.filledQty)} @ ${formatPrice(o.avgFillPrice)}` : statusLine(o)}
+          {o.status === 'FILLED' || o.status === 'PARTIALLY_FILLED' ? `Filled ${formatQty(o.filledQty)} @ ${formatPrice(o.avgFillPrice)}` : (heldLabel(o.group) ?? statusLine(o))}
           {o.type === 'TRAILING_STOP' && isArmedStop(o) && o.stopPrice ? ` · stop ${formatPrice(o.stopPrice)}` : ''}
           {' · '}
           {showDate ? formatDateTimeEt(o.receivedAt) : formatTimeEt(o.receivedAt)}

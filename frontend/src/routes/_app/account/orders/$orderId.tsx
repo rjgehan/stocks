@@ -29,6 +29,8 @@ import {
   trailLabel,
 } from '@/features/account/orderLabels'
 import { DIRECTION_TEXT } from '@/features/market/Change'
+import { LinkedOrdersCard } from '@/features/groups/LinkedOrdersCard'
+import { GroupChip } from '@/features/groups/GroupChip'
 import { QualityBadge } from '@/features/market/QualityBadge'
 
 export const Route = createFileRoute('/_app/account/orders/$orderId')({
@@ -52,6 +54,11 @@ const EVENT_LABEL: Record<string, string> = {
   EXPIRED: 'Expired',
   REPLACED: 'Replaced',
   HOLD_ADJUSTED: 'Cash hold adjusted',
+  // Phase 2: group orders (§11.9), FINRA 5330 (§14), cancel latency (§11.10)
+  ACTIVATED: 'Released by the entry',
+  QTY_ADJUSTED: 'Quantity follows the entry',
+  PRICE_ADJUSTED: 'Prices reduced for a dividend',
+  CANCEL_REQUESTED: 'Cancel requested',
 }
 
 const LIQUIDITY_LABEL: Record<string, string> = {
@@ -242,6 +249,7 @@ function OrderDetail() {
               {o.type ? ORDER_TYPE_LABEL[o.type] : ''}
               {orderPriceLabel(o) ? ` ${orderPriceLabel(o)}` : ''} · {o.timeInForce === 'GTC' ? 'Good till cancelled' : 'Day'}
               {o.extendedHours ? ' · Extended hours' : ''}
+              <GroupChip group={o.group} />
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -256,6 +264,8 @@ function OrderDetail() {
         <p className="mt-2 text-body text-text-1">{statusLine(o)}</p>
         {o.rationale ? <p className="mt-2 rounded-sm bg-bg-2 p-2 text-caption text-text-2">Note: “{o.rationale}”</p> : null}
       </section>
+
+      {o.group ? <LinkedOrdersCard group={o.group} currentOrderId={o.orderId} /> : null}
 
       {o.type === 'STOP' || o.type === 'STOP_LIMIT' || o.type === 'TRAILING_STOP' ? <StopPanel o={o} /> : null}
 
@@ -276,6 +286,7 @@ function OrderDetail() {
             {o.doneAt ? <Field label="Completed">{formatDateTimeEt(o.doneAt)}</Field> : <Field label="Expires">{formatDateTimeEt(o.expiresAt)}</Field>}
             <Field label="Session date">{formatDateEt(o.sessionDate)}</Field>
             <Field label="Placed via">{o.channel ? (CHANNEL_LABEL[o.channel] ?? o.channel) : '--'}</Field>
+            {o.doNotReduce ? <Field label="Dividends">Don't reduce (FINRA 5330)</Field> : null}
             <Field label="Order id">
               <span className="font-mono text-caption" title={o.clientOrderId ?? undefined}>
                 {o.orderId}

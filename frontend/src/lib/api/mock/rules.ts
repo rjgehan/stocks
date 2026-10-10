@@ -71,6 +71,15 @@ export function mockRules(settings: Settings, now: string): Rules {
       clientOrderIdPattern: '^[A-Za-z0-9._:-]{1,64}$',
       rationaleRequiredForAi: settings['bots.requireRationale'],
       fractional: { minBuyNotional: '1.00', minSellNotional: '0.01', minQty: '0.00001', marketOnly: true, dayOnly: true, rthOnly: true, replaceable: false },
+      // Phase 2 (§11.9, §11.10, §14)
+      groups: [
+        { type: 'BRACKET', legs: 'entry (BUY) + takeProfit (SELL LIMIT) + stopLoss (SELL STOP or STOP_LIMIT)', entryTypes: ['MARKET', 'LIMIT'], timeInForce: ['DAY', 'GTC'], notes: 'Take profit > entry > stop loss, at least 0.1% apart.' },
+        { type: 'OCO', legs: 'takeProfit (LIMIT) + stopLoss (STOP or STOP_LIMIT)', entryTypes: [], timeInForce: ['DAY', 'GTC'], notes: 'The first execution cancels the other.' },
+        { type: 'OTO', legs: 'entry (BUY) + secondary (SELL)', entryTypes: ['MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT'], timeInForce: ['DAY', 'GTC'], notes: 'The secondary waits for the entry.' },
+        { type: 'OTOCO', legs: 'entry (BUY) + takeProfit + stopLoss', entryTypes: ['MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT'], timeInForce: ['DAY', 'GTC'], notes: 'An OTO whose secondary is an OCO pair.' },
+      ],
+      cancelLatency: null,
+      dividendAdjustment: 'Open buy limits and sell stops are reduced by the dividend on the ex-date (FINRA 5330).',
     },
     execution: {
       latency: '250 ms + 100–500 ms of seeded jitter',

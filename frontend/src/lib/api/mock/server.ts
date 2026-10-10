@@ -71,6 +71,8 @@ import type {
 import { MOCK_INDEX_SYMBOLS, MOCK_INVITE_CODE, MOCK_ME_BASE, MOCK_PLAYERS, POPULAR_SYMBOLS } from './data'
 import { MockMarket, hashString, mulberry32, unitsToDec } from './market'
 import { mockRules } from './rules'
+import { MockGroups } from './groups'
+import type { PlaceOrderGroupRequest } from '../groupTypes'
 import { type Lot, type MockOtherPlayer, type MockState, clearState, loadState, saveState } from './state'
 
 type Listener = (destination: string, body: unknown) => void
@@ -185,6 +187,20 @@ export class MockServer {
   private csrfToken: string | null = null
   private s: MockState
   private readonly routes: Array<[string, RegExp, Handler]> = []
+  /** Phase 2 group orders (§11.9) on top of this engine (`./groups`). */
+  private readonly groups = new MockGroups({
+    orders: () => this.s.orders,
+    newOrder: (req) => this.newOrder(req),
+    preview: (req) => this.preview(req),
+    buyingPower: () => this.account().buyingPower ?? '0.00',
+    pushEvent: (order, type, at, detail) => this.pushEvent(order, type, at, detail ?? null),
+    emitOrder: (event, order) => this.emitOrder(event, order, null),
+    publishAccount: () => this.publish('/user/queue/account', this.account()),
+    activateLater: (orderId) => setTimeout(() => this.activate(orderId), 450 + Math.random() * 350),
+    cancel: (order, reason) => this.finish(order, 'CANCELLED', reason),
+    newGroupId: () => publicId('grp'),
+    store: () => (this.s.orderGroups ??= []),
+  })
 
   constructor(market = new MockMarket()) {
     this.market = market
@@ -707,6 +723,11 @@ export class MockServer {
       return json(this.detail(order))
     })
     r('DELETE', '/orders/{orderId}', ({ params }) => this.cancel(params[0]!, 'USER'))
+    // Phase 2 group orders (§11.9)
+    r('POST', '/order-groups/preview', ({ body }) => json(this.groups.preview(body as PlaceOrderGroupRequest)))
+    r('POST', '/order-groups', ({ body }) => this.groups.place(body as PlaceOrderGroupRequest))
+    r('GET', '/order-groups/{groupId}', ({ params }) => this.groups.get(params[0]!))
+    r('DELETE', '/order-groups/{groupId}', ({ params }) => this.groups.cancel(params[0]!))
 
     // watchlists
     r('GET', '/watchlists', () => json(this.s.watchlists))
@@ -1719,6 +1740,9 @@ export class MockServer {
       rationale: req.rationale ?? null,
       executions: null,
       events: null,
+      group: null,
+      doNotReduce: req.doNotReduce ?? false,
+      cancelRequestedAt: null,
     }
   }
 
@@ -1773,7 +1797,7 @@ export class MockServer {
 
   private activate(orderId: string): void {
     const order = this.s.orders.find((o) => o.orderId === orderId)
-    if (!order || !isOpen(order)) return
+    if (!order || !isOpen(order) || this.groups.isHeld(order)) return
     order.activatedAt = iso()
     order.status = 'WORKING'
     order.waitReason = order.type === 'LIMIT' ? 'LIMIT_NOT_REACHED' : isStopType(order.type) ? 'NOT_TRIGGERED' : null
@@ -2001,6 +2025,7 @@ export class MockServer {
       doneAt: at,
     } satisfies Partial<Order>)
     this.pushEvent(order, 'FILL', at, { executionId: execution.executionId, qty, price })
+    this.groups.afterFill(order)
     this.notify('FILL', `Filled: ${side === 'BUY' ? 'bought' : 'sold'} ${qty} ${symbol}`, `@ $${setScale(price, 2)} · ${side === 'BUY' ? 'cost' : 'proceeds'} $${principal}`, { orderId: order.orderId }, false)
   }
 
@@ -2024,6 +2049,7 @@ export class MockServer {
     this.pushEvent(order, status, undefined, reason ? { reason } : null)
     this.emitOrder(status, order, null)
     this.publish('/user/queue/account', this.account())
+    this.groups.afterEnd(order)
   }
 
   private pushEvent(order: Order, type: NonNullable<OrderEvent['type']>, at: string = iso(), detail: Record<string, unknown> | null = null): void {
