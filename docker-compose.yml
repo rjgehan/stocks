@@ -246,6 +246,24 @@ services:
             en_us: Holds pg_backup.sh from the repository (deploy/backup/).
             en_US: Holds pg_backup.sh from the repository (deploy/backup/).
 
+  cloudflared: # Cloudflare Tunnel sidecar (one tunnel per app). Public hostname -> HTTP stocks-app:8080
+    image: cloudflare/cloudflared:latest
+    container_name: stocks-cloudflared
+    restart: unless-stopped
+    labels: # Watchtower: keep the tunnel client current
+      com.centurylinklabs.watchtower.enable: "true"
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    networks: [edge] # reaches stocks-app:8080; never the database
+    logging: *logging
+    x-casaos:
+      envs:
+        - container: TUNNEL_TOKEN
+          description:
+            en_us: Token of this app's Cloudflare Tunnel (Zero Trust, Networks, Tunnels). Route stocks.<domain> to HTTP stocks-app:8080.
+            en_US: Token of this app's Cloudflare Tunnel (Zero Trust, Networks, Tunnels). Route stocks.<domain> to HTTP stocks-app:8080.
+
   agent-runner: # Phase 1 bots (§20.5). Start with: docker compose -p stocks --profile agents up -d
     profiles: [agents]
     image: ${STOCKS_IMAGE:?set STOCKS_IMAGE in .env, e.g. ghcr.io/OWNER/stocks}-agent-runner:${STOCKS_TAG:-latest}

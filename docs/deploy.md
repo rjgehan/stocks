@@ -308,9 +308,16 @@ runs:
 
 | cloudflared runs… | Tunnel service URL | `.env` |
 |---|---|---|
+| **as the `stocks-cloudflared` sidecar in this compose file** (default; one tunnel per app, like the owner's other CasaOS apps) | `http://stocks-app:8080` | `CLOUDFLARE_TUNNEL_TOKEN=<this app's tunnel token>` |
 | **as a container, joined to the `stocks-edge` network** (recommended with the CasaOS cloudflared app) | `http://stocks-app:8080` | defaults (the published port is not even used) |
 | on the host network, or as a system service | `http://localhost:8080` | `STOCKS_BIND_IP=127.0.0.1` (default) |
 | as a container on another network that cannot join `stocks-edge` | `http://<server-lan-ip>:8080` | `STOCKS_BIND_IP=0.0.0.0` **and** `TRUSTED_PROXIES` narrowed to cloudflared's Docker network, e.g. `172.18.0.0/16` (from `docker network inspect <its network>`). Any LAN device can then reach port 8080 over plain HTTP; with the broad default it could also forge `CF-Connecting-IP` (rate limits, lockout, audit) and `X-Forwarded-Proto: https`. |
+
+**The sidecar (default).** Zero Trust → **Networks → Tunnels → Create a tunnel → Cloudflared**, name it `stocks`,
+and copy the token from the install command it shows (the long string after `--token`). Put it in `.env` as
+`CLOUDFLARE_TUNNEL_TOKEN`. On the tunnel's **Public hostname** tab add `stocks.<your-domain>`, type **HTTP**,
+URL `stocks-app:8080`. The `stocks-cloudflared` container joins `stocks-edge`, so nothing is published on the host.
+If you use one of the other rows instead, leave the token empty and stop `stocks-cloudflared`.
 
 **Joining `stocks-edge`.** The stack creates the Docker network `stocks-edge`. Quick test:
 `docker network connect stocks-edge <cloudflared-container>`. That is lost when the cloudflared container is
