@@ -1,12 +1,8 @@
 package com.stocks.config.stubs;
 
 import com.stocks.config.CommonAutoConfiguration;
-import com.stocks.contract.portfolio.LeaderboardService;
-import com.stocks.contract.portfolio.PerformanceQueries;
-import com.stocks.contract.portfolio.ValuationService;
 import com.stocks.contract.trading.CorporateActionQueries;
 import com.stocks.contract.trading.CorporateActionService;
-import com.stocks.contract.watchlist.WatchlistService;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -49,28 +45,6 @@ public class StubsAutoConfiguration {
   }
 
   // ===== WS4 =====
-
-  @Bean
-  @ConditionalOnMissingBean
-  ValuationService valuationServiceStub() {
-    return NotImplementedStub.of(ValuationService.class, "WS4");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  LeaderboardService leaderboardServiceStub() {
-    return NotImplementedStub.of(LeaderboardService.class, "WS4");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  PerformanceQueries performanceQueriesStub() {
-    return NotImplementedStub.of(PerformanceQueries.class, "WS4");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  WatchlistService watchlistServiceStub() {
-    return NotImplementedStub.of(WatchlistService.class, "WS4");
-  }
+  // ValuationService, LeaderboardService, PerformanceQueries and WatchlistService are real (portfolio, league,
+  // watchlist).
 }

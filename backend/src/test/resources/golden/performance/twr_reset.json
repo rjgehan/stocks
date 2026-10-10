@@ -1,0 +1,21 @@
+{
+  "section": "ARCHITECTURE §16.2 twr_reset (§16.3)",
+  "description": "A reset continues the player's unit series, so it never erases a loss. WEEK anchor (Fri EOD) E = 500, NC = 500, U = 1. Thu 11:00 the admin resets: run 1 closes at E = 300 (U = 0.60); run 2 opens with $500 at U = 0.60 (833.33 units). Fri EOD run 2 has E = 510, so U = 0.612. WEEK TWR = -38.8%, WEEK P&L = (300 - 500) + (510 - 500) = -$190. A per-run anchor would have shown +2.0%.",
+  "steps": [
+    { "label": "OPEN", "at": "2026-10-01T14:00:00Z", "account": "p", "op": "OPEN", "amount": "500.00" },
+    { "label": "WEEK_ANCHOR", "at": "2026-10-03T00:00:00Z", "account": "p", "op": "MARK", "equity": "500.00",
+      "expect": { "unitValue": "1.0000000000" } },
+    { "label": "RESET", "at": "2026-10-08T15:00:00Z", "account": "p", "op": "RESET", "equity": "300.00",
+      "amount": "500.00",
+      "expect": { "finalUnitValue": "0.6000000000", "units": "833.3333333333", "unitValue": "0.6000000000",
+                  "unitSeries": 1 } },
+    { "label": "FRI_EOD", "at": "2026-10-10T00:00:00Z", "account": "p", "op": "MARK", "equity": "510.00",
+      "expect": { "unitValue": "0.6120000000" } }
+  ],
+  "windows": [
+    { "account": "p", "from": "WEEK_ANCHOR", "to": "FRI_EOD", "twr": "-0.3880000000", "pnl": "-190.00",
+      "rebased": false },
+    { "account": "p", "from": "RESET", "to": "FRI_EOD", "twr": "0.0200000000", "pnl": "10.00", "rebased": false },
+    { "account": "p", "from": "OPEN", "to": "FRI_EOD", "twr": "-0.3880000000", "pnl": "-190.00", "rebased": false }
+  ]
+}

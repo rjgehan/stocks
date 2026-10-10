@@ -1,0 +1,33 @@
+{
+  "section": "ARCHITECTURE §16.2 twr_tiny_equity",
+  "description": "No minimum equity for a flow. A bot at E = 0.40 with 500 units (U = 0.0008) receives a $500 deposit to ALL: units_delta = 625,000, U stays 0.0008 and the board still shows -99.92%. A bot at exactly E = 0.00 with 500 units receives $500: rebase, U = 1, units = 500, series 2, and every window spanning the rebase shows -100% and rebased.",
+  "steps": [
+    { "label": "OPEN", "at": "2026-10-05T14:00:00Z", "account": "tiny", "op": "OPEN", "amount": "500.00" },
+    { "label": "OPEN", "at": "2026-10-05T14:00:00Z", "account": "zero", "op": "OPEN", "amount": "500.00" },
+    { "label": "LOW", "at": "2026-10-07T15:00:00Z", "account": "tiny", "op": "MARK", "equity": "0.40",
+      "expect": { "units": "500.0000000000", "unitValue": "0.0008000000" } },
+    { "label": "LOW", "at": "2026-10-07T15:00:00Z", "account": "zero", "op": "MARK", "equity": "0.00",
+      "expect": { "units": "500.0000000000", "unitValue": "0.0000000000" } },
+    { "label": "DEPOSIT", "at": "2026-10-07T15:00:00Z", "account": "tiny", "op": "FLOW", "equityBefore": "0.40",
+      "amount": "500.00",
+      "expect": { "unitsDelta": "625000.0000000000", "units": "625500.0000000000", "unitValue": "0.0008000000",
+                  "unitSeries": 1, "rebased": false } },
+    { "label": "DEPOSIT", "at": "2026-10-07T15:00:00Z", "account": "zero", "op": "FLOW", "equityBefore": "0.00",
+      "amount": "500.00",
+      "expect": { "unitsDelta": "0.0000000000", "units": "500.0000000000", "unitValue": "1.0000000000",
+                  "unitSeries": 2, "rebased": true } },
+    { "label": "AFTER", "at": "2026-10-07T15:00:01Z", "account": "tiny", "op": "MARK", "equity": "500.40",
+      "expect": { "unitValue": "0.0008000000" } },
+    { "label": "AFTER", "at": "2026-10-07T15:00:01Z", "account": "zero", "op": "MARK", "equity": "500.00",
+      "expect": { "unitValue": "1.0000000000" } },
+    { "label": "LATER", "at": "2026-10-08T15:00:00Z", "account": "zero", "op": "MARK", "equity": "550.00",
+      "expect": { "unitValue": "1.1000000000" } }
+  ],
+  "windows": [
+    { "account": "tiny", "from": "OPEN", "to": "LOW", "twr": "-0.9992000000", "pnl": "-499.60", "rebased": false },
+    { "account": "tiny", "from": "OPEN", "to": "AFTER", "twr": "-0.9992000000", "pnl": "-499.60", "rebased": false },
+    { "account": "zero", "from": "OPEN", "to": "AFTER", "twr": "-1.0000000000", "pnl": "-500.00", "rebased": true },
+    { "account": "zero", "from": "OPEN", "to": "LATER", "twr": "-1.0000000000", "pnl": "-450.00", "rebased": true },
+    { "account": "zero", "from": "AFTER", "to": "LATER", "twr": "0.1000000000", "pnl": "50.00", "rebased": false }
+  ]
+}

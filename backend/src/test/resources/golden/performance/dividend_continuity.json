@@ -1,0 +1,16 @@
+{
+  "section": "ARCHITECTURE §16.1 dividend_continuity",
+  "description": "Hold 10 shares at $50; a $0.50 dividend accrues on the ex-date (the price drops by the dividend) and is paid on the payable date. The receivable counts in equity from the ex-date until payment, then the cash does: equity is continuous and the $5.00 counts exactly once.",
+  "position": { "symbol": "DIVY", "qty": "10", "buyPrice": "50.00", "startingCash": "500.00" },
+  "dividend": { "amount": "5.00" },
+  "steps": [
+    { "label": "BEFORE_EX", "at": "2026-10-07T19:00:00Z", "price": "50.00",
+      "expect": { "cash": "0.00", "longMarketValue": "500.00", "receivable": "0.00", "equity": "500.00" } },
+    { "label": "EX_DATE", "at": "2026-10-08T08:00:00Z", "price": "49.50", "op": "ACCRUE",
+      "expect": { "cash": "0.00", "longMarketValue": "495.00", "receivable": "5.00", "equity": "500.00" } },
+    { "label": "BEFORE_PAY", "at": "2026-10-09T09:59:59Z", "price": "49.50",
+      "expect": { "cash": "0.00", "longMarketValue": "495.00", "receivable": "5.00", "equity": "500.00" } },
+    { "label": "PAID", "at": "2026-10-09T10:00:00Z", "price": "49.50", "op": "PAY",
+      "expect": { "cash": "5.00", "longMarketValue": "495.00", "receivable": "0.00", "equity": "500.00" } }
+  ]
+}

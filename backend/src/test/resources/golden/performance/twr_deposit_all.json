@@ -1,0 +1,26 @@
+{
+  "section": "ARCHITECTURE §16.2 twr_deposit_all",
+  "description": "A $1,000 deposit to ALL leaves every unit value where it was: the board still shows Alice +20% / +$100 and Bob -10% / -$50.",
+  "steps": [
+    { "label": "OPEN", "at": "2026-10-05T14:00:00Z", "account": "alice", "op": "OPEN", "amount": "500.00" },
+    { "label": "OPEN", "at": "2026-10-05T14:00:00Z", "account": "bob", "op": "OPEN", "amount": "500.00" },
+    { "label": "BEFORE", "at": "2026-10-07T15:00:00Z", "account": "alice", "op": "MARK", "equity": "600.00",
+      "expect": { "unitValue": "1.2000000000" } },
+    { "label": "BEFORE", "at": "2026-10-07T15:00:00Z", "account": "bob", "op": "MARK", "equity": "450.00",
+      "expect": { "unitValue": "0.9000000000" } },
+    { "label": "DEPOSIT", "at": "2026-10-07T15:00:00Z", "account": "alice", "op": "FLOW", "equityBefore": "600.00",
+      "amount": "1000.00", "expect": { "units": "1333.3333333333", "unitValue": "1.2000000000" } },
+    { "label": "DEPOSIT", "at": "2026-10-07T15:00:00Z", "account": "bob", "op": "FLOW", "equityBefore": "450.00",
+      "amount": "1000.00", "expect": { "units": "1611.1111111111", "unitValue": "0.9000000000" } },
+    { "label": "AFTER", "at": "2026-10-07T15:00:01Z", "account": "alice", "op": "MARK", "equity": "1600.00",
+      "expect": { "unitValue": "1.2000000000" } },
+    { "label": "AFTER", "at": "2026-10-07T15:00:01Z", "account": "bob", "op": "MARK", "equity": "1450.00",
+      "expect": { "unitValue": "0.9000000000" } }
+  ],
+  "windows": [
+    { "account": "alice", "from": "OPEN", "to": "BEFORE", "twr": "0.2000000000", "pnl": "100.00", "rebased": false },
+    { "account": "alice", "from": "OPEN", "to": "AFTER", "twr": "0.2000000000", "pnl": "100.00", "rebased": false },
+    { "account": "bob", "from": "OPEN", "to": "BEFORE", "twr": "-0.1000000000", "pnl": "-50.00", "rebased": false },
+    { "account": "bob", "from": "OPEN", "to": "AFTER", "twr": "-0.1000000000", "pnl": "-50.00", "rebased": false }
+  ]
+}

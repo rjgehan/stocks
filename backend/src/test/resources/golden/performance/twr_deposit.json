@@ -1,0 +1,21 @@
+{
+  "section": "ARCHITECTURE §16.2 twr_deposit",
+  "description": "An admin deposit mid-period does not change the unit value: TWR +16.23%, P&L +$100 (the naive (E - 500) / 500 would say +120%).",
+  "steps": [
+    { "label": "MON_OPEN", "at": "2026-10-05T14:00:00Z", "account": "bot", "op": "OPEN", "amount": "500.00",
+      "expect": { "units": "500.0000000000", "unitValue": "1.0000000000" } },
+    { "label": "MON_EOD", "at": "2026-10-06T00:00:00Z", "account": "bot", "op": "MARK", "equity": "550.00",
+      "expect": { "units": "500.0000000000", "unitValue": "1.1000000000" } },
+    { "label": "TUE_DEPOSIT", "at": "2026-10-06T15:00:00Z", "account": "bot", "op": "FLOW", "equityBefore": "560.00",
+      "amount": "500.00",
+      "expect": { "units": "946.4285714286", "unitValue": "1.1200000000" } },
+    { "label": "TUE_EOD", "at": "2026-10-07T00:00:00Z", "account": "bot", "op": "MARK", "equity": "1100.00",
+      "expect": { "units": "946.4285714286", "unitValue": "1.1622641509" } }
+  ],
+  "windows": [
+    { "account": "bot", "from": "MON_OPEN", "to": "TUE_EOD", "twr": "0.1622641509", "pnl": "100.00",
+      "rebased": false },
+    { "account": "bot", "from": "MON_EOD", "to": "TUE_EOD", "twr": "0.0566037736", "pnl": "50.00",
+      "rebased": false }
+  ]
+}
