@@ -59,6 +59,10 @@ class SecurityChainsIT {
     pepper = properties.security().apiKeyPepper();
   }
 
+  /** §17.1 + §17.9.5: the chain-2 challenge with the protected-resource metadata of the MCP resource. */
+  static final String CHALLENGE = "Bearer realm=\"stocks\", resource_metadata="
+      + "\"http://localhost:5173/.well-known/oauth-protected-resource/mcp\"";
+
   static String handle(String base) {
     return base + SEQ.incrementAndGet();
   }
@@ -160,7 +164,7 @@ class SecurityChainsIT {
       assertThat(r.getResponse().getStatus()).as(attempt[0]).isEqualTo(401);
       assertThat(code(r)).isEqualTo("BAD_CREDENTIALS");
       // §17.1 / RFC 9110: a 401 raised by a controller carries the challenge too, not only the security layer's
-      assertThat(r.getResponse().getHeader("WWW-Authenticate")).as(attempt[0]).isEqualTo("Bearer realm=\"stocks\"");
+      assertThat(r.getResponse().getHeader("WWW-Authenticate")).as(attempt[0]).isEqualTo(CHALLENGE);
     }
     assertThat(s.sessionId()).isNull();
   }
@@ -324,7 +328,7 @@ class SecurityChainsIT {
   void anonymousCallersGet401NotCsrfErrors() throws Exception {
     MvcResult me = call(get("/api/v1/me"));
     assertThat(me.getResponse().getStatus()).isEqualTo(401);
-    assertThat(me.getResponse().getHeader("WWW-Authenticate")).isEqualTo("Bearer realm=\"stocks\"");
+    assertThat(me.getResponse().getHeader("WWW-Authenticate")).isEqualTo(CHALLENGE);
     MvcResult order = call(post(SecurityProbes.TRADE_PROBE).contentType(MediaType.APPLICATION_JSON).content("{}"));
     assertThat(order.getResponse().getStatus()).isEqualTo(401);
     assertThat(code(order)).isEqualTo("UNAUTHENTICATED");
@@ -435,12 +439,12 @@ class SecurityChainsIT {
   void mcpAndApiDocsNeedCredentials() throws Exception {
     MvcResult mcp = call(post("/mcp").contentType(MediaType.APPLICATION_JSON).content("{}"));
     assertThat(mcp.getResponse().getStatus()).isEqualTo(401);
-    assertThat(mcp.getResponse().getHeader("WWW-Authenticate")).isEqualTo("Bearer realm=\"stocks\"");
+    assertThat(mcp.getResponse().getHeader("WWW-Authenticate")).isEqualTo(CHALLENGE);
     assertThat(call(get("/v3/api-docs")).getResponse().getStatus()).isEqualTo(401);
     // springdoc also serves ${springdoc.api-docs.path}.yaml: it must not fall through to the public web chain
     MvcResult yaml = call(get("/v3/api-docs.yaml"));
     assertThat(yaml.getResponse().getStatus()).isEqualTo(401);
-    assertThat(yaml.getResponse().getHeader("WWW-Authenticate")).isEqualTo("Bearer realm=\"stocks\"");
+    assertThat(yaml.getResponse().getHeader("WWW-Authenticate")).isEqualTo(CHALLENGE);
     assertThat(code(yaml)).isEqualTo("UNAUTHENTICATED");
     assertThat(call(get("/v3/api-docs/swagger-config")).getResponse().getStatus()).isEqualTo(401);
     assertThat(call(get("/api/docs")).getResponse().getStatus()).isEqualTo(401);

@@ -684,6 +684,33 @@ class OAuthFlowIT {
     }
   }
 
+  @Autowired SigningKeys signingKeys;
+  @Autowired OAuthProperties oauthProperties;
+
+  @Test
+  void theSigningKeyIsStoredEncryptedAndAPepperChangeReplacesIt() {
+    String kid = signingKeys.current().getKeyID();
+    Map<String, Object> row = jdbc.sql("SELECT kid, public_jwk, private_key_enc FROM oauth_signing_key WHERE kid = ?")
+        .param(kid).query().singleRow();
+    assertThat((String) row.get("public_jwk")).contains(kid).doesNotContain("\"d\"");
+    assertThat((String) row.get("private_key_enc")).doesNotContain("MII");
+    // a restart with the same pepper loads the same key
+    assertThat(new SigningKeys(jdbc, time, properties, oauthProperties).current().getKeyID()).isEqualTo(kid);
+    // another pepper cannot decrypt it: the row is retired and a new key generated
+    var s = properties.security();
+    com.stocks.config.StocksProperties other = new com.stocks.config.StocksProperties(properties.publicUrl(),
+        properties.jobs(), properties.singleInstance(), properties.bootstrap(),
+        new com.stocks.config.StocksProperties.Security("another-pepper-0123456789abcdef0123", s.loginMaxFailures(),
+            s.loginLockout(), s.loginMaxFailuresPerHandle(), s.recentAuth(), s.extraWsOrigins(), s.passwordHashCost(),
+            s.apiKeyCacheTtl(), s.playerStatusCacheTtl()), properties.ratelimit());
+    String replaced = new SigningKeys(jdbc, time, other, oauthProperties).current().getKeyID();
+    assertThat(replaced).isNotEqualTo(kid);
+    assertThat(jdbc.sql("SELECT retired_at FROM oauth_signing_key WHERE kid = ?").param(kid).query().singleRow()
+        .get("retired_at")).isNotNull();
+    // back to the real pepper (the context's own bean keeps its key in memory)
+    assertThat(new SigningKeys(jdbc, time, properties, oauthProperties).current().getKeyID()).isNotEqualTo(replaced);
+  }
+
   @Test
   void theSpaHandlesTheConsentAndErrorPages() throws Exception {
     // /oauth/* are SPA routes (index.html), /oauth2/* and /.well-known/* never fall back to the SPA

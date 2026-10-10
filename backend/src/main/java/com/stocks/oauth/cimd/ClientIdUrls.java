@@ -53,7 +53,7 @@ public final class ClientIdUrls {
       return "the client_id URL must use the default https port";
     }
     String path = uri.getRawPath();
-    if (path == null || path.isEmpty()) {
+    if (path == null || path.isEmpty() || path.equals("/")) {
       return "the client_id URL must contain a path";
     }
     for (String segment : path.split("/", -1)) {

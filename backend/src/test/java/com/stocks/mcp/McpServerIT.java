@@ -432,7 +432,9 @@ class McpServerIT {
   void withoutAKeyMcpIsRejected() throws Exception {
     HttpResponse<String> anonymous = post(null, call("whoami"), Map.of());
     assertThat(anonymous.statusCode()).isEqualTo(401);
-    assertThat(anonymous.headers().firstValue("WWW-Authenticate")).hasValue("Bearer realm=\"stocks\"");
+    // §17.9.5: the challenge names the protected-resource metadata (how claude.ai and ChatGPT find the OAuth server)
+    assertThat(anonymous.headers().firstValue("WWW-Authenticate")).hasValue("Bearer realm=\"stocks\", "
+        + "resource_metadata=\"" + properties.publicUrl() + "/.well-known/oauth-protected-resource/mcp\"");
     assertThat(jsonMapper.readTree(anonymous.body()).get("code").asString()).isEqualTo("UNAUTHENTICATED");
 
     HttpResponse<String> badKey = post("stk_aaaaaaaaaaaa_" + "x".repeat(43), call("whoami"), Map.of());
