@@ -20,6 +20,11 @@ class McpInputSchemasTest {
   static McpToolHarness harness;
   static final JsonSchemaValidator VALIDATOR = McpJsonDefaults.getSchemaValidator();
 
+  @org.junit.jupiter.api.AfterAll
+  static void closeHarness() {
+    harness.close();
+  }
+
   @BeforeAll
   static void build() {
     harness = new McpToolHarness();

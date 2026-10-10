@@ -70,7 +70,7 @@ import tools.jackson.databind.json.JsonMapper;
  * {@code NotificationService} on a fresh database. {@link #call} goes through the same {@code McpToolHandler} as the
  * server (scope check, argument binding, Boot-mapper results, §20.2 errors).
  */
-final class McpToolHarness {
+final class McpToolHarness implements AutoCloseable {
 
   static final JsonMapper MAPPER = JacksonConfig.newMapper();
   static final RequestMeta META = new RequestMeta("req_1", Channel.MCP_KEY, "127.0.0.1", "ua", "claude-code", null);
@@ -95,6 +95,21 @@ final class McpToolHarness {
   final RulesService rules;
   final List<McpToolSet> toolSets;
   final Map<String, SyncToolSpecification> specs = new LinkedHashMap<>();
+
+  /**
+   * Closes a {@link TestDb}'s connection pool. Every {@code TestDb.fresh()} opens a pool (on its own embedded
+   * PostgreSQL database under {@code -Ppg-it}); left open, a few dozen tests exhaust the server's connections.
+   */
+  static void closeDb(TestDb db) {
+    if (db != null && db.dataSource() instanceof com.zaxxer.hikari.HikariDataSource pool) {
+      pool.close();
+    }
+  }
+
+  @Override
+  public void close() {
+    closeDb(db);
+  }
 
   McpToolHarness() {
     Fixtures fx = new Fixtures(db.jdbc(), time);

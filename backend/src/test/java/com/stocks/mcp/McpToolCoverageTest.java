@@ -71,10 +71,11 @@ class McpToolCoverageTest {
   @Test
   void everyMappedToolExistsAndIsRegistered() throws IOException {
     Coverage c = coverage();
-    McpToolHarness harness = new McpToolHarness();
-    for (Map.Entry<String, String> e : c.tools().entrySet()) {
-      assertThat(McpToolCatalog.ORDER).as(e.getKey()).contains(e.getValue());
-      assertThat(harness.specs).as(e.getKey()).containsKey(e.getValue());
+    try (McpToolHarness harness = new McpToolHarness()) {
+      for (Map.Entry<String, String> e : c.tools().entrySet()) {
+        assertThat(McpToolCatalog.ORDER).as(e.getKey()).contains(e.getValue());
+        assertThat(harness.specs).as(e.getKey()).containsKey(e.getValue());
+      }
     }
     assertThat(c.tools().keySet()).doesNotContainAnyElementsOf(c.excluded().keySet());
     assertThat(c.excluded().values()).allSatisfy(reason -> assertThat(reason).isNotBlank());

@@ -62,6 +62,11 @@ class McpJsonContractTest {
 
   McpToolHarness h;
 
+  @org.junit.jupiter.api.AfterEach
+  void closeHarness() {
+    h.close();
+  }
+
   @BeforeEach
   void setUp() {
     h = new McpToolHarness();

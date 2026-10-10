@@ -33,6 +33,11 @@ class McpToolsListTest {
 
   static final Pattern SNAKE = Pattern.compile("^[a-z][a-z0-9]*(_[a-z0-9]+)*$");
 
+  @org.junit.jupiter.api.AfterAll
+  static void closeHarness() {
+    harness.close();
+  }
+
   @BeforeAll
   static void build() {
     harness = new McpToolHarness();

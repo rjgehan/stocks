@@ -41,6 +41,14 @@ class NotificationServiceTest {
   Fixtures.PlayerRef alice;
   Fixtures.PlayerRef bob;
 
+  @org.junit.jupiter.api.AfterEach
+  void closeDb() {
+    // every TestDb.fresh() opens a pool; close it so -Ppg-it does not run out of PostgreSQL connections
+    if (db != null && db.dataSource() instanceof com.zaxxer.hikari.HikariDataSource pool) {
+      pool.close();
+    }
+  }
+
   @BeforeEach
   void setUp() {
     time = TestTimes.clock();
