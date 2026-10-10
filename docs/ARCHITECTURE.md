@@ -2948,20 +2948,106 @@ Writers (Phase 1): AUTH, KEY, ADMIN and MONEY rows and admin resets (`ACCOUNT/AC
 
 ### 17.9 Phase 2: OAuth 2.1 for the claude.ai and ChatGPT connectors
 
-- Spring Authorization Server (part of Security 7.1.1) plus `mcp-authorization-server-spring-boot` 0.1.14.
-- Authorization code with **PKCE S256 only**.
-- **CIMD** (`client_id_metadata_document_supported: true` and `"none"` in `token_endpoint_auth_methods_supported`), with **DCR** kept as a fallback.
-- `authorization_response_iss_parameter_supported: true` and `iss` sent [VERIFY Spring AS default].
-- `scopes_supported`: `market:read account:read trade league:read offline_access`.
-- Protected-resource metadata at `/.well-known/oauth-protected-resource/mcp`, with `resource = ${public-url}/mcp` exactly.
-- Redirect allowlist:
-  - `https://claude.ai/api/mcp/auth_callback`
-  - `https://chatgpt.com/connector_platform_oauth_redirect`
-  - `https://chatgpt.com/connector/oauth/*`
-  - loopback on any port
-- **Act-as consent screen.** The logged-in human chooses "Act as ◉ Claude (AI, owned by you) ○ myself". The JWT then has `sub` = the bot's public id, `act.sub` = the human, and `aud = ${public-url}/mcp`.
-- Access tokens last 30 minutes. Refresh tokens rotate on every use and last 30 days.
-- On every request, `JwtPlayerConverter` re-checks that the player is ACTIVE and that the human still owns the bot.
+The claude.ai custom connector (web, desktop, mobile; Claude Code too) and the ChatGPT developer-mode connector reach `/mcp` from their vendors' clouds and accept only OAuth (or no authentication), so Phase 2 ships an **OAuth 2.1 Authorization Server inside the app** (`com.stocks.oauth`). The human signs in with the normal login page and chooses **which player the connector acts as**: themselves, or an AI bot they own (`player.owner_player_id`). Verified against the MCP authorization spec 2026-07-28 (DCR deprecated, `iss` SHOULD), RFC 8414/9728/8707/9207/7591/7009, the CIMD draft-00, Claude's connector docs and the ChatGPT Apps SDK auth page on 2026-10-10 [V].
+
+**Why not Spring Authorization Server or mcp-security** [D] (the v1.1 plan said "Spring Authorization Server plus `mcp-authorization-server-spring-boot` 0.1.14"): Spring AS 7.1.1's JDBC store needs BLOB/TEXT columns and Jackson-polymorphic serialization of the session `Authentication` (violates §8 portability and needs allowlist mixins for `PlayerAuthenticationToken`); its consent is per (client, user) while act-as is per grant; it has no refresh-token reuse detection; mcp-security 0.1.14 (built for Boot 4.1.0) resolves CIMD documents with a plain `RestClient` (no private-address block, no size or time limit) and opens DCR through an authorization-manager post-processor. The protocol surface MCP clients use is small, so `com.stocks.oauth` implements it with `JdbcClient`, `TimeSource` and Nimbus JOSE (`nimbus-jose-jwt` 10.9.1 through `spring-security-oauth2-jose` 7.1.1, Boot-managed); nothing else is added.
+
+#### 17.9.1 Endpoints (all under `stocks.public-url`; the issuer is that URL with no trailing slash)
+
+| Method and path | Auth | Purpose |
+|---|---|---|
+| `GET /.well-known/oauth-protected-resource/mcp` and `GET /.well-known/oauth-protected-resource` | public | RFC 9728: `{resource: "${public-url}/mcp", authorization_servers: [issuer], scopes_supported: [the four §7.1 scopes], bearer_methods_supported: ["header"], resource_name: "stocks"}`. `offline_access` is **not** listed here (MCP spec: refresh tokens are not a resource requirement). |
+| `GET /.well-known/oauth-authorization-server` | public | RFC 8414 (below). `/.well-known/openid-configuration` is 404: this is not an OpenID provider. |
+| `GET /oauth2/authorize` | browser | Authorization request → stores a pending request and 302s to the SPA consent page `/oauth/consent?request=<id>` (a **relative** `Location`, so any host or port works); errors that can be returned go to the client's `redirect_uri`, the others to `/oauth/error?error=…&error_description=…`. |
+| `POST /oauth2/token` | client (below) | `authorization_code` and `refresh_token` grants, `application/x-www-form-urlencoded`. |
+| `POST /oauth2/register` | public, rate-limited | RFC 7591 DCR (`application/json`). |
+| `POST /oauth2/revoke` | client | RFC 7009: a refresh or access token revokes its whole grant; unknown tokens answer 200. |
+| `GET /oauth2/jwks` | public | The public signing key(s) (JWK set). |
+| `GET /api/v1/me/oauth/requests/{requestId}` | session | The consent screen's data (`OAuthConsentRequest`, §18.3). |
+| `POST /api/v1/me/oauth/requests/{requestId}` | session + CSRF | `{approve, actAs?, scopes?}` → `{redirectUrl}`; the SPA then navigates there. |
+| `GET /api/v1/me/connected-apps` | session | My live grants (`ConnectedApp[]`) for Settings → Connected apps. |
+| `DELETE /api/v1/me/connected-apps/{grantId}` | session + CSRF | Revoke one grant at once (its access tokens stop on the next request). |
+
+Authorization server metadata (exact members): `issuer`, `authorization_endpoint`, `token_endpoint`, `registration_endpoint` (only while DCR is enabled), `revocation_endpoint`, `jwks_uri`, `scopes_supported: ["market:read","account:read","trade","league:read","offline_access"]` (Claude appends `offline_access` to its request when listed), `response_types_supported: ["code"]`, `response_modes_supported: ["query"]`, `grant_types_supported: ["authorization_code","refresh_token"]`, `token_endpoint_auth_methods_supported: ["none","client_secret_basic","client_secret_post"]` (also for revocation), `code_challenge_methods_supported: ["S256"]`, `client_id_metadata_document_supported: true`, `authorization_response_iss_parameter_supported: true`. Claude picks CIMD only when both `client_id_metadata_document_supported` and `"none"` are advertised; ChatGPT picks CIMD when the first is, and its stable redirect `https://chatgpt.com/connector_platform_oauth_redirect` when `iss` support is advertised [V].
+
+The OAuth endpoints answer RFC 6749 JSON errors (`{error, error_description}`), not §6.5 problems; `/api/v1/me/**` answers problems as usual. Metadata and JWKS carry `Cache-Control: public, max-age=300`; token, register and revoke `no-store`. The metadata, JWKS, token, register and revoke endpoints send `Access-Control-Allow-Origin: *` (no credentials), so browser-based MCP tools (the Inspector) can complete discovery; `/oauth2/authorize` and the consent API never do.
+
+#### 17.9.2 Clients
+
+| Kind | `client_id` | How it is known | Token-endpoint auth |
+|---|---|---|---|
+| **CIMD** (preferred; Claude: `https://claude.ai/oauth/mcp-oauth-client-metadata`, Claude Code: `https://claude.ai/oauth/claude-code-client-metadata`, ChatGPT: `https://chatgpt.com/oauth/client.json` or `…/oauth/{callback_id}/client.json`) | the HTTPS URL of its metadata document | fetched on first use, cached in memory (Caffeine, ≤ 500 entries) for the response's `max-age` clamped to 5 min–24 h (`no-store` → not cached; errors and invalid documents are never cached) | `none` (public, PKCE). A document may also list `private_key_jwt` (ChatGPT does); we do not advertise it, so clients use `none`, and any `client_assertion` sent anyway is ignored. Documents with `client_secret*` methods or a `client_secret` are rejected. |
+| **DCR** (fallback, deprecated by MCP but still used) | `ocl_<ULID>` | `oauth_client` row from `POST /oauth2/register` | as registered: `none`, or `client_secret_basic`/`client_secret_post` (RFC 7591 default when omitted) with a generated secret (43 chars base64url, stored as SHA-256 hex, compared in constant time; either method is accepted at the token endpoint) |
+
+- **Client-ID URL rules** (CIMD §3): `https`, no userinfo, no fragment, no `.`/`..` segments, a non-empty path, port 443 only [D], at most 512 characters.
+- **CIMD fetch, SSRF-safe** (`CimdFetcher`): the host is resolved once and **every** address must be public (no loopback, private 10/8, 172.16/12, 192.168/16, CGNAT 100.64/10, link-local, multicast, unspecified, IPv6 ULA fc00::/7 and site-local, IPv4-mapped forms of those); the connection goes to that validated address (no second DNS lookup, so DNS rebinding cannot swap it) with TLS SNI and hostname verification for the original host; HTTP/1.1 `GET`, `Accept: application/json`, **no redirects** (3xx is an error), connect + read deadline `stocks.oauth.cimd.timeout` (3 s total), body ≤ `stocks.oauth.cimd.max-bytes` (8 KiB; the draft recommends 5 KB), status 200 and a JSON object only. The document's `client_id` must equal the URL exactly, `redirect_uris` must be a non-empty array, `client_name` is required by MCP but tolerated when missing (the host is shown instead).
+- **Redirect allowlist** (`stocks.oauth.redirect-allowlist`, defaults below; `*` matches one path segment of `[A-Za-z0-9_-]`): `https://claude.ai/api/mcp/auth_callback`, `https://chatgpt.com/connector_platform_oauth_redirect`, `https://chatgpt.com/connector/oauth/*`, plus loopback `http://localhost`, `http://127.0.0.1`, `http://[::1]` on any port and path (`stocks.oauth.allow-loopback-redirects`, true; Claude Code, the Inspector). DCR rejects a registration with any URI outside it (`invalid_redirect_uri`); CIMD keeps only the allowed URIs of a document. At authorization time the `redirect_uri` must match a registered one **exactly**, except that loopback URIs match with the port ignored (RFC 8252 §7.3; Claude Code registers `http://localhost/callback` and `http://127.0.0.1/callback`). So a code can only ever travel to claude.ai, chatgpt.com or the user's own machine.
+- **DCR limits**: body ≤ 16 KiB; `client_name` 1–100 printable characters (default "MCP client"), `grant_types` ⊆ `authorization_code refresh_token` (default both), `response_types` ⊆ `code`, at most 10 `redirect_uris`; 20 registrations per IP per hour (`stocks.oauth.dcr.per-ip-per-hour`, in memory) and at most 500 live DCR clients (`stocks.oauth.dcr.max-clients`; then `temporarily_unavailable`). **Cleanup** (`OAuthCleanupTask`, hourly): DCR clients that never completed a grant are deleted after 24 h, and clients unused for 90 days with no live grant are deleted.
+
+#### 17.9.3 Authorization request, login and the act-as consent
+
+1. `GET /oauth2/authorize?response_type=code&client_id&redirect_uri&code_challenge&code_challenge_method=S256&state&scope&resource`. Checked in this order: client (unknown or unfetchable → error page `invalid_client`), `redirect_uri` (missing with more than one registered, or no match → error page `invalid_request`; never redirected); then, redirected to the client with `state` and `iss`: `response_type` must be `code` (`unsupported_response_type`), `code_challenge` 43–128 `[A-Za-z0-9._~-]` and `code_challenge_method` exactly `S256` (**plain and a missing method are refused**, `invalid_request`), `resource` absent or equal to `${public-url}/mcp` (scheme and host compared case-insensitively, one trailing slash ignored; otherwise `invalid_target`), `state` ≤ 2,000 characters. `scope` is filtered to the four API scopes (unknown scopes such as `openid` are ignored; none left = all four requested); `offline_access` only marks the request as wanting a refresh token, which is issued whenever the client's grant types include `refresh_token` anyway.
+2. The pending request (`oauth_authorization_request`, id `oar_` + 32 random base64url characters, 15 minutes) is stored and the browser goes to `/oauth/consent?request=…`. The SPA sends an anonymous visitor to `/login?redirect=…` and back (§17.3 login, lockout and all).
+3. **Consent screen** (`GET /api/v1/me/oauth/requests/{id}`): the app's name **and the host of its `client_id` URL** (CIMD) or "registered dynamically" (DCR), the redirect host (MCP: MUST be displayed), a warning when the redirect is loopback ("any program on this computer could be receiving this"), the requested scopes, and the **Act as** choice: the human's ACTIVE AI bots (`owner_player_id` = the human) first, then "myself". Scopes the actor cannot get are shown disabled: acting as **myself**, `trade` needs `player.api_trading_allowed` (same rule as personal keys, §17.2); a bot can get all four. A FROZEN or DISABLED human cannot approve (`PLAYER_FROZEN`/`PLAYER_DISABLED`). There is **no admin scope**, so nothing admin-like is ever grantable (§17.4).
+4. `POST …/requests/{id}` `{approve: true, actAs: "<handle>", scopes: [...]}` (scopes ⊆ requested ∩ allowed for the actor, at least one) creates the `oauth_grant` and a one-time code (32 random bytes, stored as SHA-256, 5 minutes) and answers `{redirectUrl: "<redirect_uri>?code=…&state=…&iss=…"}`; `{approve: false}` answers `…?error=access_denied&state=…&iss=…`. The request is consumed either way (`NOT_FOUND` when expired, used or unknown). Audit `KEY`/`OAUTH_GRANT` (or `OAUTH_DENY`) with the client, actor and scopes.
+
+#### 17.9.4 Tokens
+
+| Token | Format | Lifetime | Storage |
+|---|---|---|---|
+| Authorization code | 43 chars base64url | 5 min, single use | SHA-256 on `oauth_grant.code_hash` |
+| Access token | JWT, RS256, header `typ: at+jwt`, `kid` (RFC 9068) | `stocks.oauth.access-token-ttl` 30 min | not stored (self-contained; revocation via the grant check below) |
+| Refresh token | `ort_` + 43 chars base64url | 30 days **from its issue**; rotated on every use, so an active connector stays connected and an idle one re-authorizes after 30 days | SHA-256 in `oauth_refresh_token` |
+
+Access-token claims: `iss` = issuer, `sub` = the **acting** player's public id, `aud` = `${public-url}/mcp`, `client_id`, `scope` (space-separated), `gid` (the grant's public id), `iat`, `nbf`, `exp`, `jti`, and `act: {sub: <human public id>}` when acting as a bot (RFC 8693). The token response is `{access_token, token_type: "Bearer", expires_in, refresh_token?, scope}` with `Cache-Control: no-store`.
+
+- **Code exchange**: client authentication as registered; `code_verifier` 43–128 characters and `BASE64URL(SHA-256(verifier)) == code_challenge`; `redirect_uri`, when sent, must equal the authorized one; `resource`, when sent, must equal the grant's (`invalid_target`). A **second use of a code revokes the grant** (and every token from it) and answers `invalid_grant` (OAuth 2.1 §4.1.3).
+- **Refresh with rotation and reuse detection**: the presented token is marked rotated with a conditional `UPDATE … WHERE rotated_at IS NULL`, a new one is issued in the same transaction, and the new pair is returned. Presenting an **already rotated** token revokes the whole grant (`revoke_reason = REUSE`, audit `AUTH`/`OAUTH_REFRESH_REUSE`) and answers `invalid_grant`; inside a 10 s grace window (`stocks.oauth.refresh-reuse-grace`, for a client that raced two refreshes) it only answers `invalid_grant`. `scope` may narrow but never widen. A grant whose human or actor is DISABLED, or whose bot no longer belongs to the human, is revoked at refresh (`invalid_grant`); a FROZEN player can still refresh (the requests then answer 403 `PLAYER_FROZEN`). Errors are RFC 6749 codes (`invalid_grant`, never `invalid_request`, for a dead refresh token: Claude reconnects on it).
+- **Revocation**: `POST /oauth2/revoke` with a refresh token or an access token of the calling client revokes the grant (`CLIENT`); Settings → Connected apps revokes as the user (`USER`). Audit `KEY`/`OAUTH_REVOKE`.
+
+**Signing key** (`SigningKeys`). `OAUTH_JWK_PEM_FILE` (an RSA private key in PKCS#8 `BEGIN PRIVATE KEY` or PKCS#1 `BEGIN RSA PRIVATE KEY` PEM, ≥ 2048 bits) wins when set. Otherwise the key is **generated on first boot** (RSA 2048) and persisted in `oauth_signing_key`, encrypted with AES-256-GCM under a key derived from `API_KEY_PEPPER` (HKDF-SHA256, info `stocks-oauth-jwk-v1`), so a database dump alone cannot mint tokens. `kid` = the RFC 7638 thumbprint. Trade-offs: the default needs no operator action and survives restarts and Watchtower upgrades; whoever has both the database and the pepper can sign tokens (they could already forge API keys); a changed pepper (or no pepper) makes the stored key unreadable, so a new one is generated (or, without a pepper, an in-memory key is used and logged as a WARN): outstanding access tokens then fail with 401 and clients silently refresh, because refresh tokens are opaque database rows. The file option is for operators who keep keys out of the database.
+
+#### 17.9.5 Resource server (chain 2 JWT branch)
+
+- `BearerTokenFilter` sends a bearer that is **not** `stk_…` and looks like a JWS (three base64url parts) to `OAuthTokenAuthenticationProvider` (`security`) when OAuth is enabled. **JWTs are accepted on `/mcp` only** (their audience); on `/api/**` they answer 401 `UNAUTHENTICATED` with `error="invalid_token"`.
+- Verification: RS256 with a key from `/oauth2/jwks`'s set, `typ` `at+jwt`, `iss` = issuer, `aud` contains `${public-url}/mcp`, `exp`/`nbf` against `TimeSource` with 60 s skew. Then, **on every request**, the grant (`gid`) is loaded with its human and actor (cache `stocks.oauth.grant-cache-ttl` 60 s, evicted at once by every revocation; 0 in `test`): revoked or unknown → 401 `invalid_token`; the actor or the human DISABLED → 403 `PLAYER_DISABLED`, FROZEN → 403 `PLAYER_FROZEN`; a bot grant whose bot no longer belongs to the human → 401. The principal is `PlayerPrincipal(actor, scopes = token ∩ grant, AuthMethod.OAUTH, apiKeyId null, oauthClientId = client_id)`, authorities `ROLE_PLAYER`, `AUTH_OAUTH`, `SCOPE_*` and **never `ROLE_ADMIN`**, even for the admin's own grant (§17.4 layer 3); the admin chain refuses any `Authorization` header anyway. `RequestMetas` gives channel `MCP_OAUTH`, so orders are labeled "via API" and the player counts as an API trader (§16.5).
+- **Challenges.** Every chain-2 401 carries `WWW-Authenticate: Bearer realm="stocks", resource_metadata="${public-url}/.well-known/oauth-protected-resource/mcp"` (plus `error="invalid_token"` for a bad token), which is how Claude and ChatGPT discover the server. Missing tool scopes stay MCP error results (`FORBIDDEN_SCOPE`, §20.3); step-up through `403 insufficient_scope` is not implemented.
+- With `stocks.oauth.enabled=false` the well-known and `/oauth2` paths answer 404, JWTs are not accepted and the challenge has no `resource_metadata`.
+
+#### 17.9.6 Tables (`V7__p2_oauth.sql`, portable; renumbered at merge)
+
+| Table | Columns (all timestamps `TIMESTAMP WITH TIME ZONE`) |
+|---|---|
+| `oauth_client` (DCR only) | `id`, `client_id VARCHAR(40) UNIQUE`, `client_name VARCHAR(100)`, `redirect_uris VARCHAR(4000)` (JSON array), `grant_types VARCHAR(64)`, `auth_method` CHECK (`none`, `client_secret_basic`, `client_secret_post`), `secret_hash VARCHAR(64)` (null iff `none`), `registered_ip VARCHAR(45)`, `user_agent VARCHAR(300)`, `created_at`, `last_used_at` |
+| `oauth_authorization_request` | `id`, `request_id VARCHAR(40) UNIQUE`, `client_id VARCHAR(512)`, `client_kind` CHECK (`CIMD`, `DCR`), `client_name`, `client_host VARCHAR(255)`, `redirect_uri VARCHAR(1000)`, `scopes VARCHAR(128)`, `offline_access`, `state VARCHAR(2000)`, `code_challenge VARCHAR(128)`, `resource VARCHAR(500)`, `created_at`, `expires_at`, `consumed_at` |
+| `oauth_grant` | `id`, `public_id VARCHAR(32) UNIQUE` (`ogr_<ULID>`), client columns as above, `redirect_uri`, `human_player_id` → player, `actor_player_id` → player, `scopes`, `resource`, `refresh_allowed`, `code_hash VARCHAR(64) UNIQUE`, `code_challenge`, `code_expires_at`, `code_used_at`, `created_at`, `last_used_at`, `revoked_at`, `revoke_reason` CHECK (`USER`, `CLIENT`, `REUSE`, `CODE_REUSE`, `OWNER_CHANGED`, `PLAYER_DISABLED`), CHECK (`revoked_at` null iff `revoke_reason` null) |
+| `oauth_refresh_token` | `token_hash VARCHAR(64) PK`, `grant_id` → `oauth_grant`, `created_at`, `expires_at`, `rotated_at` |
+| `oauth_signing_key` | `kid VARCHAR(64) PK`, `public_jwk VARCHAR(2000)`, `private_key_enc VARCHAR(4000)` (base64 of IV ‖ AES-GCM ciphertext of the PKCS#8 key), `created_at`, `retired_at` |
+
+Cleanup (`OAuthCleanupTask`, `PeriodicTask` hourly): pending requests and unexchanged codes after expiry (+1 h), refresh tokens 1 day after `expires_at`, grants revoked or without a live refresh token for 30 days, and the DCR clients above. Audit rows stay (append-only).
+
+#### 17.9.7 Configuration (`stocks.oauth`, all with safe defaults; production needs no new variable)
+
+```yaml
+stocks:
+  oauth:
+    enabled: true
+    jwk-pem-file: ${OAUTH_JWK_PEM_FILE:}       # empty: generated + persisted encrypted (17.9.4)
+    access-token-ttl: 30m
+    refresh-token-ttl: 30d
+    refresh-reuse-grace: 10s
+    code-ttl: 5m
+    request-ttl: 15m
+    grant-cache-ttl: 60s                        # test: 0s
+    allow-loopback-redirects: true
+    redirect-allowlist: [ "https://claude.ai/api/mcp/auth_callback",
+                          "https://chatgpt.com/connector_platform_oauth_redirect",
+                          "https://chatgpt.com/connector/oauth/*" ]
+    cimd: { enabled: true, timeout: 3s, max-bytes: 8192, min-cache: 5m, max-cache: 24h }
+    dcr:  { enabled: true, max-clients: 500, per-ip-per-hour: 20, unused-client-ttl: 24h, idle-client-ttl: 90d }
+```
+
+Cloudflare (§24.5): `/.well-known/*` and `/oauth2/*` must never be challenged or cached (the vendors' clouds fetch metadata, register, exchange codes and refresh from `160.79.104.0/21` for Anthropic and OpenAI's published ranges); `/oauth2/authorize` and `/oauth/consent` are ordinary browser pages.
 
 ---
 

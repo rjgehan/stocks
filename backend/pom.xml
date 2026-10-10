@@ -154,6 +154,15 @@
       <version>${springdoc.version}</version>
     </dependency>
 
+    <!-- ===== Phase 2 OAuth 2.1 for the claude.ai / ChatGPT connectors (§17.9) =====
+         Only the JOSE module of Spring Security 7.1.1 (Boot-managed, with nimbus-jose-jwt): NimbusJwtEncoder signs
+         the access tokens of com.stocks.oauth, NimbusJwtDecoder verifies them in chain 2. The authorization server
+         itself is com.stocks.oauth (not Spring Authorization Server / mcp-security; §17.9 says why). -->
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-oauth2-jose</artifactId>
+    </dependency>
+
     <!-- ===== Test ===== -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
