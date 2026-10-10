@@ -27,6 +27,8 @@ import java.util.regex.Pattern;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * API keys {@code stk_<keyId>_<secret>} (§17.2). Only {@code key_id} and the peppered HMAC of the secret are stored;
@@ -211,7 +213,7 @@ public class ApiKeyService {
     }
     jdbc.sql("UPDATE api_key SET revoked_at = ?, revoked_by = ? WHERE key_id = ? AND revoked_at IS NULL")
         .params(Jdbc.ts(time.now()), byPlayerId, keyId).update();
-    keyCache.evict(keyId);
+    evictNowAndAfterCommit(() -> keyCache.evict(keyId));
     return owner;
   }
 
@@ -219,7 +221,7 @@ public class ApiKeyService {
   public int revokeAll(long playerId, long byPlayerId) {
     int n = jdbc.sql("UPDATE api_key SET revoked_at = ?, revoked_by = ? WHERE player_id = ? AND revoked_at IS NULL")
         .params(Jdbc.ts(time.now()), byPlayerId, playerId).update();
-    keyCache.evictPlayer(playerId);
+    evictNowAndAfterCommit(() -> keyCache.evictPlayer(playerId));
     return n;
   }
 
@@ -245,8 +247,25 @@ public class ApiKeyService {
       }
       changed++;
     }
-    keyCache.evictPlayer(playerId);
+    evictNowAndAfterCommit(() -> keyCache.evictPlayer(playerId));
     return changed;
+  }
+
+  /**
+   * Evicts the key cache now and, when called inside a transaction (password change, freeze, PATCH), once more after
+   * commit: a request authenticated between the eviction and the commit would otherwise re-cache the old row (still
+   * live, still with {@code trade}) for the cache's TTL.
+   */
+  private void evictNowAndAfterCommit(Runnable evict) {
+    evict.run();
+    if (TransactionSynchronizationManager.isSynchronizationActive()) {
+      TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+        @Override
+        public void afterCommit() {
+          evict.run();
+        }
+      });
+    }
   }
 
   // ------------------------------------------------------------------------------------------- snippets

@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -21,6 +22,11 @@ import tools.jackson.databind.json.JsonMapper;
  * is replayed with {@code Idempotent-Replay: true} without enqueuing anything; a different hash is 409
  * {@code IDEMPOTENCY_KEY_CONFLICT}. Everything else goes to the engine, whose in-transaction check (step 2) is
  * authoritative. The row itself is written by WS3's engine command, never here.
+ *
+ * <p>Only a stored body that is a <b>complete</b> response DTO (every record component present, as §6.3 always writes
+ * them) is replayed here. Anything else, such as a reference the engine stores to rebuild a live view
+ * ({@code {"accountId", "runNo"}} for a reset), is left to the engine's own replay, so a replay never answers with a
+ * half-empty body.
  */
 @Component
 public class IdempotencyFastPath {
@@ -58,11 +64,13 @@ public class IdempotencyFastPath {
       throw conflict();
     }
     try {
-      T body = jsonMapper.readValue(stored.get().body(), type);
+      T body = jsonMapper.readerFor(type)
+          .with(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+          .readValue(stored.get().body());
       return Optional.of(ResponseEntity.status(HttpStatus.valueOf(stored.get().statusCode()))
           .header(IdempotencyKeys.REPLAY_HEADER, "true").body(body));
     } catch (JacksonException | IllegalArgumentException e) {
-      log.warn("Stored idempotent response {}:{} is not a {}; asking the engine instead", scope, key,
+      log.debug("Stored idempotent response {}:{} is not a complete {}; the engine replays it", scope, key,
           type.getSimpleName());
       return Optional.empty();
     }

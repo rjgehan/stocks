@@ -1,9 +1,12 @@
 package com.stocks.identity.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -70,6 +73,28 @@ class SignupAndReauthIT extends ContractMocksWebTest {
         .single()).isEqualTo(1);
     assertThat(jdbc.sql("SELECT COUNT(*) FROM audit_log WHERE action = 'SIGNUP' AND outcome = 'OK'")
         .query(Long.class).single()).isGreaterThanOrEqualTo(1);
+  }
+
+  @Test
+  void aSignupSurvivesAWatchlistOrEngineFailure() {
+    when(accountQueries.activeAccountId(anyLong()))
+        .thenThrow(ApiException.of(ErrorCode.ACCOUNT_NOT_FOUND, "none"));
+    InviteCreatedDto inv = invite(2);
+
+    doThrow(new IllegalStateException("watchlist table locked")).when(watchlists).seedDefault(anyLong());
+    String first = handle("nolist");
+    MvcResult r1 = signup(WebSession.anonymous(mvc), inv.code(), first, "No List", "long-enough-password");
+    assertThat(status(r1)).as(body(r1)).isEqualTo(201);
+    long firstId = jdbc.sql("SELECT id FROM player WHERE handle = ?").param(first).query(Long.class).single();
+    verify(accountService).openInitialAccount(eq(firstId), any(), eq(firstId));
+
+    when(accountService.openInitialAccount(anyLong(), any(), anyLong()))
+        .thenThrow(ApiException.of(ErrorCode.ENGINE_BUSY, "queue full"));
+    String second = handle("busy");
+    MvcResult r2 = signup(WebSession.anonymous(mvc), inv.code(), second, "Busy Engine", "long-enough-password");
+    assertThat(status(r2)).as("the player exists; the account opens at the next boot or login").isEqualTo(201);
+    assertThat(jdbc.sql("SELECT detail FROM audit_log WHERE action = 'SIGNUP' AND target_id = (SELECT public_id "
+        + "FROM player WHERE handle = ?)").param(second).query(String.class).single()).contains("FAILED");
   }
 
   @Test

@@ -1105,7 +1105,7 @@
     },
     "/api/v1/admin/players/{handle}/freeze": {
       "post": {
-        "description": "Recent password check. Status FROZEN at once (sessions ended, caches evicted, keys revoked only with revokeKeys), then the engine cancels open orders and restricts the account. A frozen bot gets PLAYER_FROZEN. reason: 1-80 characters.",
+        "description": "Recent password check. Status FROZEN at once (sessions ended, caches evicted, keys revoked only with revokeKeys), then the engine cancels open orders and restricts the account. A frozen bot gets PLAYER_FROZEN. reason: 1-80 characters. Errors: FORBIDDEN (yourself), VALIDATION_FAILED (a DISABLED player).",
         "operationId": "freeze",
         "parameters": [
           {
@@ -1315,7 +1315,7 @@
     },
     "/api/v1/admin/players/{handle}/unfreeze": {
       "post": {
-        "description": "Recent password check. Status ACTIVE; keys that were not revoked work again; the account's restriction becomes NONE or the recomputed GFV restriction.",
+        "description": "Recent password check. Status ACTIVE; keys that were not revoked work again; the account's restriction becomes NONE or the recomputed GFV restriction. Errors: FORBIDDEN (yourself), VALIDATION_FAILED (a DISABLED player: re-enable it with PATCH status ACTIVE).",
         "operationId": "unfreeze",
         "parameters": [
           {

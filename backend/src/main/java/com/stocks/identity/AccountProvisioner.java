@@ -72,15 +72,26 @@ public class AccountProvisioner {
       }
       throw e;
     }
+    seedWatchlist(playerId);
+    return Outcome.OPENED;
+  }
+
+  /**
+   * The default watchlist is a convenience: once the account is open, a failure here is logged and never undoes or
+   * hides the account (the player can build a list by hand; {@code seedDefault} is a no-op once a list exists).
+   */
+  private void seedWatchlist(long playerId) {
     try {
       watchlists.seedDefault(playerId);
     } catch (ApiException e) {
-      if (e.code() != ErrorCode.NOT_IMPLEMENTED) {
-        throw e;
+      if (e.code() == ErrorCode.NOT_IMPLEMENTED) {
+        log.info("Watchlists are not implemented yet; player {} has no default watchlist", playerId);
+      } else {
+        log.warn("Player {} got no default watchlist: {}", playerId, e.toString());
       }
-      log.info("Watchlists are not implemented yet; player {} has no default watchlist", playerId);
+    } catch (RuntimeException e) {
+      log.warn("Player {} got no default watchlist: {}", playerId, e.toString());
     }
-    return Outcome.OPENED;
   }
 
   /** {@code league.defaultStartingCash}, or {@code stocks.bootstrap.default-starting-cash} until settings exist. */

@@ -313,9 +313,17 @@ public class AdminPlayerService {
     return views.player(p.id());
   }
 
-  /** {@code POST /admin/players/{handle}/unfreeze}: back to ACTIVE; the engine lifts the admin restriction. */
+  /**
+   * {@code POST /admin/players/{handle}/unfreeze}: back to ACTIVE; the engine lifts the admin restriction. A frozen
+   * admin (who may still log in, §17.3) cannot unfreeze themselves, and a DISABLED player is re-enabled with
+   * {@code PATCH status: ACTIVE}, not here (both {@code VALIDATION_FAILED}/{@code FORBIDDEN}, mirroring freeze).
+   */
   public AdminPlayerDto unfreeze(String handle, PlayerPrincipal admin, RequestMeta meta) {
     PlayerRecord p = players.requireByHandle(handle);
+    selfGuard(p, admin, "unfreeze");
+    if (p.status() == PlayerStatus.DISABLED) {
+      throw ApiException.validation("status", "This player is disabled; re-enable it with PATCH status ACTIVE");
+    }
     players.setStatus(p.id(), PlayerStatus.ACTIVE);
     playerQueries.evict(p.id());
     keyCache.evictPlayer(p.id());

@@ -13,8 +13,9 @@ spring:
 
 stocks:
   bootstrap:
-    # Dev admin `admin` / `admin-dev-123` (meets the 10-character rule of §17.3). The demo seed (alice, bob, claude,
-    # chatgpt) creates only what is missing and writes the bot keys to backend/.data/dev-keys.txt.
+    # Dev admin `admin` / `admin-dev-123` (meets the 10-character rule of §17.3). The demo seed (alice, bob, carol,
+    # claude, chatgpt, a 50-use invite link) creates only what is missing and writes the bot keys and the invite link
+    # to backend/.data/dev-keys.txt.
     admin-handle: ${ADMIN_BOOTSTRAP_USERNAME:admin}
     admin-password: ${ADMIN_BOOTSTRAP_PASSWORD:admin-dev-123}
     seed-demo: true

@@ -118,7 +118,8 @@ public class AdminPlayerController {
   @Operation(summary = "Freeze a player (kill switch)",
       description = "Recent password check. Status FROZEN at once (sessions ended, caches evicted, keys revoked only "
           + "with revokeKeys), then the engine cancels open orders and restricts the account. A frozen bot gets "
-          + "PLAYER_FROZEN. reason: 1-80 characters.")
+          + "PLAYER_FROZEN. reason: 1-80 characters. Errors: FORBIDDEN (yourself), VALIDATION_FAILED (a DISABLED "
+          + "player).")
   public AdminPlayerDto freeze(@PathVariable String handle, @Valid @RequestBody FreezePlayerRequest body,
                                HttpServletRequest request) {
     PlayerPrincipal admin = CurrentPlayer.require();
@@ -128,7 +129,8 @@ public class AdminPlayerController {
   @PostMapping("/{handle}/unfreeze")
   @RecentAuth
   @Operation(summary = "Unfreeze a player", description = "Recent password check. Status ACTIVE; keys that were not "
-      + "revoked work again; the account's restriction becomes NONE or the recomputed GFV restriction.")
+      + "revoked work again; the account's restriction becomes NONE or the recomputed GFV restriction. Errors: "
+      + "FORBIDDEN (yourself), VALIDATION_FAILED (a DISABLED player: re-enable it with PATCH status ACTIVE).")
   public AdminPlayerDto unfreeze(@PathVariable String handle, HttpServletRequest request) {
     PlayerPrincipal admin = CurrentPlayer.require();
     return service.unfreeze(handle, admin, RequestMetas.of(request, admin));

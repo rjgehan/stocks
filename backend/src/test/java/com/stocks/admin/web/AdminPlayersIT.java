@@ -221,6 +221,9 @@ class AdminPlayersIT extends ContractMocksWebTest {
     assertThat(code(self)).isEqualTo("FORBIDDEN");
     MvcResult demote = send(root, patch("/api/v1/admin/players/" + admin.handle()), "{\"role\":\"PLAYER\"}");
     assertThat(code(demote)).isEqualTo("FORBIDDEN");
+    // a frozen admin may still log in (§17.3), so the kill switch must not be undoable by its target
+    MvcResult unfreezeSelf = send(root, post("/api/v1/admin/players/" + admin.handle() + "/unfreeze"), "{}");
+    assertThat(code(unfreezeSelf)).isEqualTo("FORBIDDEN");
     Fixtures.PlayerRef bot = fx.ai(handle("wannabe"), admin);
     MvcResult promote = send(root, patch("/api/v1/admin/players/" + bot.handle()), "{\"role\":\"ADMIN\"}");
     assertThat(status(promote)).isEqualTo(403);
@@ -258,6 +261,10 @@ class AdminPlayersIT extends ContractMocksWebTest {
         "Disabled by the admin", admin.id());
     assertThat(code(WebSession.anonymous(mvc).login(p.handle(), Fixtures.PASSWORD))).isEqualTo("PLAYER_DISABLED");
     assertThat(code(send(root, patch("/api/v1/admin/players/" + p.handle()), "{\"status\":\"FROZEN\"}")))
+        .isEqualTo("VALIDATION_FAILED");
+    assertThat(code(send(root, post("/api/v1/admin/players/" + p.handle() + "/unfreeze"), "{}")))
+        .as("re-enable with PATCH status ACTIVE, not unfreeze").isEqualTo("VALIDATION_FAILED");
+    assertThat(code(send(root, post("/api/v1/admin/players/" + p.handle() + "/freeze"), "{\"reason\":\"x\"}")))
         .isEqualTo("VALIDATION_FAILED");
     send(root, patch("/api/v1/admin/players/" + p.handle()), "{\"status\":\"ACTIVE\"}");
     verify(accountService).liftAdminRestriction(p.id(), admin.id());
@@ -320,6 +327,34 @@ class AdminPlayersIT extends ContractMocksWebTest {
     assertThat(status(conflict)).isEqualTo(409);
     assertThat(code(conflict)).isEqualTo("IDEMPOTENCY_KEY_CONFLICT");
     verify(accountService, org.mockito.Mockito.times(1)).reset(anyLong(), any(), any(), any(), anyLong());
+  }
+
+  @Test
+  void aStoredReferenceInsteadOfAFullAccountIsReplayedByTheEngineNotHalfEmpty() {
+    Fixtures.PlayerRef p = fx.human(handle("refreset"));
+    when(accountService.reset(eq(p.id()), any(), eq("Again"), any(IdempotencyRef.class), eq(admin.id())))
+        .thenReturn(account("acc_LIVE", 2));
+    MvcResult first = root.perform(post("/api/v1/admin/players/" + p.handle() + "/reset")
+        .header(IdempotencyKeys.HEADER, "reset-ref").contentType(MediaType.APPLICATION_JSON)
+        .content("{\"memo\":\"Again\"}"));
+    assertThat(status(first)).as(body(first)).isEqualTo(200);
+    ArgumentCaptor<IdempotencyRef> ref = ArgumentCaptor.forClass(IdempotencyRef.class);
+    verify(accountService).reset(eq(p.id()), isNull(), eq("Again"), ref.capture(), eq(admin.id()));
+    // what the engine may store for a reset: a reference it rebuilds the live account from (§17.6 step 2)
+    jdbc.sql("""
+            INSERT INTO idempotency_record (scope, idem_key, request_hash, status_code, response_body, created_at,
+                                            expires_at) VALUES (?, ?, ?, 200, ?, ?, ?)""")
+        .params("admin.reset", "reset-ref", ref.getValue().requestHash(),
+            "{\"accountId\":\"acc_LIVE\",\"runNo\":2}", Jdbc.ts(time.now()),
+            Jdbc.ts(time.now().plusSeconds(7 * 86400)))
+        .update();
+    MvcResult retry = root.perform(post("/api/v1/admin/players/" + p.handle() + "/reset")
+        .header(IdempotencyKeys.HEADER, "reset-ref").contentType(MediaType.APPLICATION_JSON)
+        .content("{\"memo\":\"Again\"}"));
+    assertThat(status(retry)).isEqualTo(200);
+    assertThat((String) json(retry, "$.cash.total")).as("a full account, not a half-empty replay")
+        .isEqualTo("500.00");
+    verify(accountService, org.mockito.Mockito.times(2)).reset(eq(p.id()), any(), any(), any(), anyLong());
   }
 
   @Test
