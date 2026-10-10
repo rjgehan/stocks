@@ -5,6 +5,7 @@ import com.stocks.contract.calendar.MarketCalendar;
 import com.stocks.contract.identity.MeQueries;
 import com.stocks.contract.identity.PlayerQueries;
 import com.stocks.contract.identity.SettingsService;
+import com.stocks.contract.marketdata.CorporateActionSource;
 import com.stocks.contract.marketdata.DailyMarkService;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.SplitAdjustments;
@@ -27,7 +28,8 @@ import java.util.List;
 /**
  * Every §5.3 contract service interface the application needs exactly one bean of: a workstream's real bean, or the
  * Day-0 stub from {@code StubsAutoConfiguration} until it lands (§27.1). Workstreams delete stubs, never entries here;
- * a new contract service interface must be added here (and stubbed), which {@code StubsAutoConfigurationTest} checks.
+ * a new contract service interface must be added here, which {@code StubsAutoConfigurationTest} checks (since M3 a
+ * contract lands with its real bean, so it needs no stub: {@code CorporateActionSource}).
  */
 final class ContractServices {
 
@@ -36,7 +38,7 @@ final class ContractServices {
       RateLimitService.class, SettingsService.class, PlayerQueries.class, MeQueries.class,
       // WS2
       MarketCalendar.class, CalendarAdmin.class, MarketDataService.class, DailyMarkService.class,
-      SplitAdjustments.class,
+      SplitAdjustments.class, CorporateActionSource.class,
       // WS3
       OrderService.class, AdminOrderService.class, OrderQueries.class, AccountService.class, AccountQueries.class,
       CashTransferService.class, EngineControl.class, CorporateActionQueries.class, CorporateActionService.class,

@@ -11,7 +11,6 @@ import com.stocks.common.domain.PlayerRole;
 import com.stocks.common.domain.PlayerStatus;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
-import com.stocks.common.error.NotImplemented;
 import com.stocks.common.events.PlayerStatusChanged;
 import com.stocks.common.money.Money;
 import com.stocks.common.time.TimeSource;
@@ -445,14 +444,12 @@ public class AdminPlayerService {
   // ------------------------------------------------------------------------------------------- helpers
 
   /**
-   * Step 2 of §10.5. Skipped (logged) while WS3 is a Day-0 stub or when the player has no account yet; any other
-   * failure propagates, so the admin can retry the (idempotent) action.
+   * Step 2 of §10.5. Skipped (logged) when the player has no account yet; any other failure propagates, so the admin
+   * can retry the (idempotent) action.
    */
   private void engineStep(PlayerRecord p, Runnable command) {
     try {
-      if (!NotImplemented.run(command)) {
-        log.info("Account step for '{}' skipped: the trading core is not implemented in this build", p.handle());
-      }
+      command.run();
     } catch (ApiException e) {
       if (e.code() == ErrorCode.ACCOUNT_NOT_FOUND || e.code() == ErrorCode.NOT_FOUND) {
         log.info("Account step for '{}' skipped: no active account", p.handle());

@@ -107,6 +107,15 @@ public class OrderStore {
         + " ORDER BY o.eligible_at, o.id").param(symbol).query(OrderStore::order).list();
   }
 
+  /** A NEEDS_ADMIN split with {@code ex_date ≤ todayEt} puts the symbol on a corporate-action hold (§14). */
+  public boolean onCorporateActionHold(String symbol, LocalDate todayEt) {
+    return jdbc.sql("""
+            SELECT COUNT(*) FROM corporate_action
+             WHERE symbol = ? AND status = 'NEEDS_ADMIN' AND action_type IN ('FORWARD_SPLIT','REVERSE_SPLIT')
+               AND ex_date <= ?""")
+        .params(symbol, todayEt).query(Integer.class).single() > 0;
+  }
+
   public int countOpen(long accountId) {
     return jdbc.sql("SELECT COUNT(*) FROM trade_order WHERE account_id = ? AND status IN " + OPEN_STATUSES)
         .param(accountId).query(Integer.class).single();

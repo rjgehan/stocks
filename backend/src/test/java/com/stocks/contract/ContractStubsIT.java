@@ -76,6 +76,11 @@ class ContractStubsIT {
   }
 
   @Test
+  void noDayZeroStubIsLeft() {                    // M4: every contract has its real bean (§27.4)
+    assertThat(context.getBeansOfType(ContractStub.class)).as("Day-0 stub beans").isEmpty();
+  }
+
+  @Test
   void theMarketDataDefaultAnswersWithQualityNone() {
     if (marketData instanceof ContractStub) {
       assertThat(marketData.quote("AAPL").quality()).isEqualTo(DataQuality.NONE);

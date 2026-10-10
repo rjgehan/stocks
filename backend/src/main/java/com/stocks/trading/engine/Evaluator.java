@@ -183,7 +183,10 @@ class Evaluator {
     });
 
     if (marketData.isHalted(r.symbol())) {
-      setWait(r, WaitReason.HALTED, null, tx, now);
+      // a NEEDS_ADMIN split also reads as halted (§14): name the wait after the corporate-action hold then
+      WaitReason why = orders.onCorporateActionHold(r.symbol(), Et.date(now)) ? WaitReason.CORPORATE_ACTION_HOLD
+          : WaitReason.HALTED;
+      setWait(r, why, null, tx, now);
       tx.afterCommit(() -> e.reopenPending = true);
       return;
     }

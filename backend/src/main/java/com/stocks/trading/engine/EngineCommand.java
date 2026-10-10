@@ -4,6 +4,7 @@ import com.stocks.common.domain.AccountRestriction;
 import com.stocks.common.domain.CancelReason;
 import com.stocks.common.domain.TransitionType;
 import com.stocks.contract.trading.CashTransferCommand;
+import com.stocks.contract.trading.CorporateActionResolution;
 import com.stocks.contract.trading.IdempotencyRef;
 import com.stocks.contract.trading.dto.ReplaceOrderRequest;
 import com.stocks.trading.order.NormalizedOrder;
@@ -16,8 +17,7 @@ import java.time.LocalDate;
  * The engine commands (§12.1, CONTRACT). Each runs on {@code engine-main} in exactly one JDBC transaction; events are
  * published only after commit (§4). Services build them; nothing else reaches the engine.
  *
- * <p>Phase 1 commands not implemented yet (corporate actions: {@code ApplyCorporateActionCmd},
- * {@code ResolveCorporateActionCmd}, {@code PayDividendsCmd}) are added to this list when they land.
+ * <p>The corporate-action commands (§14) delegate to {@code trading.corpactions.CorporateActionApplier}.
  */
 public sealed interface EngineCommand {
 
@@ -71,6 +71,16 @@ public sealed interface EngineCommand {
 
   /** §25 03:30 ET: lift GFV restrictions whose time has passed. */
   record DailyMaintenanceCmd(LocalDate date) implements EngineCommand {}
+
+  /** §14 03:45 ET on the ex-date: applies one PENDING corporate action (by public id); result: the action row. */
+  record ApplyCorporateActionCmd(String actionId) implements EngineCommand {}
+
+  /** §14, §21.1 the admin's APPLY (splits, confirmed rates, as of now) or SKIP; result: the action row. */
+  record ResolveCorporateActionCmd(String actionId, CorporateActionResolution resolution, BigDecimal oldRate,
+                                   BigDecimal newRate, String note, long actorPlayerId) implements EngineCommand {}
+
+  /** §14 06:00 ET: pays ACCRUED dividends with {@code payable_date ≤ date}; result: how many were paid. */
+  record PayDividendsCmd(LocalDate date) implements EngineCommand {}
 
   /** §8.4 I1–I9; result: {@code InvariantResult}. A failure halts the engine. */
   record CheckInvariantsCmd() implements EngineCommand {

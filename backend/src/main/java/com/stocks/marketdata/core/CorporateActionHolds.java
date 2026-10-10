@@ -12,8 +12,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Symbols under a corporate-action hold (§14: a detected split awaiting the admin), read from WS3's
- * {@code CorporateActionQueries.symbolsOnHold()} and cached for 10 s. Until WS3 lands (its Day-0 stub answers 501)
- * or when the call fails, no symbol is on hold.
+ * {@code CorporateActionQueries.symbolsOnHold()} and cached for 10 s. When the call fails (the database is
+ * unreachable, for example), no symbol is on hold until the next successful read.
  */
 public class CorporateActionHolds {
 

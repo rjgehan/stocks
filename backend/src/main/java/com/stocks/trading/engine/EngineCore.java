@@ -14,7 +14,9 @@ import com.stocks.contract.trading.EngineStatus;
 import com.stocks.contract.trading.InvariantResult;
 import com.stocks.trading.account.AccountCommands;
 import com.stocks.trading.account.TransferCommands;
+import com.stocks.trading.corpactions.CorporateActionApplier;
 import com.stocks.trading.engine.EngineCommand.ApplyCashTransfersCmd;
+import com.stocks.trading.engine.EngineCommand.ApplyCorporateActionCmd;
 import com.stocks.trading.engine.EngineCommand.CancelAllCmd;
 import com.stocks.trading.engine.EngineCommand.CancelOrderCmd;
 import com.stocks.trading.engine.EngineCommand.CheckInvariantsCmd;
@@ -22,10 +24,12 @@ import com.stocks.trading.engine.EngineCommand.DailyMaintenanceCmd;
 import com.stocks.trading.engine.EngineCommand.HaltEngineCmd;
 import com.stocks.trading.engine.EngineCommand.LiftRestrictionCmd;
 import com.stocks.trading.engine.EngineCommand.OpenAccountCmd;
+import com.stocks.trading.engine.EngineCommand.PayDividendsCmd;
 import com.stocks.trading.engine.EngineCommand.PlaceOrderCmd;
 import com.stocks.trading.engine.EngineCommand.RecordAdminViewCmd;
 import com.stocks.trading.engine.EngineCommand.ReplaceOrderCmd;
 import com.stocks.trading.engine.EngineCommand.ResetAccountCmd;
+import com.stocks.trading.engine.EngineCommand.ResolveCorporateActionCmd;
 import com.stocks.trading.engine.EngineCommand.RestrictAccountCmd;
 import com.stocks.trading.engine.EngineCommand.ResumeEngineCmd;
 import com.stocks.trading.engine.EngineCommand.SweepCmd;
@@ -76,6 +80,7 @@ public class EngineCore {
   private final MarketDataService marketData;
   private final OpenOrderIndex index;
   private final JdbcClient jdbc;
+  private final CorporateActionApplier corporateActions;
   private final PrintBuffer prints = new PrintBuffer();
   private final Set<String> dirty = ConcurrentHashMap.newKeySet();
 
@@ -90,7 +95,8 @@ public class EngineCore {
   public EngineCore(PlatformTransactionManager txManager, ApplicationEventPublisher publisher, OrderHandler orders,
                     Evaluator evaluator, AccountCommands accountCommands, TransferCommands transferCommands,
                     InvariantChecker invariants, OrderStore orderStore, AccountStore accountStore, TradingClock clock,
-                    MarketDataService marketData, OpenOrderIndex index, JdbcClient jdbc) {
+                    MarketDataService marketData, OpenOrderIndex index, JdbcClient jdbc,
+                    CorporateActionApplier corporateActions) {
     this.tx = new TransactionTemplate(txManager);
     this.publisher = publisher;
     this.orders = orders;
@@ -104,6 +110,7 @@ public class EngineCore {
     this.marketData = marketData;
     this.index = index;
     this.jdbc = jdbc;
+    this.corporateActions = corporateActions;
   }
 
   // ------------------------------------------------------------------------------------------- bootstrap
@@ -197,6 +204,10 @@ public class EngineCore {
         yield null;
       }
       case DailyMaintenanceCmd c -> accountCommands.dailyMaintenance(now, t, restrictedAccounts());
+      case ApplyCorporateActionCmd c -> corporateActions.apply(c.actionId(), now, t);
+      case ResolveCorporateActionCmd c -> corporateActions.resolve(c.actionId(), c.resolution(), c.oldRate(),
+          c.newRate(), c.note(), c.actorPlayerId(), now, t);
+      case PayDividendsCmd c -> corporateActions.payDividends(c.date(), now, t);
       case CheckInvariantsCmd c -> checkInvariants();
       case HaltEngineCmd c -> {
         halt(c.reason());
