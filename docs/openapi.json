@@ -25,11 +25,501 @@
       "name": "auth"
     },
     {
+      "description": "The caller's account (the active run)",
+      "name": "account"
+    },
+    {
       "description": "The authenticated player",
       "name": "me"
+    },
+    {
+      "description": "Place, preview, list, replace and cancel orders",
+      "name": "orders"
     }
   ],
   "paths": {
+    "/api/v1/account": {
+      "get": {
+        "description": "Equity, cash (settled / unsettled), buying power, run-relative P&L and return, day P&L, GFV status.",
+        "operationId": "account",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "The account, valued live",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/activities": {
+      "get": {
+        "description": "Ledger rows (fills, transfers, dividends) merged with account events (splits, GFVs, resets, restrictions, admin views), newest first.",
+        "operationId": "activities",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "types",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "FILL",
+                  "INITIAL_FUNDING",
+                  "DEPOSIT",
+                  "WITHDRAWAL",
+                  "ADJUSTMENT",
+                  "DIVIDEND",
+                  "CASH_IN_LIEU",
+                  "SPLIT",
+                  "NAME_CHANGE",
+                  "GFV",
+                  "RESET",
+                  "RESTRICTION",
+                  "ADMIN_VIEW"
+                ]
+              },
+              "uniqueItems": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageActivity"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Account activity",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/balances": {
+      "get": {
+        "description": "From the ledger and open orders only (no marks): settled and unsettled cash, holds, buying power and withdrawable cash as of today (ET).",
+        "operationId": "balances",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Balances"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Cash balances (§10.2)",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/executions": {
+      "get": {
+        "description": "Newest first.",
+        "operationId": "executions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "symbol",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageExecution"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Executions (fills)",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/positions": {
+      "get": {
+        "operationId": "positions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Position"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Open positions",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/positions/{symbol}": {
+      "get": {
+        "operationId": "position",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Position"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "One position",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/positions/{symbol}/close": {
+      "post": {
+        "description": "A MARKET SELL of the full available quantity; validated and idempotent like POST /orders (201, or 200 on replay).",
+        "operationId": "close",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClosePositionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceOrderResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Close a position",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/reset": {
+      "post": {
+        "description": "Only when league.allowSelfReset is on. Requires Idempotency-Key and {\"confirm\": \"RESET\"}. Closes the run and opens a new one at the same unit value.",
+        "operationId": "reset",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Reset your own account",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/runs": {
+      "get": {
+        "operationId": "runs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Run"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Every run (resets open a new one)",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/violations": {
+      "get": {
+        "description": "The restriction and the active / expired GFVs.",
+        "operationId": "violations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Violations"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Good-faith violations",
+        "tags": [
+          "account"
+        ]
+      }
+    },
     "/api/v1/auth/csrf": {
       "get": {
         "description": "Sets the XSRF-TOKEN cookie. Send its raw value as X-XSRF-TOKEN on every unsafe request.",
@@ -155,10 +645,1372 @@
           "me"
         ]
       }
+    },
+    "/api/v1/orders": {
+      "delete": {
+        "description": "Optionally only on one symbol.",
+        "operationId": "cancelAll",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "symbol",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelledOrders"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Cancel every open order",
+        "tags": [
+          "orders"
+        ]
+      },
+      "get": {
+        "description": "Newest first; status OPEN | CLOSED | ALL (default ALL). List items have executions and events null.",
+        "operationId": "list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "CLOSED",
+                "ALL"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "symbol",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOrder"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "List orders",
+        "tags": [
+          "orders"
+        ]
+      },
+      "post": {
+        "description": "201 with the PENDING order; 200 with Idempotent-Replay: true when this clientOrderId was already used for the same request; 409 for a different request.",
+        "operationId": "place",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceOrderResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Place an order",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/v1/orders/by-client-id/{clientOrderId}": {
+      "get": {
+        "operationId": "byClientId",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clientOrderId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "One order by its clientOrderId, with executions and timeline",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/v1/orders/preview": {
+      "post": {
+        "description": "Runs every check against the current account and market without placing anything; always 200 (valid=false lists the errors). clientOrderId is optional.",
+        "operationId": "preview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Preview an order",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{orderId}": {
+      "delete": {
+        "description": "Immediate; cancelling a CANCELLED order is idempotent (200).",
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Cancel an order",
+        "tags": [
+          "orders"
+        ]
+      },
+      "get": {
+        "operationId": "get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "One order with its executions and timeline",
+        "tags": [
+          "orders"
+        ]
+      },
+      "patch": {
+        "description": "Cancel-replace of an unfilled whole-share PENDING or WORKING order with a NEW clientOrderId; 201 with the new order.",
+        "operationId": "replace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceOrderResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Replace an order",
+        "tags": [
+          "orders"
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "Account": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "buyingPower": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "cash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountCash"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dayPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayTradesLast5Days": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "dividendsReceivable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "equity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "gfv": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountGfv"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "longMarketValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "marksQuality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              null
+            ]
+          },
+          "netContributions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "openBuyHolds": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "restriction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NONE",
+              "SETTLED_CASH_ONLY",
+              "LIQUIDATION_ONLY",
+              "FROZEN",
+              null
+            ]
+          },
+          "restrictionReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "restrictionUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "runNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startingCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACTIVE",
+              "CLOSED",
+              null
+            ]
+          },
+          "totalPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "totalReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CASH",
+              "MARGIN",
+              null
+            ]
+          },
+          "unitValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "accountId",
+          "asOf",
+          "buyingPower",
+          "cash",
+          "dayPnl",
+          "dayReturn",
+          "dayTradesLast5Days",
+          "dividendsReceivable",
+          "equity",
+          "gfv",
+          "longMarketValue",
+          "marksQuality",
+          "netContributions",
+          "openBuyHolds",
+          "openedAt",
+          "restriction",
+          "restrictionReason",
+          "restrictionUntil",
+          "runNo",
+          "startingCash",
+          "status",
+          "totalPnl",
+          "totalReturn",
+          "type",
+          "unitValue"
+        ]
+      },
+      "AccountCash": {
+        "type": "object",
+        "properties": {
+          "settled": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "settledAvailable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "total": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "unsettled": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "withdrawable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "settled",
+          "settledAvailable",
+          "total",
+          "unsettled",
+          "withdrawable"
+        ]
+      },
+      "AccountGfv": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "liquidationOnlyAt": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "nextExpiry": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "settledCashOnlyAt": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "active",
+          "liquidationOnlyAt",
+          "nextExpiry",
+          "settledCashOnlyAt"
+        ]
+      },
+      "Activity": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "balanceAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "SELF",
+              "ADMIN",
+              "SYSTEM",
+              null
+            ]
+          },
+          "detail": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AdminViewDetail"
+              },
+              {
+                "$ref": "#/components/schemas/GfvDetail"
+              },
+              {
+                "$ref": "#/components/schemas/NameChangeDetail"
+              },
+              {
+                "$ref": "#/components/schemas/ResetDetail"
+              },
+              {
+                "$ref": "#/components/schemas/RestrictionDetail"
+              },
+              {
+                "$ref": "#/components/schemas/SplitDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "executionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fees": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Fees"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "memo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "settleDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "BUY",
+              "SELL",
+              null
+            ]
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tradeDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "transferId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "FILL",
+              "INITIAL_FUNDING",
+              "DEPOSIT",
+              "WITHDRAWAL",
+              "ADJUSTMENT",
+              "DIVIDEND",
+              "CASH_IN_LIEU",
+              "SPLIT",
+              "NAME_CHANGE",
+              "GFV",
+              "RESET",
+              "RESTRICTION",
+              "ADMIN_VIEW",
+              null
+            ]
+          }
+        },
+        "required": [
+          "amount",
+          "at",
+          "balanceAfter",
+          "by",
+          "detail",
+          "executionId",
+          "fees",
+          "id",
+          "memo",
+          "orderId",
+          "price",
+          "qty",
+          "settleDate",
+          "side",
+          "symbol",
+          "tradeDate",
+          "transferId",
+          "type"
+        ]
+      },
+      "ActivityDetail": {
+        "discriminator": {
+          "propertyName": "type"
+        },
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "AdminViewDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ActivityDetail"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "admin": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ],
+        "required": [
+          "admin",
+          "reason"
+        ]
+      },
+      "Balances": {
+        "type": "object",
+        "properties": {
+          "asOfEt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "buyingPower": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "cashTotal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "openBuyHolds": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "restriction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NONE",
+              "SETTLED_CASH_ONLY",
+              "LIQUIDATION_ONLY",
+              "FROZEN",
+              null
+            ]
+          },
+          "settledAvailable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "settledCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "unsettledCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "unsettledCredits": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "unsettledDebits": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "withdrawable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "asOfEt",
+          "buyingPower",
+          "cashTotal",
+          "openBuyHolds",
+          "restriction",
+          "settledAvailable",
+          "settledCash",
+          "unsettledCash",
+          "unsettledCredits",
+          "unsettledDebits",
+          "withdrawable"
+        ]
+      },
+      "CancelledOrders": {
+        "type": "object",
+        "properties": {
+          "cancelled": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Order"
+            }
+          }
+        },
+        "required": [
+          "cancelled"
+        ]
+      },
+      "ClosePositionRequest": {
+        "type": "object",
+        "properties": {
+          "clientOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "clientOrderId"
+        ]
+      },
+      "Estimate": {
+        "type": "object",
+        "properties": {
+          "fees": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Fees"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hold": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "principal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "quoteAsOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "quoteQuality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              null
+            ]
+          }
+        },
+        "required": [
+          "fees",
+          "hold",
+          "price",
+          "principal",
+          "qty",
+          "quoteAsOf",
+          "quoteQuality"
+        ]
+      },
+      "Execution": {
+        "type": "object",
+        "properties": {
+          "executedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "executionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fees": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Fees"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "liquidity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "TOUCH",
+              "WALK",
+              "RESTING",
+              "PRINT",
+              "OPEN",
+              null
+            ]
+          },
+          "netAmount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "orderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "principal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "realizedPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "refQuote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RefQuote"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "settleDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "BUY",
+              "SELL",
+              null
+            ]
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tradeDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          }
+        },
+        "required": [
+          "executedAt",
+          "executionId",
+          "fees",
+          "liquidity",
+          "netAmount",
+          "orderId",
+          "price",
+          "principal",
+          "qty",
+          "realizedPnl",
+          "refQuote",
+          "settleDate",
+          "side",
+          "symbol",
+          "tradeDate"
+        ]
+      },
+      "Fees": {
+        "type": "object",
+        "properties": {
+          "cat": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "sec": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "taf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "total": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "cat",
+          "sec",
+          "taf",
+          "total"
+        ]
+      },
+      "GfvDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ActivityDetail"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "activeCount": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "fundingSettleDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date"
+              },
+              "orderId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "unsettledAmount": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              },
+              "violationId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ],
+        "required": [
+          "activeCount",
+          "fundingSettleDate",
+          "orderId",
+          "unsettledAmount",
+          "violationId"
+        ]
+      },
       "LoginRequest": {
         "type": "object",
         "properties": {
@@ -308,6 +2160,890 @@
           "status"
         ]
       },
+      "NameChangeDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ActivityDetail"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "corporateActionId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "newSymbol": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "oldSymbol": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "qty": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              }
+            }
+          }
+        ],
+        "required": [
+          "corporateActionId",
+          "newSymbol",
+          "oldSymbol",
+          "qty"
+        ]
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "acceptedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "avgFillPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "WEB",
+              "REST_KEY",
+              "MCP_KEY",
+              "MCP_OAUTH",
+              "SYSTEM",
+              "ADMIN",
+              null
+            ]
+          },
+          "clientOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "collarPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "doneAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "eligibleAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "events": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/OrderEvent"
+            }
+          },
+          "executions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Execution"
+            }
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "extendedHours": {
+            "type": "boolean"
+          },
+          "fees": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "filledPrincipal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "filledQty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "fractional": {
+            "type": "boolean"
+          },
+          "limitPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "notional": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "orderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "receivedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "replacedByOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replacesOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reservedCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "reservedQty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "sessionDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "BUY",
+              "SELL",
+              null
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PENDING",
+              "WORKING",
+              "PARTIALLY_FILLED",
+              "FILLED",
+              "CANCELLED",
+              "EXPIRED",
+              "REPLACED",
+              "REJECTED",
+              null
+            ]
+          },
+          "statusReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stopPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeInForce": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "GTC",
+              null
+            ]
+          },
+          "trailAmount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "trailPercent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "triggered": {
+            "type": "boolean"
+          },
+          "triggeredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "MARKET",
+              "LIMIT",
+              "STOP",
+              "STOP_LIMIT",
+              "TRAILING_STOP",
+              null
+            ]
+          },
+          "waitReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "LATENCY",
+              "QUEUED_FOR_OPEN",
+              "QUEUED_FOR_EXT_OPEN",
+              "SESSION_CLOSED",
+              "NOT_TRIGGERED",
+              "AWAITING_QUOTE",
+              "HALTED",
+              "CORPORATE_ACTION_HOLD",
+              "BEYOND_COLLAR",
+              "LIMIT_NOT_REACHED",
+              null
+            ]
+          },
+          "watermarkPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "acceptedAt",
+          "accountId",
+          "activatedAt",
+          "avgFillPrice",
+          "channel",
+          "clientOrderId",
+          "collarPrice",
+          "doneAt",
+          "eligibleAt",
+          "events",
+          "executions",
+          "expiresAt",
+          "extendedHours",
+          "fees",
+          "filledPrincipal",
+          "filledQty",
+          "fractional",
+          "limitPrice",
+          "notional",
+          "orderId",
+          "qty",
+          "rationale",
+          "receivedAt",
+          "replacedByOrderId",
+          "replacesOrderId",
+          "reservedCash",
+          "reservedQty",
+          "sessionDate",
+          "side",
+          "status",
+          "statusReason",
+          "stopPrice",
+          "symbol",
+          "timeInForce",
+          "trailAmount",
+          "trailPercent",
+          "triggered",
+          "triggeredAt",
+          "type",
+          "waitReason",
+          "watermarkPrice"
+        ]
+      },
+      "OrderEvent": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "detail": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "statusAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PENDING",
+              "WORKING",
+              "PARTIALLY_FILLED",
+              "FILLED",
+              "CANCELLED",
+              "EXPIRED",
+              "REPLACED",
+              "REJECTED",
+              null
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACCEPTED",
+              "QUEUED",
+              "WORKING",
+              "PAUSED",
+              "RESUMED",
+              "TRIGGERED",
+              "TRAIL_UPDATED",
+              "AWAITING_QUOTE",
+              "BEYOND_COLLAR",
+              "PARTIAL_FILL",
+              "FILL",
+              "CANCELLED",
+              "EXPIRED",
+              "REPLACED",
+              "HOLD_ADJUSTED",
+              null
+            ]
+          }
+        },
+        "required": [
+          "at",
+          "detail",
+          "seq",
+          "statusAfter",
+          "type"
+        ]
+      },
+      "PageActivity": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Activity"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "PageExecution": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Execution"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "PageOrder": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Order"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "PlaceOrderRequest": {
+        "type": "object",
+        "properties": {
+          "acknowledge": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "clientOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "extendedHours": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limitPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "notional": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shareNote": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "BUY",
+              "SELL",
+              null
+            ]
+          },
+          "stopPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeInForce": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "GTC",
+              null
+            ]
+          },
+          "trailAmount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "trailPercent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "MARKET",
+              "LIMIT",
+              "STOP",
+              "STOP_LIMIT",
+              "TRAILING_STOP",
+              null
+            ]
+          }
+        },
+        "required": [
+          "clientOrderId",
+          "side",
+          "symbol",
+          "type"
+        ]
+      },
+      "PlaceOrderResponse": {
+        "type": "object",
+        "properties": {
+          "buyingPowerAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "buyingPowerBefore": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Estimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "order": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Order"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            }
+          }
+        },
+        "required": [
+          "buyingPowerAfter",
+          "buyingPowerBefore",
+          "estimate",
+          "order",
+          "replayed",
+          "warnings"
+        ]
+      },
+      "Position": {
+        "type": "object",
+        "properties": {
+          "availableQty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "avgCost": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "costBasis": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "fractionable": {
+            "type": "boolean"
+          },
+          "last": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "mark": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "markQuality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              null
+            ]
+          },
+          "marketValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unrealizedPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "unrealizedReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "weight": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "availableQty",
+          "avgCost",
+          "costBasis",
+          "dayPnl",
+          "dayReturn",
+          "fractionable",
+          "last",
+          "mark",
+          "markQuality",
+          "marketValue",
+          "name",
+          "openedAt",
+          "qty",
+          "symbol",
+          "unrealizedPnl",
+          "unrealizedReturn",
+          "weight"
+        ]
+      },
       "Preferences": {
         "type": "object",
         "properties": {
@@ -378,6 +3114,106 @@
           "defaultTimeInForce",
           "theme",
           "upDown"
+        ]
+      },
+      "Preview": {
+        "type": "object",
+        "properties": {
+          "buyingPowerAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "buyingPowerBefore": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "errors": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PreviewError"
+            }
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Estimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionNote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            }
+          }
+        },
+        "required": [
+          "buyingPowerAfter",
+          "buyingPowerBefore",
+          "errors",
+          "estimate",
+          "sessionNote",
+          "valid",
+          "warnings"
+        ]
+      },
+      "PreviewError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "field",
+          "hint",
+          "message"
         ]
       },
       "Problem": {
@@ -477,6 +3313,630 @@
         "required": [
           "code",
           "field",
+          "message"
+        ]
+      },
+      "RefQuote": {
+        "type": "object",
+        "properties": {
+          "ask": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "askSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "bid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "bidSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "clamped": {
+            "type": "boolean"
+          },
+          "confirmedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "quality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              null
+            ]
+          },
+          "quoteAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ask",
+          "askSize",
+          "bid",
+          "bidSize",
+          "clamped",
+          "confirmedAt",
+          "last",
+          "quality",
+          "quoteAt",
+          "source"
+        ]
+      },
+      "ReplaceOrderRequest": {
+        "type": "object",
+        "properties": {
+          "clientOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "extendedHours": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limitPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stopPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "timeInForce": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "GTC",
+              null
+            ]
+          },
+          "trailAmount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "trailPercent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "clientOrderId"
+        ]
+      },
+      "ResetAccountRequest": {
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "confirm"
+        ]
+      },
+      "ResetDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ActivityDetail"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "finalEquity": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              },
+              "fromAccountId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "memo": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "runNo": {
+                "type": "integer",
+                "format": "int32"
+              },
+              "side": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "CLOSED",
+                  "OPENED",
+                  null
+                ]
+              },
+              "startingCash": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              },
+              "toAccountId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ],
+        "required": [
+          "finalEquity",
+          "fromAccountId",
+          "memo",
+          "runNo",
+          "side",
+          "startingCash",
+          "toAccountId"
+        ]
+      },
+      "RestrictionDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ActivityDetail"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "NONE",
+                  "SETTLED_CASH_ONLY",
+                  "LIQUIDATION_ONLY",
+                  "FROZEN",
+                  null
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "to": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "NONE",
+                  "SETTLED_CASH_ONLY",
+                  "LIQUIDATION_ONLY",
+                  "FROZEN",
+                  null
+                ]
+              },
+              "until": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            }
+          }
+        ],
+        "required": [
+          "from",
+          "reason",
+          "to",
+          "until"
+        ]
+      },
+      "Run": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "finalEquity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "netContributions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "pnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "runNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startingCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACTIVE",
+              "CLOSED",
+              null
+            ]
+          }
+        },
+        "required": [
+          "accountId",
+          "closedAt",
+          "finalEquity",
+          "netContributions",
+          "openedAt",
+          "pnl",
+          "return",
+          "runNo",
+          "startingCash",
+          "status"
+        ]
+      },
+      "SplitDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ActivityDetail"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "cashInLieu": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              },
+              "corporateActionId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "costBasis": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              },
+              "dustQty": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              },
+              "newRate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              },
+              "oldRate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              },
+              "qtyAfter": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              },
+              "qtyBefore": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              },
+              "realizedPnl": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "decimal"
+              }
+            }
+          }
+        ],
+        "required": [
+          "cashInLieu",
+          "corporateActionId",
+          "costBasis",
+          "dustQty",
+          "newRate",
+          "oldRate",
+          "qtyAfter",
+          "qtyBefore",
+          "realizedPnl"
+        ]
+      },
+      "Violation": {
+        "type": "object",
+        "properties": {
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "fundingSettleDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "orderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tradeDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "GFV",
+              null
+            ]
+          },
+          "unsettledAmount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "fundingSettleDate",
+          "id",
+          "occurredAt",
+          "orderId",
+          "symbol",
+          "tradeDate",
+          "type",
+          "unsettledAmount"
+        ]
+      },
+      "Violations": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Violation"
+            }
+          },
+          "expired": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Violation"
+            }
+          },
+          "restriction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NONE",
+              "SETTLED_CASH_ONLY",
+              "LIQUIDATION_ONLY",
+              "FROZEN",
+              null
+            ]
+          },
+          "restrictionUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "active",
+          "expired",
+          "restriction",
+          "restrictionUntil"
+        ]
+      },
+      "Warning": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
           "message"
         ]
       }

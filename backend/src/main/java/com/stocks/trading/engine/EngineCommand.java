@@ -1,0 +1,97 @@
+package com.stocks.trading.engine;
+
+import com.stocks.common.domain.AccountRestriction;
+import com.stocks.common.domain.CancelReason;
+import com.stocks.common.domain.TransitionType;
+import com.stocks.contract.trading.CashTransferCommand;
+import com.stocks.contract.trading.IdempotencyRef;
+import com.stocks.contract.trading.dto.ReplaceOrderRequest;
+import com.stocks.trading.order.NormalizedOrder;
+import com.stocks.trading.order.OrderOrigin;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+
+/**
+ * The engine commands (§12.1, CONTRACT). Each runs on {@code engine-main} in exactly one JDBC transaction; events are
+ * published only after commit (§4). Services build them; nothing else reaches the engine.
+ *
+ * <p>Phase 1 commands not implemented yet (corporate actions: {@code ApplyCorporateActionCmd},
+ * {@code ResolveCorporateActionCmd}, {@code PayDividendsCmd}) are added to this list when they land.
+ */
+public sealed interface EngineCommand {
+
+  /** Commands a halted engine still accepts (§12.9). */
+  default boolean allowedWhileHalted() {
+    return false;
+  }
+
+  /** §11.2 checks 6–27 (authoritative) and acceptance; result: {@code PlaceOrderResponse}. */
+  record PlaceOrderCmd(long accountId, OrderOrigin origin, NormalizedOrder order, String requestHash,
+                       Instant receivedAt) implements EngineCommand {}
+
+  /** §11.6 cancel-replace; result: {@code PlaceOrderResponse} of the new order. */
+  record ReplaceOrderCmd(long accountId, OrderOrigin origin, String orderId, ReplaceOrderRequest request,
+                         Instant receivedAt) implements EngineCommand {}
+
+  /** {@code accountIdOrNull} null = any account (admin, §21.1); result: {@code OrderDto}. */
+  record CancelOrderCmd(Long accountIdOrNull, String orderId, CancelReason reason, long actorPlayerId)
+      implements EngineCommand {}
+
+  /** Result: the cancelled {@code OrderDto}s. */
+  record CancelAllCmd(long accountId, String symbolOrNull, CancelReason reason, long actorPlayerId)
+      implements EngineCommand {}
+
+  /** An explicit sweep (activation, expiry, re-evaluation, §12.2); the loop also sweeps on its own. */
+  record SweepCmd() implements EngineCommand {}
+
+  /** §9.4 session transition: pauses, resumes and expiries; never fills for time the app was down. */
+  record TransitionCmd(LocalDate tradingDate, TransitionType type) implements EngineCommand {}
+
+  /** §21.2; result: {@code TransferBatchResultDto}. */
+  record ApplyCashTransfersCmd(CashTransferCommand transfer, IdempotencyRef idem, long adminPlayerId)
+      implements EngineCommand {}
+
+  /** Run 1 with its INITIAL transfer (§10.1); idempotent per player. Result: the account id. */
+  record OpenAccountCmd(long playerId, BigDecimal startingCash, long actorPlayerId) implements EngineCommand {}
+
+  /** §10.5 reset; result: the new account id. */
+  record ResetAccountCmd(long playerId, BigDecimal startingCashOrNull, String memo, IdempotencyRef idem,
+                         long actorPlayerId) implements EngineCommand {}
+
+  /** §10.5 freeze/disable step 2. */
+  record RestrictAccountCmd(long playerId, AccountRestriction restriction, CancelReason cancelReason, String reason,
+                            long actorPlayerId) implements EngineCommand {}
+
+  /** §10.5 unfreeze/enable step 2: the restriction becomes NONE or the recomputed GFV restriction. */
+  record LiftRestrictionCmd(long playerId, long actorPlayerId) implements EngineCommand {}
+
+  /** §21.3 break-glass view: an {@code ADMIN_VIEW} {@code account_event}. */
+  record RecordAdminViewCmd(long accountId, String reason, long actorPlayerId) implements EngineCommand {}
+
+  /** §25 03:30 ET: lift GFV restrictions whose time has passed. */
+  record DailyMaintenanceCmd(LocalDate date) implements EngineCommand {}
+
+  /** §8.4 I1–I9; result: {@code InvariantResult}. A failure halts the engine. */
+  record CheckInvariantsCmd() implements EngineCommand {
+    @Override
+    public boolean allowedWhileHalted() {
+      return true;
+    }
+  }
+
+  record HaltEngineCmd(String reason, long actorPlayerId) implements EngineCommand {
+    @Override
+    public boolean allowedWhileHalted() {
+      return true;
+    }
+  }
+
+  /** Runs the invariants first and resumes only if they hold. */
+  record ResumeEngineCmd(long actorPlayerId) implements EngineCommand {
+    @Override
+    public boolean allowedWhileHalted() {
+      return true;
+    }
+  }
+}

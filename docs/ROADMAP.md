@@ -22,7 +22,7 @@
 - [x] [WS1] `common/**`: enums, `ErrorCode` (incl. `NOT_IMPLEMENTED`, `INTERNAL_ERROR`), `PublicId` (ULID), `TimeSource`/`AdjustableTimeSource`, **`Jdbc` (no raw `Instant` on JDBC)**, `Money`/`Rounding`, events, problem details, Jackson (decimals as strings)
 - [x] [WS1] Contract interfaces and records from §5.3 in `com.stocks.contract.*`, every DTO from §18.3 as a `…Dto` record, the job SPI (`ScheduledJob`, `PeriodicTask`), and stub beans through `StubsAutoConfiguration` (`NoopMarketDataService` as the market-data default)
 - [x] [WS1] Security skeleton with dev login; SPA fallback; ArchUnit rules (§5.2, including the cycle and JDBC rules); test kit (`MutableTimeSource`, `ScriptedMarketData`, fixtures, `EmbeddedPgContextInitializer`); `JobScheduler` skeleton
-- [ ] [WS3] `DirectEngineExecutor` in WS3 test sources (week 1, with the engine)
+- [x] [WS3] `DirectEngineExecutor` in WS3 test sources (week 1, with the engine)
 - [x] [WS1] CI (`ci.yml`, GitHub-hosted): backend on H2, backend on embedded PG, frontend, OpenAPI drift and assertions (no `type: number`, response properties required), e2e (once specs exist), compose/CasaOS checks + shellcheck + actionlint, multi-arch image build without push (§26). `OpenApiExportTest` drives `make openapi` (§26 step 4). Every job's commands pass locally (the image job needs Docker); the first GitHub run is still pending.
 - [x] [WS1] Release (`release.yml`, §24.7): CI → multi-arch image (`linux/amd64`, `linux/arm64`) pushed to GHCR (`latest`, `sha-<7>`, semver) with SBOM and provenance → deploy job on the owner's self-hosted CasaOS runner (`[self-hosted, casaos]`, gated by `DEPLOY_ENABLED`), health-gated with automatic rollback; manual deploy/rollback of any tag through `workflow_dispatch`
 - [x] [WS1] Self-hosting kit: production `Dockerfile`, CasaOS-importable `docker-compose.yml` (`x-casaos` metadata, `/DATA/AppData/stocks` bind mounts), `deploy/scripts/{init-host,deploy,restore}.sh`, `deploy/backup/pg_backup.sh`, `deploy/cloudflared/config.example.yml`, `docs/deploy.md`, `docs/runbook.md`
@@ -70,25 +70,25 @@
 - [x] Market REST: `/market/clock|calendar|indices|movers`, `/assets/search|{symbol}|logo`, `/quotes`, `/snapshots`, `/bars`, `/news`
 
 ### WS3: Trading core
-- [ ] `TradingEngine`: single thread, bounded queue, one transaction per command, events after commit, sweep, dirty-symbol drain
-- [ ] `OrderGate` (checks 1–6, one write token, free replays) and pure `OrderValidator` (checks 7–27, authoritative on the engine thread), `HoldCalculator` (102% and 115% cushions), `SessionOrderMatrix`, `ExpiryCalculator` (DAY, GTC 60 days, early closes)
-- [ ] `OrderStateMachine`, table-driven and exhaustively tested
-- [ ] Order types: **MARKET** (with collar), **LIMIT** (+ extended hours), **STOP**, **STOP_LIMIT**, **TRAILING_STOP** (DAY; entered in REGULAR only)
-- [ ] **Fractional and notional market orders** (RTH, DAY, ≥ $1, 5 dp, notional all-in including fees)
-- [ ] `FillModel`: touch, book walk, partial fills by displayed size, resting fills at L, trade-through, opening and reopen semantics, halts
+- [x] `TradingEngine`: single thread, bounded queue, one transaction per command, events after commit, sweep, dirty-symbol drain
+- [x] `OrderGate` (checks 1–6, one write token, free replays) and pure `OrderValidator` (checks 7–27, authoritative on the engine thread), `HoldCalculator` (102% and 115% cushions), `SessionOrderMatrix`, `ExpiryCalculator` (DAY, GTC 60 days, early closes)
+- [x] `OrderStateMachine`, table-driven and exhaustively tested
+- [ ] Order types: **MARKET** (with collar), **LIMIT** (+ extended hours), **STOP**, **STOP_LIMIT**, **TRAILING_STOP** (DAY; entered in REGULAR only) — M1+: MARKET and LIMIT done; stop types rejected with `VALIDATION_FAILED` until M2 (§11.1)
+- [x] **Fractional and notional market orders** (RTH, DAY, ≥ $1, 5 dp, notional all-in including fees)
+- [x] `FillModel`: touch, book walk, partial fills by displayed size, resting fills at L, trade-through, opening and reopen semantics, halts
 - [ ] `TriggerEvaluator`: stop triggers on consolidated prints with a bid/ask fallback, gap at open, trailing watermark
-- [ ] `PostingService`: execution, ledger row (net of fees), FIFO lots, position, realized P&L, order update, events
-- [ ] `FeeCalculator`: effective-dated, cumulative per-order delta charging; golden table (§13)
-- [ ] `BalanceCalculator`: settled/unsettled (T+1 derived), settled available, withdrawable, buying power by restriction
-- [ ] `GfvService`: funding attribution, detection, 3 → SETTLED_CASH_ONLY and 4 → LIQUIDATION_ONLY escalation, expiry, `GFV_RISK` warning predicted on `session_date`, `GFV_ACK_REQUIRED`
-- [ ] Idempotent `clientOrderId` (replay 200, 409 on conflict); synchronous rejects return 422, are not persisted, and are audited
-- [ ] Cancel, cancel-all, replace (whole-share unfilled only), close position
-- [ ] Accounts: open (INITIAL transfer, units), reset (run n+1 at the final U, in-engine idempotency), `restrict`/`liftAdminRestriction`, `recordAdminView`; `ApplyCashTransfersCmd` (in-engine idempotency, mark-quality gate, valuation at flow, units at scale 18, empty and rebase cases, all-or-nothing)
+- [x] `PostingService`: execution, ledger row (net of fees), FIFO lots, position, realized P&L, order update, events
+- [x] `FeeCalculator`: effective-dated, cumulative per-order delta charging; golden table (§13)
+- [x] `BalanceCalculator`: settled/unsettled (T+1 derived), settled available, withdrawable, buying power by restriction
+- [x] `GfvService`: funding attribution, detection, 3 → SETTLED_CASH_ONLY and 4 → LIQUIDATION_ONLY escalation, expiry, `GFV_RISK` warning predicted on `session_date`, `GFV_ACK_REQUIRED`
+- [x] Idempotent `clientOrderId` (replay 200, 409 on conflict); synchronous rejects return 422, are not persisted, and are audited
+- [x] Cancel, cancel-all, replace (whole-share unfilled only), close position
+- [x] Accounts: open (INITIAL transfer, units), reset (run n+1 at the final U, in-engine idempotency), `restrict`/`liftAdminRestriction`, `recordAdminView`; `ApplyCashTransfersCmd` (in-engine idempotency, mark-quality gate, valuation at flow, units at scale 18, empty and rebase cases, all-or-nothing)
 - [ ] `account_event` and `position_adjustment` (append-only); activities merged from `cash_ledger` and `account_event`; `AdminOrderService`, `EngineControl`, `CorporateActionQueries`/`Service`
-- [ ] Session transitions (PRE_OPEN, RTH_OPEN, RTH_CLOSE, POST_CLOSE) with catch-up and no retroactive fills
+- [x] Session transitions (PRE_OPEN, RTH_OPEN, RTH_CLOSE, POST_CLOSE) with catch-up and no retroactive fills
 - [ ] Corporate actions: sync, forward and reverse splits (per-lot `SPLIT_QTY`, position = Σ lots, dust and cash in lieu, cancel orders; golden 2:1, 3:2, 1:3, 1:8), cash dividends (accrue on ex-date, pay on payable date, `voided_at`), name changes (incl. `WatchlistService.renameSymbol`); others go to NEEDS_ADMIN; admin resolve
-- [ ] `InvariantChecker` (I1–I9) with auto-halt; `DailyMaintenanceCmd`; `FillQualityAudit` (I10, warnings)
-- [ ] REST: `/orders/**`, `/orders/preview`, `/account`, `/account/positions/**`, `/account/activities`, `/account/executions`, `/account/violations`, `/account/runs`, `/account/reset`
+- [ ] `InvariantChecker` (I1–I9) with auto-halt; `DailyMaintenanceCmd`; `FillQualityAudit` (I10, warnings) — I1–I9, auto-halt and daily maintenance done; `FillQualityAudit` open
+- [x] REST: `/orders/**`, `/orders/preview`, `/account`, `/account/positions/**`, `/account/activities`, `/account/executions`, `/account/violations`, `/account/runs`, `/account/reset`
 
 ### WS4: Portfolio and league
 - [ ] `UnitMath` (Day 2) and `ValuationService` (end of week 1; reads through the caller's transaction)

@@ -19,6 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 @Import(TestClockConfig.class)
 public class SecurityProbes {
 
+  /** A {@code trade}-scope route (chain-2 rule for POST /account/positions/{symbol}/close). */
+  public static final String TRADE_PROBE = "/api/v1/account/positions/__probe/close";
+  /** An {@code account:read} route (chain-2 rule for GET /account/...). */
+  public static final String ACCOUNT_READ_PROBE = "/api/v1/account/__probe";
+
   /**
    * Registered as a member class of this configuration (only where it is imported); {@code @TestComponent} keeps
    * component scanning from adding it to every other test context.
@@ -47,12 +52,14 @@ public class SecurityProbes {
       return who("market:read");
     }
 
-    @PostMapping("/api/v1/orders")
+    // Real order routes belong to WS3's controllers; these paths fall under the same chain-2 rules
+    // (POST /account/positions/{symbol}/close: trade; GET /account/...: account:read).
+    @PostMapping(TRADE_PROBE)
     Map<String, Object> placeOrder() {
       return who("trade");
     }
 
-    @GetMapping("/api/v1/orders")
+    @GetMapping(ACCOUNT_READ_PROBE)
     Map<String, Object> listOrders() {
       return who("account:read");
     }
