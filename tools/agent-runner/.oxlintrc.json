@@ -16,5 +16,11 @@
     "import/no-cycle": "off",
     "unicorn/no-array-sort": "off"
   },
+  "overrides": [
+    {
+      "files": ["test/**/*.ts"],
+      "rules": { "typescript/no-explicit-any": "off" }
+    }
+  ],
   "ignorePatterns": ["dist/**", "node_modules/**"]
 }

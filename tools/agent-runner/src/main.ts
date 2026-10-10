@@ -141,7 +141,21 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv): Promise<numb
   };
   process.on('SIGTERM', onSignal);
   process.on('SIGINT', onSignal);
+  try {
+    return await serve(args, config, logger, version, shutdownController);
+  } finally {
+    process.off('SIGTERM', onSignal);
+    process.off('SIGINT', onSignal);
+  }
+}
 
+async function serve(
+  args: Args,
+  config: RunnerConfig,
+  logger: Logger,
+  version: string,
+  shutdownController: AbortController,
+): Promise<number> {
   const deps: RunnerDeps = {
     config,
     logger,
