@@ -12,3 +12,5 @@ stocks:
     # SIM anchored at a Friday in RTH, then advancing with the wall clock (eligible_at passes, orders fill); clock
     # jumps go through POST /api/v1/test/clock (§18.5). Inert until WS2 wires the SIM clock modes.
     sim: { clock: offset, anchor: 2026-10-09T14:00:00Z, always-open: true }
+  # Phase 2 Web Push (§19.2): encrypt and sign, but never call a real push service from a test run
+  push.dry-run: true
