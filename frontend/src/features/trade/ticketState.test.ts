@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildOrderRequest, initialTicket, midPrice, quickQuantity, ticketReducer } from './ticketState'
+import { buildOrderRequest, defaultLimitPrice, initialTicket, midPrice, quickQuantity, ticketReducer, withoutQueueDuplicates } from './ticketState'
 
 const ctx = { fractionable: true, availableQty: '0.95274' }
 
@@ -64,5 +64,28 @@ describe('trade ticket rules (§22.5)', () => {
     expect(quickQuantity('1', { ...base, side: 'SELL', availableQty: '0.95274' })).toBe('0.95274')
     expect(quickQuantity('0.25', { ...base, side: 'SELL', availableQty: '0.95274' })).toBe('0.23818')
     expect(midPrice('227.39', '227.42')).toBe('227.41')
+  })
+
+  // Review regression: Alpaca sends bid/ask "0" when IEX has no quote (weekends, before 08:00 ET); the ticket pre-filled
+  // a 0.00 limit and sized "Amount" sells at a zero bid.
+  it('treats a zero bid or ask as no quote', () => {
+    expect(defaultLimitPrice('BUY', { ask: '0', bid: '0', last: '255.01' })).toBe('255.01')
+    expect(defaultLimitPrice('SELL', { ask: '0', bid: '0', last: '255.01' })).toBe('255.01')
+    expect(defaultLimitPrice('BUY', { ask: '227.415', bid: '227.39', last: '227.40' })).toBe('227.42')
+    expect(defaultLimitPrice('BUY', { ask: null, bid: null, last: null })).toBeNull()
+    expect(defaultLimitPrice('BUY', { ask: '0', bid: '0', last: '0' })).toBeNull()
+    const sell = { side: 'SELL' as const, qtyMode: 'AMOUNT' as const, buyingPower: '0', ask: '0', bid: '0', availableQty: '2', fractionable: true }
+    expect(quickQuantity('1', sell)).toBeNull()
+  })
+
+  // Review regression: closed-market previews showed the queue notice twice (sessionNote + QUEUED_FOR_OPEN warning).
+  it('drops the queue warning when the session note says the same', () => {
+    const warnings = [
+      { code: 'QUEUED_FOR_OPEN', message: 'Order will queue for the Mon 09:30 ET open.' },
+      { code: 'FAT_FINGER', message: 'limitPrice is 7.0% from the reference price 227.41.' },
+    ]
+    expect(withoutQueueDuplicates(warnings, 'Order will queue for Mon 09:30 ET').map((w) => w.code)).toEqual(['FAT_FINGER'])
+    expect(withoutQueueDuplicates(warnings, null).map((w) => w.code)).toEqual(['QUEUED_FOR_OPEN', 'FAT_FINGER'])
+    expect(withoutQueueDuplicates([{ code: 'QUEUED_FOR_EXT_OPEN', message: 'x' }], 'Order will queue for 04:00 ET')).toEqual([])
   })
 })

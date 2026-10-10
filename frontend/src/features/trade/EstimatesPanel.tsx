@@ -16,7 +16,18 @@ function Row({ label, value, strong }: { label: string; value: React.ReactNode; 
 }
 
 /** Estimates from POST /orders/preview (§22.5): price, qty for notional, principal, fees, hold, BP before → after, session note. */
-export function EstimatesPanel({ preview, loading, notional }: { preview: Preview | undefined; loading: boolean; notional: boolean }) {
+export function EstimatesPanel({
+  preview,
+  loading,
+  notional,
+  highlighted = false,
+}: {
+  preview: Preview | undefined
+  loading: boolean
+  notional: boolean
+  /** Some preview error is shown on an input; otherwise the ticket's general error list explains what is wrong. */
+  highlighted?: boolean
+}) {
   const est = preview?.estimate
   if (!preview && loading) {
     return (
@@ -29,7 +40,7 @@ export function EstimatesPanel({ preview, loading, notional }: { preview: Previe
   }
   if (!preview) return null
   if (!est) {
-    return preview.valid ? null : <p className="py-1 text-caption text-text-3">Fix the highlighted fields to see the estimate.</p>
+    return preview.valid || !highlighted ? null : <p className="py-1 text-caption text-text-3">Fix the highlighted fields to see the estimate.</p>
   }
   const fees = est.fees
   const hold = est.hold && isDecimal(est.hold) && !isZero(est.hold) ? est.hold : null

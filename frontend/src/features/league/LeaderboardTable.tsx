@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import type { LeaderboardMetric, LeaderboardRow } from '@/lib/api/types'
 import { abs, isDecimal, isZero, sign } from '@/lib/format/decimal'
 import { formatMoney, formatMoneyCompact } from '@/lib/format/money'
-import { direction, formatPct } from '@/lib/format/number'
+import { formatPct, moneyDirection, pctDirection } from '@/lib/format/number'
 import { Pill } from '@/components/ui/Pill'
 import { Sparkline } from '@/components/ui/Sparkline'
 import { cx } from '@/components/ui/cx'
@@ -50,7 +50,7 @@ export function FlowChip({ flows }: { flows: string | null | undefined }) {
 function Metric({ row, metric }: { row: LeaderboardRow; metric: LeaderboardMetric }) {
   const value = metric === 'RETURN' ? row.return : row.pnl
   return (
-    <span className={cx('font-semibold', DIRECTION_TEXT[direction(value)])}>{metric === 'RETURN' ? formatPct(value) : formatMoney(value, { signed: true })}</span>
+    <span className={cx('font-semibold', DIRECTION_TEXT[metric === 'RETURN' ? pctDirection(value) : moneyDirection(value)])}>{metric === 'RETURN' ? formatPct(value) : formatMoney(value, { signed: true })}</span>
   )
 }
 
@@ -114,12 +114,12 @@ export function LeaderboardTable({ rows, me, metric, myHandle }: { rows: Leaderb
       <td className="max-w-0 py-2 pr-2">
         <Name row={r} me={isMe(r)} />
       </td>
-      <td className={cx('px-2 text-right font-semibold', metric === 'RETURN' && 'text-body', DIRECTION_TEXT[direction(r.return)])}>{formatPct(r.return)}</td>
+      <td className={cx('px-2 text-right font-semibold', metric === 'RETURN' && 'text-body', DIRECTION_TEXT[pctDirection(r.return)])}>{formatPct(r.return)}</td>
       <td className="px-2 text-right">
-        <span className={cx('font-semibold', DIRECTION_TEXT[direction(r.pnl)])}>{formatMoney(r.pnl, { signed: true })}</span>
+        <span className={cx('font-semibold', DIRECTION_TEXT[moneyDirection(r.pnl)])}>{formatMoney(r.pnl, { signed: true })}</span>
       </td>
       <td className="hidden px-2 text-right desktop:table-cell">
-        <span className={DIRECTION_TEXT[direction(r.excessVsBenchmark)]}>{formatPct(r.excessVsBenchmark)}</span>
+        <span className={DIRECTION_TEXT[pctDirection(r.excessVsBenchmark)]}>{formatPct(r.excessVsBenchmark)}</span>
       </td>
       <td className="px-2 text-right">
         <div className="flex flex-col items-end gap-0.5">

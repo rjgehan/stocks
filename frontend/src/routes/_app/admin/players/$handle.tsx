@@ -14,7 +14,7 @@ import { useMe } from '@/lib/api/hooks/identity'
 import { isApiError } from '@/lib/api/problem'
 import type { AdminPlayerLiveView } from '@/lib/api/types'
 import { formatMoney } from '@/lib/format/money'
-import { direction, formatPct, formatPrice, formatQty } from '@/lib/format/number'
+import { formatPct, formatPrice, formatQty, moneyDirection, pctDirection } from '@/lib/format/number'
 import { formatDateEt, formatDateTimeEt } from '@/lib/format/time'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
@@ -122,8 +122,8 @@ function AdminPlayerPage() {
         <Stat label="Buying power" value={formatMoney(b?.buyingPower)} />
         <Stat label="Withdrawable" value={formatMoney(b?.cash?.withdrawable)} />
         <Stat label="Net contributions" value={formatMoney(p.netContributions)} />
-        <Stat label="P&L (this run)" value={formatMoney(p.pnl, { signed: true })} className={DIRECTION_TEXT[direction(p.pnl)]} />
-        <Stat label="Return (this run)" value={formatPct(p.return)} className={DIRECTION_TEXT[direction(p.return)]} />
+        <Stat label="P&L (this run)" value={formatMoney(p.pnl, { signed: true })} className={DIRECTION_TEXT[moneyDirection(p.pnl)]} />
+        <Stat label="Return (this run)" value={formatPct(p.return)} className={DIRECTION_TEXT[pctDirection(p.return)]} />
         <Stat label="Open orders" value={p.openOrders} />
       </dl>
 
@@ -175,7 +175,7 @@ function AdminPlayerPage() {
                 <span className="text-caption text-text-3">
                   {formatDateEt(r.openedAt?.slice(0, 10))} → {r.closedAt ? formatDateEt(r.closedAt.slice(0, 10)) : 'now'} · {formatMoney(r.startingCash)}
                 </span>
-                <span className={cx('font-semibold', DIRECTION_TEXT[direction(r.return)])}>{formatPct(r.return)}</span>
+                <span className={cx('font-semibold', DIRECTION_TEXT[pctDirection(r.return)])}>{formatPct(r.return)}</span>
               </li>
             ))}
           </ul>
@@ -195,15 +195,18 @@ function AdminPlayerPage() {
       <Section
         title="API keys"
         aside={
-          <Button size="sm" variant="primary" onClick={() => setIssueFor(handle)}>
-            Issue key
-          </Button>
+          // §21.1: the admin issues keys for AI players only; humans create their own in Settings
+          p.kind === 'AI' ? (
+            <Button size="sm" variant="primary" onClick={() => setIssueFor(handle)}>
+              Issue key
+            </Button>
+          ) : undefined
         }
       >
         <ApiKeyList
           keys={d.apiKeys ?? []}
           revoking={revoke.isPending}
-          emptyBody={p.kind === 'AI' ? 'Issue a key so the bot can trade through REST or MCP.' : 'This player has no personal keys.'}
+          emptyBody={p.kind === 'AI' ? 'Issue a key so the bot can trade through REST or MCP.' : 'This player has no personal keys. Humans create their own in Settings → API keys.'}
           onRevoke={(k) =>
             k.keyId &&
             revoke.mutate(
@@ -303,7 +306,7 @@ function LiveViewDialog({ view, onClose }: { view: AdminPlayerLiveView | null; o
                 <li key={p.symbol} className="flex justify-between px-3 py-2 text-table">
                   <span className="font-semibold">{p.symbol}</span>
                   <span>
-                    {formatQty(p.qty)} sh · {formatMoney(p.marketValue)} · <span className={DIRECTION_TEXT[direction(p.unrealizedPnl)]}>{formatMoney(p.unrealizedPnl, { signed: true })}</span>
+                    {formatQty(p.qty)} sh · {formatMoney(p.marketValue)} · <span className={DIRECTION_TEXT[moneyDirection(p.unrealizedPnl)]}>{formatMoney(p.unrealizedPnl, { signed: true })}</span>
                   </span>
                 </li>
               ))}

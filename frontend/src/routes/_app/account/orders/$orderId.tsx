@@ -3,7 +3,7 @@ import { useOrder } from '@/lib/api/hooks/account'
 import { isApiError } from '@/lib/api/problem'
 import { type Execution, type OrderEvent, isOpenStatus } from '@/lib/api/types'
 import { formatMoney } from '@/lib/format/money'
-import { direction, formatInteger, formatPrice, formatQty } from '@/lib/format/number'
+import { formatInteger, formatPrice, formatQty, moneyDirection } from '@/lib/format/number'
 import { formatDateEt, formatDateTimeEt } from '@/lib/format/time'
 import { PushedHeader } from '@/app/PushedHeader'
 import { useBreakpoint } from '@/app/useBreakpoint'
@@ -83,7 +83,7 @@ function FillCard({ e }: { e: Execution }) {
         </div>
         <div className="flex justify-between py-0.5">
           <dt className="text-text-3">Realized P&amp;L</dt>
-          <dd className={cx(e.realizedPnl ? DIRECTION_TEXT[direction(e.realizedPnl)] : '')}>{e.realizedPnl ? formatMoney(e.realizedPnl, { signed: true }) : '--'}</dd>
+          <dd className={cx(e.realizedPnl ? DIRECTION_TEXT[moneyDirection(e.realizedPnl)] : '')}>{e.realizedPnl ? formatMoney(e.realizedPnl, { signed: true }) : '--'}</dd>
         </div>
         <div className="col-span-2 flex justify-between py-0.5">
           <dt className="text-text-3">Settles</dt>

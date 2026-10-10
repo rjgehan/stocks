@@ -14,7 +14,6 @@ import {
   HistogramSeries,
   LineStyle,
   type MouseEventParams,
-  TickMarkType,
   type Time,
   createChart,
   type IChartApi,
@@ -25,25 +24,31 @@ import type { Bar, Bars, ChartRange } from '@/lib/api/types'
 import { abbreviate, formatPrice } from '@/lib/format/number'
 import { useThemeStore } from '@/lib/theme/theme'
 import { cx } from '@/components/ui/cx'
+import { etTickLabel } from './chartTime'
 
 export type ChartStyle = 'candles' | 'area'
 
-const etTime = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' })
-const etDay = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' })
-const etMonth = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', year: '2-digit' })
 const etFull = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 const etDate = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric' })
 
-/** Axis labels and the crosshair in market time (ET), not the browser's zone or UTC. */
-function tickLabel(time: Time, type: TickMarkType): string {
-  const d = new Date((time as number) * 1000)
-  if (type === TickMarkType.Year || type === TickMarkType.Month) return etMonth.format(d)
-  if (type === TickMarkType.DayOfMonth) return etDay.format(d)
-  return etTime.format(d)
-}
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888'
+}
+
+/** The forming bar with the last trade as its close (high/low stretched to include it); display only. */
+function withLast(bar: PlotBar, last: string): PlotBar {
+  const p = plot(last)
+  if (!Number.isFinite(p) || p <= 0 || p === bar.close) return bar
+  const high = Math.max(bar.high, p)
+  const low = Math.min(bar.low, p)
+  return {
+    ...bar,
+    close: p,
+    high,
+    low,
+    raw: { ...bar.raw, c: last, h: high === p ? last : bar.raw.h, l: low === p ? last : bar.raw.l },
+  }
 }
 
 // Display-only conversion (never used for money arithmetic).
@@ -108,7 +113,7 @@ export default function PriceChart({
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: cssVar('--text-3'), fontFamily: cssVar('--font-sans'), attributionLogo: true },
       grid: { vertLines: { visible: false }, horzLines: { color: cssVar('--chart-grid') } },
       rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, tickMarkFormatter: tickLabel, fixLeftEdge: true, fixRightEdge: true },
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, tickMarkFormatter: etTickLabel, fixLeftEdge: true, fixRightEdge: true },
       localization: { timeFormatter: (time: Time) => `${etFull.format(new Date((time as number) * 1000))} ET` },
       crosshair: { vertLine: { color: cssVar('--chart-crosshair') }, horzLine: { color: cssVar('--chart-crosshair') } },
       handleScroll: false,
@@ -195,6 +200,9 @@ export default function PriceChart({
       const time = ts(live.bar.t)
       if (time >= lastBar.time) {
         next = { time, open: plot(live.bar.o), high: plot(live.bar.h), low: plot(live.bar.l), close: plot(live.bar.c), volume: live.bar.v, raw: live.bar }
+        // the quote ticks every second, bars at most once a second: the last trade moves the forming candle in
+        // between, so the chart's close never lags the header price
+        if (live.last && range === '1D') next = withLast(next, live.last)
       }
     } else if (live.last && range === '1D') {
       const p = plot(live.last)

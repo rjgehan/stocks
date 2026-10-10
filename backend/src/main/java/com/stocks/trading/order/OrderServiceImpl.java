@@ -113,7 +113,7 @@ public class OrderServiceImpl implements OrderService {
       bpBefore = context.balances(acc, Et.date(now)).buyingPower();
       sessionNote = sessionNote(o, now);   // shown even when a later check fails
       OrderEvaluation.Evaluated ev = evaluation.evaluate(acc, who.kind(), o, now);
-      sessionNote = SessionOrderMatrix.sessionNote(ev.acceptance());
+      sessionNote = SessionOrderMatrix.sessionNote(ev.acceptance(), now);
       return new PreviewDto(true, List.of(), ev.result().warnings(), ev.result().estimate(),
           ev.result().buyingPowerBefore(), ev.result().buyingPowerAfter(), sessionNote);
     } catch (ApiException e) {
@@ -215,7 +215,7 @@ public class OrderServiceImpl implements OrderService {
     }
     try {
       return SessionOrderMatrix.sessionNote(SessionOrderMatrix.accept(clock.calendar(), o.type(), o.extendedHours(),
-          o.timeInForce(), clock.session(now), now));
+          o.timeInForce(), clock.session(now), now), now);
     } catch (RuntimeException e) {
       return null;
     }

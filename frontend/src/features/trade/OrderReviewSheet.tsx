@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { ORDER_TYPE_LABEL } from '@/features/account/orderLabels'
 import { EstimatesPanel } from './EstimatesPanel'
+import { withoutQueueDuplicates } from './ticketState'
 
 /** Review sheet (§22.5, on by default via `confirmOrders`): every field and warning, then Confirm or Edit. */
 export function OrderReviewSheet({
@@ -66,7 +67,7 @@ export function OrderReviewSheet({
         <div className="rounded-md bg-bg-2/60 px-3 py-2">
           <EstimatesPanel preview={preview} loading={false} notional={Boolean(request.notional)} />
         </div>
-        {(preview.warnings ?? []).map((w) => (
+        {withoutQueueDuplicates(preview.warnings ?? [], preview.sessionNote).map((w) => (
           <p key={w.code} className="rounded-sm bg-warn/10 p-2 text-caption text-warn">
             {w.message}
           </p>

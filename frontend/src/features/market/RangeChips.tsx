@@ -14,7 +14,8 @@ export function RangeChips({ value, onChange }: { value: ChartRange; onChange: (
           aria-checked={r === value}
           onClick={() => onChange(r)}
           className={cx(
-            'h-7 min-w-10 shrink-0 rounded-sm px-2 text-caption font-semibold transition-colors',
+            // §22.3: 44 px touch targets on phones
+            'h-11 min-w-11 shrink-0 rounded-sm px-2 text-caption font-semibold transition-colors tablet:h-7 tablet:min-w-10',
             r === value ? 'bg-bg-3 text-text-1' : 'text-text-2 hover:bg-bg-2 hover:text-text-1',
           )}
         >

@@ -40,7 +40,8 @@ export function Segmented<T extends string>({ value, options, onChange, label, s
             onClick={() => onChange(o.value)}
             className={cx(
               'flex-1 whitespace-nowrap rounded-[6px] font-semibold transition-colors duration-150 disabled:opacity-40',
-              size === 'sm' ? 'h-7 px-2.5 text-caption' : 'h-9 px-3 text-body',
+              // §22.3: 44 px touch targets below the tablet breakpoint; compact again from tablet up
+              size === 'sm' ? 'h-11 px-2.5 text-caption tablet:h-7' : 'h-11 px-3 text-body tablet:h-9',
               selected ? TONES[o.tone ?? 'accent'] : 'text-text-2 hover:text-text-1',
             )}
           >

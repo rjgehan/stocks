@@ -576,6 +576,10 @@ export class MockServer {
       this.admin(() => {
         const h = params[0]!.toLowerCase()
         if (h !== this.s.me.handle && !this.other(h)) return problem(404, 'PLAYER_NOT_FOUND', 'Player not found')
+        // §21.1: AI players only; a human's keys are personal (the admin must not hold a friend's live-read token)
+        if (h === this.s.me.handle || this.other(h)?.kind !== 'AI') {
+          return problem(403, 'FORBIDDEN', 'Forbidden', "API keys of a human are personal; the admin issues keys for AI players only.")
+        }
         const b = (body ?? {}) as { name?: string; scopes?: string[] | null; expiresInDays?: number | null }
         if (!b.name?.trim()) return problem(400, 'VALIDATION_FAILED', 'Validation failed', 'Name the key.', null, [{ field: 'name', code: 'NotBlank', message: 'Name the key.' }])
         const scopes = b.scopes?.length ? b.scopes : ['market:read', 'account:read', 'trade', 'league:read']

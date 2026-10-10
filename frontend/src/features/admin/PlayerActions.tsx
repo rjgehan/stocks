@@ -76,7 +76,7 @@ export function PlayerActions({ p, myHandle, onIssueKey }: { p: AdminPlayer; myH
           <>
             <MenuItem onClick={() => (close(), void navigate({ to: '/admin/players/$handle', params: { handle } }))}>Open details</MenuItem>
             <MenuItem onClick={() => (close(), void navigate({ to: '/admin/money', search: { handle } }))}>Deposit / withdraw…</MenuItem>
-            <MenuItem onClick={() => (close(), onIssueKey(handle))}>Issue API key…</MenuItem>
+            {p.kind === 'AI' ? <MenuItem onClick={() => (close(), onIssueKey(handle))}>Issue API key…</MenuItem> : null}
             {p.status === 'FROZEN' ? (
               <MenuItem onClick={() => (close(), setPending('unfreeze'))}>Unfreeze</MenuItem>
             ) : (

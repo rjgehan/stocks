@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { usePositions } from '@/lib/api/hooks/account'
 import type { Position } from '@/lib/api/types'
 import { formatMoney } from '@/lib/format/money'
-import { direction, formatPct, formatPrice, formatQty } from '@/lib/format/number'
+import { formatPct, formatPrice, formatQty, moneyDirection } from '@/lib/format/number'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
@@ -11,7 +11,7 @@ import { QualityBadge } from '@/features/market/QualityBadge'
 
 function Signed({ value, pct, className }: { value: string | null | undefined; pct?: string | null; className?: string }) {
   return (
-    <span className={cx(DIRECTION_TEXT[direction(value)], className)}>
+    <span className={cx(DIRECTION_TEXT[moneyDirection(value)], className)}>
       {formatMoney(value, { signed: true })}
       {pct !== undefined ? <span className="text-[0.92em]"> ({formatPct(pct)})</span> : null}
     </span>

@@ -1,5 +1,5 @@
 import type { Dec } from '@/lib/format/decimal'
-import { arrow, direction, formatChange, formatPct } from '@/lib/format/number'
+import { arrowFor, changeDirection, formatChange, formatPct, pctDirection } from '@/lib/format/number'
 import { cx } from '@/components/ui/cx'
 
 export const DIRECTION_TEXT = { up: 'text-up', down: 'text-down', flat: 'text-flat' } as const
@@ -21,8 +21,9 @@ export function Change({
   /** Show only the percentage (narrow cells such as the index strip). */
   pctOnly?: boolean
 }) {
-  const dir = direction(change ?? pct)
-  const a = arrow(change ?? pct)
+  // the tone of the value as shown: a change that rounds to 0.00 is flat (§22.7)
+  const dir = change != null ? changeDirection(change, reference) : pctDirection(pct)
+  const a = arrowFor(dir)
   return (
     <span className={cx('inline-flex items-center gap-1 whitespace-nowrap font-medium', DIRECTION_TEXT[dir], className)}>
       {showArrow && a ? <span aria-hidden="true" className="text-[0.75em]">{a}</span> : null}

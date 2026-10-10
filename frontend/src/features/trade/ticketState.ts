@@ -179,6 +179,29 @@ export function buildOrderRequest(s: TicketState, symbol: string, ctx: TicketCon
   return req
 }
 
+const QUEUE_WARNINGS = new Set(['QUEUED_FOR_OPEN', 'QUEUED_FOR_EXT_OPEN'])
+
+/**
+ * The preview warnings to show next to the estimate: a QUEUED_FOR_OPEN / QUEUED_FOR_EXT_OPEN warning repeats the
+ * preview's `sessionNote` ("Order will queue for Mon 09:30 ET"), which the estimate already shows, so it is dropped
+ * when the note is there.
+ */
+export function withoutQueueDuplicates<W extends { code?: string | null }>(warnings: readonly W[], sessionNote: string | null | undefined): W[] {
+  return sessionNote ? warnings.filter((w) => !QUEUE_WARNINGS.has(w.code ?? '')) : [...warnings]
+}
+
+/** A price that is really there: Alpaca sends bid/ask "0" when IEX has no quote today (weekends, before 08:00 ET). */
+const quoted = (v: Dec | null | undefined): Dec | null => (v && sign(v) > 0 ? v : null)
+
+/**
+ * The limit price a new ticket starts with: the touch (ask to buy, bid to sell), else the last trade, rounded to the
+ * tick. A zero side counts as no quote, so a closed-market ticket never pre-fills 0.00.
+ */
+export function defaultLimitPrice(side: Side, q: { ask?: Dec | null; bid?: Dec | null; last?: Dec | null }): Dec | null {
+  const px = quoted(side === 'BUY' ? q.ask : q.bid) ?? quoted(q.last)
+  return px ? roundToTick(px) : null
+}
+
 /** Mid price rounded to tick, for the Bid · Mid · Ask · Last chips. */
 export function midPrice(bid: Dec, ask: Dec): Dec {
   return roundToTick(div(add(bid, ask), '2', 6, 'HALF_EVEN'))
@@ -202,7 +225,7 @@ export function quickQuantity(
   }
   if (!opts.availableQty || sign(opts.availableQty) <= 0) return null
   if (opts.qtyMode === 'AMOUNT') {
-    if (!opts.bid) return null
+    if (!opts.bid || isZero(opts.bid)) return null
     return setScale(mul(mul(opts.availableQty, opts.bid), fraction), 2, 'FLOOR')
   }
   if (fraction === '1') return opts.availableQty

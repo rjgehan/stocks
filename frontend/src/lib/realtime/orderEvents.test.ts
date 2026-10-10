@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Execution, Order, OrderUpdateEvent } from '../api/types'
-import { orderEventToast } from './useUserEvents'
+import { POSITIONS_REFRESH_MS, orderEventToast, throttle } from './useUserEvents'
 
 const order = (over: Partial<Order> = {}): Order => ({ symbol: 'AAPL', side: 'BUY', filledQty: '10', avgFillPrice: '227.38', statusReason: null, ...over }) as Order
 const ev = (event: OrderUpdateEvent['event'], o: Order, execution: Partial<Execution> | null = null): OrderUpdateEvent => ({ event, order: o, execution: execution as Execution | null })
@@ -25,5 +25,17 @@ describe('orderEventToast (§22.5 Result: live status from /user/queue/orders)',
     expect(orderEventToast(ev('ACCEPTED', order()))).toBeNull()
     expect(orderEventToast(ev('WORKING', order()))).toBeNull()
     expect(orderEventToast({ event: 'FILL', order: null, execution: null })).toBeNull()
+  })
+})
+
+// Review regression: positions refetched every 60 s while the NAV moved every ~5 s, so the rows did not add up to it.
+describe('positions refresh from account pushes', () => {
+  it('refreshes at most once per 5 s', () => {
+    const t = throttle(POSITIONS_REFRESH_MS)
+    expect(t.due(1_000)).toBe(true)
+    expect(t.due(3_000)).toBe(false)
+    expect(t.due(5_999)).toBe(false)
+    expect(t.due(6_000)).toBe(true)
+    expect(t.due(11_000)).toBe(true)
   })
 })

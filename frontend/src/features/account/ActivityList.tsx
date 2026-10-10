@@ -3,7 +3,7 @@ import { type ActivityFilter, useActivities } from '@/lib/api/hooks/account'
 import type { Activity, ActivityDetailView, ActivityType } from '@/lib/api/types'
 import { isDecimal, isZero } from '@/lib/format/decimal'
 import { formatMoney } from '@/lib/format/money'
-import { direction, formatPrice, formatQty } from '@/lib/format/number'
+import { formatPrice, formatQty, moneyDirection } from '@/lib/format/number'
 import { formatDateEt, formatDateTimeEt } from '@/lib/format/time'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -71,7 +71,7 @@ export function ActivityRow({ a }: { a: Activity }) {
         </p>
       </div>
       <div className="shrink-0 text-right">
-        {amount ? <div className={cx('font-semibold', DIRECTION_TEXT[direction(amount)])}>{formatMoney(amount, { signed: true })}</div> : null}
+        {amount ? <div className={cx('font-semibold', DIRECTION_TEXT[moneyDirection(amount)])}>{formatMoney(amount, { signed: true })}</div> : null}
         {a.balanceAfter ? <div className="text-micro text-text-3">cash {formatMoney(a.balanceAfter)}</div> : null}
       </div>
     </div>

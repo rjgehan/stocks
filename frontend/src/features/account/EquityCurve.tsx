@@ -3,7 +3,7 @@ import { useAccountHistory } from '@/lib/api/hooks/account'
 import type { HistoryRange } from '@/lib/api/types'
 import { div, isDecimal, isZero, sub } from '@/lib/format/decimal'
 import { formatMoney } from '@/lib/format/money'
-import { direction, formatPct } from '@/lib/format/number'
+import { formatPct, moneyDirection, pctDirection } from '@/lib/format/number'
 import { Segmented } from '@/components/ui/Segmented'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
@@ -57,16 +57,16 @@ export function EquityCurve() {
         <dl className="mb-2 flex flex-wrap gap-x-6 gap-y-1 text-table">
           <div>
             <dt className="text-micro text-text-3 uppercase">Return</dt>
-            <dd className={cx('font-semibold', DIRECTION_TEXT[direction(s.return)])}>{formatPct(s.return)}</dd>
+            <dd className={cx('font-semibold', DIRECTION_TEXT[pctDirection(s.return)])}>{formatPct(s.return)}</dd>
           </div>
           <div>
             <dt className="text-micro text-text-3 uppercase">P&amp;L</dt>
-            <dd className={cx('font-semibold', DIRECTION_TEXT[direction(s.pnl)])}>{formatMoney(s.pnl, { signed: true })}</dd>
+            <dd className={cx('font-semibold', DIRECTION_TEXT[moneyDirection(s.pnl)])}>{formatMoney(s.pnl, { signed: true })}</dd>
           </div>
           {s.excessVsBenchmark != null ? (
             <div>
               <dt className="text-micro text-text-3 uppercase">vs SPY</dt>
-              <dd className={cx('font-semibold', DIRECTION_TEXT[direction(s.excessVsBenchmark)])}>{formatPct(s.excessVsBenchmark)}</dd>
+              <dd className={cx('font-semibold', DIRECTION_TEXT[pctDirection(s.excessVsBenchmark)])}>{formatPct(s.excessVsBenchmark)}</dd>
             </div>
           ) : null}
           {s.maxDrawdown != null ? (

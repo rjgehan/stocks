@@ -4,7 +4,7 @@ import { usePlayerHistory, usePlayerProfile, usePlayerTrades } from '@/lib/api/h
 import { isApiError } from '@/lib/api/problem'
 import type { HistoryRange, PublicTrade } from '@/lib/api/types'
 import { formatMoney } from '@/lib/format/money'
-import { direction, formatPct, formatPrice, formatQty } from '@/lib/format/number'
+import { formatPct, formatPrice, formatQty, moneyDirection, pctDirection } from '@/lib/format/number'
 import { formatDateEt, formatDateTimeEt } from '@/lib/format/time'
 import { PushedHeader } from '@/app/PushedHeader'
 import { useBreakpoint } from '@/app/useBreakpoint'
@@ -45,7 +45,7 @@ function TradeRow({ t }: { t: PublicTrade }) {
             </Pill>
           ) : null}
         </span>
-        {t.realizedPnl ? <span className={cx('shrink-0 font-semibold', DIRECTION_TEXT[direction(t.realizedPnl)])}>{formatMoney(t.realizedPnl, { signed: true })}</span> : null}
+        {t.realizedPnl ? <span className={cx('shrink-0 font-semibold', DIRECTION_TEXT[moneyDirection(t.realizedPnl)])}>{formatMoney(t.realizedPnl, { signed: true })}</span> : null}
       </div>
       {t.untrusted?.rationale ? <p className="mt-1 rounded-sm bg-bg-2 px-2 py-1 text-caption text-text-2">“{t.untrusted.rationale}”</p> : null}
       <p className="mt-0.5 text-micro text-text-3">{formatDateTimeEt(t.executedAt)}</p>
@@ -92,7 +92,8 @@ function PlayerPage() {
       <div className="mx-auto w-full max-w-5xl space-y-4 px-4 py-4 desktop:px-6">
         <section className="flex flex-wrap items-center gap-4 rounded-lg border border-divider bg-bg-1 p-4">
           <Avatar player={player} size={56} />
-          <div className="min-w-0 flex-1">
+          {/* a real basis: at 390 px the stats wrap below instead of squeezing "@bob · member since …" to one word a line */}
+          <div className="min-w-0 flex-1 basis-[14rem]">
             {p ? (
               <>
                 <div className="flex flex-wrap items-center gap-2">
@@ -144,7 +145,7 @@ function PlayerPage() {
                 <div className="text-caption text-text-2">{PERIOD_LABEL[k]}</div>
                 {p ? (
                   <>
-                    <div className={cx('text-section font-semibold', DIRECTION_TEXT[direction(s?.return)])}>{formatPct(s?.return)}</div>
+                    <div className={cx('text-section font-semibold', DIRECTION_TEXT[pctDirection(s?.return)])}>{formatPct(s?.return)}</div>
                     <div className="text-caption text-text-3">
                       {formatMoney(s?.pnl, { signed: true })}
                       {s?.rank ? ` · #${s.rank}` : ''}

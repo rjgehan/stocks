@@ -199,12 +199,12 @@ class OrderLifecycleTest extends TradingTestBase {
     time.set(et("2026-10-09T18:00:00"));
     PreviewDto noRef = orders.preview(p.principal(), market(null, s, Side.BUY, "1"));
     assertThat(noRef.errors()).extracting(e -> e.code()).containsExactly("MARKET_DATA_UNAVAILABLE");
-    assertThat(noRef.sessionNote()).isEqualTo("Order will queue for 09:30 ET");
+    assertThat(noRef.sessionNote()).isEqualTo("Order will queue for Mon 09:30 ET");   // Friday 18:00 ET
     print(s, "100.00", 100);
     PreviewDto queued = orders.preview(p.principal(), market(null, s, Side.BUY, "1"));
     assertThat(queued.valid()).isTrue();
     assertThat(queued.estimate().hold()).isEqualByComparingTo("115.00");
-    assertThat(queued.sessionNote()).isEqualTo("Order will queue for 09:30 ET");
+    assertThat(queued.sessionNote()).isEqualTo("Order will queue for Mon 09:30 ET");
     assertThat(queued.warnings()).extracting(w -> w.code()).contains("QUEUED_FOR_OPEN");
     assertThat(jdbc.sql("SELECT COUNT(*) FROM trade_order WHERE account_id = ?").param(p.accountId())
         .query(Integer.class).single()).isZero();

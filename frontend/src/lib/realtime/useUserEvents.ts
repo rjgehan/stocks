@@ -48,6 +48,21 @@ function reasonLabel(reason: string): string {
   return reason.replaceAll('_', ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase())
 }
 
+/** At most one positions refetch per this many ms from account pushes (which arrive every ~5 s in RTH). */
+export const POSITIONS_REFRESH_MS = 5_000
+
+/** A leading-edge throttle: `due(now)` is true at most once per `intervalMs`. */
+export function throttle(intervalMs: number): { due: (now: number) => boolean } {
+  let last = Number.NEGATIVE_INFINITY
+  return {
+    due(now: number) {
+      if (now - last < intervalMs) return false
+      last = now
+      return true
+    },
+  }
+}
+
 /**
  * Turns `/user/queue/*` messages into cache updates, invalidations and toasts (§22.6), and resyncs after a
  * reconnect or when the tab becomes visible again (§19 client resync). Mount once, inside the app shell.
@@ -56,6 +71,7 @@ export function useUserEvents(isAdmin: boolean): void {
   const qc = useQueryClient()
   useEffect(() => {
     const hub = realtime()
+    const positionsThrottle = throttle(POSITIONS_REFRESH_MS)
     const offs = [
       hub.subscribe('/user/queue/orders', (body) => {
         const e = body as OrderUpdateEvent
@@ -72,6 +88,9 @@ export function useUserEvents(isAdmin: boolean): void {
       }),
       hub.subscribe('/user/queue/account', (body) => {
         qc.setQueryData(queryKeys.account, body as Account)
+        // the account push is the "marks moved" signal: refresh positions too (≤ 1 per 5 s), so the position rows
+        // and cards add up to the NAV on screen; the client never computes money itself
+        if (positionsThrottle.due(Date.now())) void qc.invalidateQueries({ queryKey: queryKeys.positions })
       }),
       hub.subscribe('/user/queue/notifications', (body) => {
         const n = body as Notification

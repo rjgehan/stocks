@@ -5,6 +5,9 @@
 import { useEffect, useRef } from 'react'
 import { ColorType, LineSeries, LineStyle, type IChartApi, type ISeriesApi, type Time, type UTCTimestamp, createChart } from 'lightweight-charts'
 import { useThemeStore } from '@/lib/theme/theme'
+import { formatMoney } from '@/lib/format/money'
+import { formatPct } from '@/lib/format/number'
+import { etTickLabel } from '@/features/market/chartTime'
 
 export interface LineSpec {
   id: string
@@ -16,6 +19,12 @@ export interface LineSpec {
 }
 
 const etFull = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+/** An axis value in the app's style: "−$0.07", "$512.40", "−2.00%" (display only). */
+export function axisLabel(p: number, format: 'money' | 'percent'): string {
+  if (!Number.isFinite(p)) return ''
+  return format === 'percent' ? formatPct(p.toFixed(6), { signed: false }) : formatMoney(p.toFixed(2))
+}
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888'
@@ -35,7 +44,8 @@ export default function LineChart({ lines, intraday, format = 'money' }: { lines
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: cssVar('--text-3'), fontFamily: cssVar('--font-sans'), attributionLogo: true },
       grid: { vertLines: { visible: false }, horzLines: { color: cssVar('--chart-grid') } },
       rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.08 } },
-      timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true },
+      // ET ticks like the price chart and the crosshair (the library's default is UTC)
+      timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true, tickMarkFormatter: etTickLabel },
       localization: { timeFormatter: (time: Time) => `${etFull.format(new Date((time as number) * 1000))} ET` },
       crosshair: { vertLine: { color: cssVar('--chart-crosshair') }, horzLine: { color: cssVar('--chart-crosshair') } },
       handleScroll: false,
@@ -61,7 +71,8 @@ export default function LineChart({ lines, intraday, format = 'money' }: { lines
       grid: { horzLines: { color: cssVar('--chart-grid') } },
       timeScale: { timeVisible: intraday },
       localization: {
-        priceFormatter: (p: number) => (format === 'percent' ? `${(p * 100).toFixed(2)}%` : `$${p.toFixed(2)}`),
+        // the app's formatters (§22.7: U+2212 minus, sign before $), fed the plotted number as a decimal string
+        priceFormatter: (p: number) => axisLabel(p, format),
       },
     })
     const seen = new Set<string>()

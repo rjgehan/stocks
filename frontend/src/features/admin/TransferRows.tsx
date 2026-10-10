@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import type { TransferRow } from '@/lib/api/types'
 import { formatMoney } from '@/lib/format/money'
-import { direction } from '@/lib/format/number'
+import { moneyDirection } from '@/lib/format/number'
 import { formatDateTimeEt } from '@/lib/format/time'
 import { Pill, type PillTone } from '@/components/ui/Pill'
 import { cx } from '@/components/ui/cx'
@@ -23,7 +23,7 @@ export function TransferRows({ rows, hideHandle }: { rows: TransferRow[]; hideHa
             </Link>
           ) : null}
           <span className="min-w-0 flex-1 truncate text-text-2">{t.memo ? `“${t.memo}”` : ''}</span>
-          <span className={cx('font-semibold', DIRECTION_TEXT[direction(t.amount)])}>{formatMoney(t.amount, { signed: true })}</span>
+          <span className={cx('font-semibold', DIRECTION_TEXT[moneyDirection(t.amount)])}>{formatMoney(t.amount, { signed: true })}</span>
           <span className="w-full text-micro text-text-3">
             {formatDateTimeEt(t.effectiveAt)}
             {t.by ? ` · by @${t.by}` : ''}

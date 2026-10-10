@@ -25,7 +25,7 @@ function useNow(intervalMs: number): number {
  * runs on the server's clock (`Clock.now` plus the time since it was fetched), not the device's: the dev and e2e
  * backends may run an offset or anchored SIM clock (§15.7).
  */
-export function SessionChip({ compact, detailClassName }: { compact?: boolean; detailClassName?: string }) {
+export function SessionChip({ compact, detailClassName, truncate }: { compact?: boolean; detailClassName?: string; truncate?: boolean }) {
   const { data: clock, dataUpdatedAt } = useClock()
   const localNow = useNow(1000)
   if (!clock?.session) return <span className="h-7 w-40 animate-pulse rounded-full bg-bg-2" aria-hidden="true" />
@@ -38,14 +38,18 @@ export function SessionChip({ compact, detailClassName }: { compact?: boolean; d
     : `opens ${formatSessionStartEt(clock.nextSessionAt, now)}`
   return (
     <span
-      className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border bg-bg-2 px-2.5 text-caption font-medium whitespace-nowrap"
+      className={cx(
+        'inline-flex h-7 items-center gap-1.5 rounded-full border border-border bg-bg-2 px-2.5 text-caption font-medium whitespace-nowrap',
+        // phone top bar: the long closed-market detail truncates instead of pushing the NAV onto two lines
+        truncate ? 'min-w-0 shrink' : 'shrink-0',
+      )}
       role="status"
       aria-live="off"
       title={`${s.label} · ${detail}${clock.earlyClose ? ' · early close today' : ''}`}
     >
-      <span className={cx('size-2 rounded-full', s.dot, clock.session === 'REGULAR' && 'motion-safe:animate-pulse')} aria-hidden="true" />
-      <span className="text-text-1">{s.label}</span>
-      {compact ? null : <span className={cx('text-text-3', detailClassName)}>· {detail}</span>}
+      <span className={cx('size-2 shrink-0 rounded-full', s.dot, clock.session === 'REGULAR' && 'motion-safe:animate-pulse')} aria-hidden="true" />
+      <span className="shrink-0 text-text-1">{s.label}</span>
+      {compact ? null : <span className={cx('text-text-3', truncate && 'min-w-0 truncate', detailClassName)}>· {detail}</span>}
     </span>
   )
 }

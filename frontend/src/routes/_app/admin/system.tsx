@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { describeError, errorBody } from '@/lib/api/errors'
 import { useHaltEngine, useResumeEngine, useRunJob, useSystemStatus } from '@/lib/api/hooks/admin'
@@ -12,7 +12,11 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { IconRefresh } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { CalendarOverrides } from '@/features/admin/CalendarOverrides'
+import { entries, jobTone, unlimited, usageLabel, usagePct } from '@/features/admin/systemStatus'
+import type { SystemStatus } from '@/lib/api/types'
 import { toast } from '@/features/notifications/toastStore'
+
+type SystemProvider = NonNullable<NonNullable<SystemStatus['marketData']>['providers']>[number]
 
 export const Route = createFileRoute('/_app/admin/system')({
   component: SystemPage,
@@ -31,20 +35,70 @@ function Card({ title, children, aside }: { title: string; children: React.React
 }
 
 function Usage({ used, max }: { used: number; max: number }) {
-  const pct = max > 0 ? Math.min(100, Math.round((used / max) * 100)) : 0
+  const pct = usagePct(used, max)
   return (
     <span className="flex items-center gap-2">
-      <span className="h-1.5 w-20 overflow-hidden rounded-full bg-bg-3" aria-hidden="true">
-        <span className={cx('block h-full rounded-full', pct > 85 ? 'bg-down' : pct > 60 ? 'bg-warn' : 'bg-up')} style={{ width: `${pct}%` }} />
-      </span>
-      <span className="text-caption">
-        {used}/{max}
+      {unlimited(max) ? null : (
+        <span className="h-1.5 w-20 overflow-hidden rounded-full bg-bg-3" aria-hidden="true">
+          <span className={cx('block h-full rounded-full', pct > 85 ? 'bg-down' : pct > 60 ? 'bg-warn' : 'bg-up')} style={{ width: `${pct}%` }} />
+        </span>
+      )}
+      <span className="text-caption" title={unlimited(max) ? 'No limit' : undefined}>
+        {usageLabel(used, max)}
       </span>
     </span>
   )
 }
 
-/** Admin · System (§21.3): engine state and queue, invariants, market-data providers and budgets, jobs with "Run now", halt and resume, calendar overrides. */
+/** The startup capability probe and the capabilities of one provider (§15.8), with failures highlighted. */
+function ProviderDetails({ provider }: { provider: SystemProvider }) {
+  const probe = entries(provider.probe as Record<string, unknown> | null, true)
+  const caps = entries(provider.capabilities as Record<string, unknown> | null, false)
+  const failures = probe.filter((e) => e.failed).length
+  if (probe.length === 0 && caps.length === 0) return null
+  return (
+    <details className="group rounded-md bg-bg-2 px-3 py-2 text-caption" open={failures > 0}>
+      <summary className="flex min-h-11 cursor-pointer items-center gap-2 text-text-2 select-none">
+        <span className="font-medium text-text-1">Probe and capabilities</span>
+        {failures ? <Pill tone="down">{failures} failing</Pill> : probe.length ? <Pill tone="up">probe OK</Pill> : null}
+      </summary>
+      <div className="mt-2 grid gap-3 tablet:grid-cols-2">
+        {probe.length ? (
+          <div>
+            <h3 className="mb-1 text-micro tracking-wide text-text-3 uppercase">Probe</h3>
+            <dl className="space-y-0.5">
+              {probe.map((e) => (
+                <div key={e.key} className={cx('flex justify-between gap-3', e.failed && 'font-medium text-down')}>
+                  <dt className="font-mono">{e.key}</dt>
+                  <dd className="min-w-0 text-right break-words">{e.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : null}
+        {caps.length ? (
+          <div>
+            <h3 className="mb-1 text-micro tracking-wide text-text-3 uppercase">Capabilities</h3>
+            <dl className="space-y-0.5">
+              {caps.map((e) => (
+                <div key={e.key} className="flex justify-between gap-3">
+                  <dt className="font-mono">{e.key}</dt>
+                  <dd className={cx('text-right', e.value === 'false' ? 'text-text-3' : 'text-text-1')}>{e.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : null}
+      </div>
+    </details>
+  )
+}
+
+/**
+ * Admin · System (§21.3): engine state and queue, invariants, market-data providers with budgets, the startup probe and
+ * capabilities (how the owner checks the live Alpaca/Finnhub keys after a deploy), jobs with "Run now", halt and resume,
+ * calendar overrides.
+ */
 function SystemPage() {
   const { data: s, isPending, isError, refetch, isFetching } = useSystemStatus()
   const runJob = useRunJob()
@@ -140,19 +194,26 @@ function SystemPage() {
             </thead>
             <tbody className="divide-y divide-divider">
               {(s.marketData?.providers ?? []).map((p) => (
-                <tr key={p.id} className="h-10">
-                  <td className="font-semibold">{p.id}</td>
-                  <td className="px-2">
-                    <Pill tone={p.state === 'LIVE' || p.state === 'CONNECTED' ? 'up' : p.state === 'DISABLED' ? 'flat' : 'warn'}>{p.state}</Pill>
-                  </td>
-                  <td className="px-2">
-                    <Usage used={p.streamSymbolsUsed} max={p.streamSymbolsMax} />
-                  </td>
-                  <td className="px-2">
-                    <Usage used={p.restPerMinUsed} max={p.restPerMinMax} />
-                  </td>
-                  <td className="px-2 text-caption text-text-3">{formatDateTimeEt(p.lastMessageAt)}</td>
-                </tr>
+                <Fragment key={p.id}>
+                  <tr className="h-10">
+                    <td className="font-semibold">{p.id}</td>
+                    <td className="px-2">
+                      <Pill tone={p.state === 'LIVE' || p.state === 'CONNECTED' ? 'up' : p.state === 'DISABLED' ? 'flat' : 'warn'}>{p.state}</Pill>
+                    </td>
+                    <td className="px-2">
+                      <Usage used={p.streamSymbolsUsed} max={p.streamSymbolsMax} />
+                    </td>
+                    <td className="px-2">
+                      <Usage used={p.restPerMinUsed} max={p.restPerMinMax} />
+                    </td>
+                    <td className="px-2 text-caption text-text-3">{formatDateTimeEt(p.lastMessageAt)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={5} className="pb-2">
+                      <ProviderDetails provider={p} />
+                    </td>
+                  </tr>
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -165,7 +226,7 @@ function SystemPage() {
           {(s.jobs ?? []).map((j) => (
             <li key={j.name} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-table">
               <span className="font-mono font-semibold">{j.name}</span>
-              {j.status ? <Pill tone={j.status === 'SUCCEEDED' ? 'up' : j.status === 'FAILED' ? 'down' : 'neutral'}>{j.status}</Pill> : null}
+              {j.status ? <Pill tone={jobTone(j.status)}>{j.status}</Pill> : null}
               <span className="text-caption text-text-3">
                 {j.lastRunKey ? `last ${j.lastRunKey}` : 'never run'}
                 {j.finishedAt ? ` · ${formatDateTimeEt(j.finishedAt)}` : ''}

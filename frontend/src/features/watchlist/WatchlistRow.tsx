@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useAsset } from '@/lib/api/hooks/market'
 import { useQuote } from '@/lib/realtime/useQuote'
-import { direction, formatChange, formatPct, formatPrice } from '@/lib/format/number'
+import { changeDirection, formatChange, formatPct, formatPrice, pctDirection } from '@/lib/format/number'
 import { IconArrowDown, IconArrowUp, IconClose, IconGrip } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { usePriceFlash } from '@/features/market/usePriceFlash'
@@ -45,9 +45,10 @@ export const WatchlistRow = memo(function WatchlistRow({
   const quote = useQuote(symbol, 'tick', { seed: false })
   const { data: asset } = useAsset(symbol)
   const flash = usePriceFlash(quote?.last)
-  const dir = direction(quote?.change)
   const ext = quote?.extended
   const pill = pillMode === 'pct' ? formatPct(quote?.changePct) : formatChange(quote?.change, quote?.last)
+  // the pill's color follows the value it shows: "0.00%" is flat, never red or green (§22.7)
+  const dir = pillMode === 'pct' ? pctDirection(quote?.changePct) : changeDirection(quote?.change, quote?.last)
 
   if (editing) {
     const { index, count, onMove, onRemove, dragging, onDragStart, onDragOver, onDragEnd } = editing

@@ -39,7 +39,7 @@ class SessionAndExpiryTest {
     assertThat(a.waitReason()).isEqualTo(WaitReason.LATENCY);
     assertThat(a.eligibleBase()).isEqualTo(now);
     assertThat(a.queued()).isFalse();
-    assertThat(SessionOrderMatrix.sessionNote(a)).isNull();
+    assertThat(SessionOrderMatrix.sessionNote(a, now)).isNull();
   }
 
   @Test
@@ -49,13 +49,17 @@ class SessionAndExpiryTest {
     assertThat(pre.waitReason()).isEqualTo(WaitReason.QUEUED_FOR_OPEN);
     assertThat(pre.eligibleBase()).isEqualTo(et("2026-10-09", "09:30"));
     assertThat(pre.warnings()).extracting(w -> w.code()).contains(WarningCode.QUEUED_FOR_OPEN.name());
-    assertThat(SessionOrderMatrix.sessionNote(pre)).isEqualTo("Order will queue for 09:30 ET");
+    assertThat(SessionOrderMatrix.sessionNote(pre, et("2026-10-09", "05:00"))).isEqualTo("Order will queue for 09:30 ET");
+    assertThat(pre.warnings()).extracting(w -> w.message()).contains("Order will queue for the 09:30 ET open.");
     // POST: next trading day's open (Columbus Day is a trading day)
     var post = accept(OrderType.LIMIT, false, TimeInForce.DAY, et("2026-10-09", "17:00"));
     assertThat(post.eligibleBase()).isEqualTo(et("2026-10-12", "09:30"));
     // a Saturday
     var sat = accept(OrderType.MARKET, false, TimeInForce.DAY, et("2026-10-10", "12:00"));
     assertThat(sat.eligibleBase()).isEqualTo(et("2026-10-12", "09:30"));
+    // review regression: on a Saturday the note says the order waits until Monday
+    assertThat(SessionOrderMatrix.sessionNote(sat, et("2026-10-10", "12:00"))).isEqualTo("Order will queue for Mon 09:30 ET");
+    assertThat(sat.warnings()).extracting(w -> w.message()).contains("Order will queue for the Mon 09:30 ET open.");
   }
 
   @Test
@@ -67,7 +71,8 @@ class SessionAndExpiryTest {
     var closed = accept(OrderType.LIMIT, true, TimeInForce.GTC, et("2026-10-09", "21:00"));
     assertThat(closed.waitReason()).isEqualTo(WaitReason.QUEUED_FOR_EXT_OPEN);
     assertThat(closed.eligibleBase()).isEqualTo(et("2026-10-12", "04:00"));
-    assertThat(SessionOrderMatrix.sessionNote(closed)).isEqualTo("Order will queue for 04:00 ET");
+    assertThat(SessionOrderMatrix.sessionNote(closed, et("2026-10-09", "21:00")))
+        .isEqualTo("Order will queue for Mon 04:00 ET");
     var early = accept(OrderType.LIMIT, true, TimeInForce.DAY, et("2026-10-09", "02:00"));
     assertThat(early.eligibleBase()).isEqualTo(et("2026-10-09", "04:00"));
   }

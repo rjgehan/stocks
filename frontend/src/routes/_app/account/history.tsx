@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useRuns } from '@/lib/api/hooks/account'
 import { formatMoney } from '@/lib/format/money'
-import { direction, formatPct } from '@/lib/format/number'
+import { formatPct, moneyDirection, pctDirection } from '@/lib/format/number'
 import { formatDateTimeEt } from '@/lib/format/time'
 import { Pill } from '@/components/ui/Pill'
 import { SkeletonRows } from '@/components/ui/Skeleton'
@@ -38,8 +38,8 @@ function HistoryPage() {
                   {formatDateTimeEt(r.openedAt)} → {r.closedAt ? formatDateTimeEt(r.closedAt) : 'now'} · started with {formatMoney(r.startingCash)}
                 </span>
                 {r.status === 'ACTIVE' ? <Pill tone="up">Active</Pill> : null}
-                <span className={cx('w-24 text-right font-semibold', DIRECTION_TEXT[direction(r.return)])}>{formatPct(r.return)}</span>
-                <span className={cx('hidden w-24 text-right tablet:inline', DIRECTION_TEXT[direction(r.pnl)])}>{formatMoney(r.pnl, { signed: true })}</span>
+                <span className={cx('w-24 text-right font-semibold', DIRECTION_TEXT[pctDirection(r.return)])}>{formatPct(r.return)}</span>
+                <span className={cx('hidden w-24 text-right tablet:inline', DIRECTION_TEXT[moneyDirection(r.pnl)])}>{formatMoney(r.pnl, { signed: true })}</span>
               </li>
             ))}
           </ul>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatMoney, formatMoneyCompact } from './money'
-import { abbreviate, arrow, direction, formatChange, formatInteger, formatPct, formatPrice, formatQty } from './number'
+import { abbreviate, arrow, changeDirection, direction, formatChange, formatInteger, formatPct, formatPrice, formatQty, moneyDirection, pctDirection } from './number'
 import { etWallTimeToIso, formatCountdown, formatDateEt, formatSessionStartEt, formatTimeEt, serverNowMs } from './time'
 
 const MINUS = '−'
@@ -115,5 +115,21 @@ describe('etWallTimeToIso (calendar overrides are entered in ET)', () => {
   it('rejects malformed input', () => {
     expect(etWallTimeToIso('2026-7-2', '13:00')).toBeNull()
     expect(etWallTimeToIso('2026-07-02', '1pm')).toBeNull()
+  })
+})
+
+// Review regression (§22.7): a value that rounds to zero was colored by its raw sign ("0.00%" in red or green).
+describe('direction as displayed', () => {
+  it('is flat when the shown value rounds to zero', () => {
+    expect(formatPct('-0.00004')).toBe('0.00%')
+    expect(direction('-0.00004')).toBe('down')
+    expect(pctDirection('-0.00004')).toBe('flat')
+    expect(pctDirection('-0.00005')).toBe('down')
+    expect(pctDirection('0.0123')).toBe('up')
+    expect(moneyDirection('-0.004')).toBe('flat')
+    expect(moneyDirection('-0.02')).toBe('down')
+    expect(changeDirection('0.004', '227.41')).toBe('flat')
+    expect(changeDirection('0.0004', '0.5123')).toBe('up') // 4 decimals below $1
+    expect(pctDirection(null)).toBe('flat')
   })
 })

@@ -61,11 +61,12 @@ public final class SessionOrderMatrix {
     }
     if (ext) {
       Instant at = nextPreOpen(calendar, now);
-      warnings.add(Warning.of(WarningCode.QUEUED_FOR_EXT_OPEN, "Order will queue for the 04:00 ET pre-market open."));
+      warnings.add(Warning.of(WarningCode.QUEUED_FOR_EXT_OPEN, "Order will queue for the " + when(at, now)
+          + " pre-market open."));
       return new Acceptance(at, WaitReason.QUEUED_FOR_EXT_OPEN, true, warnings);
     }
     Instant at = nextRegularOpen(calendar, now);
-    warnings.add(Warning.of(WarningCode.QUEUED_FOR_OPEN, "Order will queue for the 09:30 ET open."));
+    warnings.add(Warning.of(WarningCode.QUEUED_FOR_OPEN, "Order will queue for the " + when(at, now) + " open."));
     return new Acceptance(at, WaitReason.QUEUED_FOR_OPEN, true, warnings);
   }
 
@@ -93,14 +94,26 @@ public final class SessionOrderMatrix {
     return calendar.day(calendar.nextTradingDay(d)).orElseThrow().preOpenAt();
   }
 
-  /** A human note for previews ("Order will queue for 09:30 ET"), or null when the order works now. */
-  public static String sessionNote(Acceptance a) {
-    if (a.waitReason() == WaitReason.QUEUED_FOR_OPEN) {
-      return "Order will queue for 09:30 ET";
-    }
-    if (a.waitReason() == WaitReason.QUEUED_FOR_EXT_OPEN) {
-      return "Order will queue for 04:00 ET";
+  /**
+   * A human note for previews ("Order will queue for 09:30 ET", or "… for Mon 09:30 ET" when the open is not today),
+   * or null when the order works now.
+   */
+  public static String sessionNote(Acceptance a, Instant now) {
+    if (a.waitReason() == WaitReason.QUEUED_FOR_OPEN || a.waitReason() == WaitReason.QUEUED_FOR_EXT_OPEN) {
+      return "Order will queue for " + when(a.eligibleBase(), now);
     }
     return null;
+  }
+
+  private static final java.time.format.DateTimeFormatter WEEKDAY =
+      java.time.format.DateTimeFormatter.ofPattern("EEE", java.util.Locale.US);
+  private static final java.time.format.DateTimeFormatter HH_MM =
+      java.time.format.DateTimeFormatter.ofPattern("HH:mm", java.util.Locale.US);
+
+  /** "09:30 ET" today, else "Mon 09:30 ET" (a Saturday order waits for Monday). */
+  static String when(Instant at, Instant now) {
+    String time = Et.time(at).format(HH_MM) + " ET";
+    LocalDate day = Et.date(at);
+    return day.equals(Et.date(now)) ? time : day.format(WEEKDAY) + " " + time;
   }
 }

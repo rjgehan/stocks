@@ -3160,7 +3160,7 @@ type PlaceOrderResponse = { order: Order; estimate: Estimate; buyingPowerBefore:
   warnings: Warning[]; replayed: boolean };
 type Preview = { valid: boolean; errors: { code: string; field: string|null; message: string; hint: string|null }[];
   warnings: Warning[]; estimate: Estimate|null; buyingPowerBefore: Dec; buyingPowerAfter: Dec|null;
-  sessionNote: string|null /* e.g. "Order will queue for 09:30 ET" */ };
+  sessionNote: string|null /* e.g. "Order will queue for 09:30 ET"; "… for Mon 09:30 ET" when the open is not today. The SPA shows it instead of the QUEUED_FOR_OPEN / QUEUED_FOR_EXT_OPEN warning, which says the same thing. */ };
 type Watchlist = { id: string; name: string; sortOrder: number; symbols: string[] };
 
 // ---- league

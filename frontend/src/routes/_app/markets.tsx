@@ -2,7 +2,7 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMovers } from '@/lib/api/hooks/market'
 import type { MoverList } from '@/lib/api/types'
 import { useQuote, useQuotesSeed } from '@/lib/realtime/useQuote'
-import { abbreviate, direction, formatPct, formatPrice } from '@/lib/format/number'
+import { abbreviate, changeDirection, formatPct, formatPrice, pctDirection } from '@/lib/format/number'
 import { formatTimeEt } from '@/lib/format/time'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Segmented } from '@/components/ui/Segmented'
@@ -28,7 +28,7 @@ const INDEX_NAMES: Record<string, string> = { SPY: 'S&P 500', QQQ: 'Nasdaq 100',
 
 function IndexCard({ symbol }: { symbol: string }) {
   const q = useQuote(symbol, 'tick', { seed: false })
-  const dir = direction(q?.change)
+  const dir = changeDirection(q?.change, q?.last)
   return (
     <Link
       to="/stock/$symbol"
@@ -66,7 +66,7 @@ function Movers({ list }: { list: MoverList }) {
               <span
                 className={cx(
                   'w-[76px] shrink-0 rounded-sm py-1 text-center text-caption font-semibold',
-                  direction(m.changePct) === 'up' ? 'bg-up text-on-updown' : direction(m.changePct) === 'down' ? 'bg-down text-on-updown' : 'bg-bg-3',
+                  pctDirection(m.changePct) === 'up' ? 'bg-up text-on-updown' : pctDirection(m.changePct) === 'down' ? 'bg-down text-on-updown' : 'bg-bg-3',
                 )}
               >
                 {formatPct(m.changePct)}

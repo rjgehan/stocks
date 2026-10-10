@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { useFeed } from '@/lib/api/hooks/league'
 import type { FeedItem } from '@/lib/api/types'
 import { formatMoney } from '@/lib/format/money'
-import { direction, formatPrice, formatQty } from '@/lib/format/number'
+import { formatPrice, formatQty, moneyDirection } from '@/lib/format/number'
 import { formatDateTimeEt } from '@/lib/format/time'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -34,7 +34,7 @@ function describe(i: FeedItem): React.ReactNode {
           {p?.realizedPnl ? (
             <>
               {' '}
-              for <span className={DIRECTION_TEXT[direction(p.realizedPnl)]}>{formatMoney(p.realizedPnl, { signed: true })}</span>
+              for <span className={DIRECTION_TEXT[moneyDirection(p.realizedPnl)]}>{formatMoney(p.realizedPnl, { signed: true })}</span>
             </>
           ) : null}
         </>

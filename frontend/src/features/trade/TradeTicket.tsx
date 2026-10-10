@@ -33,6 +33,7 @@ import {
   amountHint,
   buildOrderRequest,
   canSell,
+  defaultLimitPrice,
   extAllowed,
   gtcAllowed,
   initialTicket,
@@ -43,6 +44,7 @@ import {
   showsStop,
   showsTrail,
   ticketReducer,
+  withoutQueueDuplicates,
 } from './ticketState'
 
 /**
@@ -103,8 +105,8 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
     const key = `${state.type}:${state.side}`
     if (!q || defaulted.current === key) return
     defaulted.current = key
-    const touch = state.side === 'BUY' ? q.ask : q.bid
-    if (showsLimit(state.type) && (touch ?? q.last)) dispatch({ type: 'field', field: 'limitPrice', value: roundToTick((touch ?? q.last)!) })
+    const limit = defaultLimitPrice(state.side, q)
+    if (showsLimit(state.type) && limit) dispatch({ type: 'field', field: 'limitPrice', value: limit })
     if (showsStop(state.type) && q.last) dispatch({ type: 'field', field: 'stopPrice', value: roundToTick(q.last) })
   }, [symbol, state.type, state.side, hasQuote])
 
@@ -127,6 +129,8 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   }, [previewErrors, submitErrors, amountMode])
   const placed = new Set(['qty', 'notional', 'limitPrice', 'stopPrice'])
   const generalErrors = previewErrors.filter((e) => !placed.has(inputFor(e.field, e.code, amountMode) ?? ''))
+  // "Fix the highlighted fields" only when an error really sits on an input (not for ENGINE_HALTED, type errors, …)
+  const highlighted = previewErrors.length > generalErrors.length
   const gfvRisk = warnings.some((w) => w.code === 'GFV_RISK')
   const stale = request !== debounced || preview.isFetching
   const canSubmit = Boolean(tradable && request && previewData?.valid && !stale && (!gfvRisk || state.gfvAck) && !place.isPending)
@@ -294,7 +298,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
                 disabled={!value}
                 onClick={() => setPriceFromChip(value)}
                 aria-label={`Use the ${label.toLowerCase()} price ${formatPrice(value)}`}
-                className="flex h-10 flex-col items-center justify-center rounded-sm bg-bg-2 text-micro font-semibold text-text-2 hover:bg-bg-3 hover:text-text-1 disabled:opacity-40"
+                className="flex h-11 flex-col items-center justify-center rounded-sm bg-bg-2 text-micro font-semibold text-text-2 hover:bg-bg-3 hover:text-text-1 disabled:opacity-40 tablet:h-10"
               >
                 <span>{label}</span>
                 <span className="text-text-1">{formatPrice(value)}</span>
@@ -348,7 +352,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
                 [state.side === 'SELL' ? 'All' : 'Max', '1'],
               ] as const
             ).map(([label, f]) => (
-              <button key={label} type="button" onClick={() => quick(f)} className="h-9 rounded-sm bg-bg-2 text-caption font-semibold text-text-2 hover:bg-bg-3 hover:text-text-1">
+              <button key={label} type="button" onClick={() => quick(f)} className="h-11 rounded-sm bg-bg-2 text-caption font-semibold text-text-2 hover:bg-bg-3 hover:text-text-1 tablet:h-9">
                 {label}
               </button>
             ))}
@@ -397,17 +401,23 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
 
         <div className="rounded-md bg-bg-2/60 px-3 py-2" aria-live="polite">
           {request ? (
-            <EstimatesPanel preview={previewData} loading={preview.isPending} notional={amountMode} />
+            <EstimatesPanel preview={previewData} loading={preview.isPending} notional={amountMode} highlighted={highlighted} />
           ) : (
             <p className="py-1 text-caption text-text-3">Enter {amountMode ? 'an amount' : 'a quantity'} to see the estimate.</p>
           )}
         </div>
 
         {generalErrors.map((e) => (
-          <p key={`${e.code}-${e.message}`} role="alert" className="rounded-sm bg-down-bg p-2 text-caption text-down">
-            {e.message}
-            {e.hint ? <span className="block text-text-2">{e.hint}</span> : null}
-          </p>
+          <div key={`${e.code}-${e.message}`} role="alert" className="rounded-sm bg-down-bg p-2 text-caption text-down">
+            <p>{e.message}</p>
+            {e.hint ? <p className="text-text-2">{e.hint}</p> : null}
+            {e.code === 'FRACTIONAL_MARKET_ONLY' && state.type !== 'MARKET' ? (
+              // the common case: selling a fractional position ("All" after an Amount buy) with the default Limit type
+              <Button size="sm" variant="secondary" className="mt-1.5" onClick={() => dispatch({ type: 'orderType', orderType: 'MARKET' })}>
+                Use a Market order
+              </Button>
+            ) : null}
+          </div>
         ))}
         {banner ? (
           <div role="alert" className="rounded-sm bg-down-bg p-2 text-caption text-down">
@@ -415,7 +425,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             {banner.detail ?? banner.hint ? <p className="text-text-2">{banner.detail ?? banner.hint}</p> : null}
           </div>
         ) : null}
-        {warnings
+        {withoutQueueDuplicates(warnings, previewData?.sessionNote)
           .filter((w) => w.code !== 'GFV_RISK')
           .map((w) => (
             <p key={w.code} className="flex gap-1.5 rounded-sm bg-warn/10 p-2 text-caption text-warn">
@@ -451,7 +461,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             </Checkbox>
           </div>
         ) : (
-          <button type="button" onClick={() => setNoteOpen(true)} className="text-caption font-semibold text-accent hover:text-accent-hover">
+          <button type="button" onClick={() => setNoteOpen(true)} className="inline-flex min-h-11 items-center text-caption font-semibold text-accent hover:text-accent-hover tablet:min-h-0">
             + Add note
           </button>
         )}

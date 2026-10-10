@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMe } from '@/lib/api/hooks/identity'
 import { useLeaderboard } from '@/lib/api/hooks/league'
 import type { KindFilter, LeaderboardMetric, LeaderboardPeriod } from '@/lib/api/types'
-import { direction, formatPct } from '@/lib/format/number'
+import { formatPct, pctDirection } from '@/lib/format/number'
 import { formatTimeEt } from '@/lib/format/time'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Segmented } from '@/components/ui/Segmented'
@@ -41,11 +41,21 @@ export const Route = createFileRoute('/_app/league')({
   component: LeaguePage,
 })
 
-function ArenaStat({ label, value, className }: { label: string; value: string | null | undefined; className?: string }) {
+function ArenaStat({ label, short, value, className }: { label: string; short?: string; value: string | null | undefined; className?: string }) {
   return (
     <div className="min-w-0">
-      <div className="truncate text-micro font-semibold tracking-wide text-text-3 uppercase">{label}</div>
-      <div className={cx('text-[18px] leading-6 font-semibold', className, DIRECTION_TEXT[direction(value)])}>{formatPct(value)}</div>
+      <div className="truncate text-micro font-semibold tracking-wide text-text-3 uppercase" title={label}>
+        {/* phones get the short label ("Humans"), so it is never cut to "HUMANS (MEDI…" */}
+        {short ? (
+          <>
+            <span className="tablet:hidden">{short}</span>
+            <span className="hidden tablet:inline">{label}</span>
+          </>
+        ) : (
+          label
+        )}
+      </div>
+      <div className={cx('text-[18px] leading-6 font-semibold', className, DIRECTION_TEXT[pctDirection(value)])}>{formatPct(value)}</div>
     </div>
   )
 }
@@ -94,9 +104,9 @@ function LeaguePage() {
             {metric === 'PNL' ? <p className="text-caption text-text-3">Ranking by dollar P&amp;L favours bigger accounts; deposits never count as profit.</p> : null}
             {board.data ? (
               <section aria-label="Arena" className="grid grid-cols-3 gap-3 rounded-lg border border-divider bg-gradient-to-r from-human/10 via-bg-1 to-ai-bg p-3 text-center">
-                <ArenaStat label="Humans (median)" value={board.data.arena?.humansMedianReturn} />
+                <ArenaStat label="Humans (median)" short="Humans" value={board.data.arena?.humansMedianReturn} />
                 <ArenaStat label={`${board.data.benchmark?.symbol ?? 'SPY'} benchmark`} value={board.data.benchmark?.return} />
-                <ArenaStat label="AI (median)" value={board.data.arena?.aiMedianReturn} />
+                <ArenaStat label="AI (median)" short="AI" value={board.data.arena?.aiMedianReturn} />
               </section>
             ) : null}
             {board.isPending ? (

@@ -129,8 +129,31 @@ export function direction(value: Maybe<Dec>): Direction {
   return s > 0 ? 'up' : s < 0 ? 'down' : 'flat'
 }
 
+/**
+ * The direction of a value **as displayed** at `scale` decimals (§22.7): a value that rounds to zero is flat, so a
+ * "0.00%" is never red or green and its color always matches its sign.
+ */
+export function directionAtScale(value: Maybe<Dec>, scale: number): Direction {
+  if (value == null || !isDecimal(value)) return 'flat'
+  return direction(setScale(value, scale, 'HALF_UP'))
+}
+
+/** Direction of a fraction shown by {@link formatPct} (2 decimals of a percent = 4 of the fraction). */
+export const pctDirection = (fraction: Maybe<Dec>): Direction => directionAtScale(fraction, 4)
+
+/** Direction of an amount shown by `formatMoney` (cents). */
+export const moneyDirection = (value: Maybe<Dec>): Direction => directionAtScale(value, 2)
+
+/** Direction of a price change shown by {@link formatChange} at the instrument's price scale. */
+export const changeDirection = (change: Maybe<Dec>, reference?: Maybe<Dec>): Direction =>
+  directionAtScale(change, priceScale(reference ?? null))
+
+/** ▲ / ▼ for a direction (§22.7: color is never the only signal). */
+export function arrowFor(d: Direction): '▲' | '▼' | '' {
+  return d === 'up' ? '▲' : d === 'down' ? '▼' : ''
+}
+
 /** Color is never the only signal (§22.7): pair every colored value with ▲/▼. */
 export function arrow(value: Maybe<Dec>): '▲' | '▼' | '' {
-  const d = direction(value)
-  return d === 'up' ? '▲' : d === 'down' ? '▼' : ''
+  return arrowFor(direction(value))
 }

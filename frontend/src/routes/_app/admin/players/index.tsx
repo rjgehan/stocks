@@ -4,7 +4,7 @@ import { useAdminPlayers } from '@/lib/api/hooks/admin'
 import { useMe } from '@/lib/api/hooks/identity'
 import type { AdminPlayer, ApiKeyCreated } from '@/lib/api/types'
 import { formatMoney } from '@/lib/format/money'
-import { direction, formatPct } from '@/lib/format/number'
+import { formatPct, moneyDirection, pctDirection } from '@/lib/format/number'
 import { formatDateTimeEt } from '@/lib/format/time'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -97,7 +97,7 @@ function PlayersPage() {
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-10 text-caption">
                     <Pill tone={p.status ? STATUS_TONE[p.status] : 'neutral'}>{p.status}</Pill>
                     <span>{formatMoney(p.equity)}</span>
-                    <span className={DIRECTION_TEXT[direction(p.return)]}>{formatPct(p.return)}</span>
+                    <span className={DIRECTION_TEXT[pctDirection(p.return)]}>{formatPct(p.return)}</span>
                     <span className="text-text-3">NC {formatMoney(p.netContributions)}</span>
                   </div>
                 </div>
@@ -139,8 +139,8 @@ function PlayersPage() {
                     <td className="px-2 text-right font-medium">{formatMoney(p.equity)}</td>
                     <td className="px-2 text-right">{formatMoney(p.cash)}</td>
                     <td className="px-2 text-right">{formatMoney(p.netContributions)}</td>
-                    <td className={cx('px-2 text-right', DIRECTION_TEXT[direction(p.pnl)])}>{formatMoney(p.pnl, { signed: true })}</td>
-                    <td className={cx('px-2 text-right font-semibold', DIRECTION_TEXT[direction(p.return)])}>{formatPct(p.return)}</td>
+                    <td className={cx('px-2 text-right', DIRECTION_TEXT[moneyDirection(p.pnl)])}>{formatMoney(p.pnl, { signed: true })}</td>
+                    <td className={cx('px-2 text-right font-semibold', DIRECTION_TEXT[pctDirection(p.return)])}>{formatPct(p.return)}</td>
                     <td className="px-2 text-right">{p.openOrders}</td>
                     <td className="px-2 text-right">{p.activeKeys}</td>
                     <td className="px-2 text-caption text-text-3">{p.lastSeenAt ? formatDateTimeEt(p.lastSeenAt) : 'never'}</td>

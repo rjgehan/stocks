@@ -3,7 +3,7 @@ import { describeError, errorBody } from '@/lib/api/errors'
 import { useClosePosition, usePositions } from '@/lib/api/hooks/account'
 import { isDecimal, sign } from '@/lib/format/decimal'
 import { formatMoney } from '@/lib/format/money'
-import { direction, formatPct, formatPrice, formatQty } from '@/lib/format/number'
+import { formatPct, formatPrice, formatQty, moneyDirection } from '@/lib/format/number'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { cx } from '@/components/ui/cx'
@@ -56,13 +56,13 @@ export function MyPositionCard({ symbol }: { symbol: string }) {
               ['Market value', formatMoney(p.marketValue)],
               [
                 'Day P&L',
-                <span key="d" className={DIRECTION_TEXT[direction(p.dayPnl)]}>
+                <span key="d" className={DIRECTION_TEXT[moneyDirection(p.dayPnl)]}>
                   {formatMoney(p.dayPnl, { signed: true })}
                 </span>,
               ],
               [
                 'Total P&L',
-                <span key="t" className={cx(DIRECTION_TEXT[direction(p.unrealizedPnl)])}>
+                <span key="t" className={cx(DIRECTION_TEXT[moneyDirection(p.unrealizedPnl)])}>
                   {formatMoney(p.unrealizedPnl, { signed: true })} ({formatPct(p.unrealizedReturn)})
                 </span>,
               ],

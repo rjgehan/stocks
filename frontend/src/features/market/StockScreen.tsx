@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { usePositions } from '@/lib/api/hooks/account'
 import { useAsset, useBars } from '@/lib/api/hooks/market'
 import { isApiError } from '@/lib/api/problem'
 import type { ChartRange, Side, Timeframe } from '@/lib/api/types'
@@ -20,6 +21,7 @@ import { OrdersTable } from '@/features/account/OrdersTable'
 import { PositionsTable } from '@/features/account/PositionsTable'
 import { TradeSheet } from '@/features/trade/TradeSheet'
 import { TradeTicket } from '@/features/trade/TradeTicket'
+import { canSell } from '@/features/trade/ticketState'
 import { StarButton } from '@/features/watchlist/StarButton'
 import { BidAskBar } from './BidAskBar'
 import { IntervalPicker, effectiveTimeframe } from './IntervalPicker'
@@ -79,6 +81,11 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
   const phone = breakpoint === 'phone'
   const [dockTab, setDockTab] = useState<'POSITIONS' | 'ORDERS'>('POSITIONS')
   const [style, setStyle] = useChartStyle(phone, range)
+  // §22.5: Sell is disabled without a position to sell (it used to open a Buy ticket)
+  const positions = usePositions()
+  const held = positions.data?.find((p) => p.symbol === symbol)
+  const sellable = canSell({ fractionable: false, availableQty: held?.availableQty ?? null })
+  const sellTitle = sellable ? undefined : `You don't own ${symbol}`
   const liveBar = useLiveBar(symbol, range === '1D')
   const live = useMemo(() => ({ bar: liveBar, last: quote?.last ?? null }), [liveBar, quote?.last])
 
@@ -185,7 +192,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
           <Button variant="buy" size="lg" className="flex-1" onClick={() => onTicket('BUY')}>
             Buy
           </Button>
-          <Button variant="sell" size="lg" className="flex-1" onClick={() => onTicket('SELL')}>
+          <Button variant="sell" size="lg" className="flex-1" disabled={!sellable} title={sellTitle} onClick={() => onTicket('SELL')}>
             Sell
           </Button>
         </div>
@@ -208,7 +215,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
               <Button variant="buy" onClick={() => onTicket('BUY')}>
                 Buy
               </Button>
-              <Button variant="sell" onClick={() => onTicket('SELL')}>
+              <Button variant="sell" disabled={!sellable} title={sellTitle} onClick={() => onTicket('SELL')}>
                 Sell
               </Button>
             </>
