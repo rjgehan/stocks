@@ -3189,7 +3189,8 @@ type Rules = { version: string; asOf: Ts;
     gfv: { requiresAck: boolean; settledCashOnlyAt: number; liquidationOnlyAt: number; restrictionDays: number; expiresAfter: string } };
   sessions: { timezone: "America/New_York"; pre: string; regular: string; post: string; earlyClose: string;
     liveIexWindow: string|null; overnight: false };
-  orders: { matrix: { type: OrderType; sessions: string; timeInForce: TimeInForce[]; qtyForms: string[]; notes: string }[];
+  orders: { matrix /* only the types this release accepts: RulesService.AVAILABLE_ORDER_TYPES (M1: MARKET, LIMIT) */:
+      { type: OrderType; sessions: string; timeInForce: TimeInForce[]; qtyForms: string[]; notes: string }[];
     gtcDays: number; maxOpenOrders: number; maxQty: Dec; tick: string; collarPct: Dec; holdPctRegular: Dec; holdPctQueued: Dec;
     fatFingerWarnPct: Dec; priceTooFarPct: Dec; clientOrderIdPattern: string; rationaleRequiredForAi: boolean;
     fractional: { minBuyNotional: Dec; minSellNotional: Dec; minQty: Dec; marketOnly: boolean; dayOnly: true; rthOnly: true; replaceable: false } };
@@ -3275,6 +3276,8 @@ The controller is absent from production by construction (`@Profile("test")`), a
 
 The named payload records are Java records in `com.stocks.contract.realtime.dto` (`TickDto` in `contract.marketdata.dto`, produced by `QuoteDtoMapper`); see the §18.3 package table.
 
+**Publishers.** WS5 (`realtime`) publishes the quote, tick and bars topics (`QuoteFanout`, a `MarketUpdateListener` with its own 100 ms flush thread), `/topic/market.session` (`MarketSessionTopic`: on `SessionChanged` and every 60 s), the user queues (`UserEventPublisher`, from the §5.3 events after commit, on one serial `realtime-events` thread so a player sees ACCEPTED before FILL) and the periodic account push (`AccountTopic`). **`/topic/leaderboard` and `/topic/feed` are published by WS4** next to the data they describe: `LeaderboardServiceImpl` (`LEADERBOARD_RECOMPUTE`, after a recompute that changed any number) and `FeedService` (`FEED_PUBLISHER`, rows whose `visible_at` passed since the last tick), both through `SimpMessageSendingOperations`. WS5 owns the endpoint, the destination rules and the caps for every topic.
+
 **Client resync.** On reconnect, or when `document.visibilityState` returns to visible, the client invalidates `['account']`, `['positions']`, `['orders','OPEN']` and `['leaderboard']` and resubscribes. Missed messages are therefore harmless, and there is no durable outbox.
 
 **Client connection lifetime.** Reconnects use stompjs's own exponential backoff (`reconnectDelay: 1000`, `reconnectTimeMode: EXPONENTIAL`, `maxReconnectDelay: 30000`; the library ignores changes to `reconnectDelay` made between attempts). The STOMP session is authenticated once, at the handshake, so it belongs to one signed-in session: sign-out and any 401 from the API call `stopRealtime()`, which closes the socket and drops every subscription and resync callback; the next sign-in opens a fresh connection, so `/user/queue/*` can never deliver the previous player's messages.
@@ -3308,7 +3311,7 @@ The named payload records are Java records in `com.stocks.contract.realtime.dto`
 
 **Identity (transport `contextExtractor`).** The auto-configured `WebMvcStatelessServerTransport` never sets a `contextExtractor`, and that is the only hook for passing the caller into a stateless tool. `McpConfig` therefore overrides the `WebMvcStatelessServerTransport` bean (it is `@ConditionalOnMissingBean`; the auto-configured router function then serves ours), built with `.jsonMapper(new JacksonMcpJsonMapper(bootMapper)).messageEndpoint(${spring.ai.mcp.server.streamable-http.mcp-endpoint}).contextExtractor(req -> …).securityValidator(…)` (Origin, below). The extractor runs on the servlet request (already authenticated by the bearer filter in chain 2) and puts two entries into `McpTransportContext`: the `PlayerPrincipal` from `SecurityContextHolder`, and a `RequestMeta` (built by `security.RequestMetas`: channel `MCP_KEY` for a key, `MCP_OAUTH` in Phase 2, `WEB` for a browser session; request id, IP, user agent; plus the MCP client name), under the keys `CurrentPlayer.PRINCIPAL_KEY` and `REQUEST_META_KEY` (`CurrentPlayer.mcpContext(principal, meta)` builds it). `McpToolHandler` hands each tool a copy whose `RequestMeta.mcpTool` is the tool's name. Tools read them with `CurrentPlayer.require(ctx)` and `CurrentPlayer.requestMeta(ctx)`. Note: with `type=SYNC` in a servlet environment Spring AI sets `immediateExecution(true)`, so tools currently run on the servlet thread and `SecurityContextHolder` would happen to work too; tools must still use `ctx` (ASYNC or any offloading would break the thread-local). **Resolved and verified (§28 #13):** `McpServerIT` drives the real server on a random port with the MCP Java SDK client (`initialize`, `tools/list`, `tools/call whoami` with `Authorization: Bearer stk_…`): `whoami` returns the key's player, and a test-only probe tool reads the principal, channel `MCP_KEY`, `mcpClient`, `mcpTool`, request id and IP straight from the context; without a key `/mcp` answers 401 with `WWW-Authenticate`.
 
-**MCP client name.** STATELESS mode has no session, and `clientInfo` arrives only on `initialize`, so later `tools/call` requests do not carry it. `McpClientNames` (WS5) fills `RequestMeta.mcpClient` in this order: the `X-Stocks-Client` request header (documented in `docs/agents.md`); otherwise the `clientInfo.name/version` of the last `initialize` seen for that `apiKeyId` (Caffeine, 24 h); otherwise the `User-Agent`. It is clipped to 120 characters. The `initialize` call itself writes an `AUTH`/`MCP_INITIALIZE` audit row with the full `clientInfo`. (Phase 0 implements the header and `User-Agent` steps; the `initialize` cache and its audit row are Phase 1. The extractor cannot read the JSON-RPC body, which the transport consumes later, so capturing `clientInfo` needs a wrapper around the server's `McpStatelessServerHandler` or a body-caching filter.)
+**MCP client name.** STATELESS mode has no session, and `clientInfo` arrives only on `initialize`, so later `tools/call` requests do not carry it. `McpClientNames` (WS5) fills `RequestMeta.mcpClient` in this order: the `X-Stocks-Client` request header (documented in `docs/agents.md`); otherwise the `clientInfo.name/version` of the last `initialize` seen for that `apiKeyId` (Caffeine, 24 h); otherwise the `User-Agent`. It is clipped to 120 characters. The `initialize` call itself writes an `AUTH`/`MCP_INITIALIZE` audit row with the full `clientInfo`. The extractor cannot read the JSON-RPC body, which the transport consumes later, so `McpInitializeCapture` (a servlet filter after Spring Security, `POST` to the MCP endpoint only) reads the body once (up to 64 KiB; a larger body streams through uninspected), hands the transport a request that replays it unchanged, and for an authenticated `initialize` stores `clientInfo.name/version` for the key (browser sessions are not keyed) and writes the audit row (`detail = {clientInfo: {name, version, title}, protocolVersion}`).
 
 **Tool conventions.**
 - Tools are public `@McpTool` methods in `com.stocks.mcp.tools`, on beans that implement the marker `McpToolSet`, with `generateOutputSchema = true` (the boot fails otherwise: every tool returns `structuredContent`).
@@ -3326,7 +3329,7 @@ The named payload records are Java records in `com.stocks.contract.realtime.dto`
 
 ### 20.2 Conventions
 
-- **Inputs** are snake_case. **Outputs** are the REST DTOs of §18.3 (camelCase), returned as `structuredContent` plus a JSON text block, both produced by Boot's `JsonMapper` (`McpToolHandler`, §20.1). Bars are compact (`columns` plus `rows`). Decimal inputs keep Spring AI's generated input schema for now (`BigDecimal` → `number`); Phase 1 widens them to `["string", "number"]` when the order tools land.
+- **Inputs** are snake_case. **Outputs** are the REST DTOs of §18.3 (camelCase), returned as `structuredContent` plus a JSON text block, both produced by Boot's `JsonMapper` (`McpToolHandler`, §20.1). Bars are compact (`columns` plus `rows`). Decimal inputs are advertised as `{"type": ["string", "number"]}` and enum inputs list their wire values (`McpInputSchemas`, applied to Spring AI's generated input schema), because MCP SDK 2.0.0 validates every call's arguments against the input schema before the tool runs. **Results are objects:** MCP requires `structuredContent` to be a JSON object with an `"type": "object"` output schema, so a tool whose REST response is a bare array returns it under one member (`mcp.tools.McpOutputs`): `get_calendar` `{days}`, `search_symbols` `{assets}`, `get_positions` `{positions}`, `get_runs` `{runs}`, `list_players` `{players}`, `get_watchlists` `{watchlists}`; the members are the §18.3 DTOs unchanged.
 - **Hints.** Every tool sets all four hints explicitly, with `openWorldHint=false`. Read tools set `readOnlyHint=true, destructiveHint=false, idempotentHint=true`; without this, ChatGPT treats them as writes needing confirmation.
 - **Errors.** Errors come back as `isError=true` with text JSON `{code, message, hint, fields, retry_after_s}` (every member present; `fields` items are `{field, code, message}`), using the same `ErrorCode` values as REST (`McpErrors`). An argument that is missing or does not convert is `VALIDATION_FAILED` with the field; an unexpected exception is `INTERNAL_ERROR` without details (logged with the request id).
 - **Untrusted text.** Other players' text and news arrive in `untrusted` objects (§17.8).
@@ -3345,8 +3348,8 @@ Read tools (RO): `readOnlyHint=true, destructiveHint=false, idempotentHint=true,
 | 1 | `whoami` | none (`account` is null without `account:read`) | `{}` | `{me: Me, account: Account, rateLimits: {readsRemaining, writesRemainingMinute, writesRemainingDay}}` (from `RateLimitService.remaining`). Java: `mcp.tools.WhoamiDto`. `account` is null until the player has an ACTIVE account (like `Me.accountId`) and when the caller lacks `account:read`; until WS1/WS3 replace the Day-0 stubs, `account` and `rateLimits` are null instead of a 501 |
 | 2 | `get_rules` | `market:read` | `{}` | `Rules` |
 | 3 | `get_market_clock` | `market:read` | `{}` | `Clock` |
-| 4 | `get_calendar` | `market:read` | `{start: date, end: date}` (≤ 400 days) | `TradingDay[]` |
-| 5 | `search_symbols` | `market:read` | `{query: string(1..50), limit?: int(1..20)=10}` | `AssetSummary[]` |
+| 4 | `get_calendar` | `market:read` | `{start: date, end: date}` (≤ 400 days) | `{days: TradingDay[]}` |
+| 5 | `search_symbols` | `market:read` | `{query: string(1..50), limit?: int(1..20)=10}` | `{assets: AssetSummary[]}` |
 | 6 | `get_asset` | `market:read` | `{symbol: string}` | `Asset` |
 | 7 | `get_quotes` | `market:read` | `{symbols: string[1..50]}` | `{quotes: Quote[]}` (also takes a 60 s LIST lease per symbol) |
 | 8 | `get_snapshot` | `market:read` | `{symbol}` | `Snapshot` |
@@ -3355,23 +3358,23 @@ Read tools (RO): `readOnlyHint=true, destructiveHint=false, idempotentHint=true,
 | 11 | `get_news` | `market:read` | `{symbols?: string[≤10], limit?: int(1..20)=10, before?: datetime}` | `{items: NewsItem[]}` |
 | 12 | `get_fundamentals` | `market:read` | `{symbol}` | `Fundamentals` or an error `NOT_FOUND` |
 | 13 | `get_account` | `account:read` | `{}` | `Account` |
-| 14 | `get_positions` | `account:read` | `{}` | `Position[]` |
+| 14 | `get_positions` | `account:read` | `{}` | `{positions: Position[]}` |
 | 15 | `get_orders` | `account:read` | `{status?: "OPEN"\|"CLOSED"\|"ALL"="OPEN", symbol?: string, limit?: int(1..100)=50, cursor?: string}` | `Page<Order>` |
 | 16 | `get_order` | `account:read` | `{order_id?: string, client_order_id?: string}` (exactly one) | `Order` with executions and events |
 | 17 | `get_executions` | `account:read` | `{symbol?: string, from?: datetime, to?: datetime, limit?: int(1..100)=50, cursor?: string}` | `Page<Execution>` |
 | 18 | `get_activity` | `account:read` | `{types?: ActivityType[], from?: date, to?: date, limit?: int(1..100)=50, cursor?: string}` | `Page<Activity>` |
 | 19 | `get_violations` | `account:read` | `{}` | `{restriction, restrictionUntil, active: Violation[], expired: Violation[]}` |
-| 20 | `get_runs` | `account:read` | `{}` | `Run[]` |
+| 20 | `get_runs` | `account:read` | `{}` | `{runs: Run[]}` |
 | 21 | `get_portfolio_history` | `account:read` | `{range: "1D"\|"1W"\|"1M"\|"3M"\|"YTD"\|"1Y"\|"ALL"}` | `PortfolioHistory` |
 | 22 | `get_notifications` | `account:read` | `{unread_only?: bool=false, limit?: int(1..100)=50, cursor?: string}` | `Page<Notification>` (orders cancelled by a corporate action, GFVs issued, admin deposits, …) |
 | 23 | `preview_order` | `account:read` | same as `place_order`; `client_order_id` and `rationale` optional | `Preview` |
 | 24 | `get_leaderboard` | `league:read` | `{period?: "TODAY"\|"WEEK"\|"MONTH"\|"YTD"\|"SEASON"\|"ALL"="WEEK", metric?: "RETURN"\|"PNL"="RETURN", kind?: "ALL"\|"HUMAN"\|"AI"="ALL", limit?: int(1..100)=50}` | `Leaderboard` |
-| 25 | `list_players` | `league:read` | `{kind?: "HUMAN"\|"AI"}` | `PlayerSummary[]` |
+| 25 | `list_players` | `league:read` | `{kind?: "HUMAN"\|"AI"}` | `{players: PlayerSummary[]}` |
 | 26 | `get_player_profile` | `league:read` | `{handle: string}` | `PlayerProfile` |
 | 27 | `get_player_history` | `league:read` | `{handle: string, range: "1D"\|"1W"\|"1M"\|"3M"\|"YTD"\|"1Y"\|"ALL"}` | `PublicHistory` |
 | 28 | `get_player_trades` | `league:read` | `{handle: string, limit?: int(1..100)=50, cursor?: string}` | `Page<PublicTrade>` (delayed) |
 | 29 | `get_league_feed` | `league:read` | `{limit?: int(1..100)=50, cursor?: string}` | `Page<FeedItem>` |
-| 30 | `get_watchlists` | `account:read` | `{}` | `Watchlist[]` |
+| 30 | `get_watchlists` | `account:read` | `{}` | `{watchlists: Watchlist[]}` |
 
 Write tools:
 
@@ -3386,7 +3389,7 @@ Write tools:
 | 37 | `delete_watchlist` | `trade` | RO=false, destructive=true, idempotent=true | `{name*}` | `{deleted: boolean}` (false if it did not exist) |
 | 38 | `mark_notifications_read` | `account:read` | RO=false, destructive=false, idempotent=true | `{ids?: string[], all?: bool}` (exactly one) | `{marked: int}` |
 
-Decimal inputs are accepted as strings or numbers, and numbers are parsed as `BigDecimal` (§6.3). There are no admin tools.
+Decimal inputs are accepted as strings or numbers, and numbers are parsed as `BigDecimal` (§6.3). There are no admin tools. A tool whose backing contract is still a Day-0 stub (or a default method a workstream has not overridden yet, e.g. `PerformanceQueries.feed`) answers the error result `NOT_IMPLEMENTED`; the catalog, schemas and order never change with what has shipped.
 
 ### 20.4 Connection recipes (`docs/agents.md`, WS5)
 

@@ -247,7 +247,10 @@ class McpServerIT {
       assertThat(init.capabilities().prompts()).isNull();
 
       List<Tool> tools = client.listTools().tools();
-      assertThat(tools).extracting(Tool::name).containsExactly("whoami", PROBE, SCOPED_PROBE); // probes: this test's
+      // the 38 catalog tools in §20.3 order, then this test's two probes
+      List<String> expected = new java.util.ArrayList<>(McpToolCatalog.ORDER);
+      expected.addAll(List.of(PROBE, SCOPED_PROBE));
+      assertThat(tools).extracting(Tool::name).containsExactlyElementsOf(expected);
       Tool whoami = tools.get(0);
       assertThat(whoami.title()).isEqualTo("Who am I");
       assertThat(whoami.annotations().readOnlyHint()).isTrue();
@@ -354,6 +357,55 @@ class McpServerIT {
     assertThat(r.headers().firstValue(RequestIds.HEADER)).hasValue("it-req-42");
   }
 
+  static String initialize(String clientName, String version, String title) {
+    return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\","
+        + "\"capabilities\":{},\"clientInfo\":{\"name\":\"" + clientName + "\",\"version\":\"" + version + "\""
+        + (title == null ? "" : ",\"title\":\"" + title + "\"") + "}}}";
+  }
+
+  @Test
+  void theLastInitializeNamesTheClientOfLaterCallsAndIsAudited() throws Exception {
+    // §20.1: no X-Stocks-Client header, so later calls with this key carry the clientInfo of its initialize
+    HttpResponse<String> init = post(botKey, initialize("claude-code", "2.1.0", "Claude Code"),
+        Map.of("User-Agent", "node"));
+    assertThat(init.statusCode()).isEqualTo(200);
+    assertThat(jsonMapper.readTree(init.body()).get("result").get("protocolVersion").asString())
+        .isEqualTo("2025-11-25");
+
+    JsonNode ctx = jsonMapper.readTree(post(botKey, call(PROBE), Map.of("User-Agent", "node")).body())
+        .get("result").get("structuredContent");
+    assertThat(ctx.get("mcpClient").asString()).isEqualTo("claude-code/2.1.0");
+    // the header still wins
+    JsonNode withHeader = jsonMapper.readTree(post(botKey, call(PROBE),
+        Map.of(McpClientNames.HEADER, "agent-runner/claude")).body()).get("result").get("structuredContent");
+    assertThat(withHeader.get("mcpClient").asString()).isEqualTo("agent-runner/claude");
+
+    List<String> row = jdbc.sql("""
+            SELECT category, outcome, channel, mcp_client, detail
+              FROM audit_log WHERE action = 'MCP_INITIALIZE' AND actor_player_id = ?""")
+        .param(bot.id())
+        .query((rs, n) -> List.of(rs.getString("category"), rs.getString("outcome"), rs.getString("channel"),
+            rs.getString("mcp_client"), rs.getString("detail")))
+        .single();
+    assertThat(row.subList(0, 4)).containsExactly("AUTH", "OK", "MCP_KEY", "claude-code/2.1.0");
+    JsonNode detail = jsonMapper.readTree(row.get(4));
+    assertThat(detail.get("clientInfo").get("name").asString()).isEqualTo("claude-code");
+    assertThat(detail.get("clientInfo").get("title").asString()).isEqualTo("Claude Code");
+    assertThat(detail.get("protocolVersion").asString()).isEqualTo("2025-11-25");
+  }
+
+  @Test
+  void largeBodiesStreamThroughUninspected() throws Exception {
+    String huge = "x".repeat(McpInitializeCapture.MAX_BODY + 10);
+    HttpResponse<String> init = post(botKey, initialize("big-client", "1", huge), Map.of());
+    assertThat(init.statusCode()).isEqualTo(200);
+    assertThat(jsonMapper.readTree(init.body()).get("result").get("serverInfo").get("name").asString())
+        .isEqualTo("stocks");
+    JsonNode ctx = jsonMapper.readTree(post(botKey, call(PROBE), Map.of("User-Agent", "ua/1")).body())
+        .get("result").get("structuredContent");
+    assertThat(ctx.get("mcpClient").asString()).as("not remembered").isEqualTo("ua/1");
+  }
+
   @Test
   void rawWhoamiIsBootJsonDecimalsAsStringsAndNullsPresent() throws Exception {
     HttpResponse<String> r = post(botKey, call("whoami"), Map.of());
@@ -410,6 +462,65 @@ class McpServerIT {
     HttpResponse<String> notification = post(botKey,
         "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}", Map.of());
     assertThat(notification.statusCode()).isEqualTo(202);
+  }
+
+  // ------------------------------------------------------------------------------------------- §20.3 tools, end to end
+
+  @Test
+  void catalogToolsRunThroughTheRealServerAndPassItsOutputValidation() {
+    String marketOnly = fx.apiKey(bot, Set.of(Scopes.MARKET_READ), properties.security().apiKeyPepper());
+    try (McpSyncClient client = client(marketOnly)) {
+      client.initialize();
+      // the SDK server validates every structuredContent against the tool's outputSchema (an invalid one would
+      // come back as isError with "output validation failed")
+      CallToolResult rules = client.callTool(new CallToolRequest("get_rules", Map.of()));
+      assertThat(rules.isError()).as(String.valueOf(rules.content())).isFalse();
+      assertThat(jsonMapper.valueToTree(rules.structuredContent()).get("account").get("startingCash").asString())
+          .isEqualTo("500.00");
+
+      CallToolResult quotes = client.callTool(new CallToolRequest("get_quotes",
+          Map.of("symbols", List.of("AAPL", "spy"))));
+      assertThat(quotes.isError()).as(String.valueOf(quotes.content())).isFalse();
+      JsonNode q = jsonMapper.valueToTree(quotes.structuredContent()).get("quotes");
+      assertThat(q.get(1).get("symbol").asString()).isEqualTo("SPY");
+      assertThat(q.get(0).get("quality").asString()).as("Day-0 market data knows nothing").isEqualTo("NONE");
+
+      CallToolResult order = client.callTool(new CallToolRequest("place_order", Map.of("client_order_id", "c-1",
+          "symbol", "AAPL", "side", "BUY", "type", "MARKET", "notional", "10.00", "rationale", "test")));
+      assertThat(order.isError()).isTrue();
+      assertThat(jsonMapper.readTree(((TextContent) order.content().get(0)).text()).get("code").asString())
+          .isEqualTo("FORBIDDEN_SCOPE");
+    }
+    try (McpSyncClient client = client(botKey)) {
+      client.initialize();
+      CallToolResult notifications = client.callTool(new CallToolRequest("get_notifications",
+          Map.of("unread_only", true, "limit", 5)));
+      assertThat(notifications.isError()).as(String.valueOf(notifications.content())).isFalse();
+      assertThat(jsonMapper.valueToTree(notifications.structuredContent()).get("items").isArray()).isTrue();
+
+      // OrderService is still WS3's Day-0 stub on this branch: a clean NOT_IMPLEMENTED, never a crash
+      CallToolResult order = client.callTool(new CallToolRequest("place_order", Map.of("client_order_id", "c-2",
+          "symbol", "AAPL", "side", "BUY", "type", "MARKET", "notional", 10, "rationale", "test")));
+      assertThat(order.isError()).isTrue();
+      assertThat(jsonMapper.readTree(((TextContent) order.content().get(0)).text()).get("code").asString())
+          .isIn("NOT_IMPLEMENTED", "ACCOUNT_NOT_FOUND");
+    }
+  }
+
+  @Test
+  void argumentsThatViolateTheInputSchemaAreRefusedByTheSdkBeforeTheToolRuns() {
+    try (McpSyncClient client = client(botKey)) {
+      client.initialize();
+      CallToolResult r = client.callTool(new CallToolRequest("get_bars", Map.of("symbol", "AAPL",
+          "timeframe", "MIN1")));
+      assertThat(r.isError()).isTrue();
+      assertThat(((TextContent) r.content().get(0)).text()).contains("input validation failed");
+      CallToolResult ok = client.callTool(new CallToolRequest("get_bars", Map.of("symbol", "AAPL",
+          "timeframe", "1Min")));
+      assertThat(ok.isError()).isTrue();   // passes the schema; the Day-0 market data has no such symbol
+      assertThat(jsonMapper.readTree(((TextContent) ok.content().get(0)).text()).get("code").asString())
+          .isEqualTo("SYMBOL_NOT_FOUND");
+    }
   }
 
   // ------------------------------------------------------------------------------------------- wiring (§28 #20)

@@ -105,15 +105,15 @@
 - [x] REST: `/leaderboard`, `/players/**`, `/feed`, `/account/history`, `/watchlists/**`
 
 ### WS5: Agents and realtime
-- [ ] STOMP `/ws`: session auth, CSRF on CONNECT (raw cookie token, non-masking `csrfChannelInterceptor`), heartbeats, subscription caps, leases (quote and `bars.{SYM}.1Min` → VIEWING, tick → LIST)
-- [ ] `QuoteFanout` as a `MarketUpdateListener` (≤ 4/s and ≤ 1/s), bars topic, session topic, leaderboard signal, feed topic
-- [ ] `UserEventPublisher` (`/user/queue/orders|account|notifications|admin`) and `NotificationService` (sole writer, idempotent by `source_ref`) with `/me/notifications`
-- [ ] `RulesService` and `GET /rules` (the bots' source of truth, versioned)
-- [ ] MCP server (STATELESS, `/mcp`): `McpConfig` (Boot `JsonMapper` as `mcpServerJsonMapper`, transport override with `contextExtractor`, output schemas with decimal strings); all 38 tools of §20.3 with explicit hints, fixed order, snake_case inputs, the `untrusted` envelope, stable error codes, rate limits, audit; `mcpClient` from `X-Stocks-Client` / last `initialize` / User-Agent
-- [ ] MCP tests: `tools/list` snapshot, identity, JSON contract (decimal strings, nulls, `outputSchema` validation), tool coverage vs `docs/openapi.json`, idempotent `place_order`, `RATIONALE_REQUIRED`, no admin tools
+- [x] STOMP `/ws`: session auth, CSRF on CONNECT (raw cookie token, non-masking `csrfChannelInterceptor`), heartbeats, subscription caps, leases (quote and `bars.{SYM}.1Min` → VIEWING, tick → LIST)
+- [x] `QuoteFanout` as a `MarketUpdateListener` (≤ 4/s and ≤ 1/s), bars topic, session topic, leaderboard signal, feed topic (the leaderboard signal and feed topic are published by WS4's `LeaderboardServiceImpl` and `FeedService`, §19)
+- [x] `UserEventPublisher` (`/user/queue/orders|account|notifications|admin`) and `NotificationService` (sole writer, idempotent by `source_ref`) with `/me/notifications` (`/user/queue/admin` is subscribable by admins; no `AdminAlertDto` source publishes to it yet)
+- [x] `RulesService` and `GET /rules` (the bots' source of truth, versioned) (M1 publishes only MARKET and LIMIT in the order matrix)
+- [x] MCP server (STATELESS, `/mcp`): `McpConfig` (Boot `JsonMapper` as `mcpServerJsonMapper`, transport override with `contextExtractor`, output schemas with decimal strings); all 38 tools of §20.3 with explicit hints, fixed order, snake_case inputs, the `untrusted` envelope, stable error codes, rate limits, audit; `mcpClient` from `X-Stocks-Client` / last `initialize` / User-Agent
+- [x] MCP tests: `tools/list` snapshot, identity, JSON contract (decimal strings, nulls, `outputSchema` validation), tool coverage vs `docs/openapi.json`, idempotent `place_order`, `RATIONALE_REQUIRED`, no admin tools (idempotent replay, `RATIONALE_REQUIRED` and rate limits are WS3/WS1 behavior passed through; covered with fakes)
 - [ ] **Agent runner** (`tools/agent-runner/`, §20.5): compose service `agent-runner` (profile `agents`); one model-agnostic loop for Claude and ChatGPT; same prompt, tools and schedule (09:45, 12:30, 15:30 ET); per-run tool-call and time caps; per-bot daily dollar cap; notes-file memory; JSONL run log
-- [ ] `docs/agents.md`: agent runner, Claude Code, Claude API MCP connector and OpenAI Responses recipes; optional claude.ai custom connector with "No sign-in" + Request headers (beta); why there is no ChatGPT-app or GPT-Actions route in Phase 1; the shared bot system prompt; `X-Stocks-Client`
-- [ ] `docs/rules.md`: the player-facing rulebook (mirrors `/rules`, with [V]/[U] notes)
+- [x] `docs/agents.md`: agent runner, Claude Code, Claude API MCP connector and OpenAI Responses recipes; optional claude.ai custom connector with "No sign-in" + Request headers (beta); why there is no ChatGPT-app or GPT-Actions route in Phase 1; the shared bot system prompt; `X-Stocks-Client`
+- [x] `docs/rules.md`: the player-facing rulebook (mirrors `/rules`, with [V]/[U] notes)
 - [ ] **Live verification:** a Claude bot (Claude Code, API key) and a GPT bot (Responses API, API key) each place, inspect and cancel orders on the deployed instance
 
 ### WS6: Frontend

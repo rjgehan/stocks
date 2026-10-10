@@ -1,0 +1,39 @@
+# MCP tool coverage (ARCHITECTURE §20.3, checked by McpToolCoverageTest): every non-admin GET in docs/openapi.json
+# maps to an MCP tool (`tools`) or is on the explicit exclusion list (`excluded`, with the reason). Path variables
+# match by position, whatever their name ({orderId} = {id}). Add a row in the PR that adds a GET endpoint.
+tools:
+  /api/v1/rules: get_rules
+  /api/v1/market/clock: get_market_clock
+  /api/v1/market/calendar: get_calendar
+  /api/v1/market/movers: get_movers
+  /api/v1/assets/search: search_symbols
+  /api/v1/assets/{symbol}: get_asset
+  /api/v1/quotes: get_quotes
+  /api/v1/snapshots/{symbol}: get_snapshot
+  /api/v1/bars/{symbol}: get_bars
+  /api/v1/news: get_news
+  /api/v1/account: get_account
+  /api/v1/account/positions: get_positions
+  /api/v1/account/activities: get_activity
+  /api/v1/account/executions: get_executions
+  /api/v1/account/history: get_portfolio_history
+  /api/v1/account/violations: get_violations
+  /api/v1/account/runs: get_runs
+  /api/v1/orders: get_orders
+  /api/v1/orders/{orderId}: get_order
+  /api/v1/watchlists: get_watchlists
+  /api/v1/leaderboard: get_leaderboard
+  /api/v1/players: list_players
+  /api/v1/players/{handle}: get_player_profile
+  /api/v1/players/{handle}/history: get_player_history
+  /api/v1/players/{handle}/trades: get_player_trades
+  /api/v1/feed: get_league_feed
+  /api/v1/me/notifications: get_notifications
+excluded:
+  /api/v1/auth/csrf: browser CSRF bootstrap
+  /api/v1/me: whoami returns the same Me
+  /api/v1/me/api-keys: session only (an agent cannot manage keys)
+  /api/v1/assets/{symbol}/logo: binary image
+  /api/v1/market/indices: get_quotes with SPY, QQQ, DIA, IWM
+  /api/v1/account/positions/{symbol}: get_positions
+  /api/v1/orders/by-client-id/{clientOrderId}: get_order with client_order_id

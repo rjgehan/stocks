@@ -1,0 +1,159 @@
+{
+  "version" : "1.9e213cace8af",
+  "asOf" : "2026-10-09T14:00:00.000Z",
+  "account" : {
+    "type" : "CASH",
+    "startingCash" : "500.00",
+    "settlement" : "T+1",
+    "pdtEnforced" : false,
+    "shortSelling" : false,
+    "buyingPowerFormula" : "Cash account: buying power = total cash (settled + unsettled sale proceeds) − open buy-order holds. Under SETTLED_CASH_ONLY it is settled cash − holds (never below 0); under LIQUIDATION_ONLY or FROZEN it is 0.",
+    "depositsSettleImmediately" : true,
+    "gfv" : {
+      "requiresAck" : true,
+      "settledCashOnlyAt" : 3,
+      "liquidationOnlyAt" : 4,
+      "restrictionDays" : 90,
+      "expiresAfter" : "P1Y1D"
+    }
+  },
+  "sessions" : {
+    "timezone" : "America/New_York",
+    "pre" : "04:00–09:30",
+    "regular" : "09:30–16:00",
+    "post" : "16:00–20:00",
+    "earlyClose" : "Early-close days (e.g. Nov 27 and Dec 24, 2026): regular session ends 13:00, after-hours 17:00",
+    "liveIexWindow" : null,
+    "overnight" : false
+  },
+  "orders" : {
+    "matrix" : [ {
+      "type" : "MARKET",
+      "sessions" : "REGULAR (entered outside it, queues for the next 09:30 ET open)",
+      "timeInForce" : [ "DAY" ],
+      "qtyForms" : [ "SHARES", "FRACTIONAL_SHARES", "NOTIONAL" ],
+      "notes" : "Fills at the touch within a 5% collar. Buy holds: 102% of the ask in REGULAR, 115% of the reference price when queued. A notional buy is all-in: principal + fees ≤ notional."
+    }, {
+      "type" : "LIMIT",
+      "sessions" : "REGULAR; also PRE and POST when extendedHours=true",
+      "timeInForce" : [ "DAY", "GTC" ],
+      "qtyForms" : [ "SHARES" ],
+      "notes" : "Marketable on arrival: fills at the touch (price improvement). Resting: fills at the limit. GTC lasts 60 days."
+    } ],
+    "gtcDays" : 60,
+    "maxOpenOrders" : 50,
+    "maxQty" : "200000",
+    "tick" : "$0.01 for prices at or above $1.00; $0.0001 below $1.00 (Reg NMS 612). Limit, stop and trail amounts must be on tick.",
+    "collarPct" : "5",
+    "holdPctRegular" : "102",
+    "holdPctQueued" : "115",
+    "fatFingerWarnPct" : "5",
+    "priceTooFarPct" : "50",
+    "clientOrderIdPattern" : "^[A-Za-z0-9._:-]{1,64}$",
+    "rationaleRequiredForAi" : true,
+    "fractional" : {
+      "minBuyNotional" : "1.00",
+      "minSellNotional" : "0.01",
+      "minQty" : "0.00001",
+      "marketOnly" : true,
+      "dayOnly" : true,
+      "rthOnly" : true,
+      "replaceable" : false
+    }
+  },
+  "execution" : {
+    "latency" : "Every order waits 250 ms + 100–500 ms of seeded jitter before it can fill, and only quotes confirmed after that instant count (no look-ahead). Humans and bots get identical treatment.",
+    "qualityLadder" : [ "REALTIME_CONSOLIDATED: two-sided consolidated quote (SIP NBBO on the paid feed, or SIM).", "REALTIME_SINGLE_VENUE: IEX top of book, two-sided, not crossed, and no wider than the symbol's liquidity tier allows (10/40/150 bps for MEGA/MID/SMALL).", "SYNTHETIC: built around the freshest eligible consolidated print (≤ 10 s in REGULAR, ≤ 60 s in PRE/POST) with a tier half-spread; size 100.", "Otherwise the order waits (AWAITING_QUOTE): market orders never fill on stale data." ],
+    "freshness" : {
+      "regularConfirmed" : "PT15S",
+      "extConfirmed" : "PT2M",
+      "regularExchangeAge" : "PT5M",
+      "extExchangeAge" : "PT15M",
+      "consolidatedPrintRegular" : "PT10S",
+      "consolidatedPrintExt" : "PT1M",
+      "extHoursRequireRealQuotes" : false,
+      "restingRequiresPrint" : false
+    },
+    "partialFills" : "Marketable orders fill at the touch up to the displayed size, then walk the book in steps of half a spread (whole shares; at most 10 levels and never beyond the limit or the 5% market collar). Fractional and notional orders fill in one piece at the touch. Resting limits fill at the limit price when the quote crosses it or a print trades through it.",
+    "liquiditySharedAcrossPlayers" : false
+  },
+  "fees" : [ {
+    "code" : "CAT",
+    "appliesTo" : "BOTH",
+    "basis" : "SHARES",
+    "rate" : "0.000003000000",
+    "rounding" : "SUBCENT_ZERO",
+    "maxPerOrder" : null,
+    "effectiveFrom" : "2026-01-01",
+    "effectiveTo" : null,
+    "note" : "CAT Fee 2026-1 per executed share [V to 2026-12-31; U 2027]"
+  }, {
+    "code" : "SEC",
+    "appliesTo" : "SELL",
+    "basis" : "PRINCIPAL",
+    "rate" : "0.000020600000",
+    "rounding" : "CEIL_CENT",
+    "maxPerOrder" : null,
+    "effectiveFrom" : "2026-04-04",
+    "effectiveTo" : null,
+    "note" : "SEC Section 31 $20.60 per $1M (fee rate advisory 2026-2) [V]; changes ~60d after FY2027 appropriation [U]"
+  }, {
+    "code" : "TAF",
+    "appliesTo" : "SELL",
+    "basis" : "SHARES",
+    "rate" : "0.000000000000",
+    "rounding" : "HALF_UP_CENT",
+    "maxPerOrder" : null,
+    "effectiveFrom" : "2026-10-01",
+    "effectiveTo" : "2026-12-31",
+    "note" : "FINRA TAF paused Q4 2026, SR-FINRA-2026-021 [V]"
+  }, {
+    "code" : "TAF",
+    "appliesTo" : "SELL",
+    "basis" : "SHARES",
+    "rate" : "0.000195000000",
+    "rounding" : "HALF_UP_CENT",
+    "maxPerOrder" : "9.79",
+    "effectiveFrom" : "2027-01-01",
+    "effectiveTo" : null,
+    "note" : "FINRA TAF resumes 2027 [U: verify rate]"
+  } ],
+  "rateLimits" : {
+    "scope" : "Per player, shared across all of a player's keys and channels (web, REST, MCP).",
+    "readsPerMinute" : {
+      "session" : 600,
+      "apiKeyOrMcp" : 120,
+      "apiKeyOrMcpBurst" : 30
+    },
+    "heavyReadsPerMinute" : {
+      "session" : 120,
+      "apiKeyOrMcp" : 30
+    },
+    "heavyReads" : "bars, portfolio history, leaderboard, player profiles",
+    "orderWritesPerMinute" : 20,
+    "orderWritesPerDay" : 300,
+    "orderWrites" : "place, replace, cancel, cancel-all, close position; an idempotent replay and a preview are free",
+    "openOrdersPerAccount" : 50,
+    "realtime" : {
+      "sessionsPerPlayer" : 5,
+      "marketSubscriptionsPerSession" : 60
+    },
+    "onLimit" : "HTTP 429 RATE_LIMITED with Retry-After; MCP tools return retry_after_s"
+  },
+  "leaderboard" : {
+    "returnDefinition" : "Time-weighted return from unit values (TWR = U(end) / U(start) − 1): deposits, withdrawals and resets never move it.",
+    "pnlDefinition" : "Net-contribution P&L: change in (equity − net deposits) over the period; it sums across resets.",
+    "pnlDayEnds" : "20:00 ET (17:00 on early-close days)",
+    "minFills" : 5,
+    "minSymbols" : 2,
+    "ties" : "Equal returns (within 1e-8) rank by P&L, then by who opened their first account earlier.",
+    "benchmark" : "SPY",
+    "resetPolicy" : "A reset never erases a loss from any leaderboard period: the new run continues the old run's unit value. Only a new period starts from 0%."
+  },
+  "social" : {
+    "tradeFeedDelay" : "PT15M",
+    "holdingsVisibility" : "EOD_WEIGHTS"
+  },
+  "dataSources" : [ "SIM: simulated prices (deterministic, not real quotes). The app shows a SIM badge." ],
+  "fairness" : [ "Same rules for all: the same starting cash, market data, latency, fill rules, fees and write limits on every channel, for humans and bots alike. Players never trade with each other.", "Deposits are public: net contributions and flows are shown on every leaderboard row, and admin deposits never move anyone's return. Resets are counted publicly, and a reset never erases a loss.", "No live copying: other players' trades appear after the feed delay (labeled \"via API\" when an API key or MCP placed them); holdings are shown only as previous-close weights; working orders are never visible.", "Rationales: AI rationales become public with the delayed trade; a human's note stays private unless they tick \"Share note\".", "Kill switch: the admin can freeze any player, and every such action is audited. Bots can never act as admin." ]
+}

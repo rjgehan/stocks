@@ -13,15 +13,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.ai.mcp.annotation.McpTool;
-import org.springframework.ai.mcp.annotation.method.tool.utils.McpJsonSchemaGenerator;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.util.StringUtils;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Builds the MCP tool list from the {@code @McpTool} methods of the {@code com.stocks.mcp.tools} beans (§20.1):
- * name, title, description and the four hints from the annotation; the input schema from Spring AI's generator; the
+ * name, title, description and the four hints from the annotation; the input schema from Spring AI's generator,
+ * post-processed by {@link McpInputSchemas} (decimals as strings or numbers, wire-value enums); the
  * output schema from the return type, post-processed by {@link McpOutputSchemas}; the call handler is
  * {@link McpToolHandler} (Boot's {@code JsonMapper}). Tools are registered in the <b>fixed order of §20.3</b>
  * ({@link #ORDER}); a tool that is not in the catalog fails the boot. Every tool has a required scope
@@ -76,8 +75,6 @@ public final class McpToolCatalog {
     }
     return Collections.unmodifiableMap(m);
   }
-
-  private static final TypeReference<LinkedHashMap<String, Object>> MAP = new TypeReference<>() {};
 
   private McpToolCatalog() {}
 
@@ -134,8 +131,7 @@ public final class McpToolCatalog {
     McpTool.McpAnnotations hints = annotation.annotations();
     String title = StringUtils.hasText(annotation.title()) ? annotation.title()
         : StringUtils.hasText(hints.title()) ? hints.title() : name;
-    McpSchema.Tool tool = McpSchema.Tool.builder(name,
-            mapper.readValue(McpJsonSchemaGenerator.generateForMethodInput(method), MAP))
+    McpSchema.Tool tool = McpSchema.Tool.builder(name, McpInputSchemas.forMethod(method, mapper))
         .title(title)
         .description(annotation.description())
         .outputSchema(McpOutputSchemas.forReturnType(method.getGenericReturnType(), mapper))
