@@ -66,6 +66,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
@@ -94,6 +95,7 @@ class McpServerIT {
 
     /** {@code AccountQueries} for the read side of {@code whoami}: the ACTIVE account row, fixed decimal values. */
     @Bean
+    @Primary   // WS3's real AccountQueries also exists; this double keeps whoami's numbers fixed
     AccountQueries testAccountQueries(JdbcClient jdbc) {
       return new AccountQueries() {
         @Override

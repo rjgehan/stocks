@@ -253,7 +253,7 @@ class SecurityChainsIT {
     MvcResult me = call(get("/api/v1/me"));
     assertThat(me.getResponse().getStatus()).isEqualTo(401);
     assertThat(me.getResponse().getHeader("WWW-Authenticate")).isEqualTo("Bearer realm=\"stocks\"");
-    MvcResult order = call(post("/api/v1/orders").contentType(MediaType.APPLICATION_JSON).content("{}"));
+    MvcResult order = call(post(SecurityProbes.TRADE_PROBE).contentType(MediaType.APPLICATION_JSON).content("{}"));
     assertThat(order.getResponse().getStatus()).isEqualTo(401);
     assertThat(code(order)).isEqualTo("UNAUTHENTICATED");
     assertThat(call(post("/api/v1/auth/logout")).getResponse().getStatus()).isEqualTo(401);
@@ -263,10 +263,10 @@ class SecurityChainsIT {
   void sessionWritesNeedCsrf() {
     Fixtures.PlayerRef p = fx.human(handle("writer"));
     WebSession s = WebSession.login(mvc, p.handle(), Fixtures.PASSWORD);
-    MvcResult without = s.performWithoutCsrf(post("/api/v1/orders"));
+    MvcResult without = s.performWithoutCsrf(post(SecurityProbes.TRADE_PROBE));
     assertThat(without.getResponse().getStatus()).isEqualTo(403);
     assertThat(code(without)).isEqualTo("CSRF_INVALID");
-    MvcResult with = s.perform(post("/api/v1/orders"));
+    MvcResult with = s.perform(post(SecurityProbes.TRADE_PROBE));
     assertThat(with.getResponse().getStatus()).isEqualTo(200);
   }
 
@@ -283,7 +283,7 @@ class SecurityChainsIT {
     assertThat((String) JsonPath.read(WebSession.contentOf(me), "$.kind")).isEqualTo("AI");
     assertThat((String) JsonPath.read(WebSession.contentOf(me), "$.authMethod")).isEqualTo("API_KEY");
     assertThat(me.getResponse().getCookie(WebSession.SESSION_COOKIE)).isNull();
-    MvcResult order = bearer(post("/api/v1/orders"), key); // no X-XSRF-TOKEN
+    MvcResult order = bearer(post(SecurityProbes.TRADE_PROBE), key); // no X-XSRF-TOKEN
     assertThat(order.getResponse().getStatus()).isEqualTo(200);
     assertThat(order.getResponse().getCookie(WebSession.SESSION_COOKIE)).isNull();
   }
@@ -335,12 +335,12 @@ class SecurityChainsIT {
     String marketOnly = fx.apiKey(human, Set.of(Scopes.MARKET_READ), pepper);
 
     assertThat(bearer(get("/api/v1/market/__probe"), readOnly).getResponse().getStatus()).isEqualTo(200);
-    assertThat(bearer(get("/api/v1/orders"), readOnly).getResponse().getStatus()).isEqualTo(200);
+    assertThat(bearer(get(SecurityProbes.ACCOUNT_READ_PROBE), readOnly).getResponse().getStatus()).isEqualTo(200);
     assertThat(bearer(get("/api/v1/players/__probe"), readOnly).getResponse().getStatus()).isEqualTo(200);
-    MvcResult trade = bearer(post("/api/v1/orders"), readOnly);
+    MvcResult trade = bearer(post(SecurityProbes.TRADE_PROBE), readOnly);
     assertThat(trade.getResponse().getStatus()).isEqualTo(403);
     assertThat(code(trade)).isEqualTo("FORBIDDEN_SCOPE");
-    assertThat(code(bearer(get("/api/v1/orders"), marketOnly))).isEqualTo("FORBIDDEN_SCOPE");
+    assertThat(code(bearer(get(SecurityProbes.ACCOUNT_READ_PROBE), marketOnly))).isEqualTo("FORBIDDEN_SCOPE");
     assertThat(code(bearer(get("/api/v1/players/__probe"), marketOnly))).isEqualTo("FORBIDDEN_SCOPE");
     assertThat(bearer(get("/api/v1/me"), marketOnly).getResponse().getStatus()).as("GET /me: any").isEqualTo(200);
   }

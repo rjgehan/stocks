@@ -13,15 +13,8 @@ import com.stocks.contract.portfolio.LeaderboardService;
 import com.stocks.contract.portfolio.PerformanceQueries;
 import com.stocks.contract.portfolio.ValuationService;
 import com.stocks.contract.security.RateLimitService;
-import com.stocks.contract.trading.AccountQueries;
-import com.stocks.contract.trading.AccountService;
-import com.stocks.contract.trading.AdminOrderService;
-import com.stocks.contract.trading.CashTransferService;
 import com.stocks.contract.trading.CorporateActionQueries;
 import com.stocks.contract.trading.CorporateActionService;
-import com.stocks.contract.trading.EngineControl;
-import com.stocks.contract.trading.OrderQueries;
-import com.stocks.contract.trading.OrderService;
 import com.stocks.contract.watchlist.WatchlistService;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -95,48 +88,8 @@ public class StubsAutoConfiguration {
   }
 
   // ===== WS3 =====
-
-  @Bean
-  @ConditionalOnMissingBean
-  OrderService orderServiceStub() {
-    return NotImplementedStub.of(OrderService.class, "WS3");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  AdminOrderService adminOrderServiceStub() {
-    return NotImplementedStub.of(AdminOrderService.class, "WS3");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  OrderQueries orderQueriesStub() {
-    return NotImplementedStub.of(OrderQueries.class, "WS3");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  AccountService accountServiceStub() {
-    return NotImplementedStub.of(AccountService.class, "WS3");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  AccountQueries accountQueriesStub() {
-    return NotImplementedStub.of(AccountQueries.class, "WS3");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  CashTransferService cashTransferServiceStub() {
-    return NotImplementedStub.of(CashTransferService.class, "WS3");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  EngineControl engineControlStub() {
-    return NotImplementedStub.of(EngineControl.class, "WS3");
-  }
+  // OrderService, AdminOrderService, OrderQueries, AccountService, AccountQueries, CashTransferService and
+  // EngineControl landed (com.stocks.trading); corporate actions are still stubbed.
 
   @Bean
   @ConditionalOnMissingBean

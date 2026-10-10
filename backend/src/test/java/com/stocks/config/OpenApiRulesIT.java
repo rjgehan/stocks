@@ -191,19 +191,29 @@ class OpenApiRulesIT {
   }
 
   private void checkRequired(JsonNode schema, String label, Set<String> visited, List<String> violations) {
+    checkRequired(schema, label, visited, violations, Set.of());
+  }
+
+  /**
+   * Like {@code .github/scripts/openapi-assert.mjs}: {@code allOf} members share the composite's {@code required}
+   * (springdoc puts a polymorphic subtype's {@code required} next to its {@code allOf}); oneOf/anyOf stand alone.
+   */
+  private void checkRequired(JsonNode schema, String label, Set<String> visited, List<String> violations,
+                             Set<String> inherited) {
     if (schema == null || !schema.isObject()) {
       return;
     }
     if (schema.has("$ref")) {
       String ref = schema.path("$ref").asString();
-      if (visited.add(ref)) {
+      if (visited.add(ref + "|" + new java.util.TreeSet<>(inherited))) {
         String name = ref.substring(ref.lastIndexOf('/') + 1);
-        checkRequired(doc.path("components").path("schemas").path(name), name, visited, violations);
+        checkRequired(doc.path("components").path("schemas").path(name), name, visited, violations, inherited);
       }
       return;
     }
+    Set<String> required = new HashSet<>(strings(schema.path("required")));
+    required.addAll(inherited);
     if (schema.has("properties")) {
-      Set<String> required = new HashSet<>(strings(schema.path("required")));
       schema.path("properties").properties().forEach(p -> {
         if (!required.contains(p.getKey())) {
           violations.add(label + "." + p.getKey());
@@ -213,7 +223,8 @@ class OpenApiRulesIT {
     }
     checkRequired(schema.path("items"), label + "[]", visited, violations);
     checkRequired(schema.path("additionalProperties"), label + "{}", visited, violations);
-    for (String k : List.of("anyOf", "oneOf", "allOf")) {
+    schema.path("allOf").forEach(s -> checkRequired(s, label, visited, violations, required));
+    for (String k : List.of("anyOf", "oneOf")) {
       schema.path(k).forEach(s -> checkRequired(s, label, visited, violations));
     }
   }
