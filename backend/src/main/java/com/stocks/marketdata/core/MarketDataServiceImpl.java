@@ -240,6 +240,11 @@ public class MarketDataServiceImpl implements MarketDataService {
   }
 
   @Override
+  public boolean onCorporateActionHold(String symbol) {
+    return holds.onHold(normalize(symbol));
+  }
+
+  @Override
   public MarketDataStatus status() {
     List<String> stale = new ArrayList<>(new TreeSet<>(feed.staleSymbols(budget.leasedSymbols())));
     return new MarketDataStatus(profile, stale, List.copyOf(new TreeSet<>(holds.symbols())), feed.providers());

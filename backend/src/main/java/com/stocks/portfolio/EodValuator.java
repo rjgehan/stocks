@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -92,8 +93,13 @@ public class EodValuator {
     List<HoldingRow> rows = new ArrayList<>();
     List<DataQuality> qualities = new ArrayList<>();
     BigDecimal lmv = Money.ZERO;
+    Map<String, LocalDate> unabsorbed = repository.unabsorbedSplits(account.id(), tradeDate, cutoff);
     for (Holding h : holdings.holdingsAt(account.id(), cutoff).values()) {
-      Mark m = marks.endOfDay(h.symbol(), tradeDate, cutoff, h.qty(), h.costBasis());
+      LocalDate exDate = unabsorbed.get(h.symbol());
+      Mark m = exDate != null && heldAtExCutoff(account.id(), h.symbol(), exDate)
+          ? marks.heldEndOfDay(h.symbol(), daysBefore(exDate), calendar.preOpen(exDate), cutoff, h.qty(),
+              h.costBasis())
+          : marks.endOfDay(h.symbol(), tradeDate, cutoff, h.qty(), h.costBasis());
       BigDecimal mv = Rounding.MARKET_VALUE.multiply(h.qty(), m.price());
       rows.add(new HoldingRow(h.symbol(), h.qty(), m.price(), mv));
       qualities.add(m.quality());
@@ -125,6 +131,26 @@ public class EodValuator {
     BigDecimal unitValue = UnitMath.unitValueOrLast(equity, units, lastU);
     return new State(cash, lmv, receivable, equity, nc, Rounding.UNIT.apply(units), unitValue, series,
         Qualities.worst(qualities), rows, upTo);
+  }
+
+  /**
+   * §14 hold at an EOD: the account held {@code symbol} at the split's ex cut-off, so its replayed quantity is still
+   * pre-split (the split waits for the admin, or was applied only after this cut-off).
+   */
+  private boolean heldAtExCutoff(long accountId, String symbol, LocalDate exDate) {
+    Holding before = holdings.holdingsAt(accountId, calendar.preOpen(exDate).minusMillis(1)).get(symbol);
+    return before != null && before.qty().signum() > 0;
+  }
+
+  /** Up to ten trading days before {@code exDate}, newest first: where the pre-split day-end mark is looked up. */
+  private List<LocalDate> daysBefore(LocalDate exDate) {
+    List<LocalDate> out = new ArrayList<>();
+    LocalDate d = exDate;
+    for (int i = 0; i < 10; i++) {
+      d = calendar.previousTradingDay(d);
+      out.add(d);
+    }
+    return out;
   }
 
   private record State(BigDecimal cash, BigDecimal longMarketValue, BigDecimal receivable, BigDecimal equity,

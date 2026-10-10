@@ -242,12 +242,19 @@ public class EngineCore {
             throw ApiException.of(ErrorCode.ENGINE_HALTED, "The engine could not bootstrap: " + lastError)
                 .withHint("Check the database and the logs, then resume again.").withRetryAfter(60);
           }
+          if (state == EngineState.RUNNING) {
+            t.afterCommit(() -> discardHaltEvidence(now));
+          }
           yield status(0);
         }
+        boolean wasHalted = state == EngineState.HALTED;
         InvariantResult r = checkInvariants();
         if (r.ok()) {
           state = EngineState.RUNNING;
           haltReason = null;
+          if (wasHalted) {
+            t.afterCommit(() -> discardHaltEvidence(now));
+          }
         }
         yield status(0);
       }
@@ -300,6 +307,34 @@ public class EngineCore {
     state = EngineState.HALTED;
     haltReason = reason;
     log.warn("Engine halted: {}", reason);
+  }
+
+  /**
+   * HALTED → RUNNING is a reload for evidence purposes (§12.7, §12.9): nothing observed while the engine was halted
+   * is ever trigger or fill evidence. The prints market data buffered meanwhile are drained and dropped, every order's
+   * print cursor moves past them, armed stops are tracked again from now (their watermark and stop are kept), and
+   * every order's next evaluation is an opening one (a current quote already through a stop still triggers, a
+   * marketable limit fills at the touch, never at a print from the halt).
+   */
+  private void discardHaltEvidence(Instant now) {
+    for (String symbol : index.symbols()) {
+      try {
+        marketData.drainPrints(symbol);
+      } catch (RuntimeException ignored) {
+        // market data unavailable: nothing buffered to drop
+      }
+      prints.forget(symbol);
+    }
+    long cursor = prints.lastSeq();
+    for (OpenOrderIndex.Entry e : index.all()) {
+      e.printCursor = cursor;
+      e.reopenPending = true;
+      if (e.trigger != null) {
+        e.trigger = e.trigger.retrackedAt(now);
+      }
+    }
+    log.info("Engine resumed: prints and quotes observed while halted are not evidence for {} open orders",
+        index.size());
   }
 
   /** One transaction; after commit: index changes, then events. */

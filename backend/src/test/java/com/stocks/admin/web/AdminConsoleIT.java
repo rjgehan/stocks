@@ -165,6 +165,11 @@ class AdminConsoleIT extends ContractMocksWebTest {
     assertThat((String) json(r, "$.engine.status")).isEqualTo("RUNNING");
 
     assertThat(status(send(post("/api/v1/admin/system/jobs/NO_SUCH_JOB/run"), "{}"))).isEqualTo(404);
+    // review regression: a run key that has not happened yet is refused before the 202 (it would apply a split or pay
+    // a dividend ahead of its date)
+    MvcResult future = send(post("/api/v1/admin/system/jobs/PAY_DIVIDENDS/run"), "{\"runKey\":\"2026-10-14\"}");
+    assertThat(status(future)).as(body(future)).isEqualTo(400);
+    assertThat((String) json(future, "$.code")).isEqualTo("VALIDATION_FAILED");
     assertThat(jdbc.sql("SELECT COUNT(*) FROM audit_log WHERE action IN ('ENGINE_HALT','ENGINE_RESUME') "
         + "AND actor_player_id = ?").param(admin.id()).query(Long.class).single()).isEqualTo(2);
   }

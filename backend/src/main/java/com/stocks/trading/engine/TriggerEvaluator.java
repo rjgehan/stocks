@@ -40,8 +40,9 @@ import tools.jackson.databind.json.JsonMapper;
  *       executable quote is anti-look-ahead (§12.3): confirmed at or after the same instant.</li>
  *   <li><b>Opening gap.</b> At the first evaluation of a session (an order queued for the open, a GTC order resumed at
  *       the open, or any order after a halt), a quote already through the stop also triggers at once.</li>
- *   <li><b>Trailing stop.</b> The watermark starts at activation at the first eligible consolidated print, else at
- *       the executable mid; then {@code hwm = max(hwm, p)} with {@code stop = TICK_DOWN(hwm − amount)} or
+ *   <li><b>Trailing stop.</b> The watermark starts at activation at the first eligible consolidated print, else (quote
+ *       mode) at the touch the trigger compares (the bid for a SELL, the ask for a BUY), else at the executable mid;
+ *       then {@code hwm = max(hwm, p)} with {@code stop = TICK_DOWN(hwm − amount)} or
  *       {@code TICK_DOWN(hwm × (1 − pct/100))} for a SELL, and {@code lwm = min(lwm, p)} with
  *       {@code stop = TICK_UP(lwm + amount)} or {@code TICK_UP(lwm × (1 + pct/100))} for a BUY. Prints are taken in
  *       order, so a dip before a new high never triggers against the later high. In quote mode the watermark follows
@@ -93,6 +94,20 @@ class TriggerEvaluator {
       this.persistedWatermark = watermark;
       this.persistedStop = stop;
       this.eventStop = stop;
+    }
+
+    /**
+     * The same watermark and stop, tracked again from {@code at}: an engine resume after a halt (§12.9), when nothing
+     * observed while the engine was halted may become trigger evidence.
+     */
+    State retrackedAt(Instant at) {
+      State s = new State(at, watermark, stop);
+      s.persistedWatermark = persistedWatermark;
+      s.persistedStop = persistedStop;
+      s.persistedAt = persistedAt;
+      s.eventStop = eventStop;
+      s.trailEventAt = trailEventAt;
+      return s;
     }
   }
 
@@ -164,6 +179,9 @@ class TriggerEvaluator {
       if (!prints.isEmpty()) {
         wm = prints.get(0);
         from = 1;
+      } else if (quoteMode && touch != null) {
+        // quote mode compares the touch with the stop: seeding at the mid would trigger on half the spread alone
+        wm = touch.setScale(Prices.SCALE, RoundingMode.HALF_EVEN);
       } else if (twoSided(quote)) {
         wm = quote.mid().setScale(Prices.SCALE, RoundingMode.HALF_EVEN);
       } else {

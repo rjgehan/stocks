@@ -58,9 +58,11 @@ final class MarketDtos {
     return new AssetSummaryDto(a.symbol(), a.name(), a.exchange(), a.type(), a.tradable(), a.fractionable());
   }
 
-  static AssetDto asset(Asset a, Optional<Fundamentals> f) {
-    return new AssetDto(a.symbol(), a.name(), a.exchange(), a.type(), a.tradable(), a.fractionable(), a.shortable(),
-        a.marginable(), a.tier(), a.active() ? AssetDto.AssetStatus.ACTIVE : AssetDto.AssetStatus.INACTIVE,
+  /** {@code onHold}: a corporate-action hold (§14) makes the asset untradable until the admin resolves it. */
+  static AssetDto asset(Asset a, Optional<Fundamentals> f, boolean onHold) {
+    return new AssetDto(a.symbol(), a.name(), a.exchange(), a.type(), a.tradable() && !onHold, a.fractionable(),
+        a.shortable(), a.marginable(), a.tier(),
+        a.active() ? AssetDto.AssetStatus.ACTIVE : AssetDto.AssetStatus.INACTIVE,
         f.map(Fundamentals::week52High).orElse(null), f.map(Fundamentals::week52Low).orElse(null),
         logoUrl(a.symbol()), f.map(MarketDtos::fundamentals).orElse(null));
   }

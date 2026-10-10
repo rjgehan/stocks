@@ -28,8 +28,19 @@ public class EngineOrderOps {
    */
   public List<OrderRow> cancelAllOnSymbol(String symbol, CancelReason reason, long actorPlayerId, Instant now,
                                           EngineTx tx) {
+    return cancelAllOnSymbol(symbol, reason, actorPlayerId, now, null, tx);
+  }
+
+  /**
+   * As {@link #cancelAllOnSymbol(String, CancelReason, long, Instant, EngineTx)}, but only the orders received before
+   * {@code receivedBeforeOrNull} (null: all): a split applied after its ex cut-off keeps the orders entered after it,
+   * which were priced post-split (§14).
+   */
+  public List<OrderRow> cancelAllOnSymbol(String symbol, CancelReason reason, long actorPlayerId, Instant now,
+                                          Instant receivedBeforeOrNull, EngineTx tx) {
     EngineThread.assertCurrent();
-    List<OrderRow> open = orderStore.openBySymbol(symbol);
+    List<OrderRow> open = orderStore.openBySymbol(symbol).stream()
+        .filter(r -> receivedBeforeOrNull == null || r.receivedAt().isBefore(receivedBeforeOrNull)).toList();
     for (OrderRow r : open) {
       orders.cancelOpen(r, reason, actorPlayerId, now, tx);
     }

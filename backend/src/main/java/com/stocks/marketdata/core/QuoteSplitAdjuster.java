@@ -41,15 +41,19 @@ public final class QuoteSplitAdjuster {
     // the same days QuoteComposer reads: in the pre-market the "main" session is the previous trading day
     LocalDate mainDay = calendar.stateAt(now).type() == SessionType.PRE ? calendar.previousTradingDay(today) : today;
     LocalDate prevDay = calendar.previousTradingDay(mainDay);
+    // adjusted as of the ET calendar date, not the P&L day: between the 03:45 application and the 04:00 pre-open the
+    // P&L day is still the previous trading day, yet positions are already split (and the ticket's reference with them)
+    LocalDate calendarDay = Et.date(now);
+    LocalDate asOf = calendarDay.isAfter(today) ? calendarDay : today;
     String s = v.symbol();
-    BigDecimal prevClose = splits.adjust(s, v.prevClose(), prevDay, today);
-    BigDecimal last = v.lastAt() == null ? v.last() : splits.adjust(s, v.last(), Et.date(v.lastAt()), today);
-    BigDecimal open = splits.adjust(s, v.dayOpen(), mainDay, today);
-    BigDecimal high = splits.adjust(s, v.dayHigh(), mainDay, today);
-    BigDecimal low = splits.adjust(s, v.dayLow(), mainDay, today);
+    BigDecimal prevClose = splits.adjust(s, v.prevClose(), prevDay, asOf);
+    BigDecimal last = v.lastAt() == null ? v.last() : splits.adjust(s, v.last(), Et.date(v.lastAt()), asOf);
+    BigDecimal open = splits.adjust(s, v.dayOpen(), mainDay, asOf);
+    BigDecimal high = splits.adjust(s, v.dayHigh(), mainDay, asOf);
+    BigDecimal low = splits.adjust(s, v.dayLow(), mainDay, asOf);
     ExtendedLine ext = v.extended();
     BigDecimal extPrice = ext == null || ext.at() == null ? (ext == null ? null : ext.price())
-        : splits.adjust(s, ext.price(), Et.date(ext.at()), today);
+        : splits.adjust(s, ext.price(), Et.date(ext.at()), asOf);
     boolean changed = prevClose != v.prevClose() || last != v.last() || open != v.dayOpen() || high != v.dayHigh()
         || low != v.dayLow() || (ext != null && extPrice != ext.price());
     if (!changed) {

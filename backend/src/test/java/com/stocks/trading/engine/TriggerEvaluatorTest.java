@@ -171,6 +171,29 @@ class TriggerEvaluatorTest {
     assertThat(none.triggered()).isFalse();
   }
 
+  /**
+   * Review regression: a trailing stop activated in quote mode (no consolidated print for 15 s) seeds its watermark at
+   * the touch the trigger compares, so a spread wider than twice the trail never triggers it with no market move.
+   */
+  @Test
+  void aQuoteModeTrailIsSeededAtTheTouchSoTheSpreadAloneNeverTriggersIt() {
+    // a SMALL-tier IEX quote 1.2% wide (executable up to 150 bps), trail 0.5%: the market has not moved
+    ExecQuote wide = quote("9.94", "10.06");
+    Outcome sell = TriggerEvaluator.decide(trailPercent(Side.SELL, "0.5"), null, null, List.of(), wide, true, false);
+    assertThat(sell.triggered()).isFalse();
+    assertThat(sell.watermark()).isEqualByComparingTo("9.94");
+    assertThat(sell.stop()).isEqualByComparingTo("9.89");
+    Outcome buy = TriggerEvaluator.decide(trailAmount(Side.BUY, "0.05"), null, null, List.of(), wide, true, false);
+    assertThat(buy.triggered()).isFalse();
+    assertThat(buy.watermark()).isEqualByComparingTo("10.06");
+    assertThat(buy.stop()).isEqualByComparingTo("10.11");
+    // the market then really moves through the stop: it triggers on the touch
+    Outcome hit = TriggerEvaluator.decide(trailPercent(Side.SELL, "0.5"), sell.watermark(), sell.stop(), List.of(),
+        quote("9.88", "10.00"), true, false);
+    assertThat(hit.triggered()).isTrue();
+    assertThat(hit.basis()).isEqualTo(Basis.QUOTE);
+  }
+
   @Test
   void outsideQuoteModeTheQuoteDoesNotMoveTheWatermark() {
     Params p = trailAmount(Side.SELL, "1.00");

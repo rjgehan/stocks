@@ -155,6 +155,89 @@ public final class SplitMath {
         Money.cents(cil.subtract(totalRelieved)));
   }
 
+  /**
+   * A split applied <b>as of now</b> to a position that traded after the ex cut-off (§14, the admin's APPLY of a
+   * split found late): only the shares held at the cut-off are split. The holder is owed
+   * {@code entitled = SPLIT_QTY(qtyAtCutoff)}; the position keeps {@code target = entitled} (non-fractionable: its
+   * whole part, the fraction is paid as cash in lieu) and so changes by {@code Δ = target − qtyAtCutoff}. Shares bought
+   * after the cut-off are not changed.
+   * <ul>
+   *   <li>{@code Δ > 0} (forward): the shares go onto the oldest open lot, cost unchanged; without an open lot (the
+   *       position was sold since) they are paid as cash in lieu.</li>
+   *   <li>{@code Δ < 0} (reverse): the shares are removed from the oldest lots first, keeping their cost, except that
+   *       a lot emptied this way is closed and its remaining cost is realized.</li>
+   * </ul>
+   *
+   * @param lots         the position's open lots now, oldest first (may be empty)
+   * @param qtyAtCutoff  the quantity held at the ex cut-off (&gt; 0)
+   * @throws IllegalStateException when a reverse split must remove more shares than the position holds now
+   * @throws NullPointerException  when cash in lieu is due and there is no price
+   */
+  public static Result applyDelta(List<Lot> lots, BigDecimal qtyAtCutoff, BigDecimal oldRate, BigDecimal newRate,
+                                  boolean fractionable, BigDecimal prevCloseOrNull) {
+    requireRates(oldRate, newRate);
+    int n = lots.size();
+    BigDecimal[] qty = new BigDecimal[n];
+    BigDecimal[] cost = new BigDecimal[n];
+    BigDecimal qtyBefore = Qty.ZERO;
+    BigDecimal costBefore = Money.ZERO;
+    for (int i = 0; i < n; i++) {
+      qty[i] = lots.get(i).qtyRemaining();
+      cost[i] = lots.get(i).cost();
+      qtyBefore = qtyBefore.add(qty[i]);
+      costBefore = costBefore.add(cost[i]);
+    }
+    BigDecimal entitled = splitQty(qtyAtCutoff, oldRate, newRate);
+    BigDecimal target = fractionable ? entitled : entitled.setScale(0, RoundingMode.FLOOR);
+    BigDecimal cilQty = entitled.subtract(target);
+    BigDecimal delta = target.subtract(qtyAtCutoff);
+    BigDecimal emptied = Money.ZERO;
+    int absorbing = -1;
+    if (delta.signum() > 0) {
+      if (n == 0) {
+        cilQty = cilQty.add(delta);                // sold since the cut-off: the extra shares are paid in cash
+      } else {
+        qty[0] = qty[0].add(delta);
+        absorbing = 0;
+      }
+    } else if (delta.signum() < 0) {
+      BigDecimal remove = delta.negate();
+      if (remove.compareTo(qtyBefore) > 0) {
+        throw new IllegalStateException("the split takes away " + remove.stripTrailingZeros().toPlainString()
+            + " shares, but only " + qtyBefore.stripTrailingZeros().toPlainString() + " are held now");
+      }
+      for (int i = 0; i < n && remove.signum() > 0; i++) {
+        BigDecimal take = remove.min(qty[i]);
+        qty[i] = qty[i].subtract(take);
+        remove = remove.subtract(take);
+        if (qty[i].signum() == 0) {
+          emptied = emptied.add(cost[i]);
+          cost[i] = Money.ZERO;
+        }
+      }
+    }
+    BigDecimal cil = cashInLieu(cilQty, prevCloseOrNull, oldRate, newRate);
+    BigDecimal forfeited = cil.signum() == 0 ? cilQty : Qty.ZERO;
+    if (cil.signum() > 0 && absorbing < 0 && n > 0) {
+      absorbing = newestWithShares(qty, n);
+    }
+    List<LotResult> out = new ArrayList<>(n);
+    BigDecimal qtyAfter = Qty.ZERO;
+    BigDecimal costAfter = Money.ZERO;
+    for (int i = 0; i < n; i++) {
+      Lot l = lots.get(i);
+      BigDecimal gained = qty[i].subtract(l.qtyRemaining()).max(Qty.ZERO);
+      BigDecimal original = l.qtyOriginal().add(gained).max(qty[i]);
+      out.add(new LotResult(l.id(), l.qtyRemaining(), Qty.normalize(qty[i]), Qty.normalize(original),
+          Money.cents(l.cost()), Money.cents(cost[i]), qty[i].signum() == 0, cil.signum() > 0 && i == absorbing));
+      qtyAfter = qtyAfter.add(qty[i]);
+      costAfter = costAfter.add(cost[i]);
+    }
+    return new Result(List.copyOf(out), Qty.normalize(qtyBefore), Qty.normalize(qtyAfter), Money.cents(costBefore),
+        Money.cents(costAfter), Qty.normalize(entitled), Qty.normalize(Qty.ZERO), Qty.normalize(cilQty), cil,
+        Qty.normalize(forfeited), Money.cents(emptied), Money.cents(cil.subtract(emptied)));
+  }
+
   private static int newestWithShares(BigDecimal[] qty, int n) {
     for (int i = n - 1; i >= 0; i--) {
       if (qty[i].signum() > 0) {

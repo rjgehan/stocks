@@ -74,8 +74,8 @@ public class AdminSystemController implements DisposableBean {
   @RecentAuth
   @Operation(summary = "Run a scheduled job now",
       description = "Recent password check. Starts one occurrence (runKey, default the latest past occurrence) in "
-          + "the background through the job_run guard; an occurrence already DONE does not run again. Watch the "
-          + "result in GET /admin/system. Errors: NOT_FOUND, VALIDATION_FAILED.")
+          + "the background through the job_run guard; an occurrence already DONE does not run again, and a key that has "
+          + "not happened yet is refused. Watch the result in GET /admin/system. Errors: NOT_FOUND, VALIDATION_FAILED.")
   public void runJob(@PathVariable String jobName, @RequestBody(required = false) RunJobRequest body,
                      HttpServletRequest request) {
     PlayerPrincipal admin = CurrentPlayer.require();
@@ -84,8 +84,8 @@ public class AdminSystemController implements DisposableBean {
       throw ApiException.of(ErrorCode.NOT_FOUND, "Unknown job '" + jobName + "'.");
     }
     String runKey = body == null || body.runKey() == null || body.runKey().isBlank() ? null : body.runKey().trim();
-    if (runKey != null && !JobScheduler.RUN_KEY.matcher(runKey).matches()) {
-      throw ApiException.validation("runKey", "1-48 characters of letters, digits and . _ : + -");
+    if (runKey != null) {
+      jobs.validateRunKey(jobName, runKey);          // format, and never a future occurrence (before the 202)
     }
     RequestMeta meta = RequestMetas.of(request, admin);
     audit.record(AuditEntry.of(AuditCategory.ADMIN, "JOB_RUN", AuditOutcome.OK).withActor(admin).withMeta(meta)

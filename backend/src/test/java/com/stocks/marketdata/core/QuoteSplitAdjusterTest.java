@@ -94,6 +94,20 @@ class QuoteSplitAdjusterTest {
     assertThat(v.extended()).isNull();
   }
 
+  /**
+   * Review regression: between the 03:45 application and the 04:00 pre-open the P&amp;L day is still Tuesday, but the
+   * positions are split, so the quote (and the ticket's check 19 reference, its {@code last}) is split-adjusted too.
+   */
+  @Test
+  void betweenTheApplicationAndThePreOpenTheQuoteIsAlreadyAdjusted() {
+    Instant now = Instant.parse("2026-10-14T07:50:00Z");                    // Wed 03:50 ET, CLOSED
+    QuoteView raw = compose("SIMS", now, trade("SIMS", "110.00", Instant.parse("2026-10-13T19:59:00Z")));
+    QuoteView v = adjuster(now).adjust(raw);
+    assertThat(v.last()).isEqualByComparingTo("55.00");
+    assertThat(v.prevClose()).isEqualByComparingTo("54.00");
+    assertThat(v.change()).isEqualByComparingTo("1.00");
+  }
+
   @Test
   void beforeTheExDateOrWithoutASplitTheViewIsUnchanged() {
     Instant before = Instant.parse("2026-10-13T15:00:00Z");

@@ -18,7 +18,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Predicate;
+import java.util.function.Function;
 
 /**
  * Live marks for equity (§15.5 {@code MarkService.mark}).
@@ -31,7 +31,8 @@ import java.util.function.Predicate;
  *   <tr><td>CLOSED</td><td>1. {@code day_end_mark} of the last trading day · 2. last trade</td></tr>
  * </table>
  * Fallbacks dated before an applied split's ex-date are split-adjusted (§14). A symbol under a corporate-action hold
- * is marked at its last pre-ex-date {@code day_end_mark}, unadjusted, quality {@code STALE}. SIM marks are the last
+ * is marked at its last {@code day_end_mark} dated before the earliest unresolved split's ex-date, unadjusted
+ * (consistent with the unadjusted quantities, however long the hold lasts), quality {@code STALE}. SIM marks are the last
  * SIM print, split-adjusted like the fallbacks, quality {@code SIMULATED}.
  */
 public class MarkService {
@@ -44,19 +45,20 @@ public class MarkService {
   private final TimeSource time;
   private final DailyMarkRepository dailyMarks;
   private final SplitAdjustments splits;
-  private final Predicate<String> onHold;
+  /** The earliest ex-date of a held symbol's unresolved splits; null when it is not on hold. */
+  private final Function<String, LocalDate> holdExDate;
   private final Duration quoteFreshRegular;
   private final Duration quoteFreshExt;
 
   public MarkService(MarketFeed feed, MarketCalendar calendar, TimeSource time, DailyMarkRepository dailyMarks,
-                     SplitAdjustments splits, Predicate<String> onHold, Duration quoteFreshRegular,
+                     SplitAdjustments splits, Function<String, LocalDate> holdExDate, Duration quoteFreshRegular,
                      Duration quoteFreshExt) {
     this.feed = feed;
     this.calendar = calendar;
     this.time = time;
     this.dailyMarks = dailyMarks;
     this.splits = splits;
-    this.onHold = onHold;
+    this.holdExDate = holdExDate;
     this.quoteFreshRegular = quoteFreshRegular;
     this.quoteFreshExt = quoteFreshExt;
   }
@@ -64,8 +66,11 @@ public class MarkService {
   public Mark mark(String symbol) {
     Instant now = time.now();
     LocalDate today = Et.date(now);
-    if (onHold.test(symbol)) {
-      return dailyMarks.lastDayEnd(symbol, today.minusDays(1))
+    LocalDate heldEx = holdExDate.apply(symbol);
+    if (heldEx != null) {
+      // the last pre-ex-date mark, even when the hold outlasts the ex-date (the ex-date's own close is post-split)
+      LocalDate before = heldEx.isAfter(today) ? today : heldEx;
+      return safeLastDayEnd(symbol, before.minusDays(1))
           .map(d -> new Mark(d.mark(), DataQuality.STALE, calendar.day(d.tradeDate()).map(TradingDay::postCloseAt)
               .orElse(null), MarkBasis.DAY_END))
           .orElse(new Mark(null, DataQuality.NONE, null, null));

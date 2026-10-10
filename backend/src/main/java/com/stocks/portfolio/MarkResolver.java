@@ -11,6 +11,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +23,8 @@ import org.springframework.stereotype.Component;
  * close, day-end mark; split-adjusted). Only when it knows <b>no price at all</b> (quality {@code NONE}) does this
  * class fall back further, so an account is never valued at zero for lack of data: the symbol's most recent fill in
  * the league (quality {@code STALE}), then the position's average cost (quality {@code NONE}). Either way the
- * valuation reports the degraded quality.
+ * valuation reports the degraded quality. A symbol that a NAME_CHANGE created has no price of its own until it trades
+ * (§14): until then the former symbol's mark and fills value it, so a rename is never a gain or a loss.
  *
  * <p>End-of-day marks (§16.4) prefer {@code dayEndMark(symbol, D)} (raw for D).
  */
@@ -60,6 +62,16 @@ public class MarkResolver {
     if (m != null && m.price() != null && m.price().signum() > 0) {
       return m;
     }
+    for (String former : formerSymbols(symbol)) {
+      try {
+        Mark f = marketData.mark(former);
+        if (f != null && f.price() != null && f.price().signum() > 0) {
+          return f;
+        }
+      } catch (RuntimeException e) {
+        log.warn("mark({}) failed: {}", former, e.toString());
+      }
+    }
     return fallback(symbol, time.now(), qty, costBasis);
   }
 
@@ -88,8 +100,45 @@ public class MarkResolver {
     return fallback(symbol, cutoff, qty, costBasis);
   }
 
+  /**
+   * The EOD mark of a holding that is still pre-split at the cut-off (§14 corporate-action hold): the first day-end
+   * mark found on {@code daysBeforeEx} (trading days before the split's ex-date, newest first), unadjusted, quality
+   * {@code STALE}, like the live hold mark; else the last fill before the ex-date's pre-open, else the average cost.
+   * The day's own day-end mark is post-split and would value the unadjusted quantity at a fraction of its worth.
+   */
+  public Mark heldEndOfDay(String symbol, List<LocalDate> daysBeforeEx, Instant exPreOpen, Instant cutoff,
+                           BigDecimal qty, BigDecimal costBasis) {
+    for (LocalDate d : daysBeforeEx) {
+      try {
+        Optional<BigDecimal> dayEnd = marketData.dayEndMark(symbol, d);
+        if (dayEnd.isPresent() && dayEnd.get().signum() > 0) {
+          return new Mark(dayEnd.get(), DataQuality.STALE, cutoff, MarkBasis.DAY_END);
+        }
+      } catch (RuntimeException e) {
+        log.warn("dayEndMark({}, {}) failed: {}", symbol, d, e.toString());
+      }
+    }
+    Mark f = fallback(symbol, exPreOpen, qty, costBasis);
+    return f.quality() == DataQuality.NONE ? f : new Mark(f.price(), DataQuality.STALE, cutoff, f.basis());
+  }
+
+  private List<String> formerSymbols(String symbol) {
+    try {
+      return repository.formerSymbols(symbol);
+    } catch (RuntimeException e) {
+      log.warn("formerSymbols({}) failed: {}", symbol, e.toString());
+      return List.of();
+    }
+  }
+
   private Mark fallback(String symbol, Instant at, BigDecimal qty, BigDecimal costBasis) {
     Optional<BigDecimal> lastFill = repository.lastFillPrice(symbol, at);
+    for (String former : lastFill.isPresent() ? List.<String>of() : formerSymbols(symbol)) {
+      lastFill = repository.lastFillPrice(former, at);
+      if (lastFill.isPresent()) {
+        break;
+      }
+    }
     if (lastFill.isPresent()) {
       return new Mark(lastFill.get(), DataQuality.STALE, at, null);
     }

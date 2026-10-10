@@ -19,7 +19,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,7 +32,7 @@ class MarkServiceTest {
   MarketFeed feed;
   DailyMarkRepository marks;
   SplitAdjustmentsImpl splits;
-  Set<String> holds;
+  Map<String, LocalDate> holds;
   MarkService service;
   TestDb db;
 
@@ -43,8 +42,8 @@ class MarkServiceTest {
     feed = mock(MarketFeed.class);
     marks = new DailyMarkRepository(db.dataSource());
     splits = new SplitAdjustmentsImpl(db.dataSource(), time);
-    holds = new java.util.HashSet<>();
-    service = new MarkService(feed, calendar, time, marks, splits, holds::contains, Duration.ofSeconds(15),
+    holds = new java.util.HashMap<>();
+    service = new MarkService(feed, calendar, time, marks, splits, holds::get, Duration.ofSeconds(15),
         Duration.ofSeconds(120));
   }
 
@@ -123,10 +122,26 @@ class MarkServiceTest {
     marks.upsertDayEnd("AAPL", LocalDate.of(2026, 10, 8), new BigDecimal("240.00"), "SIP_1MIN",
         DailyMarkRepository.FINAL, time.now());
     splits.record("AAPL", LocalDate.of(2026, 10, 9), BigDecimal.ONE, BigDecimal.TWO, 1);
-    holds.add("AAPL");
+    holds.put("AAPL", LocalDate.of(2026, 10, 9));
     Mark m = service.mark("AAPL");
     assertThat(m.price()).isEqualByComparingTo("240.00");
     assertThat(m.quality()).isEqualTo(DataQuality.STALE);
+  }
+
+  /** Review regression (§14): a hold that outlasts its ex-date keeps the last PRE-EX-DATE day-end mark. */
+  @Test
+  void aHoldOutlastingTheExDateKeepsThePreExDateMark() {
+    marks.upsertDayEnd("AAPL", LocalDate.of(2026, 10, 8), new BigDecimal("240.00"), "SIP_1MIN",
+        DailyMarkRepository.FINAL, time.now());
+    // ex-date Fri 10-09: the market traded the split shares; Friday's EOD wrote the post-split close
+    marks.upsertDayEnd("AAPL", LocalDate.of(2026, 10, 9), new BigDecimal("120.00"), "SIP_1MIN",
+        DailyMarkRepository.FINAL, time.now());
+    holds.put("AAPL", LocalDate.of(2026, 10, 9));
+    time.set(Instant.parse("2026-10-12T15:00:00Z"));       // Mon 11:00 ET, the admin has not resolved it yet
+    Mark m = service.mark("AAPL");
+    assertThat(m.price()).as("unadjusted quantity x the pre-ex-date close").isEqualByComparingTo("240.00");
+    assertThat(m.quality()).isEqualTo(DataQuality.STALE);
+    assertThat(m.basis()).isEqualTo(MarkBasis.DAY_END);
   }
 
   @Test

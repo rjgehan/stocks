@@ -30,6 +30,7 @@ import com.stocks.marketdata.core.SplitAdjustmentsImpl;
 import com.stocks.marketdata.core.SplitGuardJob;
 import com.stocks.marketdata.core.Universe;
 import java.util.List;
+import java.util.Map;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -129,7 +130,7 @@ public class MarketDataAutoConfiguration {
     MarketDataRuntime.External external = new MarketDataRuntime.External(
         () -> {
           CorporateActionQueries q = corporateActions.getIfAvailable();
-          return q == null ? List.of() : q.symbolsOnHold();
+          return q == null ? Map.of() : q.holds();
         },
         d -> {
           CorporateActionService s = corporateActionService.getIfAvailable();

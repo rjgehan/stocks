@@ -6,7 +6,9 @@ import com.stocks.common.web.Cursor;
 import com.stocks.common.web.Page;
 import com.stocks.contract.trading.CorporateActionQueries;
 import com.stocks.contract.trading.dto.CorporateActionDto;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /** §21.1 {@code GET /admin/corporate-actions} and the corporate-action holds WS2 reads (§14). */
@@ -33,6 +35,11 @@ public class CorporateActionQueriesImpl implements CorporateActionQueries {
   @Override
   public List<String> symbolsOnHold() {
     return store.symbolsOnHold(time.todayEt());
+  }
+
+  @Override
+  public Map<String, LocalDate> holds() {
+    return store.holds(time.todayEt());
   }
 
   CorporateActionDto dto(CorporateActionRow r) {

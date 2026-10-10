@@ -456,7 +456,7 @@ class StopOrderScenarioTest extends TradingTestBase {
   }
 
   @Test
-  void aTrailingStopStartsAtTheMidWithoutPrintsAndRestartsFromItsPersistedWatermark() {
+  void aTrailingStopStartsAtTheTouchInQuoteModeAndRestartsFromItsPersistedWatermark() {
     String s = symbol();
     Player p = holder(s, 3);
     OrderDto o = place(p, trailing(cid(), s, Side.SELL, "3", "1.00", null)).order();
@@ -464,8 +464,9 @@ class StopOrderScenarioTest extends TradingTestBase {
     quote(s, "99.98", 500, "100.02", 500);
     step();
     OrderDto start = order(p, o.orderId());
-    assertThat(start.watermarkPrice()).as("the executable mid").isEqualByComparingTo("100.00");
-    assertThat(start.stopPrice()).isEqualByComparingTo("99.00");
+    // quote mode compares the bid with the stop, so the watermark starts at the bid, not the mid (review fix)
+    assertThat(start.watermarkPrice()).as("the bid a SELL trail compares").isEqualByComparingTo("99.98");
+    assertThat(start.stopPrice()).isEqualByComparingTo("98.98");
 
     time.advance(Duration.ofSeconds(1));
     quote(s, "101.50", 500, "101.54", 500);                  // quote mode: the watermark follows the bid
@@ -621,6 +622,56 @@ class StopOrderScenarioTest extends TradingTestBase {
     step();
     assertThat(order(p, o.orderId()).executions()).singleElement()
         .satisfies(x -> assertThat(x.executedAt()).isEqualTo(time.now()));
+  }
+
+  /**
+   * Review regression (§12.7, §12.9): an engine halt is a reload for evidence purposes. Prints buffered while the
+   * engine was halted never trigger a stop after the resume, and never fill a resting limit through a trade-through.
+   */
+  @Test
+  void printsObservedWhileTheEngineWasHaltedAreNeverEvidenceAfterTheResume() {
+    String s = symbol();
+    Player p = holder(s, 6);
+    OrderDto o = place(p, stop(cid(), s, Side.SELL, "6", "95.00", TimeInForce.GTC)).order();
+    Player bidder = human("5000.00");
+    OrderDto resting = place(bidder, limit(cid(), s, Side.BUY, "2", "95.00", TimeInForce.GTC, false)).order();
+    time.advance(Duration.ofSeconds(2));
+    quote(s, "99.98", 1000, "100.00", 1000);
+    print(s, "99.99", 100);
+    step();
+    assertThat(order(p, o.orderId()).waitReason()).isEqualTo(WaitReason.NOT_TRIGGERED);
+    assertThat(order(bidder, resting.orderId()).waitReason()).isEqualTo(WaitReason.LIMIT_NOT_REACHED);
+
+    engine.run(new EngineCommand.HaltEngineCmd("admin investigation", 0));
+    // while the engine is halted the market dips through the stop and the limit, then recovers
+    time.advance(Duration.ofSeconds(1));
+    print(s, "94.00", 500);
+    time.advance(Duration.ofSeconds(1));
+    print(s, "99.50", 500);
+    quote(s, "99.48", 1000, "99.50", 1000);
+    step();
+    time.advance(Duration.ofSeconds(60));
+    engine.run(new EngineCommand.ResumeEngineCmd(0));
+
+    quote(s, "99.48", 1000, "99.50", 1000);
+    step();
+    time.advance(Duration.ofSeconds(1));
+    quote(s, "99.48", 1000, "99.50", 1000);
+    step();
+    OrderDto after = order(p, o.orderId());
+    assertThat(after.events()).extracting(OrderEventDto::type)
+        .as("the 94.00 dip happened while the engine was halted").doesNotContain(OrderEventType.TRIGGERED);
+    assertThat(after.executions()).isEmpty();
+    assertThat(order(bidder, resting.orderId()).executions()).as("no trade-through on a print from the halt")
+        .isEmpty();
+
+    // live data after the resume still triggers the stop
+    time.advance(Duration.ofSeconds(1));
+    print(s, "94.90", 100);
+    step();
+    OrderDto t = order(p, o.orderId());
+    assertThat(t.triggered()).isTrue();
+    assertThat(dec(trigger(t).get("price"))).isEqualByComparingTo("94.90");
   }
 
   @Test

@@ -12,10 +12,12 @@ import com.stocks.common.events.AdminAlertRaised;
 import com.stocks.common.events.CorporateActionApplied;
 import com.stocks.common.events.CorporateActionEffect;
 import com.stocks.common.jdbc.Jdbc;
+import com.stocks.common.money.Prices;
 import com.stocks.common.money.Qty;
 import com.stocks.common.money.Rounding;
 import com.stocks.common.time.Et;
 import com.stocks.contract.calendar.MarketCalendar;
+import com.stocks.contract.marketdata.Mark;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.SplitAdjustments;
 import com.stocks.contract.marketdata.model.Asset;
@@ -37,6 +39,7 @@ import com.stocks.trading.store.AccountStore;
 import com.stocks.trading.store.LotRow;
 import com.stocks.trading.store.PositionRow;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -115,13 +118,21 @@ public class CorporateActionApplier {
     if (ca.status() != CorporateActionStatus.PENDING) {
       return ca;
     }
+    if (Et.date(now).isBefore(ca.exDate())) {
+      // never before its ex-date (an admin "Run now" with a future run key): it stays PENDING until then
+      log.warn("Corporate action {} {} {} is not due before its ex-date {}; left PENDING", ca.publicId(), ca.symbol(),
+          ca.type(), ca.exDate());
+      return ca;
+    }
+    String detail = null;
     switch (ca.type()) {
       case NAME_CHANGE -> {
         String target = normalize(ca.newSymbol());
         if (target == null || target.equals(ca.symbol())) {
           return needsAdmin(ca, "NAME_CHANGE without a different new symbol", now, tx);
         }
-        rename(ca, target, ActorKind.SYSTEM, now, tx);
+        boolean traded = tradedSinceEx(ca.symbol(), ca.exDate(), now);
+        rename(ca, target, ActorKind.SYSTEM, now, traded ? now : nominalTime(ca.exDate(), now), tx);
       }
       case FORWARD_SPLIT, REVERSE_SPLIT -> {
         if (!validRates(ca.oldRate(), ca.newRate())) {
@@ -131,11 +142,25 @@ public class CorporateActionApplier {
         if (applied.isPresent()) {
           return supersede(ca, applied.get(), now);
         }
-        if (tradedSinceEx(ca.symbol(), ca.exDate(), now)) {
-          return needsAdmin(ca, "trades happened after the ex-date before the split was applied; confirm the rates"
-              + " to apply it as of now", now, tx);
+        Instant cutoff = exCutoff(ca.exDate());
+        if (!now.isBefore(cutoff) && holdersAt(ca.symbol(), cutoff).isEmpty()) {
+          // found (or applied) after its ex-date, and nobody held the symbol then: shares bought since were bought
+          // at post-split prices, so only the price history and the orders entered before the ex-date change
+          int cancelled = orders.cancelAllOnSymbol(ca.symbol(), CancelReason.CORPORATE_ACTION, 0, now, cutoff, tx)
+              .size();
+          splits.record(ca.symbol(), ca.exDate(), ca.oldRate(), ca.newRate(), ca.id());
+          detail = CorporateActionStore.appendDetail(ca.detail(), "applied after its ex-date: nobody held "
+              + ca.symbol() + " at the ex cut-off, so only prices before the ex-date were adjusted"
+              + (cancelled > 0 ? " and " + cancelled + " order(s) entered before it were cancelled" : ""));
+          break;
         }
-        String problem = split(ca, ca.oldRate(), ca.newRate(), ActorKind.SYSTEM, now, tx);
+        if (tradedSinceEx(ca.symbol(), ca.exDate(), now)) {
+          return needsAdmin(ca, LATE_AND_TRADED, now, tx);
+        }
+        // on time (03:45), or late without a trade since the cut-off (catch-up after downtime over the ex-date):
+        // the effect is dated at the nominal 03:45, so the holdings replayed for the ex-date are post-split
+        String problem = split(ca, ca.oldRate(), ca.newRate(), ActorKind.SYSTEM, now, nominalTime(ca.exDate(), now),
+            false, tx);
         if (problem != null) {
           return needsAdmin(ca, problem, now, tx);
         }
@@ -151,8 +176,13 @@ public class CorporateActionApplier {
             now, tx);
       }
     }
-    return applied(ca, CorporateActionStatus.PENDING, null, null, now, tx);
+    return applied(ca, CorporateActionStatus.PENDING, detail, null, now, tx);
   }
+
+  /** The detail (and admin alert) of a split found after its ex-date when its symbol has traded since. */
+  static final String LATE_AND_TRADED = "found after its ex-date's pre-open, and the symbol has traded since:"
+      + " confirm the rates to apply it. APPLY splits the shares each account held at the ex cut-off, as of now;"
+      + " shares bought since the ex-date are not changed";
 
   // ------------------------------------------------------------------------------------------- resolve (admin)
 
@@ -202,7 +232,18 @@ public class CorporateActionApplier {
         : CorporateActionType.REVERSE_SPLIT;
     store.setSplitRates(ca.id(), type, oldRate, newRate);
     CorporateActionRow confirmed = store.byId(ca.id()).orElseThrow();
-    String problem = split(confirmed, confirmed.oldRate(), confirmed.newRate(), ActorKind.ADMIN, now, tx);
+    if (Et.date(now).isBefore(ca.exDate())) {
+      // confirmed before its ex-date: it applies at 03:45 ET on the ex-date, like any provider split
+      if (!store.transition(ca.id(), CorporateActionStatus.NEEDS_ADMIN, CorporateActionStatus.PENDING,
+          CorporateActionStore.appendDetail(ca.detail(), "rates " + confirmed.ratio() + " confirmed by " + by
+              + noteText + "; applies at 03:45 ET on " + ca.exDate()), null, actorPlayerId)) {
+        throw notResolvable(ca);
+      }
+      log.info("Corporate action {} {} rates confirmed by {}; applies on {}", ca.publicId(), ca.symbol(), by,
+          ca.exDate());
+      return store.byId(ca.id()).orElseThrow();
+    }
+    String problem = split(confirmed, confirmed.oldRate(), confirmed.newRate(), ActorKind.ADMIN, now, now, true, tx);
     if (problem != null) {
       throw ApiException.of(ErrorCode.CORPORATE_ACTION_NOT_RESOLVABLE, problem);
     }
@@ -216,6 +257,9 @@ public class CorporateActionApplier {
   /** Pays every ACCRUED entitlement with {@code payable_date ≤ date}; returns how many were paid. */
   public int payDividends(LocalDate date, Instant now, EngineTx tx) {
     EngineThread.assertCurrent();
+    if (date.isAfter(Et.date(now))) {
+      date = Et.date(now);                          // never pay ahead of the payable date (a future run key)
+    }
     record Due(long id, long caId, String caPublicId, long accountId, long playerId, String accountStatus,
                String symbol, BigDecimal qty, BigDecimal amount, BigDecimal rate) {}
     List<Due> due = jdbc.sql("""
@@ -255,36 +299,55 @@ public class CorporateActionApplier {
 
   // ------------------------------------------------------------------------------------------- splits
 
+  /** One holder's planned split: the arithmetic is done for every holder before the first write. */
+  private record Plan(Holder holder, SplitMath.Result result, BigDecimal qtyAtCutoff) {}
+
   /**
-   * The split of §14 as of {@code now}; null on success, else why it cannot be applied (then nothing was written: every
-   * position is computed before the first write).
+   * The split of §14; null on success, else why it cannot be applied (then nothing was written: every position is
+   * computed before the first write). Its position effects are dated {@code effectiveAt} ({@code position_adjustment}
+   * and {@code account_event}; ledger rows are posted now).
+   * <ul>
+   *   <li>Normally the holders are the current positions, which before the ex cut-off (or without a trade since) are
+   *       the holdings at the cut-off.</li>
+   *   <li>{@code asOfCutoff} (the admin's APPLY after the cut-off): the holders are the accounts that held the symbol
+   *       at the cut-off. An account that has not traded it since is split as usual; one that has gets only the
+   *       difference its cut-off quantity is owed ({@link SplitMath#applyDelta}), so shares bought after the ex-date
+   *       at post-split prices are never split. Accounts that bought only after the cut-off are not touched.</li>
+   * </ul>
+   * Open orders entered before the cut-off are cancelled; orders entered after it were priced post-split and stay.
    */
   private String split(CorporateActionRow ca, BigDecimal oldRate, BigDecimal newRate, ActorKind actor, Instant now,
-                       EngineTx tx) {
+                       Instant effectiveAt, boolean asOfCutoff, EngineTx tx) {
     String symbol = ca.symbol();
-    List<Holder> holders = holders(symbol);
+    Instant cutoff = exCutoff(ca.exDate());
     boolean fractionable = marketData.asset(symbol).map(Asset::fractionable).orElse(true);
-    BigDecimal price = rawReferencePrice(symbol, ca.exDate());
+    BigDecimal price = rawReferencePrice(symbol, ca.exDate(), oldRate, newRate, now);
+    boolean late = asOfCutoff && !now.isBefore(cutoff);
+    List<Holder> holders = late ? holdersAt(symbol, cutoff) : holders(symbol);
     // validate every position first, so a missing price never leaves half the accounts split
-    List<SplitMath.Result> results = new ArrayList<>();
-    List<List<LotRow>> lotsByHolder = new ArrayList<>();
+    List<Plan> plans = new ArrayList<>();
     for (Holder h : holders) {
       List<LotRow> lots = accounts.openLots(h.accountId(), symbol);
       List<SplitMath.Lot> in = lots.stream()
           .map(l -> new SplitMath.Lot(l.id(), l.qtyRemaining(), l.qtyOriginal(), l.costRemaining())).toList();
+      BigDecimal current = lots.stream().map(LotRow::qtyRemaining).reduce(BigDecimal.ZERO, BigDecimal::add);
+      boolean untouched = !late || (current.compareTo(h.qty()) == 0 && !tradedSince(h.accountId(), symbol, cutoff));
       try {
-        results.add(SplitMath.apply(in, oldRate, newRate, fractionable, price));
+        plans.add(new Plan(h, untouched ? SplitMath.apply(in, oldRate, newRate, fractionable, price)
+            : SplitMath.applyDelta(in, h.qty(), oldRate, newRate, fractionable, price), untouched ? null : h.qty()));
       } catch (NullPointerException e) {
         return "no reference price for the cash in lieu of " + symbol;
+      } catch (IllegalStateException e) {
+        return store.handleOf(h.playerId()).map(x -> "@" + x).orElse("account " + h.accountId())
+            + " cannot be adjusted: " + e.getMessage() + " (SKIP the split and correct the account by hand)";
       }
-      lotsByHolder.add(lots);
     }
-    orders.cancelAllOnSymbol(symbol, CancelReason.CORPORATE_ACTION, 0, now, tx);
+    orders.cancelAllOnSymbol(symbol, CancelReason.CORPORATE_ACTION, 0, now, cutoff, tx);
     LocalDate tradeDate = tradingDateOnOrAfter(Et.date(now));
     LocalDate settle = clock.settlementDate(tradeDate);
-    for (int i = 0; i < holders.size(); i++) {
-      Holder h = holders.get(i);
-      SplitMath.Result r = results.get(i);
+    for (Plan plan : plans) {
+      Holder h = plan.holder();
+      SplitMath.Result r = plan.result();
       for (SplitMath.LotResult l : r.lots()) {
         positions.splitLot(l.id(), l.qtyOriginalAfter(), l.qtyAfter(), l.costAfter(), now);
       }
@@ -298,16 +361,22 @@ public class CorporateActionApplier {
       }
       for (SplitMath.LotResult l : r.lots()) {
         adjustments.insert(new AdjustmentWriter.NewAdjustment(h.accountId(), ca.id(), l.id(), symbol, symbol,
-            l.qtyBefore(), l.qtyAfter(), l.costBefore(), l.costAfter(), l.absorbedCashInLieu() ? cilId : null, now));
+            l.qtyBefore(), l.qtyAfter(), l.costBefore(), l.costAfter(), l.absorbedCashInLieu() ? cilId : null,
+            effectiveAt));
       }
-      events.insert(h.accountId(), AccountEventType.SPLIT, now, symbol, actor, new SplitDetailDto(ca.publicId(),
-          oldRate, newRate, r.qtyBefore(), r.qtyAfter(), r.costAfter(), r.cashInLieu(), r.cashInLieuQty(),
-          r.realizedPnl()));
+      events.insert(h.accountId(), AccountEventType.SPLIT, effectiveAt, symbol, actor, new SplitDetailDto(
+          ca.publicId(), oldRate, newRate, r.qtyBefore(), r.qtyAfter(), r.costAfter(), r.cashInLieu(),
+          r.cashInLieuQty(), r.realizedPnl()));
       assertI5(h.accountId(), symbol);
       tx.publish(new AccountChanged(h.accountId(), h.playerId(), "CORPORATE_ACTION", now));
-      String body = "Your " + plain(r.qtyBefore()) + " shares are now " + plain(r.qtyAfter()) + " shares; your cost"
-          + " basis is unchanged" + (r.cashInLieu().signum() > 0 ? " except for $" + r.cashInLieu().toPlainString()
-          + " paid in cash for " + plain(r.cashInLieuQty()) + " fractional shares" : "") + ".";
+      String cash = r.cashInLieu().signum() > 0 ? " $" + r.cashInLieu().toPlainString() + " was paid in cash for "
+          + plain(r.cashInLieuQty()) + " fractional shares." : "";
+      String body = plan.qtyAtCutoff() == null
+          ? "Your " + plain(r.qtyBefore()) + " shares are now " + plain(r.qtyAfter()) + " shares; your cost basis is"
+              + " unchanged" + (cash.isEmpty() ? "." : " except for the cash in lieu." + cash)
+          : "The split applies to the " + plain(plan.qtyAtCutoff()) + " shares you held at its ex-date ("
+              + ca.exDate() + "); shares bought since are unchanged. Your " + plain(r.qtyBefore())
+              + " shares are now " + plain(r.qtyAfter()) + "." + cash;
       tx.publish(new CorporateActionEffect(h.accountId(), h.playerId(), ca.publicId(), ca.type(), symbol, "SPLIT",
           symbol + " " + ca.ratio() + (ca.type() == CorporateActionType.REVERSE_SPLIT ? " reverse" : "") + " split",
           body, now));
@@ -316,27 +385,85 @@ public class CorporateActionApplier {
     return null;
   }
 
-  /** The raw close of one pre-split share: the previous trading day's day-end mark, else the previous close. */
-  private BigDecimal rawReferencePrice(String symbol, LocalDate exDate) {
+  /**
+   * The raw close of one pre-split share, for cash in lieu (§14): the day-end mark of the trading day before the
+   * ex-date, under the symbol or, when a NAME_CHANGE moved positions onto it, under its former symbol; else the official
+   * previous close when it is dated before the ex-date. A price observed on or after the ex-date is a post-split price:
+   * it is converted back to one old share ({@code × newRate / oldRate}), never used as is. Null when there is none (the
+   * split then waits for the admin).
+   */
+  private BigDecimal rawReferencePrice(String symbol, LocalDate exDate, BigDecimal oldRate, BigDecimal newRate,
+                                      Instant now) {
+    List<String> names = namesOf(symbol, exDate);
     try {
       LocalDate before = clock.calendar().previousTradingDay(exDate);
-      Optional<BigDecimal> dayEnd = marketData.dayEndMark(symbol, before);
-      if (dayEnd.isPresent() && dayEnd.get().signum() > 0) {
-        return dayEnd.get();
+      for (String s : names) {
+        Optional<BigDecimal> dayEnd = marketData.dayEndMark(s, before);
+        if (dayEnd.isPresent() && dayEnd.get().signum() > 0) {
+          return dayEnd.get();
+        }
       }
     } catch (RuntimeException e) {
       log.debug("No day-end mark for {}: {}", symbol, e.toString());
     }
     try {
-      Optional<BigDecimal> prev = marketData.previousClose(symbol);
-      if (prev.isPresent() && prev.get().signum() > 0) {
-        return prev.get();
+      LocalDate closeDate = clock.calendar().previousTradingDay(clock.calendar().currentPnlDay(now));
+      for (String s : names) {
+        Optional<BigDecimal> prev = marketData.previousClose(s);
+        if (prev.isPresent() && prev.get().signum() > 0) {
+          return closeDate.isBefore(exDate) ? prev.get() : oldShare(prev.get(), oldRate, newRate);
+        }
       }
-      BigDecimal mark = marketData.mark(symbol).price();
-      return mark != null && mark.signum() > 0 ? mark : null;
+      Mark mark = marketData.mark(symbol);
+      if (mark.price() == null || mark.price().signum() <= 0) {
+        return null;
+      }
+      boolean preEx = mark.asOf() != null && mark.asOf().isBefore(exCutoff(exDate));
+      return preEx ? mark.price() : oldShare(mark.price(), oldRate, newRate);
     } catch (RuntimeException e) {
       return null;
     }
+  }
+
+  /** A post-split price converted back to one pre-split share. */
+  private static BigDecimal oldShare(BigDecimal postSplit, BigDecimal oldRate, BigDecimal newRate) {
+    return postSplit.multiply(newRate).divide(oldRate, Prices.SCALE, RoundingMode.HALF_EVEN);
+  }
+
+  /** {@code symbol}, then the symbols APPLIED NAME_CHANGEs (ex-date ≤ {@code exDate}) moved onto it, newest first. */
+  private List<String> namesOf(String symbol, LocalDate exDate) {
+    List<String> out = new ArrayList<>(List.of(symbol));
+    for (int i = 0; i < out.size() && out.size() < 4; i++) {
+      for (String former : jdbc.sql("""
+              SELECT symbol FROM corporate_action
+               WHERE action_type = 'NAME_CHANGE' AND status = 'APPLIED' AND new_symbol = ? AND ex_date <= ?
+               ORDER BY ex_date DESC, id DESC""")
+          .params(out.get(i), exDate).query(String.class).list()) {
+        if (!out.contains(former)) {
+          out.add(former);
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * When a corporate action's effect is dated: now when applied before the ex cut-off, else (applied late, nothing
+   * traded since) the nominal 03:45 ET of the ex-date, so the replayed holdings at the cut-off already carry it.
+   */
+  Instant nominalTime(LocalDate exDate, Instant now) {
+    Instant cutoff = exCutoff(exDate);
+    if (now.isBefore(cutoff)) {
+      return now;
+    }
+    Instant nominal = Et.at(exDate, CorporateActionApplyJob.AT);
+    return nominal.isBefore(cutoff) ? nominal : cutoff.minusSeconds(1);
+  }
+
+  /** True if the account traded {@code symbol} at or after {@code cutoff}. */
+  private boolean tradedSince(long accountId, String symbol, Instant cutoff) {
+    return jdbc.sql("SELECT COUNT(*) FROM execution WHERE account_id = ? AND symbol = ? AND executed_at >= ?")
+        .params(accountId, symbol, Jdbc.ts(cutoff)).query(Integer.class).single() > 0;
   }
 
   /** True if any execution on {@code symbol} happened at or after the ex-date's pre-open (a split applied late). */
@@ -356,17 +483,18 @@ public class CorporateActionApplier {
 
   // ------------------------------------------------------------------------------------------- name changes
 
-  private void rename(CorporateActionRow ca, String target, ActorKind actor, Instant now, EngineTx tx) {
+  private void rename(CorporateActionRow ca, String target, ActorKind actor, Instant now, Instant effectiveAt,
+                      EngineTx tx) {
     String from = ca.symbol();
     ensureAsset(from, target, now);
-    orders.cancelAllOnSymbol(from, CancelReason.CORPORATE_ACTION, 0, now, tx);
+    orders.cancelAllOnSymbol(from, CancelReason.CORPORATE_ACTION, 0, now, null, tx);
     for (Holder h : holders(from)) {
       for (LotRow l : accounts.openLots(h.accountId(), from)) {
         adjustments.insert(new AdjustmentWriter.NewAdjustment(h.accountId(), ca.id(), l.id(), from, target,
-            l.qtyRemaining(), l.qtyRemaining(), l.costRemaining(), l.costRemaining(), null, now));
+            l.qtyRemaining(), l.qtyRemaining(), l.costRemaining(), l.costRemaining(), null, effectiveAt));
       }
       positions.renamePosition(h.accountId(), from, target, now);
-      events.insert(h.accountId(), AccountEventType.NAME_CHANGE, now, target, actor,
+      events.insert(h.accountId(), AccountEventType.NAME_CHANGE, effectiveAt, target, actor,
           new NameChangeDetailDto(ca.publicId(), from, target, h.qty()));
       assertI5(h.accountId(), target);
       tx.publish(new AccountChanged(h.accountId(), h.playerId(), "CORPORATE_ACTION", now));

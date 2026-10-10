@@ -41,8 +41,11 @@ import org.springframework.stereotype.Component;
  *       ex-date.</li>
  *   <li>A new row is PENDING; its {@code ApplyCorporateActionCmd} runs at 03:45 ET on the ex-date
  *       ({@link CorporateActionApplyJob}). Types Phase 1 does not apply (mergers, spin-offs, delistings) and splits
- *       reported only after their ex-date's pre-open (positions already traded unadjusted) are NEEDS_ADMIN, with an
- *       admin alert; a late split that is already applied (e.g. a resolved DETECTED one) is SKIPPED.</li>
+ *       without valid rates are NEEDS_ADMIN, with an admin alert; a split reported after its ex-date that is already
+ *       applied (e.g. a resolved DETECTED one) is SKIPPED. Any other split reported late stays PENDING and is applied
+ *       at once below: with no holder at its ex cut-off it only adjusts prices; with holders and no trade since, it is
+ *       applied as of the ex-date; only holders plus trades since put it on a corporate-action hold for the admin
+ *       ({@link CorporateActionApplier#apply}).</li>
  *   <li>A row that is still PENDING takes the provider's latest data; other rows are left alone.</li>
  * </ul>
  * Finally, PENDING actions that are already overdue (their ex-date's pre-open has passed: found late, or an earlier
@@ -174,8 +177,7 @@ public class CorporateActionSyncJob implements ScheduledJob {
           status = CorporateActionStatus.SKIPPED;
           detail = "reported after its ex-date; superseded by " + applied.get().publicId();
         } else {
-          status = CorporateActionStatus.NEEDS_ADMIN;
-          detail = "reported after its ex-date's pre-open: positions traded unadjusted; confirm to apply as of now";
+          detail = "reported after its ex-date's pre-open";   // PENDING: applyOverdue decides right below
         }
       }
       String publicId = publicIds.next(Prefix.CORPORATE_ACTION);

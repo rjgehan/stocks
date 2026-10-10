@@ -44,9 +44,9 @@ import com.stocks.marketdata.sim.SimScenarios;
 import com.stocks.marketdata.sim.SimulatedMarketDataProvider;
 import com.stocks.marketdata.spi.MarketDataProvider;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -77,9 +77,9 @@ public final class MarketDataRuntime implements AutoCloseable {
   private static final Logger log = LoggerFactory.getLogger(MarketDataRuntime.class);
 
   /** Collaborators owned by other workstreams, resolved lazily (their beans may depend on market data). */
-  public record External(Supplier<Collection<String>> holdsSource, SplitGuard.Flagger splitFlagger) {
+  public record External(Supplier<Map<String, LocalDate>> holdsSource, SplitGuard.Flagger splitFlagger) {
     public static External none() {
-      return new External(List::of, d -> { });
+      return new External(Map::of, d -> { });
     }
   }
 
@@ -190,7 +190,7 @@ public final class MarketDataRuntime implements AutoCloseable {
       }
     }
     this.bars = new BarService(primary, !props.simulated(), feed, calendar, time);
-    this.marks = new MarkService(feed, calendar, time, dailyMarks, splits, holds::onHold, rules.regularConfirmed(),
+    this.marks = new MarkService(feed, calendar, time, dailyMarks, splits, holds::exDate, rules.regularConfirmed(),
         rules.extConfirmed());
     QuoteSplitAdjuster splitAdjuster = new QuoteSplitAdjuster(splits, calendar, time);
     this.movers = new MoversService(primary, feed, assets, calendar, time,

@@ -146,7 +146,7 @@ public class MarketTools implements McpToolSet {
       @McpToolParam(description = "Ticker, e.g. AAPL") String symbol) {
     String sym = McpArgs.symbol(symbol, "symbol");
     Asset asset = requireAsset(sym);
-    return MarketDtos.asset(asset, fundamentals(sym));
+    return MarketDtos.asset(asset, fundamentals(sym), marketData.onCorporateActionHold(sym));
   }
 
   @McpTool(name = "get_quotes", title = "Quotes",

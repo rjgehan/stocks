@@ -159,11 +159,17 @@ class HoldAndResolveTest extends CorporateActionTestSupport {
     assertThat(service.resolve(merger, CorporateActionResolution.SKIP, null, null, "cash merger handled by hand",
         adminId).status()).isEqualTo(CorporateActionStatus.SKIPPED);
 
-    // a split reported after its ex-date's pre-open: positions already traded unadjusted
+    // a split reported after its ex-date's pre-open stays PENDING for the engine: nobody held it at the cut-off, so
+    // it only adjusts prices (no hold); a hold needs holders that traded since (LateCorporateActionTest)
     time.set(et("2026-10-12T10:00:00"));
-    String lateSplit = split(s, MON, "1", "2");
-    assertThat(row(lateSplit).status()).isEqualTo(CorporateActionStatus.NEEDS_ADMIN);
-    assertThat(queries.symbolsOnHold()).contains(s);
+    String noHolders = split(s, MON, "1", "2");
+    assertThat(row(noHolders).status()).isEqualTo(CorporateActionStatus.PENDING);
+    assertThat(apply(noHolders).status()).isEqualTo(CorporateActionStatus.APPLIED);
+    assertThat(queries.symbolsOnHold()).doesNotContain(s);
+    // the validation of an APPLY, on a split the guard flagged for another symbol
+    String h = symbol();
+    String lateSplit = service.flagDetectedSplit(h, MON, BigDecimal.ONE, new BigDecimal("2")).id();
+    assertThat(queries.symbolsOnHold()).contains(h);
     assertThatThrownBy(() -> service.resolve(lateSplit, CorporateActionResolution.APPLY, null, BigDecimal.ONE,
         "missing", adminId)).isInstanceOfSatisfying(ApiException.class,
             e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));

@@ -65,5 +65,13 @@ public interface MarketDataService {
   /** True while halted OR under a corporate-action hold (§14). */
   boolean isHalted(String symbol);
 
+  /**
+   * True while the symbol is under a corporate-action hold (§14: a split waiting for the admin). Asset DTOs then
+   * report {@code tradable = false}, since new orders are rejected until the admin resolves it.
+   */
+  default boolean onCorporateActionHold(String symbol) {
+    return false;
+  }
+
   MarketDataStatus status();
 }

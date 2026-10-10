@@ -15,7 +15,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 import org.springframework.jdbc.core.SqlParameterValue;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -108,6 +110,19 @@ public class CorporateActionStore {
              WHERE status = 'NEEDS_ADMIN' AND action_type IN ('FORWARD_SPLIT','REVERSE_SPLIT') AND ex_date <= ?
              ORDER BY symbol""")
         .param(todayEt).query(String.class).list();
+  }
+
+  /** {@link #symbolsOnHold} with each symbol's earliest held ex-date. */
+  public Map<String, LocalDate> holds(LocalDate todayEt) {
+    Map<String, LocalDate> out = new TreeMap<>();
+    jdbc.sql("""
+            SELECT symbol, MIN(ex_date) FROM corporate_action
+             WHERE status = 'NEEDS_ADMIN' AND action_type IN ('FORWARD_SPLIT','REVERSE_SPLIT') AND ex_date <= ?
+             GROUP BY symbol""")
+        .param(todayEt).query(rs -> {
+          out.put(rs.getString(1), Jdbc.date(rs, 2));
+        });
+    return out;
   }
 
   /** The handle of a player (the admin who resolved an action), if any. */

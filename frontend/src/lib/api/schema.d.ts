@@ -715,7 +715,7 @@ export interface paths {
         put?: never;
         /**
          * Run a scheduled job now
-         * @description Recent password check. Starts one occurrence (runKey, default the latest past occurrence) in the background through the job_run guard; an occurrence already DONE does not run again. Watch the result in GET /admin/system. Errors: NOT_FOUND, VALIDATION_FAILED.
+         * @description Recent password check. Starts one occurrence (runKey, default the latest past occurrence) in the background through the job_run guard; an occurrence already DONE does not run again, and a key that has not happened yet is refused. Watch the result in GET /admin/system. Errors: NOT_FOUND, VALIDATION_FAILED.
          */
         post: operations["runJob"];
         delete?: never;

@@ -65,7 +65,7 @@ public class AssetController {
     String s = Symbols.normalize(symbol, "symbol");
     Asset a = Symbols.require(marketData, s);
     Fundamentals f = marketData.fundamentals(s).orElse(null);
-    return AssetDtoMapper.toDto(a, f);
+    return AssetDtoMapper.toDto(a, f, marketData.onCorporateActionHold(s));
   }
 
   @GetMapping(value = "/{symbol}/logo", produces = MediaType.IMAGE_PNG_VALUE)

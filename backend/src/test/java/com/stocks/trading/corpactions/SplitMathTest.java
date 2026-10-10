@@ -164,6 +164,50 @@ class SplitMathTest {
         .isEqualByComparingTo("2");
   }
 
+  // ------------------------------------------------------------------------------------------- applyDelta (late APPLY)
+
+  /** Review regression: only the shares held at the ex cut-off are split; later purchases keep their quantity. */
+  @Test
+  void aLateForwardSplitAddsOnlyTheCutoffSharesShareOfTheSplitToTheOldestLot() {
+    // 10 held at the cut-off (lot 1), 4 bought after it at the post-split price (lot 2)
+    SplitMath.Result r = SplitMath.applyDelta(List.of(lot(1, "10", "1000.00"), lot(2, "4", "200.00")), d("10"), ONE,
+        TWO, true, d("100.00"));
+    assertThat(r.qtyBefore()).isEqualByComparingTo("14");
+    assertThat(r.qtyAfter()).isEqualByComparingTo("24");
+    assertThat(r.costAfter()).isEqualByComparingTo("1200.00");
+    assertThat(r.lots()).extracting(SplitMath.LotResult::qtyAfter).usingElementComparator(BigDecimal::compareTo)
+        .containsExactly(d("20"), d("4"));
+    assertThat(r.lots().get(0).qtyOriginalAfter()).isEqualByComparingTo("20");
+    assertThat(r.cashInLieu()).isEqualByComparingTo("0.00");
+    // sold everything since the cut-off: the extra shares are owed in cash (non-fractionable 3:2 of 3 → 1.5 more)
+    SplitMath.Result sold = SplitMath.applyDelta(List.of(), d("3"), TWO, THREE, false, d("20.00"));
+    assertThat(sold.qtyAfter()).isEqualByComparingTo("0");
+    assertThat(sold.cashInLieuQty()).isEqualByComparingTo("1.5");
+    assertThat(sold.cashInLieu()).as("1.5 × 20.00 × 2 / 3").isEqualByComparingTo("20.00");
+  }
+
+  @Test
+  void aLateReverseSplitRemovesFromTheOldestLotsKeepsTheirCostAndRefusesToOverdraw() {
+    // 1-for-10 on 15 held at the cut-off (lot 1); 2 bought since at the post-split price (lot 2); non-fractionable
+    SplitMath.Result r = SplitMath.applyDelta(List.of(lot(1, "15", "45.00"), lot(2, "2", "60.00")), d("15"), d("10"),
+        ONE, false, d("3.00"));
+    // entitled 1.5 → keeps 1 and is paid 0.5 × 3.00 × 10 = 15.00; lot 1 loses 14 shares, cost kept
+    assertThat(r.qtyAfter()).isEqualByComparingTo("3");
+    assertThat(r.lots()).extracting(SplitMath.LotResult::qtyAfter).usingElementComparator(BigDecimal::compareTo)
+        .containsExactly(d("1"), d("2"));
+    assertThat(r.costAfter()).isEqualByComparingTo("105.00");
+    assertThat(r.cashInLieu()).isEqualByComparingTo("15.00");
+    assertThat(r.lots().get(1).absorbedCashInLieu()).isTrue();
+    // a lot emptied by the removal is closed and its cost realized
+    SplitMath.Result emptied = SplitMath.applyDelta(List.of(lot(1, "5", "15.00"), lot(2, "10", "300.00")), d("10"),
+        d("10"), ONE, true, d("3.00"));
+    assertThat(emptied.lots()).extracting(SplitMath.LotResult::closed).containsExactly(true, false);
+    assertThat(emptied.qtyAfter()).isEqualByComparingTo("6");
+    assertThat(emptied.realizedPnl()).isEqualByComparingTo("-15.00");
+    assertThatThrownBy(() -> SplitMath.applyDelta(List.of(lot(1, "2", "60.00")), d("20"), d("10"), ONE, true,
+        d("3.00"))).isInstanceOf(IllegalStateException.class).hasMessageContaining("only 2 are held now");
+  }
+
   @Test
   void neverDividesRatesOnTheirOwn() {
     // 1-for-3 and 3:2 do not terminate as ratios; every quantity is computed multiply-first at scale 5

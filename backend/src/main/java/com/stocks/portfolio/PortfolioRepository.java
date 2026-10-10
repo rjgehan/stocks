@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -216,6 +217,42 @@ public class PortfolioRepository {
             SELECT price FROM execution WHERE symbol = ? AND executed_at <= ?
              ORDER BY executed_at DESC, id DESC LIMIT 1""")
         .params(symbol, Jdbc.ts(t)).query(BigDecimal.class).optional();
+  }
+
+  // ------------------------------------------------------------------------------------------- corporate actions
+
+  /**
+   * §14 corporate-action holds at an EOD cut-off {@code c} of {@code tradeDate}: symbol → the earliest ex-date (≤ the
+   * trade date) of a split that the account's holding at {@code c} has not absorbed yet, because it is still waiting
+   * for the admin (NEEDS_ADMIN) or was applied only after {@code c} without an adjustment of this account dated ≤ c.
+   * Holdings replayed at {@code c} are then pre-split while the market's day-end mark is post-split.
+   */
+  public Map<String, LocalDate> unabsorbedSplits(long accountId, LocalDate tradeDate, Instant c) {
+    Map<String, LocalDate> out = new HashMap<>();
+    jdbc.sql("""
+            SELECT ca.symbol, MIN(ca.ex_date) FROM corporate_action ca
+             WHERE ca.action_type IN ('FORWARD_SPLIT','REVERSE_SPLIT') AND ca.ex_date <= ?
+               AND (ca.status = 'NEEDS_ADMIN' OR (ca.status = 'APPLIED' AND ca.applied_at > ?))
+               AND NOT EXISTS (SELECT 1 FROM position_adjustment pa WHERE pa.corporate_action_id = ca.id
+                                  AND pa.account_id = ? AND pa.effective_at <= ?)
+             GROUP BY ca.symbol""")
+        .params(tradeDate, Jdbc.ts(c), accountId, Jdbc.ts(c))
+        .query(rs -> {
+          out.put(rs.getString(1), Jdbc.date(rs, 2));
+        });
+    return out;
+  }
+
+  /**
+   * The symbols that APPLIED NAME_CHANGEs moved onto {@code symbol}, newest first (§14: until the new symbol has a price
+   * of its own, the old symbol's prices value the renamed position).
+   */
+  public List<String> formerSymbols(String symbol) {
+    return jdbc.sql("""
+            SELECT symbol FROM corporate_action
+             WHERE action_type = 'NAME_CHANGE' AND status = 'APPLIED' AND new_symbol = ? AND symbol <> ?
+             ORDER BY ex_date DESC, id DESC""")
+        .params(symbol, symbol).query(String.class).list();
   }
 
   /** A cash amount read from SQL (a SUM may be null), at scale 2. */

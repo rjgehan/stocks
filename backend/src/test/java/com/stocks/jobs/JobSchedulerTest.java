@@ -93,6 +93,25 @@ class JobSchedulerTest {
         e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
   }
 
+  /** Review regression: "Run now" with a future key would run tomorrow's work today (a split before its ex-date). */
+  @Test
+  void runNowRefusesAKeyThatHasNotHappenedYet() {
+    FakeJob daily = new FakeJob("DAILY", Duration.ofDays(1), CatchUpPolicy.LATEST_ONLY);
+    FakeJob hourly = new FakeJob("HOURLY", Duration.ofHours(1), CatchUpPolicy.ALL_MISSED);
+    JobScheduler s = scheduler(List.of(daily, hourly), List.of(), disabled);
+    for (String key : List.of("2026-10-10", "2026-10-19", "2026-10-10T00:00:00Z")) {
+      assertThatThrownBy(() -> s.runNow("DAILY", key)).as(key).isInstanceOfSatisfying(ApiException.class, e -> {
+        assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+        assertThat(e.getMessage() + e.fields()).contains("has not happened yet");
+      });
+    }
+    // later today (10:00 ET now): the 15:00Z occurrence is upcoming, the 14:00Z one is past
+    assertThatThrownBy(() -> s.runNow("HOURLY", "2026-10-09T15:00:00Z")).isInstanceOf(ApiException.class);
+    assertThat(s.runNow("HOURLY", "2026-10-09T14:00:00Z").outcome()).isEqualTo(JobRunGuard.Outcome.DONE);
+    assertThat(s.runNow("DAILY", "2026-10-09").outcome()).isEqualTo(JobRunGuard.Outcome.DONE);
+    assertThat(daily.runs).containsExactly("2026-10-09");
+  }
+
   @Test
   void jobNamesAreValidated() {
     FakeJob bad = new FakeJob("lowercase", Duration.ofHours(1), CatchUpPolicy.NONE);

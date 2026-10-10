@@ -3,6 +3,7 @@ package com.stocks.jobs;
 import com.stocks.common.domain.SessionType;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
+import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
 import com.stocks.config.StocksProperties;
 import com.stocks.contract.calendar.MarketCalendar;
@@ -12,6 +13,8 @@ import com.stocks.contract.jobs.PeriodicTask;
 import com.stocks.contract.jobs.ScheduledJob;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -401,11 +404,53 @@ public class JobScheduler {
         throw ApiException.of(ErrorCode.NOT_FOUND, "Job '" + name + "' has no past occurrence to run.");
       }
       runKey = past.get(past.size() - 1).runKey();
-    } else if (!RUN_KEY.matcher(runKey).matches()) {
-      throw ApiException.validation("runKey", "1-48 characters of letters, digits and . _ : + -");
+    } else {
+      validateRunKey(name, runKey);
     }
     String key = runKey;
     return guard.run(name, key, () -> s.job.run(key));
+  }
+
+  /**
+   * Checks an admin-supplied run key before "Run now" accepts it (the admin endpoint calls this before answering 202):
+   * its format, and that it is not an occurrence that has not happened yet, which would run tomorrow's work today
+   * (e.g. apply a split before its ex-date).
+   *
+   * @throws ApiException {@code NOT_FOUND} for an unknown job, {@code VALIDATION_FAILED} for a bad or future key
+   */
+  public void validateRunKey(String name, String runKey) {
+    JobState s = jobStates.get(name);
+    if (s == null) {
+      throw ApiException.of(ErrorCode.NOT_FOUND, "Unknown job '" + name + "'.");
+    }
+    if (!RUN_KEY.matcher(runKey).matches()) {
+      throw ApiException.validation("runKey", "1-48 characters of letters, digits and . _ : + -");
+    }
+    if (isFuture(s.job, runKey, time.now())) {
+      throw ApiException.validation("runKey", "must be a past occurrence: " + runKey + " has not happened yet");
+    }
+  }
+
+  /**
+   * True when {@code runKey} names an occurrence that has not happened yet: its leading ET date ({@code yyyy-MM-dd},
+   * the form every scheduled job's key starts with) is after today, or it is one of the job's upcoming occurrences.
+   */
+  boolean isFuture(ScheduledJob job, String runKey, Instant now) {
+    if (runKey.length() >= 10) {
+      try {
+        if (LocalDate.parse(runKey.substring(0, 10)).isAfter(Et.date(now))) {
+          return true;
+        }
+      } catch (DateTimeParseException ignored) {
+        // not a dated key: only the upcoming occurrences can tell
+      }
+    }
+    try {
+      return job.occurrencesBetween(now, now.plus(LOOKAHEAD), calendar).stream()
+          .anyMatch(o -> o.runKey().equals(runKey));
+    } catch (RuntimeException e) {
+      return false;                                // no calendar yet: the date check above is all there is
+    }
   }
 
   /** The registry: every job and task with its next occurrence and last run. */

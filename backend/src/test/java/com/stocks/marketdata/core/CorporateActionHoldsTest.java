@@ -5,7 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.stocks.common.time.MutableTimeSource;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
+import java.time.LocalDate;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -15,7 +16,8 @@ import org.junit.jupiter.api.Test;
 class CorporateActionHoldsTest {
 
   final MutableTimeSource time = new MutableTimeSource(Instant.parse("2026-10-14T13:20:00Z"));
-  final AtomicReference<List<String>> table = new AtomicReference<>(List.of("SIMS"));
+  final AtomicReference<Map<String, LocalDate>> table =
+      new AtomicReference<>(Map.of("SIMS", LocalDate.of(2026, 10, 14)));
   final AtomicInteger reads = new AtomicInteger();
 
   @Test
@@ -25,7 +27,9 @@ class CorporateActionHoldsTest {
       return table.get();
     }, time);
     assertThat(holds.onHold("SIMS")).isTrue();
-    table.set(List.of());                                       // the admin resolved the split
+    assertThat(holds.exDate("SIMS")).isEqualTo(LocalDate.of(2026, 10, 14));
+    assertThat(holds.exDate("AAPL")).isNull();
+    table.set(Map.of());                                       // the admin resolved the split
     time.advance(Duration.ofSeconds(5));
     assertThat(holds.onHold("SIMS")).isTrue();                  // still cached: the integration bug's window
     holds.invalidate();                                         // CorporateActionCacheListener, after commit
