@@ -31,6 +31,9 @@ public class RecordingMarketData extends ScriptedMarketData {
   private final Map<String, List<Bar>> bars = new ConcurrentHashMap<>();
   private final AtomicInteger quoteReads = new AtomicInteger();
   private final List<NewsItem> news = new CopyOnWriteArrayList<>();
+  private final Map<String, com.stocks.contract.marketdata.Tape> tapes = new ConcurrentHashMap<>();
+  private final Map<String, com.stocks.contract.marketdata.Recommendations> recommendations =
+      new ConcurrentHashMap<>();
 
   public RecordingMarketData(TimeSource time) {
     super(time);
@@ -69,6 +72,32 @@ public class RecordingMarketData extends ScriptedMarketData {
     return news.stream().filter(n -> symbols == null || symbols.isEmpty()
             || n.symbols().stream().anyMatch(symbols::contains))
         .limit(Math.max(0, limit)).toList();
+  }
+
+  /** §15.10: the tape {@code timeAndSales} serves for the symbol (newest first, as the real feeds return it). */
+  public RecordingMarketData withTape(com.stocks.contract.marketdata.Tape tape) {
+    tapes.put(tape.symbol(), tape);
+    return this;
+  }
+
+  @Override
+  public com.stocks.contract.marketdata.Tape timeAndSales(String symbol, int limit) {
+    com.stocks.contract.marketdata.Tape t = tapes.get(symbol);
+    if (t == null) {
+      return com.stocks.contract.marketdata.Tape.none(symbol);
+    }
+    return new com.stocks.contract.marketdata.Tape(t.symbol(), t.source(), t.streaming(),
+        t.prints().stream().limit(Math.max(0, limit)).toList());
+  }
+
+  public RecordingMarketData withRecommendations(com.stocks.contract.marketdata.Recommendations r) {
+    recommendations.put(r.symbol(), r);
+    return this;
+  }
+
+  @Override
+  public Optional<com.stocks.contract.marketdata.Recommendations> recommendations(String symbol) {
+    return Optional.ofNullable(recommendations.get(symbol));
   }
 
   public RecordingMarketData withBars(String symbol, Bar... list) {

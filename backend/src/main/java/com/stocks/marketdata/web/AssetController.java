@@ -1,9 +1,12 @@
 package com.stocks.marketdata.web;
 
 import com.stocks.common.error.ApiException;
+import com.stocks.common.time.TimeSource;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.dto.AssetDto;
 import com.stocks.contract.marketdata.dto.AssetSummaryDto;
+import com.stocks.contract.marketdata.dto.RecommendationsDto;
+import com.stocks.contract.marketdata.dto.TimeAndSalesDto;
 import com.stocks.contract.marketdata.model.Asset;
 import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.marketdata.config.MarketDataRuntime;
@@ -26,20 +29,26 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** §18.2 asset endpoints: symbol search, asset detail with fundamentals, and the logo proxy ({@code market:read}). */
+/**
+ * §18.2 asset endpoints: symbol search, asset detail with fundamentals and the logo proxy; Phase 2 (§15.10) Time &amp;
+ * Sales and analyst recommendation trends ({@code market:read}).
+ */
 @RestController
 @RequestMapping("/api/v1/assets")
 @Tag(name = "assets", description = "Symbols, asset detail and logos (§18.2)")
 public class AssetController {
 
   static final int MAX_SEARCH = 20;
+  static final int MAX_TRADES = 200;
 
   private final MarketDataService marketData;
   private final MarketDataRuntime runtime;
+  private final TimeSource time;
 
-  public AssetController(MarketDataService marketData, MarketDataRuntime runtime) {
+  public AssetController(MarketDataService marketData, MarketDataRuntime runtime, TimeSource time) {
     this.marketData = marketData;
     this.runtime = runtime;
+    this.time = time;
   }
 
   @GetMapping("/search")
@@ -66,6 +75,34 @@ public class AssetController {
     Asset a = Symbols.require(marketData, s);
     Fundamentals f = marketData.fundamentals(s).orElse(null);
     return AssetDtoMapper.toDto(a, f, marketData.onCorporateActionHold(s));
+  }
+
+  @GetMapping("/{symbol}/trades")
+  @Operation(summary = "Time & Sales (recent prints)",
+      description = "Phase 2 (§15.10): the symbol's most recent prints, newest first, each with its side against the "
+          + "quote in force when it arrived (AT_ASK, AT_BID, BETWEEN, UNKNOWN). Only prints a trade stream delivered: "
+          + "source SIP (consolidated), IEX (single venue, a few percent of the volume), SIMULATED, or NONE when no "
+          + "stream covers the symbol right now (streaming=false; the quote page's /topic/trades.{SYM} subscription "
+          + "asks for one). Prices are raw (as traded). Errors: SYMBOL_NOT_FOUND, VALIDATION_FAILED.")
+  public TimeAndSalesDto trades(@PathVariable String symbol,
+      @Parameter(description = "1–200, default 60") @RequestParam(defaultValue = "60") int limit) {
+    if (limit < 1 || limit > MAX_TRADES) {
+      throw ApiException.validation("limit", "limit must be 1.." + MAX_TRADES);
+    }
+    String s = Symbols.normalize(symbol, "symbol");
+    Symbols.require(marketData, s);
+    return TimeAndSalesDto.of(marketData.timeAndSales(s, limit), time.now());
+  }
+
+  @GetMapping("/{symbol}/recommendations")
+  @Operation(summary = "Analyst recommendation trends",
+      description = "Phase 2 (§15.10): monthly counts of strong buy, buy, hold, sell and strong sell ratings, newest "
+          + "first (Finnhub's free recommendation trends, cached 12 h). periods is empty and source is \"none\" when "
+          + "no source covers the symbol (no Finnhub token, an ETF). Errors: SYMBOL_NOT_FOUND.")
+  public RecommendationsDto recommendations(@PathVariable String symbol) {
+    String s = Symbols.normalize(symbol, "symbol");
+    Symbols.require(marketData, s);
+    return RecommendationsDto.of(s, marketData.recommendations(s));
   }
 
   @GetMapping(value = "/{symbol}/logo", produces = MediaType.IMAGE_PNG_VALUE)

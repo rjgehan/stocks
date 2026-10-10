@@ -13,6 +13,9 @@ import com.stocks.contract.marketdata.Print;
 import com.stocks.contract.marketdata.ProviderStatus;
 import com.stocks.contract.marketdata.QuoteView;
 import com.stocks.contract.marketdata.RefreshPriority;
+import com.stocks.contract.marketdata.Tape;
+import com.stocks.contract.marketdata.TapePrint;
+import com.stocks.contract.marketdata.TapeSource;
 import com.stocks.contract.marketdata.model.Bar;
 import com.stocks.contract.marketdata.model.MarketEvent;
 import com.stocks.contract.marketdata.model.Snapshot;
@@ -410,6 +413,51 @@ public class LiveFeed implements MarketFeed {
       return a;
     }
     return a.isAfter(b) ? a : b;
+  }
+
+  /**
+   * §15.10: the stream-delivered prints of the quote book. The source is that of the newest print (SIP when the
+   * Finnhub stream or Alpaca SIP delivered it, IEX otherwise); with no print yet it is the stream that covers the
+   * symbol, or {@code NONE}.
+   */
+  @Override
+  public Tape tape(String symbol, int limit) {
+    List<TapePrint> prints = book.tape(symbol, limit);
+    WebSocketStream a = alpacaStream;
+    WebSocketStream f = finnhubStream;
+    boolean onFinnhub = f != null && f.subscribed().contains(symbol);
+    boolean onAlpaca = a != null && a.subscribed().contains(symbol);
+    boolean sip = "sip".equals(props.effectiveFeed());
+    TapeSource source;
+    if (!prints.isEmpty()) {
+      source = prints.get(0).consolidated() ? TapeSource.SIP : TapeSource.IEX;
+    } else if (onFinnhub || onAlpaca && sip) {
+      source = TapeSource.SIP;
+    } else if (onAlpaca) {
+      source = TapeSource.IEX;
+    } else {
+      source = TapeSource.NONE;
+    }
+    return new Tape(symbol, source, onFinnhub || onAlpaca, prints);
+  }
+
+  /** §15.10: one background snapshot pass over the symbols not polled in the last minute (batches of 100). */
+  @Override
+  public void warm(Collection<String> symbols) {
+    if (!running) {
+      return;
+    }
+    Instant now = time.now();
+    Set<String> due = new TreeSet<>();
+    for (String s : symbols) {
+      Instant last = lastPolled.get(s);
+      if (last == null || Duration.between(last, now).compareTo(STREAMED_POLL) >= 0) {
+        due.add(s);
+      }
+    }
+    if (!due.isEmpty()) {
+      refreshers.execute(() -> fetch(due, RefreshPriority.BACKGROUND));
+    }
   }
 
   @Override

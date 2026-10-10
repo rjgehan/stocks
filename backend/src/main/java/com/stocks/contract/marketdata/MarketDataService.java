@@ -74,4 +74,20 @@ public interface MarketDataService {
   }
 
   MarketDataStatus status();
+
+  /**
+   * Phase 2 (§15.10): the symbol's Time &amp; Sales tape, newest first, at most {@code limit} prints. Only prints a
+   * trade stream delivered (never sampled or synthesized ones); {@link Tape#none} when no stream covers the symbol.
+   */
+  default Tape timeAndSales(String symbol, int limit) {
+    return Tape.none(symbol);
+  }
+
+  /**
+   * Phase 2 (§15.10): analyst recommendation trends (Finnhub free {@code /stock/recommendation}, cached); empty when
+   * no source has them (no Finnhub token, an ETF, a provider failure).
+   */
+  default Optional<Recommendations> recommendations(String symbol) {
+    return Optional.empty();
+  }
 }

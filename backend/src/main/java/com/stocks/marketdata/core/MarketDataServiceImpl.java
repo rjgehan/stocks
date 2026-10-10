@@ -14,7 +14,9 @@ import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.MarketDataStatus;
 import com.stocks.contract.marketdata.Print;
 import com.stocks.contract.marketdata.QuoteView;
+import com.stocks.contract.marketdata.Recommendations;
 import com.stocks.contract.marketdata.RefreshPriority;
+import com.stocks.contract.marketdata.Tape;
 import com.stocks.contract.marketdata.SplitAdjustments;
 import com.stocks.contract.marketdata.model.Asset;
 import com.stocks.contract.marketdata.model.Fundamentals;
@@ -43,6 +45,9 @@ import java.util.TreeSet;
  */
 public class MarketDataServiceImpl implements MarketDataService {
 
+  /** §15.10: the most Time &amp; Sales prints one call returns. */
+  public static final int MAX_TAPE = 500;
+
   private final String profile;
   private final MarketFeed feed;
   private final AssetService assets;
@@ -59,13 +64,14 @@ public class MarketDataServiceImpl implements MarketDataService {
   private final MarketCalendar calendar;
   private final TimeSource time;
   private final PointInTimeMarket sim;
+  private final RecommendationService recommendations;
 
   public MarketDataServiceImpl(String profile, MarketFeed feed, AssetService assets, BarService bars, MarkService marks,
                                MoversService movers, NewsService news, FundamentalsService fundamentals,
                                SubscriptionBudgetManager budget, DailyMarkRepository dailyMarks,
                                SplitAdjustments splits, CorporateActionHolds holds,
                                QuoteSplitAdjuster splitAdjuster, MarketCalendar calendar,
-                               TimeSource time, PointInTimeMarket simOrNull) {
+                               TimeSource time, PointInTimeMarket simOrNull, RecommendationService recommendations) {
     this.profile = profile;
     this.feed = feed;
     this.assets = assets;
@@ -82,6 +88,7 @@ public class MarketDataServiceImpl implements MarketDataService {
     this.calendar = calendar;
     this.time = time;
     this.sim = simOrNull;
+    this.recommendations = recommendations;
   }
 
   /** Upper case, trimmed; null stays null. */
@@ -248,6 +255,22 @@ public class MarketDataServiceImpl implements MarketDataService {
   public MarketDataStatus status() {
     List<String> stale = new ArrayList<>(new TreeSet<>(feed.staleSymbols(budget.leasedSymbols())));
     return new MarketDataStatus(profile, stale, List.copyOf(new TreeSet<>(holds.symbols())), feed.providers());
+  }
+
+  /** §15.10: at most {@link #MAX_TAPE} prints; an unknown or blank symbol has no tape. */
+  @Override
+  public Tape timeAndSales(String symbol, int limit) {
+    String s = normalize(symbol);
+    if (s == null || s.isEmpty()) {
+      return Tape.none(s);
+    }
+    return feed.tape(s, Math.max(1, Math.min(MAX_TAPE, limit)));
+  }
+
+  @Override
+  public Optional<Recommendations> recommendations(String symbol) {
+    String s = normalize(symbol);
+    return s == null || s.isEmpty() || recommendations == null ? Optional.empty() : recommendations.recommendations(s);
   }
 
   private static <T> Optional<T> safe(java.util.function.Supplier<Optional<T>> s) {

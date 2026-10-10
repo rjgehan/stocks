@@ -12,6 +12,9 @@ import com.stocks.contract.marketdata.Print;
 import com.stocks.contract.marketdata.ProviderStatus;
 import com.stocks.contract.marketdata.QuoteView;
 import com.stocks.contract.marketdata.RefreshPriority;
+import com.stocks.contract.marketdata.Tape;
+import com.stocks.contract.marketdata.TapePrint;
+import com.stocks.contract.marketdata.TapeSource;
 import com.stocks.contract.marketdata.model.Bar;
 import com.stocks.contract.marketdata.model.Quote;
 import com.stocks.contract.marketdata.model.Trade;
@@ -50,6 +53,8 @@ public class SimFeed implements MarketFeed {
   static final Duration TICK = Duration.ofMillis(250);
   static final Duration FIRST_DRAIN_LOOKBACK = Duration.ofSeconds(60);
   static final int MAX_PRINTS = 2_000;
+  static final List<Duration> TAPE_LOOKBACKS = List.of(Duration.ofMinutes(2), Duration.ofMinutes(15),
+      Duration.ofHours(2));
 
   private final PointInTimeMarket sim;
   private final MarketCalendar calendar;
@@ -171,6 +176,35 @@ public class SimFeed implements MarketFeed {
     Map<String, QuoteView> out = new LinkedHashMap<>();
     symbols.forEach(s -> out.put(s, quote(s)));
     return out;
+  }
+
+  /**
+   * §15.10: the SIM's prints are a pure function of time, so the tape is the latest {@code limit} prints up to now
+   * (looking back 2 minutes, then 15, then 2 hours for thin symbols), each colored against the SIM quote in force at
+   * its time.
+   */
+  @Override
+  public Tape tape(String symbol, int limit) {
+    if (!sim.knows(symbol)) {
+      return Tape.none(symbol);
+    }
+    Instant now = time.now();
+    int n = Math.max(1, limit);
+    List<Trade> trades = List.of();
+    for (Duration lookback : TAPE_LOOKBACKS) {
+      trades = sim.tradesBetween(symbol, now.minus(lookback), now, 50_000);
+      if (trades.size() >= n) {
+        break;
+      }
+    }
+    List<TapePrint> out = new ArrayList<>(Math.min(n, trades.size()));
+    for (int i = trades.size() - 1; i >= 0 && out.size() < n; i--) {
+      Trade t = trades.get(i);
+      Quote q = sim.quoteAt(symbol, t.ts()).orElse(null);
+      out.add(new TapePrint(t.id(), t.price(), t.size(), t.ts(), t.venue(), true,
+          TapeClassifier.classify(t.price(), q == null ? null : q.bid(), q == null ? null : q.ask())));
+    }
+    return new Tape(symbol, TapeSource.SIMULATED, true, out);
   }
 
   @Override

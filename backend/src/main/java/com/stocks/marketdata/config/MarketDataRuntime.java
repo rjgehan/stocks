@@ -31,6 +31,7 @@ import com.stocks.marketdata.core.NewsService;
 import com.stocks.marketdata.core.ProviderHttp;
 import com.stocks.marketdata.core.ProviderRateLimiter;
 import com.stocks.marketdata.core.QuoteBook;
+import com.stocks.marketdata.core.RecommendationService;
 import com.stocks.marketdata.core.SimFeed;
 import com.stocks.marketdata.core.SplitAdjustmentsImpl;
 import com.stocks.marketdata.core.SplitGuard;
@@ -105,6 +106,7 @@ public final class MarketDataRuntime implements AutoCloseable {
   private final MoversService movers;
   private final NewsService news;
   private final FundamentalsService fundamentals;
+  private final RecommendationService recommendations;
   private final LogoService logos;
   private final AssetSync assetSync;
   private final DailyMarkServiceImpl dailyMarkService;
@@ -141,6 +143,7 @@ public final class MarketDataRuntime implements AutoCloseable {
       feed = new SimFeed(sim, sim.capabilities(), calendar, time, rules, assets::tier, budget, listenerSupplier);
       seed = sim.assets();
       fundamentals = new FundamentalsService(sim);
+      recommendations = new RecommendationService(sim, time);
       news = new NewsService(List.of(sim), () -> true);
       logos = new LogoService(null);
       probe = null;
@@ -175,6 +178,7 @@ public final class MarketDataRuntime implements AutoCloseable {
       feed = live;
       seed = universe.entries().stream().map(Universe.Entry::asset).toList();
       fundamentals = new FundamentalsService(finnhub);
+      recommendations = new RecommendationService(finnhub, time);
       List<MarketDataProvider> newsSources = new ArrayList<>();
       newsSources.add(alpaca);
       if (finnhub != null) {
@@ -200,7 +204,7 @@ public final class MarketDataRuntime implements AutoCloseable {
     this.splitGuard = new SplitGuard(primary, props.simulated() ? null : "sip", tracked,
         splits instanceof SplitAdjustmentsImpl impl ? impl : null, external.splitFlagger(), calendar, time);
     this.service = new MarketDataServiceImpl(props.profile(), feed, assets, bars, marks, movers, news, fundamentals,
-        budget, dailyMarks, splits, holds, splitAdjuster, calendar, time, sim);
+        budget, dailyMarks, splits, holds, splitAdjuster, calendar, time, sim, recommendations);
     log.info("Market data: profile={} feed={} finnhub={} alpaca={}", props.profile(),
         props.simulated() ? "SIM" : props.effectiveFeed(), finnhub != null ? "on" : "off",
         props.simulated() ? "-" : props.alpaca());

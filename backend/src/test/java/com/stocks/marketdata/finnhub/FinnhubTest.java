@@ -8,6 +8,8 @@ import com.stocks.contract.marketdata.RefreshPriority;
 import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.contract.marketdata.model.MarketEvent;
 import com.stocks.contract.marketdata.model.NewsItem;
+import com.stocks.contract.marketdata.model.RecommendationTrend;
+import com.stocks.marketdata.spi.CompanyProfile;
 import com.stocks.contract.marketdata.model.TradeEvent;
 import com.stocks.marketdata.config.MarketDataProperties;
 import com.stocks.marketdata.core.Json;
@@ -71,6 +73,47 @@ class FinnhubTest {
       assertThat(news.getFirst().id()).isEqualTo("fh-7123");
       assertThat(news.getFirst().imageUrl()).isNull();
       assertThat(news.getFirst().symbols()).containsExactly("AAPL");
+    }
+  }
+
+  /** §15.10: profile2 alone (the screener's one-call statistics) and the free recommendation trends. */
+  @Test
+  void profileAndRecommendationFixtures() {
+    try (FakeHttpServer http = new FakeHttpServer()) {
+      http.fixture("/stock/profile2", "finnhub/profile2.json")
+          .fixture("/stock/recommendation", "finnhub/recommendation.json");
+      MarketDataProperties.Finnhub f = Providers.finnhub(http.url(), "ws://127.0.0.1:1");
+      SystemTimeSource time = new SystemTimeSource();
+      ProviderHttp ph = new ProviderHttp("finnhub", Duration.ofSeconds(2), Duration.ofSeconds(5),
+          new ProviderRateLimiter("finnhub", 55, 30), time::now, Map.of("X-Finnhub-Token", f.token()));
+      FinnhubProvider provider = new FinnhubProvider(f, new FinnhubRestClient(f, ph), time,
+          WebSocketStream.Timings.defaults());
+
+      CompanyProfile p = provider.profile("AAPL", RefreshPriority.BACKGROUND).orElseThrow();
+      assertThat(p.sharesOutstanding()).isEqualTo(new BigDecimal("14840390000"));
+      assertThat(p.marketCap()).isEqualTo(new BigDecimal("3376000500000"));
+      assertThat(p.industry()).isEqualTo("Technology");
+      assertThat(p.source()).isEqualTo("finnhub");
+      assertThat(http.requests("/stock/metric")).as("profile2 only: one call").isEmpty();
+
+      List<RecommendationTrend> trends = provider.recommendations("AAPL");
+      assertThat(trends).hasSize(4);
+      assertThat(trends.getFirst()).isEqualTo(new RecommendationTrend("AAPL", java.time.LocalDate.of(2026, 10, 1), 13,
+          24, 7, 0, 0));
+      assertThat(trends.getFirst().total()).isEqualTo(44);
+      assertThat(http.requests("/stock/recommendation").getFirst().query()).containsEntry("symbol", "AAPL");
+    }
+  }
+
+  @Test
+  void anEmptyProfileIsNoProfile() {
+    try (FakeHttpServer http = new FakeHttpServer()) {
+      http.json("/stock/profile2", "{}");
+      MarketDataProperties.Finnhub f = Providers.finnhub(http.url(), "ws://127.0.0.1:1");
+      SystemTimeSource time = new SystemTimeSource();
+      ProviderHttp ph = new ProviderHttp("finnhub", Duration.ofSeconds(2), Duration.ofSeconds(5),
+          new ProviderRateLimiter("finnhub", 55, 30), time::now, Map.of("X-Finnhub-Token", f.token()));
+      assertThat(new FinnhubRestClient(f, ph).profile("SPY", RefreshPriority.BACKGROUND)).isEmpty();
     }
   }
 

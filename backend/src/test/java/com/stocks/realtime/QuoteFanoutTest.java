@@ -9,11 +9,18 @@ import com.stocks.common.time.MutableTimeSource;
 import com.stocks.contract.marketdata.dto.BarDto;
 import com.stocks.contract.marketdata.dto.QuoteDto;
 import com.stocks.contract.marketdata.dto.TickDto;
+import com.stocks.contract.marketdata.dto.TimeAndSalesDto;
+import com.stocks.contract.marketdata.Tape;
+import com.stocks.contract.marketdata.TapePrint;
+import com.stocks.contract.marketdata.TapeSide;
+import com.stocks.contract.marketdata.TapeSource;
 import com.stocks.contract.marketdata.model.Bar;
 import com.stocks.realtime.RealtimeTestSupport.CapturingMessaging;
 import com.stocks.testkit.TestTimes;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -117,6 +124,45 @@ class QuoteFanoutTest {
     assertThat(bar.t()).isEqualTo(TestTimes.START);
     assertThat(bar.c()).isEqualByComparingTo("227.40");
     assertThat(bar.v()).isEqualTo(300);
+  }
+
+  static TapePrint print(String id, Instant ts, String price, TapeSide side) {
+    return new TapePrint(id, new BigDecimal(price), 100, ts, "V", false, side);
+  }
+
+  @Test
+  void tradesSendOnlyThePrintsThatAreNewSinceTheLastMessage() {
+    Instant t = TestTimes.START;
+    TapePrint a = print("a", t, "227.40", TapeSide.BETWEEN);
+    TapePrint b = print("b", t.plusMillis(5), "227.41", TapeSide.AT_ASK);
+    md.withTape(new Tape("AAPL", TapeSource.IEX, true, List.of(b, a)));
+    subscribe("tr", "/topic/trades.AAPL");
+    fanout.prime("AAPL");
+    assertThat(fanout.flush(t0)).isEqualTo(1);
+    TimeAndSalesDto first = (TimeAndSalesDto) messaging.to("/topic/trades.AAPL").get(0).payload();
+    assertThat(first.source()).isEqualTo(TapeSource.IEX);
+    assertThat(first.streaming()).isTrue();
+    assertThat(first.prints()).extracting(TimeAndSalesDto.TapePrintDto::id).containsExactly("b", "a");
+    assertThat(first.prints().get(0).side()).isEqualTo(TapeSide.AT_ASK);
+
+    // nothing new: an update sends nothing
+    fanout.onMarketUpdate("AAPL");
+    assertThat(fanout.flush(t0 + 300 * MS)).isZero();
+
+    // two new prints, one at the cursor's own time: both go out, the old ones do not
+    TapePrint c = print("c", t.plusMillis(5), "227.39", TapeSide.AT_BID);
+    TapePrint d = print("d", t.plusMillis(9), "227.42", TapeSide.AT_ASK);
+    md.withTape(new Tape("AAPL", TapeSource.IEX, true, List.of(d, c, b, a)));
+    fanout.onMarketUpdate("AAPL");
+    assertThat(fanout.flush(t0 + 600 * MS)).isEqualTo(1);
+    TimeAndSalesDto second = (TimeAndSalesDto) messaging.to("/topic/trades.AAPL").get(1).payload();
+    assertThat(second.prints()).extracting(TimeAndSalesDto.TapePrintDto::id).containsExactly("d", "c");
+    assertThat(messaging.to("/topic/quote.AAPL")).as("no quote subscribers").isEmpty();
+
+    // a symbol without a stream sends nothing at all
+    md.withTape(Tape.none("AAPL"));
+    fanout.onMarketUpdate("AAPL");
+    assertThat(fanout.flush(t0 + 900 * MS)).isZero();
   }
 
   @Test

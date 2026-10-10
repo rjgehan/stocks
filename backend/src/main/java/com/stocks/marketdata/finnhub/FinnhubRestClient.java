@@ -4,6 +4,8 @@ import com.stocks.common.domain.AssetType;
 import com.stocks.contract.marketdata.RefreshPriority;
 import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.contract.marketdata.model.NewsItem;
+import com.stocks.contract.marketdata.model.RecommendationTrend;
+import com.stocks.marketdata.spi.CompanyProfile;
 import com.stocks.marketdata.config.MarketDataProperties;
 import com.stocks.marketdata.core.Json;
 import com.stocks.marketdata.core.ProviderHttp;
@@ -65,6 +67,56 @@ public class FinnhubRestClient {
         scale(Json.dec(metric, "beta"), 2),
         sharesM == null ? null : sharesM.multiply(MILLION).setScale(0, RoundingMode.HALF_EVEN),
         Json.str(profile, "finnhubIndustry"), Json.str(profile, "weburl"), ID));
+  }
+
+  /**
+   * {@code /stock/profile2} only (§15.10 screener; one call): {@code shareOutstanding} and
+   * {@code marketCapitalization} are in millions, {@code finnhubIndustry} is Finnhub's industry label. Empty when
+   * Finnhub returns {@code {}} (ETFs, unknown symbols).
+   */
+  public Optional<CompanyProfile> profile(String symbol, RefreshPriority priority) {
+    JsonNode profile = http.getJson(priority, props.baseUrl(), "/stock/profile2", ProviderHttp.query("symbol", symbol));
+    if (profile == null || profile.isEmpty() || !profile.isObject()) {
+      return Optional.empty();
+    }
+    BigDecimal capM = Json.dec(profile, "marketCapitalization");
+    BigDecimal sharesM = Json.dec(profile, "shareOutstanding");
+    String industry = Json.str(profile, "finnhubIndustry");
+    if (capM == null && sharesM == null && (industry == null || industry.isBlank())) {
+      return Optional.empty();
+    }
+    return Optional.of(new CompanyProfile(symbol,
+        sharesM == null || sharesM.signum() <= 0 ? null : sharesM.multiply(MILLION).setScale(0, RoundingMode.HALF_EVEN),
+        capM == null || capM.signum() <= 0 ? null : capM.multiply(MILLION).setScale(0, RoundingMode.HALF_EVEN),
+        industry == null || industry.isBlank() || "N/A".equalsIgnoreCase(industry.trim()) ? null : industry.trim(),
+        ID));
+  }
+
+  /**
+   * {@code /stock/recommendation?symbol} (§15.10, free tier): monthly counts per rating, as Finnhub sends them
+   * (newest first). {@code period} is the first day of the month ({@code YYYY-MM-DD}).
+   */
+  public List<RecommendationTrend> recommendations(String symbol, RefreshPriority priority) {
+    JsonNode root = http.getJson(priority, props.baseUrl(), "/stock/recommendation",
+        ProviderHttp.query("symbol", symbol));
+    List<RecommendationTrend> out = new ArrayList<>();
+    if (root == null || !root.isArray()) {
+      return out;
+    }
+    for (JsonNode r : root.values()) {
+      LocalDate period = Json.date(r, "period");
+      if (period == null) {
+        continue;
+      }
+      out.add(new RecommendationTrend(symbol, period, count(r, "strongBuy"), count(r, "buy"), count(r, "hold"),
+          count(r, "sell"), count(r, "strongSell")));
+    }
+    return out;
+  }
+
+  private static int count(JsonNode n, String field) {
+    long v = Json.lng(n, field, 0);
+    return (int) Math.max(0, Math.min(10_000, v));
   }
 
   private static BigDecimal first(JsonNode n, String... fields) {

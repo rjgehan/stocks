@@ -14,6 +14,8 @@ import java.util.regex.Pattern;
  *   <tr><td>{@code /topic/quote.{SYM}}</td><td>{@link Kind#QUOTE}</td><td>VIEWING</td></tr>
  *   <tr><td>{@code /topic/tick.{SYM}}</td><td>{@link Kind#TICK}</td><td>LIST</td></tr>
  *   <tr><td>{@code /topic/bars.{SYM}.1Min}</td><td>{@link Kind#BARS}</td><td>VIEWING</td></tr>
+ *   <tr><td>{@code /topic/trades.{SYM}} (Phase 2, §15.10 Time &amp; Sales)</td><td>{@link Kind#TRADES}</td>
+ *       <td>VIEWING</td></tr>
  *   <tr><td>{@code /topic/market.session}, {@code /topic/leaderboard}, {@code /topic/feed}</td><td>broadcast</td>
  *       <td>none</td></tr>
  *   <tr><td>{@code /user/queue/orders|account|notifications}</td><td>the caller's own queue</td><td>none</td></tr>
@@ -28,17 +30,17 @@ public final class StompDestinations {
 
   /** What a destination is. The three market kinds count toward the per-session cap of §17.5. */
   public enum Kind {
-    QUOTE, TICK, BARS, SESSION, LEADERBOARD, FEED, USER_QUEUE, ADMIN_QUEUE;
+    QUOTE, TICK, BARS, TRADES, SESSION, LEADERBOARD, FEED, USER_QUEUE, ADMIN_QUEUE;
 
     /** Market-data kinds: counted toward the 60-per-session cap and backed by a lease. */
     public boolean isMarket() {
-      return this == QUOTE || this == TICK || this == BARS;
+      return this == QUOTE || this == TICK || this == BARS || this == TRADES;
     }
 
     /** The lease priority a subscription of this kind holds (§15.5), or null. */
     public LeasePriority leasePriority() {
       return switch (this) {
-        case QUOTE, BARS -> LeasePriority.VIEWING;
+        case QUOTE, BARS, TRADES -> LeasePriority.VIEWING;
         case TICK -> LeasePriority.LIST;
         default -> null;
       };
@@ -52,6 +54,7 @@ public final class StompDestinations {
   public static final String TICK_PREFIX = "/topic/tick.";
   public static final String BARS_PREFIX = "/topic/bars.";
   public static final String BARS_SUFFIX = ".1Min";
+  public static final String TRADES_PREFIX = "/topic/trades.";
   public static final String SESSION_TOPIC = "/topic/market.session";
   public static final String LEADERBOARD_TOPIC = "/topic/leaderboard";
   public static final String FEED_TOPIC = "/topic/feed";
@@ -101,6 +104,10 @@ public final class StompDestinations {
       return Optional.of(new Parsed(Kind.QUOTE, symbolOrInvalid(destination.substring(QUOTE_PREFIX.length())),
           destination));
     }
+    if (destination.startsWith(TRADES_PREFIX)) {
+      return Optional.of(new Parsed(Kind.TRADES, symbolOrInvalid(destination.substring(TRADES_PREFIX.length())),
+          destination));
+    }
     if (destination.startsWith(TICK_PREFIX)) {
       return Optional.of(new Parsed(Kind.TICK, symbolOrInvalid(destination.substring(TICK_PREFIX.length())),
           destination));
@@ -129,6 +136,11 @@ public final class StompDestinations {
   /** {@code /topic/tick.AAPL}. */
   public static String tick(String symbol) {
     return TICK_PREFIX + symbol;
+  }
+
+  /** {@code /topic/trades.AAPL} (§15.10). */
+  public static String trades(String symbol) {
+    return TRADES_PREFIX + symbol;
   }
 
   /** {@code /topic/bars.AAPL.1Min}. */

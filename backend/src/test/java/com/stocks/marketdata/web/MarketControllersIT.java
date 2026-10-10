@@ -222,6 +222,45 @@ class MarketControllersIT {
     assertThat(code("/api/v1/bars/NOPE?range=1D")).isEqualTo("SYMBOL_NOT_FOUND");
   }
 
+  /** §15.10 Time &amp; Sales: the SIM's prints, newest first, each with a side; validation and unknown symbols. */
+  @Test
+  void timeAndSales() throws Exception {
+    String t = json("/api/v1/assets/aapl/trades?limit=25");
+    assertThat((String) read(t, "$.symbol")).isEqualTo("AAPL");
+    assertThat((String) read(t, "$.source")).isEqualTo("SIMULATED");
+    assertThat((Boolean) read(t, "$.streaming")).isTrue();
+    List<Map<String, Object>> prints = read(t, "$.prints");
+    assertThat(prints).hasSize(25).allSatisfy(p -> {
+      assertThat((String) p.get("price")).matches("\\d+\\.\\d+");
+      assertThat(p.get("size")).isInstanceOf(Integer.class);
+      assertThat((String) p.get("side")).isIn("AT_ASK", "AT_BID", "BETWEEN");
+      assertThat((String) p.get("t")).startsWith("2026-10-09T1");
+      assertThat(p.get("id")).isNotNull();
+    });
+    assertThat((String) prints.get(0).get("t")).isGreaterThanOrEqualTo((String) prints.get(24).get("t"));
+    assertThat((List<Object>) read(json("/api/v1/assets/AAPL/trades"), "$.prints")).hasSize(60);
+    assertThat(code("/api/v1/assets/AAPL/trades?limit=201")).isEqualTo("VALIDATION_FAILED");
+    assertThat(code("/api/v1/assets/NOPE/trades")).isEqualTo("SYMBOL_NOT_FOUND");
+  }
+
+  /** §15.10 analyst recommendation trends: the SIM's simulated months for a stock, none for an ETF. */
+  @Test
+  void recommendations() throws Exception {
+    String r = json("/api/v1/assets/AAPL/recommendations");
+    assertThat((String) read(r, "$.source")).isEqualTo("simulated");
+    assertThat((List<Object>) read(r, "$.periods[*].period")).containsExactly("2026-10-01", "2026-09-01",
+        "2026-08-01", "2026-07-01");
+    Map<String, Object> first = read(r, "$.periods[0]");
+    int sum = (Integer) first.get("strongBuy") + (Integer) first.get("buy") + (Integer) first.get("hold")
+        + (Integer) first.get("sell") + (Integer) first.get("strongSell");
+    assertThat(first.get("total")).isEqualTo(sum);
+    String etf = json("/api/v1/assets/SPY/recommendations");
+    assertThat((String) read(etf, "$.source")).isEqualTo("none");
+    assertThat((List<Object>) read(etf, "$.periods")).isEmpty();
+    assertThat((Object) read(etf, "$.asOf")).isNull();
+    assertThat(code("/api/v1/assets/NOPE/recommendations")).isEqualTo("SYMBOL_NOT_FOUND");
+  }
+
   @Test
   void marketReadScopeIsRequired() throws Exception {
     Fixtures fx = new Fixtures(jdbc, time);

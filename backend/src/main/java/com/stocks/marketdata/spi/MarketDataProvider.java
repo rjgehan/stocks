@@ -11,6 +11,7 @@ import com.stocks.contract.marketdata.model.MarketEvent;
 import com.stocks.contract.marketdata.model.Movers;
 import com.stocks.contract.marketdata.model.NewsItem;
 import com.stocks.contract.marketdata.model.Quote;
+import com.stocks.contract.marketdata.model.RecommendationTrend;
 import com.stocks.contract.marketdata.model.Snapshot;
 import com.stocks.contract.marketdata.model.Trade;
 import com.stocks.contract.marketdata.model.TradingDayData;
@@ -85,6 +86,20 @@ public interface MarketDataProvider {
 
   default Map<String, AssetType> assetTypes() {
     throw unsupported("assetTypes");
+  }
+
+  /** Phase 2 (§15.10): monthly analyst recommendation trends, newest first (Finnhub {@code /stock/recommendation}). */
+  default List<RecommendationTrend> recommendations(String symbol) {
+    throw unsupported("recommendations");
+  }
+
+  /**
+   * Phase 2 (§15.10, screener): shares outstanding, market cap and industry of one company (Finnhub
+   * {@code /stock/profile2}: one call, unlike {@link #fundamentals} which also reads {@code metric}). Empty when the
+   * provider knows nothing about the symbol (an ETF, a delisted name).
+   */
+  default Optional<CompanyProfile> profile(String symbol, RefreshPriority priority) {
+    throw unsupported("profile");
   }
 
   /** At most one upstream stream per provider. */
