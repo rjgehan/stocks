@@ -257,8 +257,10 @@ done
 endgroup
 is_true "$pulled" || die "cannot pull $IMAGE:$TAG (wrong tag, or the server is not logged in to ghcr.io: docs/deploy.md)"
 NEW_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE:$TAG")"
+# The agent runner lives in the same repository under the tag prefix agent-runner- (release.yml, ARCHITECTURE §24.7).
+AGENT_TAG="agent-runner-$TAG"
 if [[ ",${COMPOSE_PROFILES:-}," == *",agents,"* ]]; then
-  docker pull "$IMAGE-agent-runner:$TAG" || die "cannot pull $IMAGE-agent-runner:$TAG (profile agents is on)"
+  docker pull "$IMAGE:$AGENT_TAG" || die "cannot pull $IMAGE:$AGENT_TAG (profile agents is on)"
 fi
 
 # ------------------------------------------------------------------------------------------------ pre-deploy backup
@@ -359,7 +361,15 @@ while read -r t; do
   kept=$(( kept + 1 ))
   if [[ $kept -gt $KEEP_IMAGES ]]; then docker image rm "$IMAGE:$t" > /dev/null 2>&1 || true; fi
 done < <(docker image ls "$IMAGE" --format '{{.Tag}}' | grep -E '^(sha-[0-9a-f]+|v?[0-9]+\.[0-9]+.*)$' || true)
+# The same for the agent runner's agent-runner-sha-/agent-runner-<version> tags.
+kept=0
+while read -r t; do
+  [[ "$t" == "$AGENT_TAG" ]] && continue
+  kept=$(( kept + 1 ))
+  if [[ $kept -gt $KEEP_IMAGES ]]; then docker image rm "$IMAGE:$t" > /dev/null 2>&1 || true; fi
+done < <(docker image ls "$IMAGE" --format '{{.Tag}}' | grep -E '^agent-runner-(sha-[0-9a-f]+|v?[0-9]+\.[0-9]+.*)$' || true)
 docker image prune -f --filter "label=org.opencontainers.image.title=stocks" > /dev/null 2>&1 || true
+docker image prune -f --filter "label=org.opencontainers.image.title=stocks-agent-runner" > /dev/null 2>&1 || true
 
 log "deployed $IMAGE:$TAG"
 write_summary "OK"

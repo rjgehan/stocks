@@ -257,7 +257,8 @@ services:
 
   agent-runner: # Phase 1 bots (§20.5). Start with: docker compose -p stocks --profile agents up -d
     profiles: [agents]
-    image: ${STOCKS_IMAGE:?set STOCKS_IMAGE in .env, e.g. ghcr.io/OWNER/stocks}-agent-runner:${STOCKS_TAG:-latest}
+    # Same GHCR package as the app, tag prefix agent-runner- (release.yml): no second package to make public.
+    image: ${STOCKS_IMAGE:?set STOCKS_IMAGE in .env, e.g. ghcr.io/OWNER/stocks}:agent-runner-${STOCKS_TAG:-latest}
     container_name: stocks-agent-runner
     restart: unless-stopped
     labels:  # Watchtower: update together with the app
@@ -278,7 +279,10 @@ services:
       AGENT_DAILY_USD_CAP: ${AGENT_DAILY_USD_CAP:-1.00}
       AGENT_MAX_TOOL_CALLS: ${AGENT_MAX_TOOL_CALLS:-40}
       AGENT_MAX_RUN_SECONDS: ${AGENT_MAX_RUN_SECONDS:-300}
-      # TODO(WS5): map the AGENT_PRICE_* keys here once tools/agent-runner defines them (and add them to .env.example).
+      AGENT_PRICE_CLAUDE: ${AGENT_PRICE_CLAUDE:-}
+      AGENT_PRICE_CHATGPT: ${AGENT_PRICE_CHATGPT:-}
+    # SIGTERM cancels in-flight model requests at once; a tool call already sent to the app may take a few seconds.
+    stop_grace_period: 30s
     volumes:
       - type: bind
         source: /DATA/AppData/stocks/agent-data

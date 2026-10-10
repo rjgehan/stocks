@@ -1,0 +1,33 @@
+{
+  "name": "stocks-agent-runner",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "stocks agent runner: the league's Claude and ChatGPT bots on one model-agnostic MCP loop (ARCHITECTURE §20.5)",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "oxlint --deny-warnings",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "start": "node dist/main.js",
+    "once": "node dist/main.js --once"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.128.0",
+    "@modelcontextprotocol/sdk": "1.30.1",
+    "openai": "7.23.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "oxlint": "1.85.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

@@ -42,7 +42,8 @@ the tunnel. Secrets stay in `/DATA/AppData/stocks/.env` on the server; GitHub ho
 9. [Upgrades, releases and rollbacks](#9-upgrades-releases-and-rollbacks)
 10. [Backups](#10-backups)
 11. [Watchtower (no runner; used in production)](#11-watchtower-no-runner-used-in-production)
-12. [Troubleshooting](#12-troubleshooting)
+12. [The agent runner (Claude and ChatGPT bots)](#12-the-agent-runner-claude-and-chatgpt-bots)
+13. [Troubleshooting](#13-troubleshooting)
 
 ## 1. What you need
 
@@ -91,6 +92,11 @@ until you set `DEPLOY_ENABLED` (step 6).
 | push of tag `v1.2.3` | `1.2.3`, `1.2`, `sha-<7 hex>` |
 | Run workflow (no tag input) | `sha-<7 hex>` (plus `latest` when run on `main`) |
 
+The agent runner (`tools/agent-runner`, §12) is pushed to the **same package** with the prefix `agent-runner-`:
+`agent-runner-sha-<7 hex>` always, `agent-runner-latest` from `main`, `agent-runner-1.2.3` and `agent-runner-1.2`
+for a version tag. Compose runs `${STOCKS_IMAGE}:agent-runner-${STOCKS_TAG}`, so it always matches the app's tag,
+and a public `stocks` package covers it too.
+
 The image carries SBOM and provenance attestations and OCI labels. The package is **private** at first and is
 linked to the repository.
 
@@ -122,7 +128,7 @@ Everything lives in `/DATA/AppData/stocks` (the CasaOS AppData convention):
 ├── scripts/pg_backup.sh        copied from the repository by every deploy
 ├── pgdata/                     PostgreSQL 18 data
 ├── backups/                    nightly and pre-deploy dumps
-└── agent-data/                 bot notes and run logs (Phase 1)
+└── agent-data/                 the agent runner's bot notes, daily spend and run logs (owned by uid 1000, §12)
 ```
 
 The compose file sits in its own `compose/` directory on purpose. CasaOS lists every Compose project Docker runs,
@@ -228,7 +234,7 @@ and adds another image to trust and keep updated; the service auto-updates and s
 | `DEPLOY_ENABLED` | `true` | Master switch. Anything else skips the deploy job (images are still pushed). |
 | `DEPLOY_DIR` | `/DATA/AppData/stocks/compose` (default) | The Compose project directory on the server (`docker-compose.yml` and the `.env` link) |
 | `DEPLOY_SYNC_COMPOSE` | `true` (default) | Copy the repository's `docker-compose.yml` into `DEPLOY_DIR` on every deploy (the old one is kept as `.bak`). Set `false` to manage the file by hand. |
-| `DEPLOY_PROFILES` | empty (default) | Extra Compose profiles; `agents` once the Phase 1 agent runner exists |
+| `DEPLOY_PROFILES` | empty (default) | Extra Compose profiles: `agents` runs the league bots' agent runner (§12) and makes every deploy pull `agent-runner-<tag>` too |
 | `DEPLOY_HEALTH_TIMEOUT` | `420` (default) | Seconds to wait for the app's readiness check before rolling back |
 | `DEPLOY_PUBLIC_URL` | `https://stocks.<your-domain>` (optional) | After a deploy, check that the tunnel answers 200 (a warning only) |
 
@@ -433,7 +439,7 @@ services for it:
 
 | Service | Label `com.centurylinklabs.watchtower.enable` |
 |---|---|
-| `app`, `agent-runner` | `"true"`: updated on every push to `main` |
+| `app`, `agent-runner` | `"true"`: updated on every push to `main` (`latest` and `agent-runner-latest`) |
 | `db`, `backup` | `"false"`: never touched (PostgreSQL upgrades are deliberate, see the runbook) |
 
 1. Leave `DEPLOY_ENABLED` unset (or `false`). Images keep being pushed.
@@ -460,7 +466,33 @@ pre-deploy dump (the nightly backup still runs), up to five minutes of delay, an
 or `pg_backup.sh` are not applied automatically: re-import or copy them by hand when a release notes it.
 Database migrations run automatically when the new app starts (Flyway).
 
-## 12. Troubleshooting
+## 12. The agent runner (Claude and ChatGPT bots)
+
+The league's two AI players trade through `stocks-agent-runner` (compose profile `agents`), which calls the app at
+`http://app:8080/mcp` inside Docker and the Anthropic and OpenAI APIs outbound. It holds only the two bots' `stk_…`
+keys and the two LLM keys: no admin power, no database access. How it works, its logs and its costs:
+[agents.md §2.5](agents.md#25-the-leagues-agent-runner-phase-1-toolsagent-runner).
+
+1. **Create the bots** in the app (Admin → Players → New player, kind AI, handles `claude` and `chatgpt`, each with
+   an API key) and copy both keys.
+2. **Fill in `.env`** (`/DATA/AppData/stocks/.env`): `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `STOCKS_CLAUDE_KEY`,
+   `STOCKS_CHATGPT_KEY`, `CLAUDE_MODEL`, `OPENAI_MODEL`; optionally `AGENT_DAILY_USD_CAP` (1.00 per bot per ET day),
+   `AGENT_SCHEDULE_ET`, `AGENT_MAX_TOOL_CALLS`, `AGENT_MAX_RUN_SECONDS` and the `AGENT_PRICE_*` overrides. A bot with
+   an empty key or model is skipped with a log line, so you can start the service first and add keys later.
+3. **Data directory**: the image runs as uid 1000. `init-host.sh` gives it `agent-data/`; on a host prepared before
+   that, run `sudo chown -R 1000:1000 /DATA/AppData/stocks/agent-data` once.
+4. **Start it**: `cd /DATA/AppData/stocks/compose && docker compose -p stocks --profile agents up -d`. Keep it
+   updated with `DEPLOY_PROFILES=agents` (pipeline, §6) or Watchtower (its label follows `agent-runner-latest`).
+   After editing `.env`, run the same command again.
+5. **Test once**: `docker exec stocks-agent-runner node dist/main.js --once --bot claude` (real API calls; they count
+   toward the daily cap). `docker logs stocks-agent-runner` shows one summary line per run.
+6. **Stop it**: `docker compose -p stocks --profile agents stop agent-runner` (orders already placed stay; open
+   orders keep working in the app).
+
+CasaOS Import leaves profile services out, so on an Import install start the runner with the same command from the
+`compose/` directory.
+
+## 13. Troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
@@ -476,3 +508,6 @@ Database migrations run automatically when the new app starts (Flyway).
 | Requests show the proxy IP, or login cookies are not kept | `APP_PUBLIC_URL` is not the https hostname, or `TRUSTED_PROXIES` does not match cloudflared's address. |
 | Stack not visible in CasaOS | CasaOS shows Compose projects it can load; check `docker compose ls`. The app works regardless. |
 | Bots get a Cloudflare challenge on `/mcp` | Bot Fight Mode is on, or a WAF/Access rule covers `/mcp` (step 8). |
+| `stocks-agent-runner` restarts with `cannot write to /data` | `agent-data/` is not owned by uid 1000: `sudo chown -R 1000:1000 /DATA/AppData/stocks/agent-data` (§12). |
+| `bot skipped: … are not set` / `no price for …` in the runner log | Fill in the named `.env` keys, or set `AGENT_PRICE_CLAUDE` / `AGENT_PRICE_CHATGPT` for a model the runner has no price for, then `docker compose -p stocks --profile agents up -d` ([agents.md §2.5](agents.md#25-the-leagues-agent-runner-phase-1-toolsagent-runner)). |
+| Runner lines show `status=error` | The message in parentheses says why: a revoked or wrong `stk_…` key (401), the app not reachable, or an LLM API error after its retries (bad key, model name or billing). The run log in `agent-data/<bot>/runs/` has the details. |

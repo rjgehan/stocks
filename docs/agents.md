@@ -134,11 +134,117 @@ key can only trade fake money for its own player.
 
 ### 2.5 The league's agent runner (Phase 1, `tools/agent-runner/`)
 
-The two league bots run in the compose stack (profile `agents`) and call `http://app:8080/mcp` directly, so they work
-even when vendor clouds cannot reach the public hostname. Both bots get the same system prompt (§4 below), the same 38
-tools converted to plain function tools, the same schedule (09:45, 12:30, 15:30 ET on trading days) and the same caps;
-only the model differs (ARCHITECTURE §20.5). **Status:** specified, not built yet; until it ships, run a bot with
-recipe 2.2 or 2.4 on a schedule of your own.
+The two league bots run in the compose stack (service `agent-runner`, profile `agents`) and call
+`http://app:8080/mcp` directly, so they work even when vendor clouds cannot reach the public hostname. Both bots get
+the same system prompt (§5 below), the same 38 tools converted to plain function tools, the same schedule (09:45,
+12:30, 15:30 ET on trading days), the same caps and the same 8 KB of memory; only the model differs
+(ARCHITECTURE §20.5).
+
+**How a run works.**
+
+1. The runner connects to the MCP server with the bot's key and `X-Stocks-Client: agent-runner/<bot>` and calls
+   `get_market_clock`. A scheduled run on a non-trading day stops here (no model call, no cost). Both bots start in
+   the same minute.
+2. It lists the tools and converts them: Claude gets Messages API custom tools, ChatGPT gets Responses API function
+   tools, plus the runner-local `save_notes(text)` (not a server tool). Neither uses a vendor MCP connector, a beta
+   header or Cloudflare rules.
+3. The first message gives the run time, the budget, the market clock and the bot's notes
+   (`agent-data/<bot>/notes.md`, at most 8 KB, written only by the bot through `save_notes`).
+4. The model only **proposes** tool calls. The runner executes them, one at a time, and returns the server's result
+   text unchanged: other players' text stays inside its `untrusted` envelope, and errors keep the server's
+   `{code, message, hint, fields, retry_after_s}` JSON. A `RATE_LIMITED` result is retried once after
+   `retry_after_s` (15 s at most).
+5. The run ends when the model stops calling tools, or at a cap: `AGENT_MAX_TOOL_CALLS` (40; once used up, the
+   remaining proposed calls are refused and the model gets one last turn without tools to write its summary),
+   `AGENT_MAX_RUN_SECONDS` (300; in-flight model requests are cancelled), or the bot's `AGENT_DAILY_USD_CAP`
+   (1.00 USD per ET day; checked after every model response, so a day can exceed it by at most one response;
+   the bot's remaining runs that day are skipped and logged).
+
+429 and 5xx answers from the LLM APIs are retried by the vendor SDKs with exponential backoff (honouring
+`retry-after`, 4 retries) and logged. `SIGTERM` (`docker compose stop`) cancels in-flight model requests, writes
+the run logs and exits.
+
+**Enable it** (once; the runner can be started before the keys exist: a bot without its keys or model is skipped
+with a log line):
+
+1. In the app, as admin: **Admin → Players → New player**, kind **AI**, handle `claude`, with an API key; copy the
+   `stk_…` key (shown once). Repeat for `chatgpt`. (Existing AI players: **Admin → Players → *bot* → API keys**.)
+2. On the server, `sudo -u gha-runner nano /DATA/AppData/stocks/.env` (or your own user) and fill in:
+
+   ```sh
+   ANTHROPIC_API_KEY=sk-ant-...        # console.anthropic.com
+   OPENAI_API_KEY=sk-...               # platform.openai.com
+   STOCKS_CLAUDE_KEY=stk_...           # step 1
+   STOCKS_CHATGPT_KEY=stk_...
+   CLAUDE_MODEL=claude-opus-5-5        # your choice; see "Costs" for priced models
+   OPENAI_MODEL=gpt-5.5
+   # optional: AGENT_DAILY_USD_CAP=1.00, AGENT_SCHEDULE_ET=09:45,12:30,15:30, AGENT_PRICE_CLAUDE=..., ...
+   ```
+
+3. The image runs as uid 1000 and writes to `/DATA/AppData/stocks/agent-data`. `init-host.sh` sets that up on a new
+   host; on an existing one run `sudo chown -R 1000:1000 /DATA/AppData/stocks/agent-data` once.
+4. Start it: `cd /DATA/AppData/stocks/compose && docker compose -p stocks --profile agents up -d`. To keep it
+   deployed: with the pipeline, set the repository variable `DEPLOY_PROFILES=agents` (deploys then pull
+   `stocks:agent-runner-sha-…` too); with Watchtower, the service's label makes it follow `agent-runner-latest`.
+   After changing `.env`, run the same `up -d` command again.
+5. Check: `docker logs stocks-agent-runner` shows one `bot enabled` line per bot (model and the price used),
+   `bot skipped` lines naming any missing variable, and `next runs: …`.
+
+**Run once now** (to test after setting the keys; it costs real money, counts toward the daily cap and also runs on
+a non-trading day, where the bot sees the market closed and plans):
+
+```sh
+docker exec stocks-agent-runner node dist/main.js --once --bot claude    # or chatgpt, or all
+docker exec stocks-agent-runner node dist/main.js --check                # configuration and prices, no secrets
+# without the service running, from /DATA/AppData/stocks/compose:
+docker compose -p stocks --profile agents run --rm agent-runner --once --bot chatgpt
+```
+
+`--once` exits 0 when every requested bot ran (or stopped at a cap), 1 when a run failed and 2 when a requested bot
+is not configured. Locally, against a dev server (`make dev`; the dev seed's bot keys are in
+`backend/.data/dev-keys.txt`):
+
+```sh
+cd tools/agent-runner && npm ci && npm run build
+STOCKS_MCP_URL=http://localhost:8080/mcp AGENT_DATA_DIR=./.data STOCKS_CLAUDE_KEY=stk_... \
+  ANTHROPIC_API_KEY=sk-ant-... CLAUDE_MODEL=claude-opus-5-5 node dist/main.js --once --bot claude
+```
+
+The runner's tests never call a vendor: `npm test` uses local fake Messages and Responses APIs, and
+`npm run test:e2e` drives the real backend (jar, profile dev) and MCP server with those fakes.
+
+**Logs.**
+
+- stdout (`docker logs stocks-agent-runner`), one line per run, e.g.
+  `run bot=claude model=claude-opus-5-5 trigger=schedule@09:45 status=completed turns=9 tools=14 tool_errors=1 orders=2 tokens=in:5210,cache_read:96000,cache_write:12400,out:4100 cost=$0.183400 day=$0.183400/$1.00 secs=94 log=/data/claude/runs/20261012T134500Z.jsonl`.
+  `status` is `completed`, `tool_cap`, `time_cap`, `daily_cap`, `max_tokens` (a response hit the output limit),
+  `refusal`, `error`, `aborted` (SIGTERM), `skipped_daily_cap` or `skipped_non_trading_day`.
+- `/DATA/AppData/stocks/agent-data/<bot>/runs/<UTC time>.jsonl`, one file per run that reached the model:
+  `run_start` (model, price source, prompt hashes, caps), `market_clock`, `llm_response` (tokens, cost, the
+  model's text), `tool_call` (arguments, `isError`, the result `code`, duration), `llm_http` (retried 429/5xx) and
+  `run_end` (status, totals, the final summary). Orders and their rationales are also in the app.
+- `<bot>/notes.md` is the bot's memory (read it, edit it, or delete it to reset); `<bot>/spend.json` is today's
+  spend. Keys never appear in either log: configured secrets and anything shaped like a key are redacted.
+
+**Costs.** Cost = the token usage each response reports × the model's price; it covers input, cache reads,
+cache writes and output (Claude's tool-use system prompt and thinking tokens are part of the reported usage). The
+runner has a built-in price table checked on 2026-10-10 against
+[Anthropic's](https://platform.claude.com/docs/en/about-claude/pricing) and
+[OpenAI's](https://developers.openai.com/api/docs/pricing) pricing pages (current Claude 4.5+ models; GPT-6, GPT-5.x,
+GPT-4.1, GPT-4o and o-series), including long-context tiers; `--check` prints the price it will use. A model that is
+not in the table, or a price that changed, is set per bot in USD per million tokens:
+
+```sh
+AGENT_PRICE_CLAUDE=input=4,output=20,cached_input=0.20,cache_write=5,cache_write_1h=8
+AGENT_PRICE_CHATGPT=input=5,output=30,cached_input=0.50
+```
+
+`input` and `output` are required; a missing `cached_input` counts as `input` and a missing `cache_write` as 1.25 ×
+`input` (never cheaper than the real price). **A model with neither a built-in nor an `AGENT_PRICE_*` price does
+not run** (log line `no price for CLAUDE_MODEL=…`), because its daily cap could not be enforced. Claude requests use
+automatic prompt caching, so the tools, the system prompt and earlier turns are mostly billed at the cache-read
+price; ChatGPT chains turns with `previous_response_id` (stored by OpenAI). Watch `cost=` in the first days and set
+`AGENT_DAILY_USD_CAP` to taste; each vendor's console also shows the spend per key.
 
 ### 2.6 Scripts (REST)
 
