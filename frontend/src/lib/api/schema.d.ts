@@ -336,7 +336,7 @@ export interface paths {
          * Preview a cash transfer (no writes)
          * @description Per affected account: cash, withdrawable, equity before, unit value, worst mark quality, whether it would apply and warnings (ACCOUNT_EQUITY_TOO_LOW, MARKS_DEGRADED). Errors: VALIDATION_FAILED, PLAYER_NOT_FOUND.
          */
-        post: operations["preview_1"];
+        post: operations["preview_2"];
         delete?: never;
         options?: never;
         head?: never;
@@ -481,7 +481,7 @@ export interface paths {
          * Cancel any player's open order
          * @description Recent password check. Errors: ORDER_NOT_FOUND, ORDER_NOT_CANCELLABLE.
          */
-        delete: operations["cancel_1"];
+        delete: operations["cancel_2"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1170,6 +1170,71 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/order-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Place a group order
+         * @description OCO, OTO, OTOCO or BRACKET: every leg or nothing. 201 with the group (children of an entry wait, held, until it executes); 200 with Idempotent-Replay: true when this clientOrderId was already used for the same group; 409 for a different request.
+         */
+        post: operations["place_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/order-groups/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview a group order
+         * @description Runs the group rules and every leg's checks against the current account and market without placing anything; always 200 (valid=false lists the error, its field prefixed with the leg, e.g. takeProfit.limitPrice). clientOrderId is optional.
+         */
+        post: operations["preview_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/order-groups/{groupId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One group order with its current legs */
+        get: operations["get_2"];
+        put?: never;
+        post?: never;
+        /**
+         * Cancel a group order
+         * @description Cancels every open leg, children first; idempotent.
+         */
+        delete: operations["cancel_1"];
+        options?: never;
+        head?: never;
+        /**
+         * Replace a group order
+         * @description One cancel-replace of the changed legs (prices, the quantity while nothing has filled, the time in force) with a NEW group clientOrderId; 201 with the group.
+         */
+        patch: operations["replace_1"];
         trace?: never;
     };
     "/api/v1/orders": {
@@ -2113,6 +2178,40 @@ export interface components {
              */
             type: "GFV";
         };
+        GroupLegChange: {
+            /** Format: decimal */
+            limitPrice: string | null;
+            /** Format: decimal */
+            stopPrice: string | null;
+        };
+        GroupLegPreview: {
+            estimate: components["schemas"]["Estimate"] | null;
+            /** @enum {string|null} */
+            role: "ENTRY" | "TAKE_PROFIT" | "STOP_LOSS" | "SECONDARY" | null;
+            /** @enum {string|null} */
+            side: "BUY" | "SELL" | null;
+            /** @enum {string|null} */
+            type: "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | null;
+        };
+        GroupLegRequest: {
+            /** Format: decimal */
+            limitPrice?: string | null;
+            /** Format: decimal */
+            stopPrice?: string | null;
+            /** @enum {string|null} */
+            type?: "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | null;
+        };
+        GroupPreview: {
+            /** Format: decimal */
+            buyingPowerAfter: string | null;
+            /** Format: decimal */
+            buyingPowerBefore: string | null;
+            errors: components["schemas"]["PreviewError"][] | null;
+            legs: components["schemas"]["GroupLegPreview"][] | null;
+            sessionNote: string | null;
+            valid: boolean;
+            warnings: components["schemas"]["Warning"][] | null;
+        };
         HaltEngineRequest: {
             reason: string | null;
         };
@@ -2317,11 +2416,14 @@ export interface components {
             activatedAt: string | null;
             /** Format: decimal */
             avgFillPrice: string | null;
+            /** Format: date-time */
+            cancelRequestedAt: string | null;
             /** @enum {string|null} */
             channel: "WEB" | "REST_KEY" | "MCP_KEY" | "MCP_OAUTH" | "SYSTEM" | "ADMIN" | null;
             clientOrderId: string | null;
             /** Format: decimal */
             collarPrice: string | null;
+            doNotReduce: boolean;
             /** Format: date-time */
             doneAt: string | null;
             /** Format: date-time */
@@ -2338,6 +2440,7 @@ export interface components {
             /** Format: decimal */
             filledQty: string | null;
             fractional: boolean;
+            group: components["schemas"]["OrderGroupRef"] | null;
             /** Format: decimal */
             limitPrice: string | null;
             /** Format: decimal */
@@ -2359,7 +2462,7 @@ export interface components {
             /** @enum {string|null} */
             side: "BUY" | "SELL" | null;
             /** @enum {string|null} */
-            status: "PENDING" | "WORKING" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" | "EXPIRED" | "REPLACED" | "REJECTED" | null;
+            status: "PENDING" | "WORKING" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" | "EXPIRED" | "REPLACED" | "REJECTED" | "PENDING_CANCEL" | null;
             statusReason: string | null;
             /** Format: decimal */
             stopPrice: string | null;
@@ -2376,7 +2479,7 @@ export interface components {
             /** @enum {string|null} */
             type: "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | null;
             /** @enum {string|null} */
-            waitReason: "LATENCY" | "QUEUED_FOR_OPEN" | "QUEUED_FOR_EXT_OPEN" | "SESSION_CLOSED" | "NOT_TRIGGERED" | "AWAITING_QUOTE" | "HALTED" | "CORPORATE_ACTION_HOLD" | "BEYOND_COLLAR" | "LIMIT_NOT_REACHED" | null;
+            waitReason: "LATENCY" | "QUEUED_FOR_OPEN" | "QUEUED_FOR_EXT_OPEN" | "SESSION_CLOSED" | "NOT_TRIGGERED" | "AWAITING_QUOTE" | "HALTED" | "CORPORATE_ACTION_HOLD" | "BEYOND_COLLAR" | "LIMIT_NOT_REACHED" | "AWAITING_PARENT" | null;
             /** Format: decimal */
             watermarkPrice: string | null;
         };
@@ -2389,9 +2492,44 @@ export interface components {
             /** Format: int32 */
             seq: number;
             /** @enum {string|null} */
-            statusAfter: "PENDING" | "WORKING" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" | "EXPIRED" | "REPLACED" | "REJECTED" | null;
+            statusAfter: "PENDING" | "WORKING" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" | "EXPIRED" | "REPLACED" | "REJECTED" | "PENDING_CANCEL" | null;
             /** @enum {string|null} */
-            type: "ACCEPTED" | "QUEUED" | "WORKING" | "PAUSED" | "RESUMED" | "TRIGGERED" | "TRAIL_UPDATED" | "AWAITING_QUOTE" | "BEYOND_COLLAR" | "PARTIAL_FILL" | "FILL" | "CANCELLED" | "EXPIRED" | "REPLACED" | "HOLD_ADJUSTED" | null;
+            type: "ACCEPTED" | "QUEUED" | "WORKING" | "PAUSED" | "RESUMED" | "TRIGGERED" | "TRAIL_UPDATED" | "AWAITING_QUOTE" | "BEYOND_COLLAR" | "PARTIAL_FILL" | "FILL" | "CANCELLED" | "EXPIRED" | "REPLACED" | "HOLD_ADJUSTED" | "ACTIVATED" | "QTY_ADJUSTED" | "PRICE_ADJUSTED" | "CANCEL_REQUESTED" | null;
+        };
+        OrderGroup: {
+            clientOrderId: string | null;
+            /** Format: date-time */
+            createdAt: string | null;
+            groupId: string | null;
+            legs: components["schemas"]["Order"][] | null;
+            /** Format: decimal */
+            qty: string | null;
+            /** @enum {string|null} */
+            status: "ACTIVE" | "COMPLETED" | "CANCELLED" | "EXPIRED" | null;
+            symbol: string | null;
+            /** @enum {string|null} */
+            timeInForce: "DAY" | "GTC" | null;
+            /** @enum {string|null} */
+            type: "OCO" | "OTO" | "OTOCO" | "BRACKET" | null;
+            /** Format: date-time */
+            updatedAt: string | null;
+        };
+        OrderGroupRef: {
+            groupId: string | null;
+            held: boolean;
+            parentOrderId: string | null;
+            /** @enum {string|null} */
+            role: "ENTRY" | "TAKE_PROFIT" | "STOP_LOSS" | "SECONDARY" | null;
+            /** @enum {string|null} */
+            type: "OCO" | "OTO" | "OTOCO" | "BRACKET" | null;
+        };
+        OrderGroupRule: {
+            entryTypes: ("MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP")[] | null;
+            legs: string | null;
+            notes: string | null;
+            timeInForce: ("DAY" | "GTC")[] | null;
+            /** @enum {string|null} */
+            type: "OCO" | "OTO" | "OTOCO" | "BRACKET" | null;
         };
         OrderMatrixRow: {
             notes: string | null;
@@ -2437,9 +2575,40 @@ export interface components {
             items: components["schemas"]["TransferRow"][] | null;
             nextCursor: string | null;
         };
+        PlaceOrderGroupRequest: {
+            acknowledge?: string[] | null;
+            clientOrderId: string | null;
+            doNotReduce?: boolean | null;
+            entry?: components["schemas"]["GroupLegRequest"] | null;
+            /** Format: decimal */
+            qty: string | null;
+            rationale?: string | null;
+            secondary?: components["schemas"]["GroupLegRequest"] | null;
+            shareNote?: boolean | null;
+            /** @enum {string|null} */
+            side?: "BUY" | "SELL" | null;
+            stopLoss?: components["schemas"]["GroupLegRequest"] | null;
+            symbol: string | null;
+            takeProfit?: components["schemas"]["GroupLegRequest"] | null;
+            /** @enum {string|null} */
+            timeInForce?: "DAY" | "GTC" | null;
+            /** @enum {string|null} */
+            type: "OCO" | "OTO" | "OTOCO" | "BRACKET" | null;
+        };
+        PlaceOrderGroupResponse: {
+            /** Format: decimal */
+            buyingPowerAfter: string | null;
+            /** Format: decimal */
+            buyingPowerBefore: string | null;
+            estimate: components["schemas"]["Estimate"] | null;
+            group: components["schemas"]["OrderGroup"] | null;
+            replayed: boolean;
+            warnings: components["schemas"]["Warning"][] | null;
+        };
         PlaceOrderRequest: {
             acknowledge?: string[] | null;
             clientOrderId: string | null;
+            doNotReduce?: boolean | null;
             extendedHours?: boolean | null;
             /** Format: decimal */
             limitPrice?: string | null;
@@ -2715,8 +2884,21 @@ export interface components {
             quoteAt: string | null;
             source: string | null;
         };
+        ReplaceOrderGroupRequest: {
+            clientOrderId: string | null;
+            entry?: components["schemas"]["GroupLegChange"] | null;
+            /** Format: decimal */
+            qty?: string | null;
+            rationale?: string | null;
+            secondary?: components["schemas"]["GroupLegChange"] | null;
+            stopLoss?: components["schemas"]["GroupLegChange"] | null;
+            takeProfit?: components["schemas"]["GroupLegChange"] | null;
+            /** @enum {string|null} */
+            timeInForce?: "DAY" | "GTC" | null;
+        };
         ReplaceOrderRequest: {
             clientOrderId: string | null;
+            doNotReduce?: boolean | null;
             extendedHours?: boolean | null;
             /** Format: decimal */
             limitPrice?: string | null;
@@ -2869,12 +3051,15 @@ export interface components {
             ties: string | null;
         };
         RulesOrders: {
+            cancelLatency: string | null;
             clientOrderIdPattern: string | null;
             /** Format: decimal */
             collarPct: string | null;
+            dividendAdjustment: string | null;
             /** Format: decimal */
             fatFingerWarnPct: string | null;
             fractional: components["schemas"]["RulesFractional"] | null;
+            groups: components["schemas"]["OrderGroupRule"][] | null;
             /** Format: int32 */
             gtcDays: number;
             /** Format: decimal */
@@ -3880,7 +4065,7 @@ export interface operations {
             };
         };
     };
-    preview_1: {
+    preview_2: {
         parameters: {
             query?: never;
             header?: never;
@@ -4134,7 +4319,7 @@ export interface operations {
             };
         };
     };
-    cancel_1: {
+    cancel_2: {
         parameters: {
             query?: never;
             header?: never;
@@ -5455,6 +5640,169 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NewsList"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    place_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaceOrderGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaceOrderGroupResponse"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    preview_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaceOrderGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupPreview"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderGroup"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    cancel_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderGroup"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    replace_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceOrderGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaceOrderGroupResponse"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

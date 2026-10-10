@@ -3,6 +3,7 @@ package com.stocks.rules;
 import com.stocks.common.domain.AccountType;
 import com.stocks.common.domain.FeeCode;
 import com.stocks.common.domain.HoldingsVisibility;
+import com.stocks.common.domain.OrderGroupType;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.TimeInForce;
 import com.stocks.common.error.ApiException;
@@ -12,6 +13,7 @@ import com.stocks.common.time.TimeSource;
 import com.stocks.config.StocksProperties;
 import com.stocks.contract.identity.SettingsService;
 import com.stocks.contract.rules.dto.RulesDto;
+import com.stocks.contract.rules.dto.RulesDto.OrderGroupRuleDto;
 import com.stocks.contract.rules.dto.RulesDto.OrderMatrixRowDto;
 import com.stocks.contract.rules.dto.RulesDto.RulesAccountDto;
 import com.stocks.contract.rules.dto.RulesDto.RulesExecutionDto;
@@ -97,7 +99,8 @@ public class RulesService {
         r.marketCollarPct(), r.holdPctRegular(), r.holdPctQueued(), r.fatFingerWarnPct(), r.priceTooFarPct(),
         "^[A-Za-z0-9._:-]{1,64}$", botsRequireRationale(),
         new RulesFractionalDto(r.fractional().minBuyNotional(), r.fractional().minSellNotional(),
-            r.fractional().minQty(), !r.fractional().allowLimit(), true, true, false));
+            r.fractional().minQty(), !r.fractional().allowLimit(), true, true, false),
+        groups(), cancelLatency(r.cancelLatency()), DIVIDEND_ADJUSTMENT);
 
     RulesExecutionDto execution = new RulesExecutionDto(latency(config.engine()), qualityLadder(), freshness(r),
         "Marketable orders fill at the touch up to the displayed size, then walk the book in steps of half a spread "
@@ -174,6 +177,47 @@ public class RulesService {
                 + "lowest (buy) consolidated trade since the order started working, then triggers like STOP into a "
                 + "market order. Buy hold: qty × (reference + trail) × " + plain(r.holdPctRegular()) + "%."));
   }
+
+  /** §11.9 (Phase 2): the group order types, Webull's "Advanced" orders. */
+  static List<OrderGroupRuleDto> groups() {
+    List<TimeInForce> both = List.of(TimeInForce.DAY, TimeInForce.GTC);
+    String common = " One symbol and one whole-share qty for every leg; no notional, fractional, extended-hours or "
+        + "trailing legs. timeInForce applies to every leg (a MARKET entry is DAY). AI players send one rationale "
+        + "for the group. Each leg is also an ordinary order (GET /orders shows its group).";
+    return List.of(
+        new OrderGroupRuleDto(OrderGroupType.BRACKET, "entry (BUY) + takeProfit (SELL LIMIT) + stopLoss (SELL STOP or "
+            + "STOP_LIMIT)", List.of(OrderType.MARKET, OrderType.LIMIT), both,
+            "The take profit and the stop loss wait (held) until the entry executes, then work for the quantity it "
+                + "bought, as one-cancels-other. takeProfit.limitPrice > entry price > stopLoss.stopPrice, at least "
+                + "0.1% of the entry price apart (entry price: the limit, or "
+                + "the ask for a MARKET entry)." + common),
+        new OrderGroupRuleDto(OrderGroupType.OCO, "takeProfit (LIMIT) + stopLoss (STOP or STOP_LIMIT), both on side "
+            + "(SELL by default; BUY allowed)", List.of(), both,
+            "Both legs work at once; the first execution of either (a partial fill is enough) cancels the other. A "
+                + "SELL pair reserves its shares once; a BUY pair holds the larger of its two holds once." + common),
+        new OrderGroupRuleDto(OrderGroupType.OTO, "entry (BUY) + secondary (SELL LIMIT, STOP or STOP_LIMIT)",
+            List.of(OrderType.MARKET, OrderType.LIMIT, OrderType.STOP, OrderType.STOP_LIMIT), both,
+            "The secondary waits (held) until the entry executes, then works for the quantity it bought. A held "
+                + "stop is checked against the entry price, not the market." + common),
+        new OrderGroupRuleDto(OrderGroupType.OTOCO, "entry (BUY) + takeProfit (SELL LIMIT) + stopLoss (SELL STOP or "
+            + "STOP_LIMIT)", List.of(OrderType.MARKET, OrderType.LIMIT, OrderType.STOP, OrderType.STOP_LIMIT), both,
+            "An OTO whose secondary is an OCO pair (a bracket without the bracket price rules, and with stop entries)."
+                + common));
+  }
+
+  /** §11.10: the published cancel latency, or null when it is off (the default). */
+  static String cancelLatency(RulesConfig.CancelLatency c) {
+    if (c == null || !c.enabled()) {
+      return null;
+    }
+    return "A cancel of a working order takes " + c.base().toMillis() + " ms + 0–" + c.jitterMax().toMillis()
+        + " ms of seeded jitter; meanwhile it shows PENDING_CANCEL and can still fill (a fill wins).";
+  }
+
+  /** §14 FINRA Rule 5330. */
+  static final String DIVIDEND_ADJUSTMENT = "On a cash dividend's ex-date, open BUY LIMIT orders and untriggered SELL "
+      + "STOP / STOP_LIMIT orders entered before the ex-date are reduced by the dividend, rounded down to the tick "
+      + "(FINRA Rule 5330); send doNotReduce: true to keep your prices. Splits and symbol changes cancel open orders.";
 
   static String latency(RulesConfig.Engine e) {
     return "Every order waits " + e.latencyBase().toMillis() + " ms + " + e.latencyJitterMin().toMillis() + "–"

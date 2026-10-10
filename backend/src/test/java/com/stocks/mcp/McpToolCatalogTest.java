@@ -12,7 +12,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.mcp.annotation.McpTool;
 import tools.jackson.databind.json.JsonMapper;
 
-/** §20.3: the tool list follows the catalog order, rejects unknown and duplicate names, and has all 38 names. */
+/**
+ * §20.3: the tool list follows the catalog order, rejects unknown and duplicate names, and has all 42 names (the 38 of
+ * Phase 1, then the four Phase 2 group-order tools).
+ */
 class McpToolCatalogTest {
 
   static final JsonMapper MAPPER = JacksonConfig.newMapper();
@@ -79,8 +82,13 @@ class McpToolCatalogTest {
   }
 
   @Test
-  void theCatalogHasThe38ToolsOfSection20Point3AndNoAdminTool() {
-    assertThat(McpToolCatalog.ORDER).hasSize(38).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
-        .endsWith("mark_notifications_read").noneMatch(n -> n.contains("admin"));
+  void theCatalogHasThe42ToolsOfSection20Point3AndNoAdminTool() {
+    assertThat(McpToolCatalog.ORDER).hasSize(42).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
+        .endsWith("mark_notifications_read", "preview_order_group", "place_order_group", "get_order_group",
+            "cancel_order_group")
+        .noneMatch(n -> n.contains("admin"));
+    assertThat(McpToolCatalog.SCOPES).containsEntry("place_order_group", Scopes.TRADE)
+        .containsEntry("cancel_order_group", Scopes.TRADE).containsEntry("preview_order_group", Scopes.ACCOUNT_READ)
+        .containsEntry("get_order_group", Scopes.ACCOUNT_READ);
   }
 }

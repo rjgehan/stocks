@@ -1,5 +1,5 @@
 {
-  "version" : "1.29583763aef8",
+  "version" : "1.8eb55bcb729d",
   "asOf" : "2026-10-09T14:00:00.000Z",
   "account" : {
     "type" : "CASH",
@@ -77,7 +77,34 @@
       "dayOnly" : true,
       "rthOnly" : true,
       "replaceable" : false
-    }
+    },
+    "groups" : [ {
+      "type" : "BRACKET",
+      "legs" : "entry (BUY) + takeProfit (SELL LIMIT) + stopLoss (SELL STOP or STOP_LIMIT)",
+      "entryTypes" : [ "MARKET", "LIMIT" ],
+      "timeInForce" : [ "DAY", "GTC" ],
+      "notes" : "The take profit and the stop loss wait (held) until the entry executes, then work for the quantity it bought, as one-cancels-other. takeProfit.limitPrice > entry price > stopLoss.stopPrice, at least 0.1% of the entry price apart (entry price: the limit, or the ask for a MARKET entry). One symbol and one whole-share qty for every leg; no notional, fractional, extended-hours or trailing legs. timeInForce applies to every leg (a MARKET entry is DAY). AI players send one rationale for the group. Each leg is also an ordinary order (GET /orders shows its group)."
+    }, {
+      "type" : "OCO",
+      "legs" : "takeProfit (LIMIT) + stopLoss (STOP or STOP_LIMIT), both on side (SELL by default; BUY allowed)",
+      "entryTypes" : [ ],
+      "timeInForce" : [ "DAY", "GTC" ],
+      "notes" : "Both legs work at once; the first execution of either (a partial fill is enough) cancels the other. A SELL pair reserves its shares once; a BUY pair holds the larger of its two holds once. One symbol and one whole-share qty for every leg; no notional, fractional, extended-hours or trailing legs. timeInForce applies to every leg (a MARKET entry is DAY). AI players send one rationale for the group. Each leg is also an ordinary order (GET /orders shows its group)."
+    }, {
+      "type" : "OTO",
+      "legs" : "entry (BUY) + secondary (SELL LIMIT, STOP or STOP_LIMIT)",
+      "entryTypes" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT" ],
+      "timeInForce" : [ "DAY", "GTC" ],
+      "notes" : "The secondary waits (held) until the entry executes, then works for the quantity it bought. A held stop is checked against the entry price, not the market. One symbol and one whole-share qty for every leg; no notional, fractional, extended-hours or trailing legs. timeInForce applies to every leg (a MARKET entry is DAY). AI players send one rationale for the group. Each leg is also an ordinary order (GET /orders shows its group)."
+    }, {
+      "type" : "OTOCO",
+      "legs" : "entry (BUY) + takeProfit (SELL LIMIT) + stopLoss (SELL STOP or STOP_LIMIT)",
+      "entryTypes" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT" ],
+      "timeInForce" : [ "DAY", "GTC" ],
+      "notes" : "An OTO whose secondary is an OCO pair (a bracket without the bracket price rules, and with stop entries). One symbol and one whole-share qty for every leg; no notional, fractional, extended-hours or trailing legs. timeInForce applies to every leg (a MARKET entry is DAY). AI players send one rationale for the group. Each leg is also an ordinary order (GET /orders shows its group)."
+    } ],
+    "cancelLatency" : null,
+    "dividendAdjustment" : "On a cash dividend's ex-date, open BUY LIMIT orders and untriggered SELL STOP / STOP_LIMIT orders entered before the ex-date are reduced by the dividend, rounded down to the tick (FINRA Rule 5330); send doNotReduce: true to keep your prices. Splits and symbol changes cancel open orders."
   },
   "execution" : {
     "latency" : "Every order waits 250 ms + 100–500 ms of seeded jitter before it can fill, and only quotes confirmed after that instant count (no look-ahead). Humans and bots get identical treatment.",

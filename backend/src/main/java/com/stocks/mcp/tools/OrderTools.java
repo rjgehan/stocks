@@ -31,7 +31,7 @@ import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 /**
- * Order tools (§20.3 #15, #16, #23, #31–#35). Reads need {@code account:read}; writes need {@code trade} and go
+ * Order tools (§20.3 #15, #16, #23, #31–#35; group orders are {@link OrderGroupTools}). Reads need {@code account:read}; writes need {@code trade} and go
  * through WS3's {@code OrderService} exactly like REST: {@code OrderGate} (engine state, player status, client order
  * id, idempotency fast path, one write token) and the engine's {@code OrderValidator} (rationale for AI players,
  * symbol, quantity, prices, session, buying power, GFV …). Synchronous rejections come back as error results with the
@@ -126,10 +126,12 @@ public class OrderTools implements McpToolSet {
       @McpToolParam(required = false, description = EXT) Boolean extended_hours,
       @McpToolParam(required = false, description = "Optional here") String rationale,
       @McpToolParam(required = false, description = SHARE_NOTE) Boolean share_note,
-      @McpToolParam(required = false, description = ACK) List<String> acknowledge) {
+      @McpToolParam(required = false, description = ACK) List<String> acknowledge,
+      @McpToolParam(required = false, description = DO_NOT_REDUCE) Boolean do_not_reduce) {
     PlayerPrincipal caller = McpArgs.caller(ctx);
     return orderService.preview(caller, request(client_order_id, symbol, side, type, qty, notional, limit_price,
-        stop_price, trail_amount, trail_percent, time_in_force, extended_hours, rationale, share_note, acknowledge));
+        stop_price, trail_amount, trail_percent, time_in_force, extended_hours, rationale, share_note, acknowledge,
+        do_not_reduce));
   }
 
   // ------------------------------------------------------------------------------------------- writes
@@ -166,11 +168,12 @@ public class OrderTools implements McpToolSet {
       @McpToolParam(required = false, description = EXT) Boolean extended_hours,
       @McpToolParam(required = false, description = RATIONALE) String rationale,
       @McpToolParam(required = false, description = SHARE_NOTE) Boolean share_note,
-      @McpToolParam(required = false, description = ACK) List<String> acknowledge) {
+      @McpToolParam(required = false, description = ACK) List<String> acknowledge,
+      @McpToolParam(required = false, description = DO_NOT_REDUCE) Boolean do_not_reduce) {
     PlayerPrincipal caller = McpArgs.caller(ctx);
     return orderService.place(caller, request(client_order_id, symbol, side, type, qty, notional, limit_price,
-        stop_price, trail_amount, trail_percent, time_in_force, extended_hours, rationale, share_note, acknowledge),
-        meta(ctx));
+        stop_price, trail_amount, trail_percent, time_in_force, extended_hours, rationale, share_note, acknowledge,
+        do_not_reduce), meta(ctx));
   }
 
   @McpTool(name = "replace_order", title = "Replace an order",
@@ -192,11 +195,13 @@ public class OrderTools implements McpToolSet {
       @McpToolParam(required = false, description = TRAIL_PERCENT) BigDecimal trail_percent,
       @McpToolParam(required = false, description = TIF) TimeInForce time_in_force,
       @McpToolParam(required = false, description = EXT) Boolean extended_hours,
-      @McpToolParam(required = false, description = RATIONALE) String rationale) {
+      @McpToolParam(required = false, description = RATIONALE) String rationale,
+      @McpToolParam(required = false, description = DO_NOT_REDUCE) Boolean do_not_reduce) {
     PlayerPrincipal caller = McpArgs.caller(ctx);
     String orderId = McpArgs.text(order_id, 32, "order_id");
     return orderService.replace(caller, orderId, new ReplaceOrderRequest(client_order_id, qty, limit_price,
-        stop_price, trail_amount, trail_percent, time_in_force, extended_hours, rationale(rationale)), meta(ctx));
+        stop_price, trail_amount, trail_percent, time_in_force, extended_hours, rationale(rationale), do_not_reduce),
+        meta(ctx));
   }
 
   @McpTool(name = "cancel_order", title = "Cancel an order",
@@ -261,15 +266,17 @@ public class OrderTools implements McpToolSet {
       + "becomes public with the delayed trade.";
   private static final String SHARE_NOTE = "Humans only: publish your rationale with the delayed trade";
   private static final String ACK = "Warnings you accept; [\"GFV_RISK\"] to sell despite a good-faith-violation risk";
+  private static final String DO_NOT_REDUCE = "Keep your limit and stop prices on ex-dividend dates (FINRA 5330 "
+      + "\"do not reduce\"); default false: a BUY LIMIT or SELL STOP is reduced by the dividend";
 
   private static PlaceOrderRequest request(String clientOrderId, String symbol, Side side, OrderType type,
                                            BigDecimal qty, BigDecimal notional, BigDecimal limitPrice,
                                            BigDecimal stopPrice, BigDecimal trailAmount, BigDecimal trailPercent,
                                            TimeInForce tif, Boolean extendedHours, String rationale,
-                                           Boolean shareNote, List<String> acknowledge) {
+                                           Boolean shareNote, List<String> acknowledge, Boolean doNotReduce) {
     return new PlaceOrderRequest(clientOrderId, McpArgs.symbol(symbol, "symbol"), side, type, qty, notional,
         limitPrice, stopPrice, trailAmount, trailPercent, tif, extendedHours, rationale(rationale), shareNote,
-        acknowledge(acknowledge));
+        acknowledge(acknowledge), doNotReduce);
   }
 
   /** Trims; an over-long rationale is a validation error (the engine's 1–1000 rule, checked early). */

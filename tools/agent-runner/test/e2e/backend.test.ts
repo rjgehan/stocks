@@ -255,9 +255,10 @@ describe('agent runner against the real stocks MCP server', () => {
     expect(`${s.status}\n${sink.text}`).toMatch(/^completed\n/);
     expect(s).toMatchObject({ toolCalls: 4, toolErrors: 0, orders: 1, turns: 4 });
     expect(JSON.parse(placed)).toMatchObject({ order: { clientOrderId }, replayed: false });
-    // The model saw the server's 38 tools plus save_notes, converted to Messages API custom tools.
+    // The model saw the server's 42 tools (38 + the Phase 2 group-order tools) plus save_notes, converted to
+    // Messages API custom tools.
     const tools = llm.calls[0]?.body.tools as { name: string; input_schema: { type: string } }[];
-    expect(tools).toHaveLength(39);
+    expect(tools).toHaveLength(43);
     expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['whoami', 'place_order', 'get_league_feed', 'save_notes']));
     expect(llm.calls[0]?.body.messages[0].content).toContain('"feed":{"profile":"simulated"');
 

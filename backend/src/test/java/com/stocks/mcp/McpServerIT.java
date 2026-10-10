@@ -247,7 +247,7 @@ class McpServerIT {
       assertThat(init.capabilities().prompts()).isNull();
 
       List<Tool> tools = client.listTools().tools();
-      // the 38 catalog tools in §20.3 order, then this test's two probes
+      // the 42 catalog tools in §20.3 order, then this test's two probes
       List<String> expected = new java.util.ArrayList<>(McpToolCatalog.ORDER);
       expected.addAll(List.of(PROBE, SCOPED_PROBE));
       assertThat(tools).extracting(Tool::name).containsExactlyElementsOf(expected);
