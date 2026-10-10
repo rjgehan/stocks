@@ -175,7 +175,8 @@ These pins come from the agents-stack research and were checked against Maven Ce
 | @types/node | **22.20.4** (dev; types for `vite.config.ts`, `playwright.config.ts` and `e2e/`; pinned at scaffold) |
 | @playwright/test | **1.64.0** (dev) |
 | oxlint | **1.87.0** (dev) |
-| vite-plugin-pwa | **1.3.0** (Phase 2) |
+| vite-plugin-pwa | **1.3.0** (Phase 2; `injectManifest`, §22.10) |
+| workbox-precaching, workbox-routing, workbox-window | **7.4.1** (Phase 2; the service worker and its registration, §22.10) |
 | @modelcontextprotocol/inspector | **2.10.1** (dev tool, run through `npx`) |
 
 **TypeScript 6 and `openapi-typescript`.** Every `openapi-typescript` 7.x release declares `peerDependencies: { typescript: "^5.x" }`, so a plain `npm install` with TypeScript 6 fails with `ERESOLVE` (reproduced on Node 22.23.2 / npm 10.9.8). Decision: keep TypeScript 6 and add this to `frontend/package.json`:
@@ -818,6 +819,7 @@ public record SessionChanged(SessionState state) {}
 |---|---|---|---|
 | `ply` | player | `xfr` | cash_transfer |
 | `acc` | account | `bat` | transfer_batch |
+| `alr` | price_alert (Phase 2) | `psh` | push_subscription (Phase 2) |
 | `ord` | trade_order | `inv` | invite |
 | `exe` | execution | `wlt` | watchlist |
 | `vio` | account_violation | `cac` | corporate_action |
@@ -961,7 +963,12 @@ enum ChartRange      { D1("1D"), D5("5D"), M1("1M"), M3("3M"), M6("6M"), YTD("YT
 enum MoverList       { GAINERS, LOSERS, ACTIVES }
 enum HoldingsVisibility { EOD_WEIGHTS, EOD_FULL, HIDDEN }
 enum NotificationKind { FILL, PARTIAL_FILL, ORDER_CANCELLED, ORDER_EXPIRED, DEPOSIT, WITHDRAWAL, ADJUSTMENT,
-                        GFV_ISSUED, RESTRICTION_CHANGED, CORPORATE_ACTION, ACCOUNT_RESET, SYSTEM }
+                        GFV_ISSUED, RESTRICTION_CHANGED, CORPORATE_ACTION, ACCOUNT_RESET, SYSTEM,
+                        PRICE_ALERT /* Phase 2, §19.1 */ }
+// Phase 2 (§19.1, §19.2)
+enum AlertCondition  { PRICE_GTE, PRICE_LTE, CHANGE_PCT_GTE, CHANGE_PCT_LTE }
+enum AlertStatus     { ACTIVE, PAUSED, TRIGGERED, EXPIRED }
+enum PushCategory    { FILLS, ALERTS, MONEY, ACCOUNT, LEAGUE }
 ```
 
 **API scopes** are space-separated strings: `market:read`, `account:read`, `trade`, `league:read` (constants in `com.stocks.contract.security.Scopes`). There is no admin scope.
@@ -976,11 +983,11 @@ enum NotificationKind { FILL, PARTIAL_FILL, ORDER_CANCELLED, ORDER_EXPIRED, DEPO
 | 404 | `NOT_FOUND`, `SYMBOL_NOT_FOUND`, `ORDER_NOT_FOUND`, `PLAYER_NOT_FOUND`, `ACCOUNT_NOT_FOUND` |
 | 409 | `CLIENT_ORDER_ID_CONFLICT`, `IDEMPOTENCY_KEY_CONFLICT`, `ORDER_NOT_CANCELLABLE`, `ORDER_NOT_REPLACEABLE`, `HANDLE_TAKEN` |
 | 422 (orders) | `CLIENT_ORDER_ID_INVALID`, `RATIONALE_REQUIRED`, `SYMBOL_NOT_TRADABLE`, `INVALID_QTY`, `QTY_OR_NOTIONAL_REQUIRED`, `NOT_FRACTIONABLE`, `FRACTIONAL_MARKET_ONLY`, `FRACTIONAL_DAY_ONLY`, `FRACTIONAL_NOT_REPLACEABLE`, `NOTIONAL_TOO_SMALL`, `INVALID_TICK`, `LIMIT_PRICE_REQUIRED`, `STOP_PRICE_REQUIRED`, `TRAIL_REQUIRED`, `PRICE_NOT_ALLOWED`, `EXT_HOURS_LIMIT_ONLY`, `TIF_NOT_ALLOWED`, `SESSION_NOT_ALLOWED`, `STOP_PRICE_WRONG_SIDE`, `PRICE_TOO_FAR`, `SHORT_SELLING_NOT_ALLOWED`, `INSUFFICIENT_POSITION`, `INSUFFICIENT_BUYING_POWER`, `ACCOUNT_RESTRICTED`, `TOO_MANY_OPEN_ORDERS`, `GFV_ACK_REQUIRED`, `MARKET_DATA_UNAVAILABLE` |
-| 422 (other) | `INSUFFICIENT_WITHDRAWABLE`, `MARKS_DEGRADED`, `SELF_RESET_DISABLED`, `INVITE_INVALID`, `WEAK_PASSWORD`, `SETTING_INVALID`, `CORPORATE_ACTION_NOT_RESOLVABLE` |
+| 422 (other) | `INSUFFICIENT_WITHDRAWABLE`, `MARKS_DEGRADED`, `SELF_RESET_DISABLED`, `INVITE_INVALID`, `WEAK_PASSWORD`, `SETTING_INVALID`, `CORPORATE_ACTION_NOT_RESOLVABLE`, `TOO_MANY_ALERTS` (Phase 2) |
 | 429 | `RATE_LIMITED`, `LOGIN_LOCKED` |
 | 500 | `INTERNAL_ERROR` (any unmapped exception; the body carries only `requestId`, never a stack trace) |
 | 501 | `NOT_IMPLEMENTED` (Day-0 stub beans, §27.1; must not exist at M4) |
-| 503 | `ENGINE_BUSY`, `ENGINE_TIMEOUT`, `ENGINE_HALTED`, `PROVIDER_UNAVAILABLE` |
+| 503 | `ENGINE_BUSY`, `ENGINE_TIMEOUT`, `ENGINE_HALTED`, `PROVIDER_UNAVAILABLE`, `PUSH_UNAVAILABLE` (Phase 2, §19.2) |
 
 **Authentication outcome order** for an API key (REST and MCP alike): unknown or malformed key → 401 `INVALID_API_KEY`; revoked → 401 `API_KEY_REVOKED`; expired → 401 `API_KEY_EXPIRED`; then the owner's status: FROZEN → 403 `PLAYER_FROZEN`, DISABLED → 403 `PLAYER_DISABLED`. Freezing or disabling does **not** revoke keys by default (§10.5), so a frozen bot sees `PLAYER_FROZEN`; it sees `API_KEY_REVOKED` only if the admin also chose to revoke its keys.
 
@@ -1755,6 +1762,69 @@ CREATE TABLE SPRING_SESSION_ATTRIBUTES (
 | I8 | `trade_order.filled_qty` = Σ `execution.qty`, and `fees_total` = Σ execution fees. A terminal order has no reservations. |
 | I9 | Every `execution` has exactly one `cash_ledger` row with `amount = net_amount`. Every APPLIED `cash_transfer` has exactly one ledger row. |
 | I10 | (Warning only.) Every execution price lies within the SIP 1-minute [low − spread, high + spread] of its minute (spread = the execution's reference-quote spread, at least one tick; RAW bars; a minute with only the IEX tail is retried until the execution is 30 minutes old). Checked by `FillQualityAudit` after the 15-minute embargo; a finding is logged at WARN and written once to `audit_log` as `SYSTEM/FILL_QUALITY_WARNING` (target the execution); it never halts the engine. |
+
+### 8.5 Phase 2: price alerts and Web Push (`common/V5__p2_alerts.sql`, provisional number)
+
+Portable (no vendor extras). `price_alert` (§19.1), `push_subscription`, `push_preference` and `push_vapid_key` (§19.2). None is an engine table; `com.stocks.alerts` and `com.stocks.push` are their only writers. Upserts are cast-everything `MERGE`s with `-Ppg-it` tests.
+
+```sql
+CREATE TABLE price_alert (
+  id                  BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  public_id           VARCHAR(32)   NOT NULL UNIQUE,              -- alr_…
+  player_id           BIGINT        NOT NULL REFERENCES player(id),
+  symbol              VARCHAR(12)   NOT NULL,
+  condition_type      VARCHAR(16)   NOT NULL CHECK (condition_type IN ('PRICE_GTE','PRICE_LTE','CHANGE_PCT_GTE','CHANGE_PCT_LTE')),
+  threshold           NUMERIC(19,6) NOT NULL,                     -- a price, or a fraction for CHANGE_PCT_*
+  repeating           BOOLEAN       NOT NULL,
+  status              VARCHAR(10)   NOT NULL CHECK (status IN ('ACTIVE','PAUSED','TRIGGERED','EXPIRED')),
+  armed               BOOLEAN       NOT NULL,
+  note                VARCHAR(140),
+  expires_at          TIMESTAMP WITH TIME ZONE,
+  version             INT           NOT NULL,                     -- +1 on every edit; firing requires it unchanged
+  trigger_count       INT           NOT NULL,
+  last_triggered_at   TIMESTAMP WITH TIME ZONE,
+  last_trigger_price  NUMERIC(19,4),
+  last_trigger_day    DATE,                                       -- ET trading day of the last firing
+  created_at          TIMESTAMP WITH TIME ZONE NOT NULL,
+  updated_at          TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE INDEX ix_price_alert_player ON price_alert(player_id, created_at);
+CREATE INDEX ix_price_alert_status ON price_alert(status, symbol);
+
+CREATE TABLE push_subscription (                       -- one row per browser subscription (device)
+  id               BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  public_id        VARCHAR(32)   NOT NULL UNIQUE,                 -- psh_…
+  player_id        BIGINT        NOT NULL REFERENCES player(id),
+  endpoint         VARCHAR(1024) NOT NULL,                        -- never returned by the API, never logged
+  endpoint_hash    VARCHAR(64)   NOT NULL UNIQUE,                 -- SHA-256 hex: one player per subscription
+  p256dh           VARCHAR(100)  NOT NULL,                        -- base64url, 65-byte P-256 point
+  auth_secret      VARCHAR(40)   NOT NULL,                        -- base64url, 16 bytes
+  session_hash     VARCHAR(64),                                   -- SHA-256 hex of the registering HTTP session id
+  device_label     VARCHAR(80)   NOT NULL,
+  failure_count    INT           NOT NULL,
+  created_at       TIMESTAMP WITH TIME ZONE NOT NULL,
+  updated_at       TIMESTAMP WITH TIME ZONE NOT NULL,
+  last_success_at  TIMESTAMP WITH TIME ZONE,
+  last_failure_at  TIMESTAMP WITH TIME ZONE
+);
+CREATE INDEX ix_push_subscription_player ON push_subscription(player_id);
+CREATE INDEX ix_push_subscription_session ON push_subscription(session_hash);
+
+CREATE TABLE push_preference (                         -- only categories the player changed; the rest default on
+  player_id   BIGINT       NOT NULL REFERENCES player(id),
+  category    VARCHAR(16)  NOT NULL CHECK (category IN ('FILLS','ALERTS','MONEY','ACCOUNT','LEAGUE')),
+  enabled     BOOLEAN      NOT NULL,
+  updated_at  TIMESTAMP WITH TIME ZONE NOT NULL,
+  PRIMARY KEY (player_id, category)
+);
+
+CREATE TABLE push_vapid_key (                          -- generated on first boot unless stocks.push.vapid.* is set
+  id           INT          NOT NULL PRIMARY KEY CHECK (id = 1),
+  public_key   VARCHAR(100) NOT NULL,                             -- base64url, 65-byte uncompressed point
+  private_key  VARCHAR(100) NOT NULL,                             -- base64url, 32-byte scalar
+  created_at   TIMESTAMP WITH TIME ZONE NOT NULL
+);
+```
 
 ---
 
@@ -2850,7 +2920,7 @@ Phase 2 adds a chain before chain 1 (`/oauth2/**`, `/.well-known/**`, the Author
 
 **Implementation notes** (`security.SecurityConfig`, Phase 0; all chains answer 401/403 with the §6.5 problem body):
 - **Chain order in code:** actuator (management port 8081, `EndpointRequest.toAnyEndpoint()`; the exposed endpoints are open there because the port is never published or tunneled and, in `prod`, binds to the container's loopback only (`management.server.address: 127.0.0.1`, so other containers on `stocks-edge`/`stocks-backend` cannot read it), and the management server has no Spring Session, so no player could authenticate on it anyway), 1 admin, the dev-only `/h2-console/**` chain (`spring.h2.console.enabled`; no CSRF/CSP, frames same-origin), 2 api, 3 ws, 4 web.
-- **Per-route rules in chain 2** (`RouteAuthorization`), so feature controllers need no security code: `market:read` for `/market/**`, `/assets/**`, `/quotes`, `/snapshots/**`, `/bars/**`, `/news`, `/rules`; `account:read` for GET `/account/**`, `/orders/**`, `/watchlists/**`, `POST /orders/preview` and `/me/notifications/**`; `trade` for `POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close` and watchlist writes; `league:read` for `/leaderboard`, `/players/**`, `/feed`; session only for `/me/**` (except `GET /me` and notifications), `/auth/logout`, `/auth/reauth` and `POST /account/reset` (also `trade`). Everything else in the chain (`/mcp`, `/v3/**`, Swagger UI, `/api/v1/test/**`, new routes) needs any authenticated player. MCP tools enforce the same scopes per call (`McpToolCatalog.SCOPES`, the Scope column of §20.3). A key without the scope gets 403 `FORBIDDEN_SCOPE`; a key on a session-only route 403 `FORBIDDEN`. A session holds all four scopes.
+- **Per-route rules in chain 2** (`RouteAuthorization`), so feature controllers need no security code: `market:read` for `/market/**`, `/assets/**`, `/quotes`, `/snapshots/**`, `/bars/**`, `/news`, `/rules`; `account:read` for GET `/account/**`, `/orders/**`, `/watchlists/**`, `POST /orders/preview` and `/me/notifications/**`; `trade` for `POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close`, watchlist writes and alert writes (Phase 2); `account:read` for `GET /alerts` (Phase 2); `league:read` for `/leaderboard`, `/players/**`, `/feed`; session only for `/me/**` (except `GET /me` and notifications; this covers `/me/push/**`, Phase 2), `/auth/logout`, `/auth/reauth` and `POST /account/reset` (also `trade`). Everything else in the chain (`/mcp`, `/v3/**`, Swagger UI, `/api/v1/test/**`, new routes) needs any authenticated player. MCP tools enforce the same scopes per call (`McpToolCatalog.SCOPES`, the Scope column of §20.3). A key without the scope gets 403 `FORBIDDEN_SCOPE`; a key on a session-only route 403 `FORBIDDEN`. A session holds all four scopes.
 - **CSRF failures of anonymous callers** on non-public routes answer 401 `UNAUTHENTICATED` (a bot that forgot its key is not told about CSRF); sessions and the public login/signup routes get 403 `CSRF_INVALID`.
 - **Authorities** (`PlayerAuthenticationToken`): `ROLE_PLAYER`; `ROLE_ADMIN` only for a HUMAN ADMIN **on a session** (an API key never has it, even the admin's own: layer 3 of §17.4 twice over); `AUTH_SESSION`/`AUTH_API_KEY`; `SCOPE_<scope>`. `getName()` is the player's public id, which Spring Session JDBC stores in `PRINCIPAL_NAME`, so a player's sessions can be found and deleted (§17.3, §10.5). Authorize admin work with the chain, never with `PlayerPrincipal.isAdmin()` (it reports the role for display, e.g. in `Me`).
 - Headers: `Cache-Control: no-store` on chains 1–3 (instead of Spring Security's default), none from chain 4 (`WebConfig` sets them). Header values that Spring Security's `StrictHttpFirewall` rejects lazily (control characters) answer 400 `VALIDATION_FAILED` (`FirewallRejectionAdvice`); `RequestMetas` drops such a `User-Agent` instead of failing.
@@ -2998,6 +3068,13 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `DELETE /me/api-keys/{keyId}` | session | → 204 | `NOT_FOUND` |
 | `GET /me/notifications?unreadOnly&cursor&limit` | any (`account:read`) | → `Page<Notification>` | |
 | `POST /me/notifications/read` | any (`account:read`) | `{ids?: string[], all?: boolean}` → 204 | |
+| `GET /me/push` (Phase 2, §19.2) | session | → `PushSettings` | |
+| `PATCH /me/push/preferences` | session | `UpdatePushPreferencesRequest` (`Partial<PushPreferences>`) → `PushPreferences` | `PUSH_UNAVAILABLE` |
+| `POST /me/push/subscriptions` | session | `PushSubscriptionRequest {endpoint, p256dh, auth}` → 201 `PushDevice` (this device; moves it from another player) | `VALIDATION_FAILED`, `PUSH_UNAVAILABLE` |
+| `POST /me/push/sync` | session | `{endpoint}` → `PushSync` (`registered` false: the SPA unsubscribes the browser; re-binds this session) | `PUSH_UNAVAILABLE` |
+| `POST /me/push/unsubscribe` | session | `{endpoint}` → 204 (this device) | |
+| `DELETE /me/push/subscriptions/{deviceId}` | session | → 204 | `NOT_FOUND` |
+| `POST /me/push/test` | session | → `PushTestResult` (waits ≤ 15 s) | `RATE_LIMITED` (1 per 10 s), `PUSH_UNAVAILABLE` |
 | `GET /rules` | `market:read` | → `Rules` | |
 
 ### 18.2 Market, account, orders, watchlists, league
@@ -3046,6 +3123,11 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `GET /players/{handle}/history?range` | league:read | → `PublicHistory` (unit values, plus equity unless HIDDEN) | |
 | `GET /players/{handle}/trades?cursor&limit` | league:read | → `Page<PublicTrade>` (delayed) | |
 | `GET /feed?cursor&limit` | league:read | → `Page<FeedItem>` (only `visible_at ≤ now`) | |
+| `GET /alerts?status&symbol` (Phase 2, §19.1) | account:read | → `Alert[]` (ACTIVE, PAUSED, TRIGGERED, EXPIRED in that order, newest first within each) | |
+| `POST /alerts` | trade | `CreateAlertRequest` → 201 `Alert` (200 with the existing alert when an identical ACTIVE/PAUSED one exists) | `SYMBOL_NOT_FOUND`, `VALIDATION_FAILED`, `TOO_MANY_ALERTS` |
+| `PUT /alerts/{alertId}` | trade | `UpdateAlertRequest` → `Alert` (re-armed; TRIGGERED/EXPIRED become ACTIVE) | `NOT_FOUND`, `VALIDATION_FAILED`, `TOO_MANY_ALERTS` |
+| `POST /alerts/{alertId}/pause`, `POST /alerts/{alertId}/resume` | trade | → `Alert` (resume re-arms) | `NOT_FOUND`, `TOO_MANY_ALERTS` |
+| `DELETE /alerts/{alertId}` | trade | → 204 | `NOT_FOUND` |
 
 ### 18.3 DTOs (TypeScript notation; JSON on the wire)
 
@@ -3064,6 +3146,8 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `watchlist.dto` (WS4) | `WatchlistDto`; requests `CreateWatchlistRequest`, `UpdateWatchlistRequest`, `AddWatchlistSymbolRequest` |
 | `realtime.dto` (WS5) | `NotificationDto`, `MarkNotificationsReadRequest`; §19 `MarketSessionDto`, `LeaderboardUpdateDto`, `OrderUpdateDto`, `AdminAlertDto` |
 | `rules.dto` (WS5) | `RulesDto` |
+| `alerts.dto` (Phase 2) | `AlertDto`; requests `CreateAlertRequest`, `UpdateAlertRequest` |
+| `push.dto` (Phase 2) | `PushSettingsDto`, `PushPreferencesDto`, `PushDeviceDto`, `PushSyncDto`, `PushTestResultDto`; requests `UpdatePushPreferencesRequest`, `PushSubscriptionRequest`, `PushEndpointRequest` |
 
 - **Intersections** (`Asset = AssetSummary & …`, `Snapshot = Quote & …`, `AdminPlayer = PlayerSummary & …`) are flattened into one record; the base type's members come first, in order.
 - **Anonymous object types** are nested records with globally unique simple names ending in `Dto` (`AccountDto.AccountCashDto`, `ClockDto.ClockFeedDto`, `NewsItemDto.UntrustedNewsDto`, …), so OpenAPI schema names never collide.
@@ -3103,6 +3187,19 @@ type PlayerSummary = { playerId: string; handle: string; displayName: string; ki
   avatarSeed: string|null; memberSince: Ts; resets: number };
 type Notification = { id: string; kind: NotificationKind; title: string; body: string; payload: object|null;
   createdAt: Ts; readAt: Ts|null };
+// Phase 2 (§19.1, §19.2)
+type Alert = { id: string /* alr_… */; symbol: string; condition: AlertCondition; threshold: Dec; repeat: boolean;
+  status: AlertStatus; armed: boolean; note: string|null; expiresAt: Ts|null; triggerCount: number;
+  lastTriggeredAt: Ts|null; lastTriggerPrice: Dec|null; createdAt: Ts; updatedAt: Ts };
+type CreateAlertRequest = { symbol: string; condition: AlertCondition; threshold: Dec; repeat?: boolean /* false */;
+  expiresAt?: Ts|null; note?: string|null };
+type UpdateAlertRequest = { condition: AlertCondition; threshold: Dec; repeat?: boolean; expiresAt?: Ts|null; note?: string|null };
+type PushPreferences = { fills: boolean; alerts: boolean; money: boolean; account: boolean; league: boolean };
+type PushDevice = { id: string /* psh_… */; label: string; pushService: string /* host */; current: boolean /* this session */;
+  createdAt: Ts; lastSuccessAt: Ts|null; lastFailureAt: Ts|null };
+type PushSettings = { available: boolean; vapidPublicKey: string|null; preferences: PushPreferences; devices: PushDevice[] };
+type PushSync = { registered: boolean; device: PushDevice|null };
+type PushTestResult = { devices: number; delivered: number; failed: number; removed: number };
 
 // ---- market
 type Clock = { now: Ts; nowEt: string; session: SessionType; tradingDate: DateEt|null;
@@ -3328,6 +3425,39 @@ The named payload records are Java records in `com.stocks.contract.realtime.dto`
 
 **The client never computes money.** NAV, P&L and buying power always come from the server's `Account`. The only exception is a cosmetic live position value of qty × tick in the watchlist, which is not shown as NAV.
 
+### 19.1 Price alerts (Phase 2)
+
+A player sets **price alerts** on any listed symbol from the quote page or the Alerts list (REST §18.2, MCP §20.3 #39–41). They are evaluated by the backend from the live market feed, outside the trading engine, and have **no trading side effects**: an alert never places, changes or cancels an order. Package `com.stocks.alerts` (`AlertService`, `AlertRules` (pure), `AlertMonitor`, `AlertRepository`, `web/AlertController`); DTOs in `contract.alerts.dto`.
+
+| Item | Rule |
+|---|---|
+| Conditions (`AlertCondition`) | `PRICE_GTE` (live price ≥ threshold), `PRICE_LTE` (≤), `CHANGE_PCT_GTE` (change from the previous close ≥ threshold), `CHANGE_PCT_LTE` (≤). A price threshold is a price (> 0, ≤ 4 decimals, below 1,000,000); a change threshold is a **fraction** like `Quote.changePct` (`"0.05"` = +5%, `"-0.03"` = −3%; −1 < t ≤ 10, ≤ 6 decimals). |
+| Live price | REGULAR: `Quote.last` at `lastAt`. PRE/POST: the extended line's price at `extended.at` (the main line is the prior close, not live). CLOSED: none. Only quotes of quality `REALTIME_CONSOLIDATED`, `REALTIME_SINGLE_VENUE` or `SIMULATED` (the SIM profile, never production) that are not halted, with a print no older than `stocks.alerts.max-price-age` (15 min). **Stale, synthetic ("Est."), delayed and empty quotes never evaluate an alert** (and never re-arm one). |
+| Change from the previous close | The previous close is the last regular close before the current trading day: REGULAR `Quote.changePct`; PRE the extended line's `changePct`; POST (live − `prevClose`) ÷ `prevClose`. Scale 10, HALF_EVEN. |
+| Evaluation | `AlertMonitor` is a `MarketUpdateListener`: `onMarketUpdate(symbol)` only marks a symbol with ACTIVE alerts dirty (a set lookup, never blocks, §5.3). Its own thread (`price-alerts`, every `stocks.alerts.evaluate-every` = 250 ms) reads `MarketDataService.quote(symbol)` for the dirty symbols and applies `AlertRules`. It holds one `LIST` lease (`alert:<SYM>`) per symbol with an ACTIVE alert, so the symbol is polled (≥ every 10 s) or streamed (§15.5), and releases it when the last one goes. Every 60 s the same thread reloads the active set (self-healing), expires alerts and purges old ones. Not a job: `stocks.jobs.enabled=false` does not stop it; `stocks.alerts.enabled=false` does. |
+| One firing per trigger | An ACTIVE alert is **armed** or not. It fires when it is armed and its condition holds on a live price (and, for a repeating alert, at least `stocks.alerts.cooldown` (15 min) after its previous firing). Firing is one conditional `UPDATE … WHERE status='ACTIVE' AND armed AND version=? AND (expires_at IS NULL OR expires_at > now)`: one-shot alerts become `TRIGGERED`, repeating ones stay `ACTIVE` with `armed=false`; `trigger_count`, `last_triggered_at`, `last_trigger_price` and `last_trigger_day` are set. Only the call that updated the row writes the notification, keyed `ALERT:<alr>:<trigger_count>`, so a redelivery never notifies twice. |
+| Re-arm (repeating alerts) | A price alert re-arms when a live price is back on the other side of the threshold by `stocks.alerts.rearm-band` (0.5%: GTE re-arms at ≤ t × 0.995, LTE at ≥ t × 1.005); a change alert when the change is back by the band in percentage points (GTE ≤ t − 0.005, LTE ≥ t + 0.005) **or** on a new trading day (the reference close changed). Hysteresis stops an alert from chattering around its threshold. |
+| Edits | `PUT /alerts/{id}` replaces condition, threshold, repeat, expiry and note and **re-arms** (`version + 1`); a TRIGGERED or EXPIRED alert becomes ACTIVE again; a PAUSED one stays PAUSED. Pause/resume (resume re-arms). Creating an alert identical to an existing ACTIVE or PAUSED one (symbol, condition, threshold, repeat) returns that alert (200, MCP `create_alert` is idempotent). An alert whose condition already holds fires on the next live update; the UI says so before saving. |
+| Expiry and retention | Optional `expiresAt` (in the future, ≤ 365 days): an alert never fires after it and becomes `EXPIRED` within a minute. TRIGGERED and EXPIRED alerts are deleted 90 days after their last change (`stocks.alerts.retention`). |
+| Limits | 50 alerts per player in ACTIVE or PAUSED (`stocks.alerts.max-active-per-player`), else 422 `TOO_MANY_ALERTS`; 500 stored in total; note ≤ 140 characters (private, never published). Unknown symbol → 404 `SYMBOL_NOT_FOUND`. Alerts belong to the player, not the run, so a reset keeps them. |
+| Corporate actions | When a split, reverse split or name change is applied (`CorporateActionApplied`), the symbol's ACTIVE alerts are **paused** and the player gets a `PRICE_ALERT` notification ("AAPL alerts paused after a split; check the prices and resume them"). |
+| When it fires | One notification (kind `PRICE_ALERT`, `NotificationService`, payload `{alertId, symbol, condition, threshold, price, changePct}`), which is pushed on `/user/queue/notifications` (the SPA toasts it and refreshes its alert list) and sent as a Web Push (§19.2, category `ALERTS`). Title `AAPL ≥ $230.00`, body `AAPL is at $230.15 (+2.31% today). Your alert: price at or above $230.00.` plus the note. |
+
+### 19.2 Web Push (Phase 2)
+
+Notifications reach a player's phone or desktop while the app is closed through the standard Web Push stack: the browser's push service (FCM, Mozilla autopush, Apple, WNS) with **RFC 8291** message encryption (`aes128gcm`, RFC 8188) and **RFC 8292** VAPID authentication, implemented on the JDK 21 crypto providers (ECDH and ECDSA P-256, HKDF-SHA-256, AES-128-GCM; no third-party library, `com.stocks.push`: `WebPushCrypto`, `VapidJwt`, `VapidKeys`, `PushSender`, `PushDispatcher`, `PushSubscriptions`, `PushService`, `web/PushController`).
+
+| Item | Rule |
+|---|---|
+| VAPID key pair | P-256. `stocks.push.vapid.public-key` / `private-key` (base64url: the 65-byte uncompressed point and the 32-byte scalar, the format of `web-push generate-vapid-keys`) when both are set; otherwise generated on first boot and stored in `push_vapid_key` (one row), so production needs no new environment. A broken or mismatched pair (checked by a sign/verify round trip at boot) logs an ERROR and turns push off (`available=false`): the app still boots. Subject (`sub`): `stocks.push.vapid.subject`, else `stocks.public-url` when it is https, else `mailto:admin@localhost`. JWT `{"typ":"JWT","alg":"ES256"}` · `{aud: <endpoint origin>, exp: now + 12 h, sub}`, cached per audience until 1 h before expiry; header `Authorization: vapid t=<jwt>, k=<public key>`. |
+| Subscriptions (`push_subscription`) | One row per browser subscription (per device): endpoint, `p256dh`, `auth`, a device label from the User-Agent ("Safari on iPhone"), the SHA-256 of the registering HTTP session id. The endpoint is unique (`endpoint_hash`), so **a subscription belongs to exactly one player**: registering it again from another player's session moves it. Endpoints must be `https` on port 443 at a known push service (`stocks.push.allowed-endpoint-hosts`: `fcm.googleapis.com`, `android.googleapis.com`, `updates.push.services.mozilla.com`, `*.push.services.mozilla.com`, `web.push.apple.com`, `*.push.apple.com`, `*.notify.windows.com`; never an IP literal, no user info, ≤ 1024 characters; this is the SSRF guard), `p256dh` a valid uncompressed P-256 point, `auth` 16 bytes. The endpoint and keys never leave the server (the device list shows the label and the push service host) and are never logged. At most 10 devices per player (the oldest is dropped). |
+| Removal | 404 or 410 from the push service deletes the row; **logout** deletes the rows registered by that session (`SessionsRevoked.one`); **password change**, admin password reset, freeze, disable and role change delete all of the player's rows (`SessionsRevoked` for every session); a login rotating the session id re-binds the rows (`SessionIdChanged`); 10 consecutive other failures delete the row; the player can remove any device in Settings. The SPA also unsubscribes the browser on sign-out, and at app start re-syncs a browser subscription the server no longer knows (`POST /me/push/sync`: unknown → the SPA unsubscribes it; another player's → the row is deleted, the device changed hands). |
+| Preferences (`push_preference`) | Per player and category, default on: `FILLS` (FILL, PARTIAL_FILL, ORDER_CANCELLED, ORDER_EXPIRED), `ALERTS` (PRICE_ALERT), `MONEY` (DEPOSIT, WITHDRAWAL, ADJUSTMENT: admin cash), `ACCOUNT` (GFV_ISSUED, RESTRICTION_CHANGED, CORPORATE_ACTION, ACCOUNT_RESET, SYSTEM) and `LEAGUE` (league events: a new weekly leader, from the feed). Push is opt-in per device (the browser permission); preferences filter what is sent. |
+| What is sent | Every new notification (`NotificationService` publishes `NotificationCreated` after its insert) whose category is on, to every device of the player; plus league events (`PushLeagueTask`, a `PeriodicTask` every 60 s reading `PerformanceQueries.feed`: NEW_LEADER items that became visible since boot, to every player with `LEAGUE` on). Payload (encrypted, ≤ 3 KB): `{v: 1, kind, title, body, url, tag}` with the title and body the notification shows (body ≤ 240 characters) and a same-origin path to open (`/stock/AAPL`, `/account/orders/<id>`, `/account/activity`, `/league`); nothing else (no balances beyond the text, no ids of other players). `TTL` 1 h for alerts, 24 h otherwise; `Urgency: high` for fills and alerts; `Topic` for test pushes. |
+| Delivery | `PushDispatcher`: a bounded executor (`stocks.push.threads` = 4 virtual threads, queue `stocks.push.queue-capacity` = 1000, overflow dropped and logged), never the engine or request thread (the listener only enqueues). JDK `HttpClient`, connect timeout 5 s, request timeout 10 s, no redirects. 429 and 5xx and I/O errors are retried up to `stocks.push.max-attempts` (3) after 2 s and 10 s (or `Retry-After`, at most 5 min) by a scheduler thread; 201/200/202 records `last_success_at`. `stocks.push.dry-run=true` (the e2e profile) encrypts and signs but sends nothing. |
+| Test push | `POST /me/push/test` sends "Test notification" to every device of the caller and waits up to 15 s for the outcome (`{devices, delivered, failed, removed}`); one call per 10 s per player (429 `RATE_LIMITED`). |
+| Availability | `stocks.push.enabled=false`, or no usable VAPID key, makes `GET /me/push` answer `available: false` and every write 503 `PUSH_UNAVAILABLE`; notifications still work in the app. Bots never have browser subscriptions; they read the same notifications with `get_notifications`. |
+
 ---
 
 ## 20. MCP server for AI agents (CONTRACT)
@@ -3432,6 +3562,9 @@ Write tools:
 | 36 | `update_watchlist` | `trade` | RO=false, destructive=false, idempotent=true | `{name*, add?: string[], remove?: string[]}` (creates the list if missing) | `Watchlist` |
 | 37 | `delete_watchlist` | `trade` | RO=false, destructive=true, idempotent=true | `{name*}` | `{deleted: boolean}` (false if it did not exist) |
 | 38 | `mark_notifications_read` | `account:read` | RO=false, destructive=false, idempotent=true | `{ids?: string[], all?: bool}` (exactly one) | `{marked: int}` |
+| 39 | `list_alerts` (Phase 2) | `account:read` | RO=true, destructive=false, idempotent=true | `{status?: "ACTIVE"\|"PAUSED"\|"TRIGGERED"\|"EXPIRED", symbol?: string}` | `{alerts: Alert[]}` |
+| 40 | `create_alert` (Phase 2) | `trade` | RO=false, destructive=false, **idempotent=true** (an identical ACTIVE/PAUSED alert is returned, not duplicated) | `{symbol*, condition*: "PRICE_GTE"\|"PRICE_LTE"\|"CHANGE_PCT_GTE"\|"CHANGE_PCT_LTE", threshold*: decimal-string (a price, or a fraction like changePct), repeat?: bool=false, expires_at?: datetime, note?: string(≤140)}` | `Alert` |
+| 41 | `delete_alert` (Phase 2) | `trade` | RO=false, destructive=true, idempotent=true | `{alert_id*}` | `{deleted: boolean}` |
 
 Decimal inputs are accepted as strings or numbers, and numbers are parsed as `BigDecimal` (§6.3). There are no admin tools. A tool whose backing contract is still a Day-0 stub (or a default method a workstream has not overridden yet, e.g. `PerformanceQueries.feed`) answers the error result `NOT_IMPLEMENTED`; the catalog, schemas and order never change with what has shipped.
 
@@ -3652,7 +3785,8 @@ frontend/src/
 | `/league` | `period=WEEK`, `metric=RETURN`, `kind=ALL`, `view=BOARD\|FEED` | Full-width board, Arena card, my pinned row | **Tab: League** (cards) |
 | `/players/$handle` | `range` | Profile | Stacked profile |
 | `/account` (+ `/positions`, `/orders?status=OPEN`, `/orders/$orderId`, `/activity?types`, `/history?range`) | | Overview with tabs; the watchlist panel stays | **Tab: Account** |
-| `/settings` (+ `/appearance`, `/trading`, `/api-keys`, `/account`) | | Settings page | **Tab: Menu** |
+| `/settings` (+ `/appearance`, `/trading`, `/api-keys`, `/account`, `/notifications` (Phase 2: Web Push on this device, categories, devices, test)) | | Settings page | **Tab: Menu** |
+| `/alerts` (Phase 2) | `status?` | Alerts list (edit, pause, resume, delete) | Pushed screen from Menu |
 | `/admin` (+ `/players`, `/players/$handle`, `/money`, `/invites`, `/settings`, `/system`, `/corporate-actions?status`, `/audit`) | | Admin console with tabs | Card lists; ADMIN only |
 
 ### 22.3 Layouts and breakpoints
@@ -3664,7 +3798,7 @@ frontend/src/
 | 1024–1439 | 56 px icon rail, watchlist panel 260 px (collapsible), flexible center, ticket column 340 px, bottom dock (Positions · Orders · Activity), resizable |
 | ≥ 1440 | Same, with a 300 px watchlist and a 380 px ticket. The right column also shows the bid/ask block. Time & Sales is Phase 2. |
 
-**Phone shell (Phase 1).** `index.html` sets `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`; without `viewport-fit=cover`, `env(safe-area-inset-*)` is always 0 and the tab bar sits under the iPhone home indicator. It also links a static `manifest.webmanifest` (`display: standalone`, name "stocks", dark `background_color`/`theme_color`, 192 and 512 px icons), an `apple-touch-icon` (180 px) and `<meta name="theme-color">` for light and dark. That gives an installable, standalone home-screen app on iOS and Android with no service worker; offline support and Web Push stay Phase 2 (vite-plugin-pwa).
+**Phone shell (Phase 1).** `index.html` sets `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`; without `viewport-fit=cover`, `env(safe-area-inset-*)` is always 0 and the tab bar sits under the iPhone home indicator. It also links a static `manifest.webmanifest` (`display: standalone`, name "stocks", dark `background_color`/`theme_color`, 192 and 512 px icons), an `apple-touch-icon` (180 px) and `<meta name="theme-color">` for light and dark. That gives an installable, standalone home-screen app on iOS and Android with no service worker; offline support and Web Push stay Phase 2 (vite-plugin-pwa). **Phase 2:** §22.10 adds the service worker, the offline shell and Web Push; the static manifest and icons are unchanged.
 
 **Global chrome:**
 - `TopBar`: search, `SessionChip` ("● Market Open · closes 2:14:07"), a **PAPER** badge, a **SIM** badge when quality is SIMULATED, the NAV hero, and the notification bell.
@@ -3792,6 +3926,14 @@ body { background: var(--bg-0); color: var(--text-1); font-family: var(--font-sa
 `VITE_API_MOCK=1` switches `lib/api/client.ts` to `lib/api/mock/`. This is an in-memory fake that implements the §18 DTOs, built from the §18.4 example data, with a fake ticking quote stream. It needs no extra dependencies. WS6 can therefore build every screen before the backend endpoints exist. Until a controller lands, its types come from `lib/api/planned.d.ts`; `contract.ts` merges them under the generated `schema.d.ts` per path, HTTP method and schema name, so `make openapi` can regenerate `schema.d.ts` at any time without breaking the build, and a planned entry is deleted once the backend publishes it. Generated response types are stricter than the planned ones about `null` (§18 rule 2: every non-primitive response field is `T | null`), so moving a screen onto a generated type means handling `null`. CI runs the e2e suite against the **real** backend (profiles `test,e2e`: SIM with a wall-advancing clock anchored on a Friday in RTH, always-open, plus the test clock endpoint of §18.5), signed in as the `e2e` profile's bootstrap admin (§23.2).
 
 Mock mode also seeds a corporate-action history (a split, a reverse split paid partly as cash in lieu, a symbol change, a paid and an accrued dividend, a detected split on hold and a merger waiting for the admin), runs a stand-in `TriggerEvaluator` for the stop types, and publishes a league `/topic/feed` event every 20–45 s while the feed is open. Mock builds expose test hooks on `window.stocksMock` (`nudge(symbol, bps)` moves a price through a stop, `emitFeed(kind, handle)`, `expireRecentAuth()`), which the Playwright specs use only when no `E2E_BASE_URL` is set; production builds never include the mock.
+
+### 22.10 PWA, alerts and Web Push screens (Phase 2)
+
+- **Service worker** (`src/sw.ts`, vite-plugin-pwa 1.3.0 `strategies: 'injectManifest'`, `manifest: false` so the static `public/manifest.webmanifest` and icons stay as they are). It precaches the app shell (`index.html`, the hashed `/assets/*`, icons, `theme-init.js`) with workbox-precaching and answers **navigations** with the precached `index.html` (the offline shell), except `/api/`, `/mcp`, `/ws`, `/v3/`, `/swagger-ui`, `/oauth2/`, `/.well-known/`, `/h2-console`, `/actuator` and `/login/oauth2`. It registers **no** runtime caching: every `/api`, `/mcp` and `/ws` request goes to the network untouched (private data is never cached; a test reads the built `dist/sw.js` and fails on any API route or runtime cache). Offline, the shell renders and every query shows its error state.
+- **Updates.** `registerType: 'prompt'`: a new deploy installs a waiting worker and the SPA shows "New version available · Reload" (`PwaUpdatePrompt`); Reload calls `updateServiceWorker(true)`. The worker checks for updates hourly and when the tab becomes visible. `sw.js` is served `no-cache` (§24.3, `WebConfig`). Mock mode and the Vite dev server register no worker.
+- **Push.** The worker shows a push as a system notification (`{title, body, tag, data: {url}}`, the app icon) and on click focuses an open window and navigates it to `url` (same-origin paths only), or opens one. `pushsubscriptionchange` re-subscribes with the same key and re-posts the subscription.
+- **Settings → Notifications** (`/settings/notifications`): the state of this device (supported / permission denied / not installed / on / off), "Enable on this device" (asks for permission from the tap, subscribes with the server's VAPID key, `POST /me/push/subscriptions`), "Turn off on this device", the five category switches, the device list (remove), and "Send a test notification". **iOS and iPadOS:** Web Push works only in the app installed to the Home Screen, on iOS 16.4 or later; in Safari the page says "Tap Share, then Add to Home Screen, open stocks from the Home Screen, then come back here" (and "requires iOS 16.4 or later" on older versions), instead of a broken button.
+- **Alerts.** The quote page has an **Alert** button (bell) that opens the alert sheet: condition (Price ≥, Price ≤, Day change ≥, Day change ≤), threshold (prefilled from the live price, or ±5% for a change; percent in the UI, a fraction on the wire), repeat, expiry (never, end of today, 1 week, 1 month) and a private note; it says when the alert would fire at once and lists the symbol's other alerts. `/alerts` lists every alert by status with edit, pause/resume and delete. A `PRICE_ALERT` notification toasts, refreshes `['alerts']` and links to the quote page.
 
 ---
 
@@ -3938,6 +4080,28 @@ stocks:
     intraday-retention-days: 14
     benchmark-symbol: SPY
     leaderboard-refresh: 5s
+  alerts:                                   # Phase 2, §19.1 (alerts.AlertProperties)
+    enabled: true
+    max-active-per-player: 50
+    max-stored-per-player: 500
+    max-price-age: 15m                      # an older print is not a live price
+    rearm-band: 0.005                       # repeating alerts re-arm 0.5% (or 0.5 pp) back past the threshold
+    cooldown: 15m                           # minimum time between two firings of one repeating alert
+    evaluate-every: 250ms
+    retention: 90d                          # TRIGGERED/EXPIRED alerts are deleted after this
+  push:                                     # Phase 2, §19.2 (push.PushProperties)
+    enabled: true
+    vapid: { public-key: '', private-key: '', subject: '' }   # empty: generated on first boot, kept in push_vapid_key
+    allowed-endpoint-hosts: [ fcm.googleapis.com, android.googleapis.com, updates.push.services.mozilla.com,
+                              '*.push.services.mozilla.com', web.push.apple.com, '*.push.apple.com', '*.notify.windows.com' ]
+    allow-insecure-endpoints: false         # tests only: http and any host (a local fake push service)
+    dry-run: false                          # the e2e profile: encrypt and sign, send nothing
+    threads: 4
+    queue-capacity: 1000
+    connect-timeout: 5s
+    request-timeout: 10s
+    max-attempts: 3
+    max-devices-per-player: 10
 ```
 
 **Binding.** Each prefix is bound by a record in its owner's package, so no workstream edits another's properties class: `StocksProperties` (WS1, `config/`: `public-url`, `security`, `ratelimit`, `bootstrap`, `jobs`, `single-instance`), `MarketDataProperties` (WS2, `stocks.marketdata`), `EngineProperties` and `RulesProperties` (WS3, `stocks.engine`, `stocks.rules`), `PerformanceProperties` (WS4, `stocks.performance`). `RulesService` (WS5) reads `RulesProperties` through its accessor.
@@ -3979,6 +4143,7 @@ stocks:
 | `CLAUDE_MODEL`, `OPENAI_MODEL`, `AGENT_SCHEDULE_ET`, `AGENT_DAILY_USD_CAP`, `AGENT_MAX_TOOL_CALLS`, `AGENT_MAX_RUN_SECONDS` | agent-runner | §20.5 defaults: `09:45,12:30,15:30`, `1.00`, `40`, `300`. A bot whose LLM key, stocks key or model is empty is skipped |
 | `AGENT_PRICE_CLAUDE`, `AGENT_PRICE_CHATGPT` | agent-runner, optional | Price override for that bot's model in USD per 1M tokens, `input=4,output=20[,cached_input=0.20,cache_write=5,cache_write_1h=8]`; empty = the runner's built-in table (§20.5) |
 | `OAUTH_JWK_PEM_FILE` | Phase 2 | RSA signing key |
+| `STOCKS_PUSH_VAPID_PUBLIC_KEY`, `STOCKS_PUSH_VAPID_PRIVATE_KEY`, `STOCKS_PUSH_VAPID_SUBJECT` | no (Phase 2) | Optional VAPID override (§19.2), base64url as `web-push generate-vapid-keys` prints it. Without them the key pair is generated on first boot and kept in the database. The production compose file does not pass them; set them through the app's `environment` (or `JDK_JAVA_OPTIONS=-Dstocks.push.vapid.public-key=…`) only to reuse an existing pair. |
 
 ### 23.4 Runtime settings (`app_setting`, admin-editable, seeded at boot if missing)
 
@@ -4327,6 +4492,7 @@ Actions are pinned to their current major versions: `actions/checkout@v7`, `acti
 | 09:00 next trading day | Re-mark PROVISIONAL marks; re-run the EOD snapshot for that date if any mark changed | Scheduled | WS2 → WS4 | no | `date:REMARK` | LATEST_ONLY |
 | at boot, once | `BenchmarkBackfillJob` (§16.6) | Scheduled (single occurrence) | WS4 | no | `2025-12-31` | ALL_MISSED |
 | every 5 s | Leaderboard recompute; feed visibility publisher | Periodic | WS4 | no | — | — |
+| every 60 s | `PUSH_LEAGUE_EVENTS`: Web Push for NEW_LEADER feed items (§19.2) | Periodic | Phase 2 | no | — | — |
 | rolling, 16 min after each execution | `FillQualityAudit` (I10, warnings only; `FILL_QUALITY_AUDIT`, every 60 s) | Periodic (scans executions 16–30 min old) | WS3 | no | — | — |
 
 ## 26. Testing strategy
