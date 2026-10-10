@@ -81,6 +81,19 @@ class JobRunGuardTest {
   }
 
   @Test
+  void latestReturnsTheNewestRunAndHoldsNoConnection() {
+    guard.run("HOUSEKEEPING", "2026-10-08", () -> { });
+    time.advance(Duration.ofDays(1));
+    guard.run("HOUSEKEEPING", "2026-10-09", () -> { });
+    for (int i = 0; i < 25; i++) { // more calls than the pool has connections
+      assertThat(guard.latest("HOUSEKEEPING").orElseThrow().runKey()).isEqualTo("2026-10-09");
+      assertThat(guard.latest("NEVER_RAN")).isEmpty();
+    }
+    assertThat(((com.zaxxer.hikari.HikariDataSource) db.dataSource()).getHikariPoolMXBean().getActiveConnections())
+        .as("connections still checked out").isZero();
+  }
+
+  @Test
   void aRunningRowLeftByACrashedProcessIsTakenOver() {
     db.jdbc().sql("INSERT INTO job_run (job_name, run_key, status, started_at) VALUES (?, ?, 'RUNNING', ?)")
         .params("SESSION_TRANSITION", "2026-10-09:RTH_OPEN", Jdbc.ts(TestTimes.START.minusSeconds(3600))).update();

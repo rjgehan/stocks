@@ -171,16 +171,20 @@ public class JobRunGuard {
         .optional();
   }
 
-  /** The most recently started run of a job (the {@code /admin/system} registry). */
+  /**
+   * The most recently started run of a job (the {@code /admin/system} registry). One row via {@code LIMIT 1} and
+   * {@code optional()}: never {@code query(...).stream()}, whose open {@code ResultSet} holds a pooled connection until
+   * the stream is closed (every {@code GET /admin/system} used to leak one connection per registered job).
+   */
   public Optional<JobRunRecord> latest(String jobName) {
     return jdbc.sql("""
             SELECT job_name, run_key, status, started_at, finished_at, detail FROM job_run
-             WHERE job_name = ? ORDER BY started_at DESC, run_key DESC""")
+             WHERE job_name = ? ORDER BY started_at DESC, run_key DESC LIMIT 1""")
         .param(jobName)
         .query((rs, n) -> new JobRunRecord(rs.getString("job_name"), rs.getString("run_key"),
             Status.valueOf(rs.getString("status")), Jdbc.instant(rs, "started_at"), Jdbc.instant(rs, "finished_at"),
             rs.getString("detail")))
-        .stream().findFirst();
+        .optional();
   }
 
   /** The subset of {@code runKeys} that is DONE for {@code jobName} (catch-up). */
