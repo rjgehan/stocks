@@ -71,7 +71,7 @@ public final class Untrusted {
     FeedItemDto.FeedPayloadDto payload = p == null ? null : new FeedItemDto.FeedPayloadDto(p.side(), p.qty(),
         p.price(), p.realizedPnl(), p.amount(), p.period(), p.untrusted() == null ? null
             : new FeedItemDto.UntrustedFeedTextDto(rationale(p.untrusted().rationale()),
-                rationale(p.untrusted().memo())));
+                rationale(p.untrusted().memo()), rationale(p.untrusted().note())));
     return new FeedItemDto(f.id(), f.at(), f.kind(), player(f.player()), f.symbol(), payload);
   }
 

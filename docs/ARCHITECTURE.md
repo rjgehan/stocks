@@ -823,6 +823,7 @@ public record SessionChanged(SessionState state) {}
 | `vio` | account_violation | `cac` | corporate_action |
 | `fde` | feed_event | `ntf` | notification |
 | `led` | cash_ledger | `aev` | account_event |
+| `arn` | agent_run (Phase 2, §20.6) | `jnl` | journal_note (Phase 2, §20.7) |
 
 - API keys use their own public `key_id` (§17.2).
 - `clientOrderId` is chosen by the client and must match `^[A-Za-z0-9._:-]{1,64}$`.

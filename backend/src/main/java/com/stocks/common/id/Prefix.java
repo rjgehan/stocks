@@ -16,6 +16,10 @@ public enum Prefix {
   CORPORATE_ACTION("cac"),
   NOTIFICATION("ntf"),
   ACCOUNT_EVENT("aev"),
+  /** Phase 2 (§20.6): a run the agent runner reported. */
+  AGENT_RUN("arn"),
+  /** Phase 2 (§20.7): a public AI journal note. */
+  JOURNAL_NOTE("jnl"),
   /** Server-generated {@code X-Request-Id} values (§6.6); never stored as a row id. */
   REQUEST("req");
 

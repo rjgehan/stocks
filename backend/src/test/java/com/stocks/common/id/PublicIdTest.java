@@ -31,7 +31,7 @@ class PublicIdTest {
   @Test
   void everyPrefixFromTheSpecTable() {
     assertThat(Prefix.values()).extracting(Prefix::code).containsExactly(
-        "ply", "acc", "ord", "exe", "vio", "fde", "led", "xfr", "bat", "inv", "wlt", "cac", "ntf", "aev", "req");
+        "ply", "acc", "ord", "exe", "vio", "fde", "led", "xfr", "bat", "inv", "wlt", "cac", "ntf", "aev", "arn", "jnl", "req");
     for (Prefix p : Prefix.values()) {
       String id = ids.next(p);
       assertThat(id).matches(FORMAT);
