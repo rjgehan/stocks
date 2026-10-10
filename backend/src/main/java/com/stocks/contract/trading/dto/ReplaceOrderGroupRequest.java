@@ -11,5 +11,5 @@ import java.math.BigDecimal;
  */
 public record ReplaceOrderGroupRequest(
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String clientOrderId,
-    BigDecimal qty, TimeInForce timeInForce, GroupLegChange entry, GroupLegChange takeProfit,
-    GroupLegChange stopLoss, GroupLegChange secondary, String rationale) {}
+    BigDecimal qty, TimeInForce timeInForce, GroupLegChangeDto entry, GroupLegChangeDto takeProfit,
+    GroupLegChangeDto stopLoss, GroupLegChangeDto secondary, String rationale) {}

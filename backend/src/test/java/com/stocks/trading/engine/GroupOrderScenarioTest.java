@@ -15,7 +15,7 @@ import com.stocks.common.domain.TimeInForce;
 import com.stocks.common.domain.WaitReason;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
-import com.stocks.contract.trading.dto.GroupLegChange;
+import com.stocks.contract.trading.dto.GroupLegChangeDto;
 import com.stocks.contract.trading.dto.GroupLegRequest;
 import com.stocks.contract.trading.dto.GroupPreviewDto;
 import com.stocks.contract.trading.dto.OrderDto;
@@ -435,8 +435,8 @@ class GroupOrderScenarioTest extends TradingTestBase {
     OrderDto oldEntry = leg(g, OrderGroupRole.ENTRY);
     OrderDto oldTp = leg(g, OrderGroupRole.TAKE_PROFIT);
     PlaceOrderGroupResponse r = orders.replaceGroup(p.principal(), g.groupId(), new ReplaceOrderGroupRequest(cid(),
-        new BigDecimal("12"), null, new GroupLegChange(new BigDecimal("97.00"), null), null,
-        new GroupLegChange(null, new BigDecimal("94.00")), null, null), meta());
+        new BigDecimal("12"), null, new GroupLegChangeDto(new BigDecimal("97.00"), null), null,
+        new GroupLegChangeDto(null, new BigDecimal("94.00")), null, null), meta());
     OrderGroupDto after = r.group();
     OrderDto entry = leg(after, OrderGroupRole.ENTRY);
     assertThat(entry.orderId()).isNotEqualTo(oldEntry.orderId());
@@ -455,7 +455,7 @@ class GroupOrderScenarioTest extends TradingTestBase {
 
     // a failing replace changes nothing (bracket rule on the merged group)
     assertThatThrownBy(() -> orders.replaceGroup(p.principal(), g.groupId(), new ReplaceOrderGroupRequest(cid(),
-        null, null, null, new GroupLegChange(new BigDecimal("96.00"), null), null, null, null), meta()))
+        null, null, null, new GroupLegChangeDto(new BigDecimal("96.00"), null), null, null, null), meta()))
         .isInstanceOfSatisfying(ApiException.class,
             e -> assertThat(e.code()).isEqualTo(ErrorCode.ORDER_GROUP_INVALID));
     assertThat(group(p, g.groupId()).legs()).extracting(OrderDto::orderId)
@@ -511,7 +511,7 @@ class GroupOrderScenarioTest extends TradingTestBase {
     // after a group replace, the original id still replays
     String newId = cid();
     orders.replaceGroup(p.principal(), first.group().groupId(), new ReplaceOrderGroupRequest(newId, null, null, null,
-        new GroupLegChange(new BigDecimal("111.00"), null), null, null, null), meta());
+        new GroupLegChangeDto(new BigDecimal("111.00"), null), null, null, null), meta());
     assertThat(placeGroup(p, req).replayed()).isTrue();
     assertThat(group(p, first.group().groupId()).clientOrderId()).isEqualTo(newId);
   }

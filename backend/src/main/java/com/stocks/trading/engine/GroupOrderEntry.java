@@ -18,7 +18,7 @@ import com.stocks.common.money.Money;
 import com.stocks.common.money.Prices;
 import com.stocks.common.money.Qty;
 import com.stocks.common.time.Et;
-import com.stocks.contract.trading.dto.GroupLegChange;
+import com.stocks.contract.trading.dto.GroupLegChangeDto;
 import com.stocks.contract.trading.dto.OrderGroupDto;
 import com.stocks.contract.trading.dto.PlaceOrderGroupResponse;
 import com.stocks.contract.trading.dto.PlaceOrderResponse;
@@ -211,7 +211,7 @@ class GroupOrderEntry {
         req.timeInForce() != null ? req.timeInForce() : cur.timeInForce());
     Set<OrderGroupRole> priced = java.util.EnumSet.noneOf(OrderGroupRole.class);
     for (OrderGroupRole role : cur.roles()) {
-      GroupLegChange ch = switch (role) {
+      GroupLegChangeDto ch = switch (role) {
         case ENTRY -> req.entry();
         case TAKE_PROFIT -> req.takeProfit();
         case STOP_LOSS -> req.stopLoss();
@@ -512,7 +512,7 @@ class GroupOrderEntry {
     return RequestHasher.sha256Hex(f.toString());
   }
 
-  private static void put(Map<String, Object> f, String leg, GroupLegChange c) {
+  private static void put(Map<String, Object> f, String leg, GroupLegChangeDto c) {
     if (c != null) {
       f.put(leg + ".limitPrice", dec(c.limitPrice()));
       f.put(leg + ".stopPrice", dec(c.stopPrice()));
