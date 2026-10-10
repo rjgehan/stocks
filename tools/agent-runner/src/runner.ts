@@ -224,7 +224,7 @@ export async function runBot(bot: BotConfig, deps: RunnerDeps, opts: RunOptions)
   const timeoutMs = deps.runTimeoutMs ?? config.maxRunSeconds * 1000;
   const deadline = AbortSignal.timeout(timeoutMs);
   const runSignal = AbortSignal.any([deadline, deps.shutdown]);
-  const deadlineAt = started.getTime() + timeoutMs;
+  const deadlineAt = Date.now() + timeoutMs; // wall clock, like AbortSignal.timeout
 
   let mcp: McpConnection | null = null;
   let log: RunLog | null = null;
