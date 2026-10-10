@@ -73,9 +73,13 @@ class RulesServiceTest {
     assertThat(r.orders().rationaleRequiredForAi()).isTrue();
     assertThat(r.orders().fractional().minBuyNotional()).isEqualByComparingTo("1.00");
     assertThat(r.orders().fractional().marketOnly()).isTrue();
-    assertThat(r.orders().matrix()).extracting(RulesDto.OrderMatrixRowDto::type).containsExactly(OrderType.MARKET,
-        OrderType.LIMIT, OrderType.STOP, OrderType.STOP_LIMIT, OrderType.TRAILING_STOP);
-    assertThat(r.orders().matrix().get(4).timeInForce()).containsExactly(TimeInForce.DAY);
+    assertThat(r.orders().matrix()).as("M1 accepts MARKET and LIMIT only").extracting(
+        RulesDto.OrderMatrixRowDto::type).containsExactly(OrderType.MARKET, OrderType.LIMIT);
+    assertThat(RulesService.matrix(RulesConfig.from(env).rules())).extracting(RulesDto.OrderMatrixRowDto::type)
+        .containsExactly(OrderType.MARKET, OrderType.LIMIT, OrderType.STOP, OrderType.STOP_LIMIT,
+            OrderType.TRAILING_STOP);
+    assertThat(RulesService.matrix(RulesConfig.from(env).rules()).get(4).timeInForce())
+        .containsExactly(TimeInForce.DAY);
     assertThat(r.leaderboard().minFills()).isEqualTo(5);
     assertThat(r.leaderboard().minSymbols()).isEqualTo(2);
     assertThat(r.leaderboard().benchmark()).isEqualTo("SPY");

@@ -28,11 +28,14 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -88,7 +91,7 @@ public class RulesService {
         "16:00–20:00", "Early-close days (e.g. Nov 27 and Dec 24, 2026): regular session ends 13:00, after-hours "
             + "17:00", liveIexWindow(config), false);
 
-    RulesOrdersDto orders = new RulesOrdersDto(matrix(r), r.gtcDays(), r.maxOpenOrders(), r.maxOrderQty(),
+    RulesOrdersDto orders = new RulesOrdersDto(availableMatrix(r), r.gtcDays(), r.maxOpenOrders(), r.maxOrderQty(),
         "$0.01 for prices at or above $1.00; $0.0001 below $1.00 (Reg NMS 612). Limit, stop and trail amounts must "
             + "be on tick.",
         r.marketCollarPct(), r.holdPctRegular(), r.holdPctQueued(), r.fatFingerWarnPct(), r.priceTooFarPct(),
@@ -126,6 +129,21 @@ public class RulesService {
 
   // ------------------------------------------------------------------------------------------- orders
 
+  /**
+   * The order types this release accepts. M1 ships MARKET and LIMIT; WS3's {@code OrderValidator} rejects STOP,
+   * STOP_LIMIT and TRAILING_STOP with {@code VALIDATION_FAILED} on {@code type} until its trigger evaluator lands (M2),
+   * so the published matrix lists only these and a bot never plans around an order type it cannot place. Add the
+   * other types here in the PR that enables them (and update {@code docs/rules.md}).
+   */
+  public static final Set<OrderType> AVAILABLE_ORDER_TYPES = Collections.unmodifiableSet(
+      EnumSet.of(OrderType.MARKET, OrderType.LIMIT));
+
+  /** The published matrix: the rows of {@link #matrix} whose type is {@linkplain #AVAILABLE_ORDER_TYPES available}. */
+  static List<OrderMatrixRowDto> availableMatrix(RulesConfig.Rules r) {
+    return matrix(r).stream().filter(row -> AVAILABLE_ORDER_TYPES.contains(row.type())).toList();
+  }
+
+  /** Every Phase 1 order type (§11.1), whether or not this release accepts it yet. */
   static List<OrderMatrixRowDto> matrix(RulesConfig.Rules r) {
     List<String> wholeOnly = List.of("SHARES");
     return List.of(

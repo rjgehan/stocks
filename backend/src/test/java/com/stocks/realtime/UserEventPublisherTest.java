@@ -75,6 +75,7 @@ class UserEventPublisherTest {
     notifications = new NotificationService(db.jdbc(), new PublicId(time), time, JacksonConfig.newMapper(), push);
     publisher = new UserEventPublisher(orders, accounts, notifications, push, Runnable::run);
     when(accounts.account(7L)).thenReturn(TradingSamples.account("acc_7", "512.34"));
+    when(accounts.account(8L)).thenReturn(TradingSamples.account("acc_8", "500.00"));
   }
 
   void connectAlice() {
@@ -195,7 +196,9 @@ class UserEventPublisherTest {
         new BigDecimal("500.00"), null, TestTimes.START));
     publisher.on(new ViolationIssued(7, alice.id(), "vio_1", ViolationType.GFV, AccountRestriction.SETTLED_CASH_ONLY,
         TestTimes.START));
+    // a reset publishes RESET for the closed run (7) and for the new one (8) at the same instant: one notification
     publisher.on(new AccountChanged(7, alice.id(), "RESET", TestTimes.START));
+    publisher.on(new AccountChanged(8, alice.id(), "RESET", TestTimes.START));
     publisher.on(new AccountChanged(7, alice.id(), "FILL", TestTimes.START));
     publisher.on(new PlayerStatusChanged(alice.id(), PlayerStatus.FROZEN, TestTimes.START));
     publisher.on(new PlayerStatusChanged(alice.id(), PlayerStatus.DISABLED, TestTimes.START));
@@ -212,7 +215,7 @@ class UserEventPublisherTest {
         .satisfies(n -> assertThat(n.title()).isEqualTo("Withdrawal: −$25.50"));
     assertThat(notes()).filteredOn(n -> n.kind() == NotificationKind.GFV_ISSUED).singleElement()
         .satisfies(n -> assertThat(n.body()).contains("settled cash for 90 days"));
-    assertThat(messaging.to("/queue/account")).as("every account event pushes the account").hasSize(6);
+    assertThat(messaging.to("/queue/account")).as("every account event pushes the account").hasSize(7);
   }
 
   @Test

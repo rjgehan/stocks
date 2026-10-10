@@ -354,14 +354,14 @@ public class UserEventPublisher implements DisposableBean {
     if (playerId == null || !push.isConnected(playerId)) {
       return;
     }
-    lookup(() -> Optional.of(accounts.account(accountId)))
+    lookup(() -> Optional.ofNullable(accounts.account(accountId)))
         .ifPresent(a -> push.toPlayer(playerId, StompDestinations.ACCOUNT_QUEUE, a));
   }
 
   /** Pushes the player's live {@code Account} now (the periodic marks push, {@link AccountTopic}). */
   void pushAccountOf(long playerId) {
     lookup(() -> Optional.of(accounts.activeAccountId(playerId)))
-        .flatMap(id -> lookup(() -> Optional.<AccountDto>of(accounts.account(id))))
+        .flatMap(id -> lookup(() -> Optional.<AccountDto>ofNullable(accounts.account(id))))
         .ifPresent(a -> push.toPlayer(playerId, StompDestinations.ACCOUNT_QUEUE, a));
   }
 

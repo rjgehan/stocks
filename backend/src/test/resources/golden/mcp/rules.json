@@ -1,5 +1,5 @@
 {
-  "version" : "1.4c4d5410bd2d",
+  "version" : "1.9e213cace8af",
   "asOf" : "2026-10-09T14:00:00.000Z",
   "account" : {
     "type" : "CASH",
@@ -39,24 +39,6 @@
       "timeInForce" : [ "DAY", "GTC" ],
       "qtyForms" : [ "SHARES" ],
       "notes" : "Marketable on arrival: fills at the touch (price improvement). Resting: fills at the limit. GTC lasts 60 days."
-    }, {
-      "type" : "STOP",
-      "sessions" : "REGULAR only",
-      "timeInForce" : [ "DAY", "GTC" ],
-      "qtyForms" : [ "SHARES" ],
-      "notes" : "Triggers on the last eligible consolidated trade, then becomes a market order with the collar."
-    }, {
-      "type" : "STOP_LIMIT",
-      "sessions" : "REGULAR only",
-      "timeInForce" : [ "DAY", "GTC" ],
-      "qtyForms" : [ "SHARES" ],
-      "notes" : "Triggers like STOP, then becomes a limit order."
-    }, {
-      "type" : "TRAILING_STOP",
-      "sessions" : "REGULAR only, and can only be entered during REGULAR",
-      "timeInForce" : [ "DAY" ],
-      "qtyForms" : [ "SHARES" ],
-      "notes" : "Exactly one of trailAmount ($) or trailPercent (0 < p < 100)."
     } ],
     "gtcDays" : 60,
     "maxOpenOrders" : 50,
