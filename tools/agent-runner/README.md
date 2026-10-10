@@ -14,6 +14,7 @@ src/tools.ts       MCP tool schemas → Anthropic custom tools / OpenAI Response
 src/llm/           the Anthropic Messages and OpenAI Responses adapters
 src/pricing.ts     built-in per-model prices, AGENT_PRICE_* overrides, exact cost (BigInt pico-dollars)
 src/store.ts       notes.md, spend.json under AGENT_DATA_DIR/<bot>/
+src/report.ts      Phase 2: each run's summary to POST /api/v1/agent-runs with the bot's key (AGENT_REPORT_*)
 prompts/system.md  the shared system prompt (copied verbatim into docs/agents.md; a backend test checks it)
 ```
 

@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { parseUsd } from './money.js';
 import { builtinPrice, parsePriceOverride, type ModelPrice, type Vendor } from './pricing.js';
+import { reportUrl } from './report.js';
 import { parseSchedule, type SlotTime } from './time.js';
 
 export type BotId = 'claude' | 'chatgpt';
@@ -35,6 +36,8 @@ export interface RunnerConfig {
   dailyUsdCap: bigint;
   dailyUsdCapText: string;
   systemPrompt: string;
+  /** Where run reports go (§20.6); null when AGENT_REPORT_RUNS=false. */
+  reportUrl: string | null;
   bots: BotConfig[];
   skipped: BotSkip[];
   /** Every secret value, for log redaction. */
@@ -121,6 +124,21 @@ export function loadConfig(env: Env, systemPrompt?: string): RunnerConfig {
     throw new ConfigError(`STOCKS_MCP_URL="${mcpUrl}" is not an http(s) URL`);
   }
 
+  const reportRuns = (str(env, 'AGENT_REPORT_RUNS') || 'true').toLowerCase();
+  if (reportRuns !== 'true' && reportRuns !== 'false') {
+    throw new ConfigError(`AGENT_REPORT_RUNS="${reportRuns}" must be true or false`);
+  }
+  let runReportUrl: string | null = null;
+  if (reportRuns === 'true') {
+    try {
+      runReportUrl = reportUrl(mcpUrl, str(env, 'AGENT_REPORT_URL') || undefined);
+      const u = new URL(runReportUrl);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('not http(s)');
+    } catch {
+      throw new ConfigError(`AGENT_REPORT_URL="${str(env, 'AGENT_REPORT_URL')}" is not an http(s) URL`);
+    }
+  }
+
   const bots: BotConfig[] = [];
   const skipped: BotSkip[] = [];
   const secrets: string[] = [];
@@ -177,6 +195,7 @@ export function loadConfig(env: Env, systemPrompt?: string): RunnerConfig {
     dailyUsdCap,
     dailyUsdCapText,
     systemPrompt: systemPrompt ?? readFileSync(DEFAULT_SYSTEM_PROMPT_PATH, 'utf8').trim(),
+    reportUrl: runReportUrl,
     bots,
     skipped,
     secrets,

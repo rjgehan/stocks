@@ -3,13 +3,14 @@ import { functionTools, SAVE_NOTES, toAnthropicTools, toOpenAITools, toParameter
 import { FIXTURE_TOOLS } from './fakes/mcp.js';
 
 describe('MCP → function tools', () => {
-  it('offers all 38 stocks tools in server order plus save_notes', () => {
-    expect(FIXTURE_TOOLS).toHaveLength(38);
+  it('offers all 40 stocks tools in server order plus save_notes', () => {
+    expect(FIXTURE_TOOLS).toHaveLength(40);
     const { tools, dropped } = functionTools(FIXTURE_TOOLS);
     expect(dropped).toEqual([]);
     expect(tools.map((t) => t.name)).toEqual([...FIXTURE_TOOLS.map((t) => t.name), SAVE_NOTES]);
     expect(tools[0]?.name).toBe('whoami');
     expect(tools[30]?.name).toBe('place_order');
+    expect(tools.slice(-3).map((t) => t.name)).toEqual(['get_player_journal', 'add_journal_note', 'save_notes']);
     for (const t of tools) {
       expect(t.name).toMatch(TOOL_NAME);
       expect(t.description.length).toBeGreaterThan(10);

@@ -9,6 +9,7 @@ import { errorMessage, type Logger } from './log.js';
 import { type ConnectMcp, type McpConnection, runnerError, type ToolOutcome } from './mcp.js';
 import { formatUsd } from './money.js';
 import { addUsage, costOf, type TokenUsage, ZERO_USAGE } from './pricing.js';
+import { buildReport, countTool, newRunRef, postReport, type ToolCounts } from './report.js';
 import { RunLog } from './runlog.js';
 import { acquireRunLock, addSpend, botDir, readNotes, readSpend, saveNotes, type Spend } from './store.js';
 import { type Clock, etDate, etTime } from './time.js';
@@ -43,6 +44,8 @@ export interface RunSummary {
   durationMs: number;
   logPath: string | null;
   message: string | null;
+  /** Calls by tool and result code, for the run report (§20.6). */
+  tools: ToolCounts;
 }
 
 export interface RunnerDeps {
@@ -58,6 +61,10 @@ export interface RunnerDeps {
   runTimeoutMs?: number;
   /** Test hook. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  /** The run report's HTTP client (default: the global fetch); tests pass a fake. */
+  fetch?: typeof fetch;
+  /** Test hook: the wait between report attempts. */
+  reportSleep?: (ms: number) => Promise<void>;
 }
 
 export interface RunOptions {
@@ -193,6 +200,7 @@ function newSummary(bot: BotConfig): RunSummary {
     durationMs: 0,
     logPath: null,
     message: null,
+    tools: new Map(),
   };
 }
 
@@ -203,6 +211,27 @@ function newSummary(bot: BotConfig): RunSummary {
  */
 export async function runBot(bot: BotConfig, deps: RunnerDeps, opts: RunOptions): Promise<RunSummary> {
   const started = deps.clock.now();
+  const summary = await runOnce(bot, deps, opts, started);
+  await report(bot, deps, opts, started, summary);
+  return summary;
+}
+
+/** §20.6: the run's summary to the app with the bot's own key; a failure is logged and changes nothing. */
+async function report(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, started: Date, summary: RunSummary): Promise<void> {
+  if (!deps.config.reportUrl) return;
+  try {
+    const body = buildReport(newRunRef(started, bot.id), summary, opts, started, deps.config, deps.version);
+    await postReport(deps.config.reportUrl, bot, body, {
+      logger: deps.logger,
+      fetch: deps.fetch ?? fetch,
+      sleep: deps.reportSleep,
+    });
+  } catch (e) {
+    deps.logger.warn(`report failed: ${errorMessage(e)}`, bot.id);
+  }
+}
+
+async function runOnce(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, started: Date): Promise<RunSummary> {
   const dir = botDir(deps.config.dataDir, bot.id);
   let lock: ReturnType<typeof acquireRunLock>;
   try {
@@ -446,6 +475,7 @@ async function runLocked(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, sta
             'Finish with a short summary; the next run starts with a fresh budget.',
           );
           results.push({ id: call.id, name: call.name, output: skipped.text, isError: true });
+          countTool(summary.tools, call.name, skipped.code, false);
           runLog.write('tool_call', { id: call.id, name: call.name, executed: false, code: skipped.code });
           continue;
         }
@@ -454,6 +484,7 @@ async function runLocked(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, sta
         const args = parseArgs(call.argsJson);
         const t0 = Date.now();
         const { outcome, retried } = await execute(call, args);
+        countTool(summary.tools, call.name, outcome.code, !outcome.isError);
         if (outcome.isError) summary.toolErrors++;
         else if (ORDER_TOOLS.has(call.name)) summary.orders++;
         const output = clipResult(outcome.text);

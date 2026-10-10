@@ -5,6 +5,7 @@ import { type BotConfig, loadConfig, type RunnerConfig } from '../src/config.js'
 import { Logger, type Sink } from '../src/log.js';
 import { adapterFor } from '../src/main.js';
 import type { ConnectMcp } from '../src/mcp.js';
+import type { RunReport } from '../src/report.js';
 import type { RunnerDeps } from '../src/runner.js';
 import type { Clock } from '../src/time.js';
 
@@ -64,12 +65,30 @@ export const fixedClock = (iso: string): Clock => {
   return { now: () => new Date(t + (Date.now() - start)) };
 };
 
+/** A posted run report (§20.6) as the fake app received it. */
+export interface PostedReport {
+  url: string;
+  headers: Record<string, string>;
+  body: RunReport;
+}
+
+/** A fetch that records run reports and answers `status` (201 by default). */
+export function reportFetch(reports: PostedReport[], status = 201): typeof fetch {
+  return (async (url: string | URL | Request, init?: RequestInit) => {
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries((init?.headers ?? {}) as Record<string, string>)) headers[k.toLowerCase()] = v;
+    reports.push({ url: String(url), headers, body: JSON.parse(String(init?.body)) as RunReport });
+    return new Response('{}', { status, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+}
+
 export function testDeps(
   config: RunnerConfig,
   connectMcp: ConnectMcp,
   extra: Partial<RunnerDeps> = {},
-): RunnerDeps & { sink: MemorySink } {
+): RunnerDeps & { sink: MemorySink; reports: PostedReport[] } {
   const sink = new MemorySink();
+  const reports: PostedReport[] = [];
   return {
     config,
     logger: new Logger(config.secrets, sink),
@@ -79,8 +98,11 @@ export function testDeps(
     version: '1.0.0-test',
     shutdown: new AbortController().signal,
     sleep: async () => undefined,
+    fetch: reportFetch(reports),
+    reportSleep: async () => undefined,
     ...extra,
     sink,
+    reports,
   };
 }
 

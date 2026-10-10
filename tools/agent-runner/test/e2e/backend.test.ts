@@ -255,9 +255,9 @@ describe('agent runner against the real stocks MCP server', () => {
     expect(`${s.status}\n${sink.text}`).toMatch(/^completed\n/);
     expect(s).toMatchObject({ toolCalls: 4, toolErrors: 0, orders: 1, turns: 4 });
     expect(JSON.parse(placed)).toMatchObject({ order: { clientOrderId }, replayed: false });
-    // The model saw the server's 38 tools plus save_notes, converted to Messages API custom tools.
+    // The model saw the server's 40 tools plus save_notes, converted to Messages API custom tools.
     const tools = llm.calls[0]?.body.tools as { name: string; input_schema: { type: string } }[];
-    expect(tools).toHaveLength(39);
+    expect(tools).toHaveLength(41);
     expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['whoami', 'place_order', 'get_league_feed', 'save_notes']));
     expect(llm.calls[0]?.body.messages[0].content).toContain('"feed":{"profile":"simulated"');
 
@@ -282,6 +282,15 @@ describe('agent runner against the real stocks MCP server', () => {
     ]);
     expect(readFileSync(s.logPath!, 'utf8')).not.toContain(keys.claude);
     expect(sink.text).not.toContain(keys.claude);
+    expect(sink.text).not.toContain('report failed');
+    // §20.6: the run was reported with the bot's key; the public summary shows it, without cost
+    const summary = await fetch(`${baseUrl}/api/v1/players/claude/agent-runs`, {
+      headers: { Authorization: `Bearer ${keys.claude}` },
+    });
+    expect(summary.status).toBe(200);
+    const runs = (await summary.json()) as { runs: number; lastStatus: string; lastRunOrders: number };
+    expect(runs.runs).toBeGreaterThanOrEqual(1);
+    expect(runs).toMatchObject({ lastStatus: 'COMPLETED', lastRunOrders: 1 });
     await cancelOrder(keys.claude, order.orderId);
     process.stdout.write(`${sink.text}`);
   });
@@ -322,7 +331,7 @@ describe('agent runner against the real stocks MCP server', () => {
 
     expect(`${s.status}\n${sink.text}`).toMatch(/^completed\n/);
     expect(s).toMatchObject({ toolCalls: 4, toolErrors: 0, orders: 1 });
-    expect(llm.calls[0]?.body.tools).toHaveLength(39);
+    expect(llm.calls[0]?.body.tools).toHaveLength(41);
     expect(JSON.parse(placed)).toMatchObject({ order: { clientOrderId }, replayed: false });
     expect(llm.calls[1]?.body.previous_response_id).toMatch(/^resp_fake_/);
     const order = await orderByClientId(keys.chatgpt, clientOrderId);
