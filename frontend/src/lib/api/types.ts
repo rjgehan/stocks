@@ -70,6 +70,13 @@ export type CashTransferRequest = S['CashTransferRequest']
 export type CashTransferPreview = S['CashTransferPreview']
 export type TransferBatchResult = S['TransferBatchResult']
 export type TransferRow = S['TransferRow']
+export type CorporateAction = S['CorporateAction']
+export type ResolveCorporateActionRequest = S['ResolveCorporateActionRequest']
+// rules (bots and the ticket read the order matrix from here, §18.3 Rules)
+export type Rules = S['Rules']
+export type OrderMatrixRow = S['OrderMatrixRow']
+/** Planned (`planned.d.ts`): `Activity.detail` of a dividend entitlement. */
+export type DividendDetail = S['DividendDetail']
 
 // enums (null stripped)
 export type DataQuality = NN<Quote['quality']>
@@ -90,6 +97,8 @@ export type LeaderboardPeriod = NN<Leaderboard['period']>
 export type LeaderboardMetric = NN<Leaderboard['metric']>
 export type KindFilter = NN<Leaderboard['kind']>
 export type MoverList = 'GAINERS' | 'LOSERS' | 'ACTIVES'
+export type CorporateActionType = NN<CorporateAction['type']>
+export type CorporateActionStatus = NN<CorporateAction['status']>
 
 /** `/topic/tick.{SYM}` payload (§19, `TickDto`). */
 export interface Tick {
@@ -121,7 +130,10 @@ export interface OrderUpdateEvent {
 
 /**
  * `Activity.detail` (`ActivityDetailDto`, sealed with `type`). Read through this loose view: the generated
- * shape of a polymorphic schema is not guaranteed to be a discriminated union.
+ * shape of a polymorphic schema is not guaranteed to be a discriminated union. Members by `type` (§18.3):
+ * SPLIT (oldRate, newRate, qtyBefore, qtyAfter, costBasis, cashInLieu, dustQty, realizedPnl), NAME_CHANGE
+ * (oldSymbol, newSymbol, qty), GFV, RESET, RESTRICTION, ADMIN_VIEW (admin, reason) and the planned DIVIDEND
+ * (`planned.d.ts` `DividendDetail`: status ACCRUED | PAID | VOID, cashRate, qty, exDate, payableDate).
  */
 export interface ActivityDetailView {
   type?: string | null
@@ -134,6 +146,27 @@ export interface ActivityDetailView {
   newSymbol?: string | null
   from?: string | null
   to?: string | null
+  corporateActionId?: string | null
+  // SPLIT
+  oldRate?: string | null
+  newRate?: string | null
+  qtyBefore?: string | null
+  qtyAfter?: string | null
+  costBasis?: string | null
+  cashInLieu?: string | null
+  dustQty?: string | null
+  realizedPnl?: string | null
+  // NAME_CHANGE, DIVIDEND
+  qty?: string | null
+  // DIVIDEND (planned)
+  status?: string | null
+  cashRate?: string | null
+  exDate?: string | null
+  payableDate?: string | null
+  // GFV
+  unsettledAmount?: string | null
+  fundingSettleDate?: string | null
+  activeCount?: number | null
 }
 
 /**

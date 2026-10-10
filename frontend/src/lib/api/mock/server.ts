@@ -17,13 +17,16 @@ import {
   div,
   fromInteger,
   gt,
+  gte,
   isDecimal,
   isZero,
   lt,
+  lte,
   max,
   min,
   mul,
   negate,
+  roundToTick,
   setScale,
   sign,
   sub,
@@ -39,6 +42,7 @@ import type {
   CalendarOverride,
   ChartRange,
   Clock,
+  CorporateAction,
   Estimate,
   Execution,
   Fees,
@@ -57,6 +61,7 @@ import type {
   Position,
   Preview,
   PublicTrade,
+  Rules,
   Run,
   Settings,
   SystemStatus,
@@ -65,6 +70,7 @@ import type {
 } from '../types'
 import { MOCK_INDEX_SYMBOLS, MOCK_INVITE_CODE, MOCK_ME_BASE, MOCK_PLAYERS, POPULAR_SYMBOLS } from './data'
 import { MockMarket, hashString, mulberry32, unitsToDec } from './market'
+import { mockRules } from './rules'
 import { type Lot, type MockOtherPlayer, type MockState, clearState, loadState, saveState } from './state'
 
 type Listener = (destination: string, body: unknown) => void
@@ -139,6 +145,16 @@ function median(xs: Dec[]): Dec | null {
   return sorted.length % 2 ? sorted[mid]! : div(add(sorted[mid - 1]!, sorted[mid]!), '2', 10, 'HALF_EVEN')
 }
 
+const DAY_MS = 24 * 60 * MIN
+/** ET calendar date (YYYY-MM-DD) of an instant. */
+const etDate = (ms: number): string => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+const STOP_TYPES = new Set(['STOP', 'STOP_LIMIT', 'TRAILING_STOP'])
+const ORDER_TYPE_NAME: Record<string, string> = { MARKET: 'Market', LIMIT: 'Limit', STOP: 'Stop', STOP_LIMIT: 'Stop limit', TRAILING_STOP: 'Trailing stop' }
+/** TRAIL_UPDATED is throttled to one every 10 s (§11.5). */
+const TRAIL_EVENT_MS = 10_000
+const isStopType = (t: string | null | undefined): boolean => t != null && STOP_TYPES.has(t)
+/** A triggered STOP_LIMIT behaves as a limit order (§12.7). */
+const limitLike = (o: Pick<Order, 'type' | 'triggered'>): boolean => o.type === 'LIMIT' || (o.type === 'STOP_LIMIT' && o.triggered)
 const floor5 = (d: Dec): Dec => setScale(d, 5, 'FLOOR')
 const money = (d: Dec): Dec => setScale(d, 2, 'HALF_EVEN')
 const isOpen = (o: Order): boolean => o.status === 'PENDING' || o.status === 'WORKING' || o.status === 'PARTIALLY_FILLED'
@@ -160,6 +176,8 @@ function defaultSettings(): Settings {
 }
 
 export class MockServer {
+  /** Jobs the admin ran by hand this session (§21.1 "Run now"): shown as the job's last run. */
+  private readonly manualRuns = new Map<string, { runKey: string; finishedAt: string }>()
   readonly market: MockMarket
   private readonly listeners = new Set<Listener>()
   private readonly startedAt = Date.now()
@@ -184,7 +202,7 @@ export class MockServer {
   private seed(): MockState {
     const openedAt = iso(this.startedAt - 9 * 24 * 60 * MIN)
     const s: MockState = {
-      v: 2,
+      v: 3,
       me: { playerId: MOCK_ME_BASE.playerId, handle: 'demo', displayName: 'Demo Player', role: 'ADMIN', accountId: MOCK_ME_BASE.accountId, createdAt: openedAt },
       apiTradingAllowed: true,
       preferences: { theme: 'DARK', upDown: 'GREEN_UP', confirmOrders: true, defaultOrderType: 'LIMIT', defaultTimeInForce: 'DAY', defaultQtyMode: 'SHARES' },
@@ -234,6 +252,8 @@ export class MockServer {
       audit: [],
       idempotency: {},
       engineHalted: null,
+      corporateActions: [],
+      liveFeed: [],
       reauthAt: this.startedAt,
       seq: 1,
     }
@@ -244,6 +264,8 @@ export class MockServer {
       s.transfers.push(this.transferRow(p.handle, p.accountId, 'INITIAL', '500.00', 'Starting cash', openedAt, null, '0.00', '1'))
     }
     s.transfers.push(this.transferRow('demo', s.me.accountId, 'INITIAL', '500.00', 'Starting cash', openedAt, null, '0.00', '1'))
+    this.seedCorporateActionHistory()
+    this.seedFeed()
     // §18.4: the notional buy of $125.00 NVDA, filled 45 minutes ago.
     const filledAt = iso(this.startedAt - 45 * MIN)
     const order = this.newOrder({ clientOrderId: 'web-seed-0001', symbol: 'NVDA', side: 'BUY', type: 'MARKET', notional: '125.00', timeInForce: 'DAY' }, filledAt)
@@ -275,6 +297,182 @@ export class MockServer {
     saveState(this.s)
   }
 
+  /**
+   * Corporate-action history (§14) so the Activity screen and the admin list show every kind: a 2-for-1 split, a
+   * 1-for-2 reverse split of a whole-share symbol paid partly as cash in lieu, a symbol change, a paid dividend, an
+   * accrued dividend (a receivable that counts in equity until it pays), an upcoming dividend, a detected split that
+   * waits for the admin (a corporate-action hold) and a merger the admin must handle manually.
+   */
+  private seedCorporateActionHistory(): void {
+    const s = this.s
+    const ago = (days: number, hours = 0): number => this.startedAt - days * DAY_MS + hours * 60 * MIN
+    const at = (days: number, hours = 0): string => iso(ago(days, hours))
+    const buy = (symbol: string, qty: Dec, price: Dec, when: string) => {
+      const o = this.newOrder({ clientOrderId: `web-seed-${symbol.toLowerCase()}`, symbol, side: 'BUY', type: 'LIMIT', qty, limitPrice: price, timeInForce: 'DAY' }, when)
+      s.orders.push(o)
+      this.pushEvent(o, 'ACCEPTED', when)
+      this.pushEvent(o, 'WORKING', when)
+      this.fillAt(o, price, qty, when, 'TOUCH')
+    }
+    const ca = (p: Partial<CorporateAction> & Pick<CorporateAction, 'symbol' | 'type' | 'exDate'>): CorporateAction => {
+      const row: CorporateAction = {
+        id: publicId('cac'),
+        recordDate: null,
+        payableDate: null,
+        oldRate: null,
+        newRate: null,
+        cashRate: null,
+        newSymbol: null,
+        status: 'APPLIED',
+        origin: 'PROVIDER',
+        detail: null,
+        createdAt: iso(Date.parse(`${p.exDate}T12:00:00Z`) - 7 * DAY_MS),
+        appliedAt: null,
+        resolvedBy: null,
+        ...p,
+      }
+      s.corporateActions.push(row)
+      return row
+    }
+
+    buy('F', '1', '23.0400', at(9))
+    buy('XYZW', '3', '20.4000', at(7))
+    buy('SIMX', '10', '0.4012', at(5, 1))
+
+    // F cash dividend: ex-date 6 days ago (1 share entitled), paid 3 days ago (a DIVIDEND ledger row, settled at once).
+    const fDiv = ca({ symbol: 'F', type: 'CASH_DIVIDEND', exDate: etDate(ago(6)), recordDate: etDate(ago(6)), payableDate: etDate(ago(3)), cashRate: '0.15', appliedAt: at(6, -1) })
+    s.cash = add(s.cash, '0.15')
+    s.ledger.push(
+      this.ledgerRow({
+        at: iso(ago(3) - 4 * 60 * MIN),
+        type: 'DIVIDEND',
+        symbol: 'F',
+        qty: '1',
+        price: '0.15',
+        amount: '0.15',
+        balanceAfter: s.cash,
+        memo: `F cash dividend $0.15/share, ex-date ${fDiv.exDate}`,
+        by: 'SYSTEM',
+        tradeDate: fDiv.payableDate!,
+        settleDate: fDiv.payableDate,
+        detail: { type: 'DIVIDEND', corporateActionId: fDiv.id, status: 'PAID', qty: '1', cashRate: '0.15', exDate: fDiv.exDate, payableDate: fDiv.payableDate } as unknown as Activity['detail'],
+      }),
+    )
+    // F 2-for-1 (old 1 → new 2): the quantity doubles, the cost is unchanged.
+    const fSplit = ca({ symbol: 'F', type: 'FORWARD_SPLIT', exDate: etDate(ago(4)), oldRate: '1', newRate: '2', appliedAt: at(4, -1) })
+    const f = s.lots.F!
+    s.lots.F = { ...f, qty: '2' }
+    s.ledger.push(
+      this.eventRow({
+        at: fSplit.appliedAt!,
+        type: 'SPLIT',
+        symbol: 'F',
+        qty: '2',
+        detail: { type: 'SPLIT', corporateActionId: fSplit.id, oldRate: '1', newRate: '2', qtyBefore: '1', qtyAfter: '2', costBasis: f.costBasis, cashInLieu: '0.00', dustQty: '0', realizedPnl: '0.00' },
+      }),
+    )
+    // XYZW 1-for-2 reverse (old 2 → new 1), whole shares only: 3 → entitled 1.5 → keep 1, cash in lieu for 0.5 at
+    // the pre-split close 20.61 × 2 / 1 = 41.22; the relieved cost 20.40 leaves +0.21 realized.
+    const xySplit = ca({ symbol: 'XYZW', type: 'REVERSE_SPLIT', exDate: etDate(ago(3)), oldRate: '2', newRate: '1', appliedAt: at(3, -1) })
+    const xy = s.lots.XYZW!
+    s.lots.XYZW = { ...xy, qty: '1', costBasis: sub(xy.costBasis, '20.40') }
+    s.ledger.push(
+      this.eventRow({
+        at: xySplit.appliedAt!,
+        type: 'SPLIT',
+        symbol: 'XYZW',
+        qty: '1',
+        detail: { type: 'SPLIT', corporateActionId: xySplit.id, oldRate: '2', newRate: '1', qtyBefore: '3', qtyAfter: '1', costBasis: s.lots.XYZW.costBasis, cashInLieu: '20.61', dustQty: '0.5', realizedPnl: '0.21' },
+      }),
+    )
+    s.cash = add(s.cash, '20.61')
+    s.ledger.push(
+      this.ledgerRow({
+        at: xySplit.appliedAt!,
+        type: 'CASH_IN_LIEU',
+        symbol: 'XYZW',
+        qty: '0.5',
+        price: '41.2200',
+        amount: '20.61',
+        balanceAfter: s.cash,
+        memo: 'Cash in lieu of 0.5 XYZW share (1-for-2 reverse split); realized P&L +$0.21',
+        by: 'SYSTEM',
+        settleDate: etDate(ago(2)),
+      }),
+    )
+    // SIMX is now SIMA: the position moves to the new symbol; history keeps the old one.
+    const rename = ca({ symbol: 'SIMX', type: 'NAME_CHANGE', exDate: etDate(ago(3)), newSymbol: 'SIMA', appliedAt: at(3, -1) })
+    s.lots.SIMA = { ...s.lots.SIMX!, symbol: 'SIMA' }
+    delete s.lots.SIMX
+    s.ledger.push(
+      this.eventRow({ at: rename.appliedAt!, type: 'NAME_CHANGE', symbol: 'SIMA', qty: '10', detail: { type: 'NAME_CHANGE', corporateActionId: rename.id, oldSymbol: 'SIMX', newSymbol: 'SIMA', qty: '10' } }),
+    )
+    // XYZW: ex-date yesterday, pays in 12 days. Until then it is a receivable (planned `DividendDetail`, ACCRUED).
+    const xyDiv = ca({ symbol: 'XYZW', type: 'CASH_DIVIDEND', exDate: etDate(ago(1)), recordDate: etDate(ago(1)), payableDate: etDate(ago(-12)), cashRate: '0.25', appliedAt: at(1, -1) })
+    s.ledger.push({
+      ...this.ledgerRow({
+        at: xyDiv.appliedAt!,
+        type: 'DIVIDEND',
+        symbol: 'XYZW',
+        qty: '1',
+        price: '0.25',
+        amount: '0.25',
+        balanceAfter: null,
+        by: 'SYSTEM',
+        tradeDate: xyDiv.exDate!,
+        settleDate: xyDiv.payableDate,
+        detail: { type: 'DIVIDEND', corporateActionId: xyDiv.id, status: 'ACCRUED', qty: '1', cashRate: '0.25', exDate: xyDiv.exDate, payableDate: xyDiv.payableDate } as unknown as Activity['detail'],
+      }),
+      id: `div_${xyDiv.id!.slice(4)}`,
+    })
+    // Upcoming and pending-review actions (admin list).
+    ca({ symbol: 'NVDA', type: 'CASH_DIVIDEND', exDate: etDate(ago(-6)), recordDate: etDate(ago(-6)), payableDate: etDate(ago(-20)), cashRate: '0.01', status: 'PENDING' })
+    ca({
+      symbol: 'SOFI',
+      type: 'FORWARD_SPLIT',
+      exDate: etDate(this.startedAt),
+      oldRate: '1',
+      newRate: '2',
+      status: 'NEEDS_ADMIN',
+      origin: 'DETECTED',
+      detail: "The raw prior close 26.21 and the split-adjusted close 13.11 differ, and no split was reported: inferred 2-for-1. Trading in SOFI is on hold until you resolve it.",
+      createdAt: iso(this.startedAt - 5 * 60 * MIN),
+    })
+    ca({
+      symbol: 'SIMB',
+      type: 'CASH_MERGER',
+      exDate: etDate(ago(-2)),
+      cashRate: '1.2500',
+      status: 'NEEDS_ADMIN',
+      detail: 'Cash merger at $1.25 per share reported by the provider. Mergers are applied manually in Phase 2; skip it to dismiss.',
+      createdAt: iso(this.startedAt - 26 * 60 * MIN),
+    })
+  }
+
+  /** Feed items that are not derived from transfers or trades: joins, a new leader, a closed position. */
+  private seedFeed(): void {
+    const s = this.s
+    const byHandle = (h: string) => s.others.find((p) => p.handle === h)
+    const item = (kind: NonNullable<FeedItem['kind']>, handle: string, at: number, symbol: string | null, payload: Partial<NonNullable<FeedItem['payload']>>): void => {
+      const p = byHandle(handle)
+      if (!p) return
+      s.liveFeed.push({
+        id: publicId('fde'),
+        at: iso(at),
+        kind,
+        player: this.summary(p),
+        symbol,
+        payload: { side: null, qty: null, price: null, realizedPnl: null, amount: null, period: null, untrusted: { rationale: null, memo: null }, ...payload },
+      })
+    }
+    const bob = byHandle('bob')
+    if (bob) bob.resets = 1
+    for (const [i, p] of s.others.entries()) item('JOINED', p.handle, this.startedAt - 9 * DAY_MS + (i + 1) * 17 * MIN, null, {})
+    item('NEW_LEADER', 'claude', this.startedAt - 140 * MIN, null, { period: 'WEEK' })
+    item('POSITION_CLOSED', 'alice', this.startedAt - 190 * MIN, 'AMD', { side: 'SELL', qty: '2', price: '166.2100', realizedPnl: '12.40' })
+    item('RESET', 'bob', this.startedAt - 3 * DAY_MS, null, {})
+  }
+
   // ================================================================ events (fake STOMP broker)
 
   subscribe(listener: Listener): () => void {
@@ -286,8 +484,14 @@ export class MockServer {
     for (const l of this.listeners) l(destination, body)
   }
 
+  /** Symbols with a working order: the fake market keeps stepping them so stops and limits work off screen. */
+  workingSymbols(): string[] {
+    return [...new Set(this.s.orders.filter((o) => o.status === 'WORKING' && o.symbol).map((o) => o.symbol!))]
+  }
+
   /** Called by the fake realtime driver on each market step. */
   onMarketStep(symbol: string): void {
+    this.evaluateStops(symbol)
     this.sweepRestingLimits(symbol)
   }
 
@@ -392,6 +596,7 @@ export class MockServer {
 
     // market
     r('GET', '/market/clock', () => json(this.clock()))
+    r('GET', '/rules', () => json(this.rules()))
     r('GET', '/market/indices', () => json(MOCK_INDEX_SYMBOLS.map((s) => this.market.quote(s))))
     r('GET', '/market/movers', ({ url }) => {
       const list = (url.searchParams.get('list') ?? 'GAINERS').toUpperCase() as MoverList
@@ -443,7 +648,12 @@ export class MockServer {
     })
     r('GET', '/account/activities', ({ url }) => {
       const types = url.searchParams.getAll('types').flatMap((v) => v.split(',')).map((t) => t.trim().toUpperCase()).filter(Boolean)
-      const rows = this.s.ledger.filter((a) => types.length === 0 || (a.type && types.includes(a.type))).toReversed()
+      // newest first by occurred-at (§18.2); the seed and corporate actions append out of order
+      const rows = this.s.ledger
+        .map((a, i) => ({ a, i }))
+        .filter(({ a }) => types.length === 0 || (a.type && types.includes(a.type)))
+        .sort((x, y) => Date.parse(y.a.at ?? '') - Date.parse(x.a.at ?? '') || y.i - x.i)
+        .map(({ a }) => a)
       return json(this.page(rows, url))
     })
     r('GET', '/account/history', ({ url }) => json(this.history(url.searchParams.get('range') ?? '1M')))
@@ -644,9 +854,13 @@ export class MockServer {
       }),
     )
     r('GET', '/admin/system', () => this.admin(() => json(this.system())))
-    r('POST', '/admin/system/jobs/{jobName}/run', ({ params }) =>
+    r('POST', '/admin/system/jobs/{jobName}/run', ({ params, body }) =>
       this.admin(() => {
-        this.audit('ADMIN', 'JOB_RUN', 'OK', this.s.me.handle, 'job', params[0]!)
+        const name = params[0]!
+        if (!this.system().jobs?.some((j) => j.name === name)) return problem(404, 'NOT_FOUND', 'Not found', `No job named ${name}.`)
+        const runKey = (body as { runKey?: string | null } | null)?.runKey?.trim() || TRADE_DATE
+        this.manualRuns.set(name, { runKey, finishedAt: iso(Date.now() + 1_500) })
+        this.audit('ADMIN', 'JOB_RUN', 'OK', this.s.me.handle, 'job', name, { runKey })
         return noContent(202)
       }, true),
     )
@@ -707,6 +921,16 @@ export class MockServer {
       }, true),
     )
     r('DELETE', '/admin/orders/{orderId}', ({ params }) => this.admin(() => this.cancel(params[0]!, 'ADMIN'), true))
+    r('GET', '/admin/corporate-actions', ({ url }) =>
+      this.admin(() => {
+        const status = url.searchParams.get('status')?.toUpperCase()
+        const rows = this.s.corporateActions
+          .filter((c) => !status || c.status === status)
+          .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? '') || (b.exDate ?? '').localeCompare(a.exDate ?? ''))
+        return json(this.page(rows, url))
+      }),
+    )
+    r('POST', '/admin/corporate-actions/{id}/resolve', ({ params, body }) => this.admin(() => this.resolveCorporateAction(params[0]!, body), true))
   }
 
   /** ADMIN-only guard; `recent` marks the §21.1 R routes (`@RecentAuth`, 15 min). */
@@ -920,6 +1144,103 @@ export class MockServer {
     }
   }
 
+  /** `GET /rules` (§18.3): the mock accepts every Phase 1 order type (the full §11.1 matrix). */
+  private rules(): Rules {
+    return mockRules(this.s.settings, iso())
+  }
+
+  /** Symbols on a corporate-action hold (§14): a split waiting for the admin with an ex-date today or earlier. */
+  private holdSymbols(): string[] {
+    const today = etDate(Date.now())
+    return this.s.corporateActions
+      .filter((c) => c.status === 'NEEDS_ADMIN' && (c.type === 'FORWARD_SPLIT' || c.type === 'REVERSE_SPLIT') && (c.exDate ?? '') <= today)
+      .map((c) => c.symbol!)
+  }
+
+  /**
+   * `POST /admin/corporate-actions/{id}/resolve` (§14, §21.1): APPLY a split with confirmed rates (per-lot quantity,
+   * cash in lieu for whole-share symbols, open orders on the symbol cancelled, a SPLIT activity), or SKIP it.
+   */
+  private resolveCorporateAction(id: string, body: unknown): Response {
+    const c = this.s.corporateActions.find((x) => x.id === id)
+    if (!c) return problem(404, 'NOT_FOUND', 'Not found', `No corporate action ${id}.`)
+    const b = (body ?? {}) as { resolution?: string | null; oldRate?: string | null; newRate?: string | null; note?: string | null }
+    const fields: FieldErr[] = []
+    const resolution = b.resolution?.toUpperCase()
+    if (resolution !== 'APPLY' && resolution !== 'SKIP') fields.push({ field: 'resolution', code: 'NotNull', message: 'Choose apply or skip.' })
+    const note = b.note?.trim() ?? ''
+    if (note.length < 1 || note.length > 200) fields.push({ field: 'note', code: 'Size', message: 'A note of 1–200 characters is required.' })
+    if (resolution === 'APPLY') {
+      for (const f of ['oldRate', 'newRate'] as const) {
+        const v = b[f]
+        if (!v || !isDecimal(v) || sign(v) <= 0) fields.push({ field: f, code: 'Positive', message: 'Enter a positive number of shares.' })
+      }
+    }
+    if (fields.length) return problem(400, 'VALIDATION_FAILED', 'Validation failed', fields[0]!.message, null, fields)
+    const split = c.type === 'FORWARD_SPLIT' || c.type === 'REVERSE_SPLIT'
+    if (c.status !== 'NEEDS_ADMIN' || (resolution === 'APPLY' && !split)) {
+      return problem(
+        422,
+        'CORPORATE_ACTION_NOT_RESOLVABLE',
+        'Not resolvable',
+        c.status !== 'NEEDS_ADMIN' ? `This action is already ${String(c.status).toLowerCase().replaceAll('_', ' ')}.` : 'Phase 1 applies forward and reverse splits only; skip this one.',
+      )
+    }
+    const now = iso()
+    if (resolution === 'APPLY') {
+      const oldRate = b.oldRate!
+      const newRate = b.newRate!
+      c.oldRate = oldRate
+      c.newRate = newRate
+      c.type = compare(newRate, oldRate) >= 0 ? 'FORWARD_SPLIT' : 'REVERSE_SPLIT'
+      const symbol = c.symbol!
+      for (const o of this.s.orders.filter((x) => isOpen(x) && x.symbol === symbol)) this.finish(o, 'CANCELLED', 'CORPORATE_ACTION')
+      const lot = this.s.lots[symbol]
+      if (lot) {
+        // §14 split arithmetic: multiply first, divide last, with an explicit scale
+        const entitled = div(mul(lot.qty, newRate), oldRate, 5, 'FLOOR')
+        const fractionable = this.market.meta(symbol)?.fractionable ?? true
+        const keep = fractionable ? entitled : setScale(entitled, 0, 'FLOOR')
+        const cilQty = sub(entitled, keep)
+        let cil = '0.00'
+        let realized = '0.00'
+        let cost = lot.costBasis
+        if (sign(cilQty) > 0) {
+          const prev = this.market.quote(symbol).prevClose ?? '0'
+          cil = setScale(div(mul(mul(cilQty, prev), oldRate), newRate, 10, 'HALF_EVEN'), 2, 'FLOOR')
+          const relieved = money(div(mul(lot.costBasis, cilQty), entitled, 10, 'HALF_EVEN'))
+          cost = sub(lot.costBasis, relieved)
+          realized = sub(cil, relieved)
+        }
+        const before = lot.qty
+        if (sign(keep) > 0) this.s.lots[symbol] = { ...lot, qty: keep, costBasis: cost }
+        else delete this.s.lots[symbol]
+        this.s.ledger.push(
+          this.eventRow({
+            at: now,
+            type: 'SPLIT',
+            symbol,
+            qty: keep,
+            detail: { type: 'SPLIT', corporateActionId: c.id, oldRate, newRate, qtyBefore: before, qtyAfter: keep, costBasis: cost, cashInLieu: cil, dustQty: cilQty, realizedPnl: realized },
+          }),
+        )
+        if (sign(cil) > 0) {
+          this.s.cash = add(this.s.cash, cil)
+          this.s.ledger.push(this.ledgerRow({ at: now, type: 'CASH_IN_LIEU', symbol, qty: cilQty, amount: cil, balanceAfter: this.s.cash, memo: `Cash in lieu of ${cilQty} ${symbol} share(s)`, by: 'SYSTEM' }))
+        }
+        this.notify('CORPORATE_ACTION', `${symbol} split ${newRate}-for-${oldRate}`, `Your ${before} shares are now ${keep}.`, { corporateActionId: c.id })
+        this.publish('/user/queue/account', this.account())
+      }
+      c.status = 'APPLIED'
+      c.appliedAt = now
+    } else {
+      c.status = 'SKIPPED'
+    }
+    c.resolvedBy = this.s.me.handle
+    this.audit('ADMIN', 'CORPORATE_ACTION_RESOLVE', 'OK', this.s.me.handle, 'corporate_action', c.id, { resolution, note })
+    return json(c)
+  }
+
   // ================================================================ market
 
   private asset(symbol: string): Asset | null {
@@ -930,7 +1251,7 @@ export class MockServer {
       name: meta.name,
       exchange: meta.exchange,
       type: meta.type,
-      tradable: true,
+      tradable: !this.holdSymbols().includes(symbol),
       fractionable: meta.fractionable,
       shortable: false,
       marginable: false,
@@ -985,8 +1306,15 @@ export class MockServer {
     return Object.values(this.s.lots).reduce((acc, lot) => add(acc, money(mul(lot.qty, this.mark(lot.symbol)))), '0.00')
   }
 
+  /** Accrued, unpaid dividends (§16.1 receivable): they count in equity from the ex-date until they pay. */
+  private receivable(): Dec {
+    return this.s.ledger
+      .filter((a) => a.type === 'DIVIDEND' && (a.detail as { status?: string } | null)?.status === 'ACCRUED')
+      .reduce((acc, a) => add(acc, a.amount ?? '0.00'), '0.00')
+  }
+
   private equity(): Dec {
-    return add(this.s.cash, this.longValue())
+    return add(add(this.s.cash, this.longValue()), this.receivable())
   }
 
   /** U = E / units (§16.2), scale 10 for display. */
@@ -1058,7 +1386,7 @@ export class MockServer {
       restrictionReason: null,
       equity,
       longMarketValue,
-      dividendsReceivable: '0.00',
+      dividendsReceivable: this.receivable(),
       cash: { total: this.s.cash, settled, unsettled, settledAvailable: max('0.00', sub(settled, holds)), withdrawable: max('0.00', settled) },
       openBuyHolds: holds,
       buyingPower: max('0.00', sub(this.s.cash, holds)),
@@ -1114,6 +1442,11 @@ export class MockServer {
       transferId: p.transferId ?? null,
       detail: p.detail ?? null,
     }
+  }
+
+  /** An `account_event` row (SPLIT, NAME_CHANGE, …) as an activity: `aev_` id, no cash amount (§18.2). */
+  private eventRow(p: Partial<Activity> & Pick<Activity, 'type' | 'at'>): Activity {
+    return { ...this.ledgerRow({ by: 'SYSTEM', ...p }), id: publicId('aev') }
   }
 
   /** Synthetic equity / unit-value curve ending at the live values, with the transfers as flows. */
@@ -1211,22 +1544,44 @@ export class MockServer {
       if (tif !== 'DAY' || req.extendedHours) err('FRACTIONAL_DAY_ONLY', 'timeInForce', 'Dollar orders are Day only, regular hours.')
       if (!meta.fractionable) err('NOT_FRACTIONABLE', 'notional', `${meta.symbol} does not support fractional shares.`)
     }
-    if (type === 'MARKET' && tif === 'GTC') err('TIF_NOT_ALLOWED', 'timeInForce', 'Market orders are Day only.')
-    if ((type === 'LIMIT' || type === 'STOP_LIMIT') && !req.limitPrice) err('LIMIT_PRICE_REQUIRED', 'limitPrice', 'Enter a limit price.')
-    if (type === 'MARKET' && req.limitPrice) err('PRICE_NOT_ALLOWED', 'limitPrice', 'Market orders take no limit price.')
-    if ((type === 'STOP' || type === 'STOP_LIMIT') && !req.stopPrice) err('STOP_PRICE_REQUIRED', 'stopPrice', 'Enter a stop price.')
+    // §11.2 checks 15–20 for every Phase 1 type (the mock accepts the full §11.1 matrix)
+    const usesLimit = type === 'LIMIT' || type === 'STOP_LIMIT'
+    const usesStop = type === 'STOP' || type === 'STOP_LIMIT'
+    const usesTrail = type === 'TRAILING_STOP'
+    const label = ORDER_TYPE_NAME[type] ?? type
+    if (req.limitPrice != null && !usesLimit) err('PRICE_NOT_ALLOWED', 'limitPrice', `${label} orders take no limit price.`)
+    if (req.stopPrice != null && !usesStop) err('PRICE_NOT_ALLOWED', 'stopPrice', usesTrail ? "A trailing stop's stop is computed from the trail." : `${label} orders take no stop price.`)
+    if ((req.trailAmount != null || req.trailPercent != null) && !usesTrail) err('PRICE_NOT_ALLOWED', req.trailAmount != null ? 'trailAmount' : 'trailPercent', `${label} orders take no trail.`)
+    if (usesLimit && req.limitPrice == null) err('LIMIT_PRICE_REQUIRED', 'limitPrice', 'Enter a limit price.')
+    if (usesStop && req.stopPrice == null) err('STOP_PRICE_REQUIRED', 'stopPrice', 'Enter a stop price (the trigger).')
+    if (usesTrail && (req.trailAmount == null) === (req.trailPercent == null)) {
+      err('TRAIL_REQUIRED', req.trailAmount != null ? 'trailPercent' : 'trailAmount', 'Enter a trail in dollars or in percent (one of them).', 'For example 5% trails 5% behind the best price since the order started.')
+    }
+    if (req.trailPercent != null && (!isDecimal(req.trailPercent) || sign(req.trailPercent) <= 0 || gte(req.trailPercent, '100'))) {
+      err('VALIDATION_FAILED', 'trailPercent', 'The trail must be more than 0% and less than 100%.')
+    }
+    if (req.trailAmount != null && (!isDecimal(req.trailAmount) || sign(req.trailAmount) <= 0 || compare(setScale(req.trailAmount, tickFor(last) === '0.01' ? 2 : 4, 'DOWN'), req.trailAmount) !== 0)) {
+      err('INVALID_TICK', 'trailAmount', `The trail must be a positive multiple of $${tickFor(last)}.`)
+    }
+    if ((type === 'MARKET' || type === 'TRAILING_STOP') && tif === 'GTC') err('TIF_NOT_ALLOWED', 'timeInForce', `${label} orders are Day only.`)
     if (req.extendedHours && type !== 'LIMIT') err('EXT_HOURS_LIMIT_ONLY', 'extendedHours', 'Extended hours need a Limit order.')
-    for (const [field, price] of [
-      ['limitPrice', req.limitPrice],
-      ['stopPrice', req.stopPrice],
-    ] as const) {
+    const priceFields: Array<readonly ['limitPrice' | 'stopPrice', Dec | null | undefined]> = [
+      ['limitPrice', usesLimit ? req.limitPrice : null],
+      ['stopPrice', usesStop ? req.stopPrice : null],
+    ]
+    for (const [field, price] of priceFields) {
       if (price == null) continue
       if (!isDecimal(price) || sign(price) <= 0) err('INVALID_TICK', field, 'Enter a valid price.')
       else if (compare(setScale(price, tickFor(price) === '0.01' ? 2 : 4, 'DOWN'), price) !== 0) err('INVALID_TICK', field, `Prices must be in steps of $${tickFor(price)}.`)
       else {
+        // check 19: a buy stop above the market, a sell stop below it
+        if (field === 'stopPrice' && (side === 'BUY' ? lte(price, last) : gte(price, last))) {
+          err('STOP_PRICE_WRONG_SIDE', 'stopPrice', side === 'BUY' ? `A buy stop must be above the last price $${setScale(last, 2)}.` : `A sell stop must be below the last price $${setScale(last, 2)}.`)
+          continue
+        }
         const away = div(sub(price, last), last, 6, 'HALF_UP')
         if (gt(away, '0.5') || lt(away, '-0.5')) err('PRICE_TOO_FAR', field, 'The price is more than 50% away from the last price.')
-        else if (gt(away, '0.05') || lt(away, '-0.05')) warnings.push({ code: 'FAT_FINGER', message: 'Your price is more than 5% away from the last price.' })
+        else if (gt(away, '0.05') || lt(away, '-0.05')) warnings.push({ code: 'FAT_FINGER', message: `Your ${field === 'stopPrice' ? 'stop' : 'limit'} price is more than 5% away from the last price.` })
       }
     }
     if (side === 'SELL' && !lot) err('SHORT_SELLING_NOT_ALLOWED', 'side', 'You have no position to sell. Short selling is not allowed.')
@@ -1236,7 +1591,20 @@ export class MockServer {
     let buyingPowerAfter: Dec | null = null
     if (errors.length === 0) {
       const touch = side === 'BUY' ? ask : bid
-      const refPrice = type === 'LIMIT' ? (side === 'BUY' ? min(req.limitPrice!, ask) : max(req.limitPrice!, bid)) : touch
+      // the trailing stop's starting trigger (§12.7): last ∓ trail, on tick
+      const trail = usesTrail ? this.trailDistance(req.trailAmount ?? null, req.trailPercent ?? null, last) : null
+      const trailStop = trail ? (side === 'BUY' ? roundToTick(add(last, trail), 'CEILING') : roundToTick(sub(last, trail), 'FLOOR')) : null
+      // the estimate: a limit at its price (or better), a stop at its trigger, a market order at the touch
+      const refPrice =
+        type === 'LIMIT'
+          ? side === 'BUY'
+            ? min(req.limitPrice!, ask)
+            : max(req.limitPrice!, bid)
+          : type === 'STOP_LIMIT'
+            ? req.limitPrice!
+            : type === 'STOP'
+              ? req.stopPrice!
+              : trailStop ?? touch
       let estQty: Dec
       if (notional != null) {
         const q0 = floor5(div(notional, refPrice, 8, 'DOWN'))
@@ -1253,7 +1621,11 @@ export class MockServer {
             ? setScale(notional, 2, 'CEILING')
             : type === 'MARKET'
               ? setScale(add(mul(mul(estQty, ask), '1.02'), fees.cat ?? '0'), 2, 'CEILING')
-              : setScale(add(mul(estQty, req.limitPrice!), fees.cat ?? '0'), 2, 'CEILING')
+              : type === 'STOP'
+                ? setScale(add(mul(mul(estQty, max(req.stopPrice!, last)), '1.02'), fees.cat ?? '0'), 2, 'CEILING')
+                : type === 'TRAILING_STOP'
+                  ? setScale(add(mul(mul(estQty, add(last, trail ?? '0')), '1.02'), fees.cat ?? '0'), 2, 'CEILING')
+                  : setScale(add(mul(estQty, req.limitPrice!), fees.cat ?? '0'), 2, 'CEILING')
         if (gt(hold, bp)) {
           const maxShares = div(bp, mul(ask, '1.02'), 0, 'FLOOR')
           err(
@@ -1385,18 +1757,106 @@ export class MockServer {
     if (!order || !isOpen(order)) return
     order.activatedAt = iso()
     order.status = 'WORKING'
-    order.waitReason = order.type === 'LIMIT' ? 'LIMIT_NOT_REACHED' : null
+    order.waitReason = order.type === 'LIMIT' ? 'LIMIT_NOT_REACHED' : isStopType(order.type) ? 'NOT_TRIGGERED' : null
+    if (order.type === 'TRAILING_STOP' && order.symbol) {
+      // §12.7: the watermark starts at the first print (the mock's last), the stop trails it
+      const last = unitsToDec(this.market.bidAsk(order.symbol)?.last ?? 0)
+      order.watermarkPrice = last
+      order.stopPrice = this.trailStop(order, last)
+    }
     this.pushEvent(order, 'WORKING')
     if (order.type === 'MARKET' || this.marketable(order)) {
       this.fill(order)
     } else {
       this.emitOrder('WORKING', order, null)
+      // the opening-gap rule (§12.7): already through the stop at activation triggers at once
+      if (isStopType(order.type)) this.evaluateStops(order.symbol!)
+    }
+    this.persist()
+  }
+
+  /** A trailing stop's dollar distance at a reference price: the amount, or ref × pct / 100. */
+  private trailDistance(amount: Dec | null, percent: Dec | null, ref: Dec): Dec | null {
+    if (amount != null && isDecimal(amount)) return amount
+    if (percent != null && isDecimal(percent)) return div(mul(ref, percent), '100', 8, 'HALF_UP')
+    return null
+  }
+
+  /** §12.7: SELL `TICK_DOWN(hwm − trail)`, BUY `TICK_UP(lwm + trail)`. */
+  private trailStop(order: Order, watermark: Dec): Dec {
+    const trail = this.trailDistance(order.trailAmount, order.trailPercent, watermark) ?? '0'
+    return order.side === 'SELL' ? roundToTick(sub(watermark, trail), 'FLOOR') : roundToTick(add(watermark, trail), 'CEILING')
+  }
+
+  /**
+   * The mock `TriggerEvaluator` (§12.7) for one symbol, on each market step: trailing watermarks follow the last
+   * price (TRAIL_UPDATED at most every 10 s), and a stop triggers when the last trade reaches it (SELL ≤ stop,
+   * BUY ≥ stop). A triggered STOP / TRAILING_STOP fills like a market order, a STOP_LIMIT works as a limit.
+   */
+  private evaluateStops(symbol: string): void {
+    const ba = this.market.bidAsk(symbol)
+    if (!ba) return
+    const last = unitsToDec(ba.last)
+    let changed = false
+    for (const order of this.s.orders) {
+      if (order.symbol !== symbol || order.status !== 'WORKING' || !isStopType(order.type) || order.triggered) continue
+      if (order.type === 'TRAILING_STOP') {
+        const wm = order.watermarkPrice ?? last
+        const next = order.side === 'SELL' ? max(wm, last) : min(wm, last)
+        if (compare(next, wm) !== 0 || order.stopPrice == null) {
+          order.watermarkPrice = next
+          const stop = this.trailStop(order, next)
+          if (order.stopPrice == null || compare(stop, order.stopPrice) !== 0) {
+            order.stopPrice = stop
+            const events = this.s.events[order.orderId!] ?? []
+            const lastTrail = events.findLast((e) => e.type === 'TRAIL_UPDATED')
+            if (!lastTrail || Date.now() - Date.parse(lastTrail.at ?? '') >= TRAIL_EVENT_MS) {
+              this.pushEvent(order, 'TRAIL_UPDATED', iso(), { watermark: next, stopPrice: stop })
+            }
+            this.emitOrder('TRAIL_UPDATED', order, null)
+          }
+          changed = true
+        }
+      }
+      const stop = order.stopPrice
+      if (!stop) continue
+      const through = order.side === 'SELL' ? lte(last, stop) : gte(last, stop)
+      if (!through) continue
+      const at = iso()
+      order.triggered = true
+      order.triggeredAt = at
+      order.waitReason = 'LATENCY'
+      this.pushEvent(order, 'TRIGGERED', at, {
+        price: last,
+        basis: 'PRINT',
+        stopPrice: stop,
+        ...(order.type === 'TRAILING_STOP' ? { watermark: order.watermarkPrice } : {}),
+        eligibleAt: iso(Date.parse(at) + 400),
+      })
+      this.emitOrder('TRIGGERED', order, null)
+      changed = true
+      const id = order.orderId!
+      setTimeout(() => this.workTriggered(id), 350 + Math.random() * 250)
+    }
+    if (changed) this.persist()
+  }
+
+  /** After the trigger latency: a STOP / TRAILING_STOP fills at the touch, a STOP_LIMIT works as a limit (§12.7). */
+  private workTriggered(orderId: string): void {
+    const order = this.s.orders.find((o) => o.orderId === orderId)
+    if (!order || !isOpen(order)) return
+    if (order.type === 'STOP_LIMIT') {
+      order.waitReason = 'LIMIT_NOT_REACHED'
+      if (this.marketable(order)) this.fill(order)
+      else this.emitOrder('WORKING', order, null)
+    } else {
+      this.fill(order)
     }
     this.persist()
   }
 
   private marketable(order: Order): boolean {
-    if (order.type !== 'LIMIT' || !order.limitPrice || !order.symbol) return false
+    if (!limitLike(order) || !order.limitPrice || !order.symbol) return false
     const ba = this.market.bidAsk(order.symbol)
     if (!ba) return false
     return order.side === 'BUY' ? compare(order.limitPrice, unitsToDec(ba.ask)) >= 0 : compare(order.limitPrice, unitsToDec(ba.bid)) <= 0
@@ -1417,7 +1877,7 @@ export class MockServer {
     const ba = order.symbol ? this.market.bidAsk(order.symbol) : null
     if (!ba) return
     const touch = unitsToDec(order.side === 'BUY' ? ba.ask : ba.bid)
-    const price = order.type === 'LIMIT' && order.limitPrice ? (liquidity === 'RESTING' ? order.limitPrice : order.side === 'BUY' ? min(order.limitPrice, touch) : max(order.limitPrice, touch)) : touch
+    const price = limitLike(order) && order.limitPrice ? (liquidity === 'RESTING' ? order.limitPrice : order.side === 'BUY' ? min(order.limitPrice, touch) : max(order.limitPrice, touch)) : touch
     let qty: Dec
     if (order.notional != null) {
       const q0 = floor5(div(order.notional, price, 8, 'DOWN'))
@@ -1793,7 +2253,46 @@ export class MockServer {
         items.push({ id: `feed_dep_${t.transferId}`, at: t.effectiveAt, kind: 'DEPOSIT', player: p, symbol: null, payload: { side: null, qty: null, price: null, realizedPnl: null, amount: t.amount, period: null, untrusted: { rationale: null, memo: t.memo } } })
       }
     }
+    items.push(...this.s.liveFeed.filter((i) => Date.parse(i.at ?? '') <= Date.now()))
     return items.sort((a, b) => Date.parse(b.at ?? '') - Date.parse(a.at ?? ''))
+  }
+
+  /**
+   * One live league event (§19 `/topic/feed`): a bot or friend trade, published when it becomes visible. Mock mode
+   * emits one every 20–45 s while the page is open; e2e calls it through `window.__stocksMock.emitFeed()`.
+   */
+  emitFeed(kind: 'FILL' | 'POSITION_CLOSED' | 'NEW_LEADER' | 'DEPOSIT' | 'JOINED' | 'RESET' = 'FILL', handle?: string): FeedItem | null {
+    const candidates = this.s.others.filter((p) => p.status !== 'DISABLED')
+    const p = (handle ? candidates.find((x) => x.handle === handle) : null) ?? candidates[Math.floor(Math.random() * candidates.length)]
+    if (!p) return null
+    const symbols = ['NVDA', 'AAPL', 'MSFT', 'TSLA', 'AMD', 'SPY', 'META', 'GOOGL']
+    const symbol = kind === 'FILL' || kind === 'POSITION_CLOSED' ? (p.top ?? symbols[Math.floor(Math.random() * symbols.length)]!) : null
+    const side = kind === 'POSITION_CLOSED' ? 'SELL' : Math.random() > 0.4 ? 'BUY' : 'SELL'
+    const price = symbol ? setScale(unitsToDec(this.market.bidAsk(symbol)?.last ?? 0), 2) : null
+    const item: FeedItem = {
+      id: publicId('fde'),
+      at: iso(),
+      kind,
+      player: this.summary(p),
+      symbol,
+      payload: {
+        side: symbol ? side : null,
+        qty: symbol ? String(1 + Math.floor(Math.random() * 3)) : null,
+        price,
+        realizedPnl: kind === 'POSITION_CLOSED' ? setScale(((Math.random() - 0.35) * 30).toFixed(2), 2) : null,
+        amount: kind === 'DEPOSIT' ? '100.00' : null,
+        period: kind === 'NEW_LEADER' ? 'TODAY' : null,
+        untrusted: {
+          rationale: p.kind === 'AI' && symbol ? `${side === 'BUY' ? 'Adding' : 'Trimming'} ${symbol}: ${side === 'BUY' ? 'momentum held above the 20-day average' : 'locking in gains, keeping settled cash'}.` : null,
+          memo: kind === 'DEPOSIT' ? 'Weekly top-up' : null,
+        },
+      },
+    }
+    this.s.liveFeed.push(item)
+    if (this.s.liveFeed.length > 200) this.s.liveFeed.splice(0, this.s.liveFeed.length - 200)
+    this.persist()
+    this.publish('/topic/feed', item)
+    return item
   }
 
   // ================================================================ admin
@@ -2237,7 +2736,7 @@ export class MockServer {
 
   private system(): SystemStatus {
     const now = Date.now()
-    return {
+    const status: SystemStatus = {
       version: '0.1.0-mock',
       startedAt: iso(this.startedAt),
       db: 'h2',
@@ -2246,7 +2745,7 @@ export class MockServer {
       marketData: {
         profile: 'mock',
         staleSymbols: [],
-        corporateActionHolds: [],
+        corporateActionHolds: this.holdSymbols(),
         providers: [
           { id: 'sim', state: 'LIVE', streamSymbolsUsed: 12, streamSymbolsMax: 1000, restPerMinUsed: 0, restPerMinMax: 0, lastMessageAt: iso(now - 900), capabilities: { quotes: true, bars: true, news: false }, probe: { ok: true } },
           { id: 'alpaca', state: 'DISABLED', streamSymbolsUsed: 0, streamSymbolsMax: 30, restPerMinUsed: 0, restPerMinMax: 180, lastMessageAt: null, capabilities: {}, probe: { skipped: 'mock mode' } },
@@ -2258,9 +2757,20 @@ export class MockServer {
         { name: 'DAILY_MARK', lastRunKey: '2026-10-08', status: 'SUCCEEDED', finishedAt: '2026-10-08T20:20:12.000Z', detail: null },
         { name: 'ASSET_SYNC', lastRunKey: '2026-10-09', status: 'SUCCEEDED', finishedAt: '2026-10-09T08:00:05.000Z', detail: '11,842 assets' },
         { name: 'INVARIANTS', lastRunKey: '2026-10-09', status: 'SUCCEEDED', finishedAt: '2026-10-09T09:00:01.000Z', detail: 'I1–I9 OK' },
+        { name: 'CORPORATE_ACTION_SYNC', lastRunKey: '2026-10-09', status: 'SUCCEEDED', finishedAt: '2026-10-09T06:30:04.000Z', detail: '3 upserted' },
+        { name: 'APPLY_CORPORATE_ACTIONS', lastRunKey: '2026-10-09', status: 'SUCCEEDED', finishedAt: '2026-10-09T07:45:02.000Z', detail: '0 applied' },
+        { name: 'PAY_DIVIDENDS', lastRunKey: '2026-10-09', status: 'SUCCEEDED', finishedAt: '2026-10-09T10:00:01.000Z', detail: '0 paid' },
+        { name: 'SPLIT_GUARD', lastRunKey: '2026-10-09T09:20', status: 'SUCCEEDED', finishedAt: '2026-10-09T13:20:03.000Z', detail: '1 detected (SOFI)' },
       ],
-      corporateActionsNeedingAdmin: 0,
+      corporateActionsNeedingAdmin: this.s.corporateActions.filter((c) => c.status === 'NEEDS_ADMIN').length,
     }
+    status.jobs = status.jobs!.map((j) => {
+      const run = this.manualRuns.get(j.name!)
+      if (!run) return j
+      const done = Date.parse(run.finishedAt) <= now
+      return { ...j, lastRunKey: run.runKey, status: done ? 'SUCCEEDED' : 'RUNNING', finishedAt: done ? run.finishedAt : null, detail: done ? 'Run by the admin' : null }
+    })
+    return status
   }
 
   /** Resets every bit of mock state (Settings → "Reset mock data"). */

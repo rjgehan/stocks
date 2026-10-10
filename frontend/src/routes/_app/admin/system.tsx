@@ -107,6 +107,7 @@ function SystemPage() {
   const [haltOpen, setHaltOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [jobConfirm, setJobConfirm] = useState<string | null>(null)
+  const [runKey, setRunKey] = useState('')
   if (isPending) return <Skeleton className="h-80 w-full" />
   if (isError || !s) return <EmptyState title="System status is unavailable" body="The backend may be restarting." />
   const engine = s.engine
@@ -265,22 +266,37 @@ function SystemPage() {
       </ConfirmDialog>
       <ConfirmDialog
         open={jobConfirm !== null}
-        onClose={() => setJobConfirm(null)}
+        onClose={() => {
+          setJobConfirm(null)
+          setRunKey('')
+        }}
         title={`Run ${jobConfirm ?? ''} now?`}
         confirmLabel="Run job"
         pending={runJob.isPending}
         onConfirm={() =>
           jobConfirm &&
-          runJob.mutate(jobConfirm, {
-            onSuccess: () => {
-              toast({ tone: 'neutral', title: `${jobConfirm} started` })
-              setJobConfirm(null)
+          runJob.mutate(
+            { jobName: jobConfirm, runKey: runKey.trim() || undefined },
+            {
+              onSuccess: () => {
+                toast({ tone: 'neutral', title: `${jobConfirm} started`, body: runKey.trim() ? `Run key ${runKey.trim()}` : 'Latest past occurrence' })
+                setJobConfirm(null)
+                setRunKey('')
+              },
+              onError: (e) => toast({ tone: 'error', title: 'Job not started', body: errorBody(describeError(e)) ?? describeError(e).title }),
             },
-            onError: (e) => toast({ tone: 'error', title: 'Job not started', body: describeError(e).title }),
-          })
+          )
         }
       >
-        Runs the latest past occurrence. Jobs are idempotent, so a duplicate run is harmless.
+        <p>Runs in the background; the outcome shows in the jobs list. Jobs are idempotent, so a duplicate run is harmless.</p>
+        <TextField
+          label="Run key (optional)"
+          hint="Leave empty for the latest past occurrence, e.g. 2026-10-09 for a daily job."
+          value={runKey}
+          onChange={(e) => setRunKey(e.target.value)}
+          maxLength={40}
+          placeholder="Latest past occurrence"
+        />
       </ConfirmDialog>
     </div>
   )
