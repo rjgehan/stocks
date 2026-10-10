@@ -167,6 +167,11 @@ export interface ActivityDetailView {
   unsettledAmount?: string | null
   fundingSettleDate?: string | null
   activeCount?: number | null
+  // RESET
+  finalEquity?: string | null
+  startingCash?: string | null
+  // RESTRICTION
+  until?: string | null
 }
 
 /**
