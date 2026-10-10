@@ -144,16 +144,20 @@ class McpServerIT {
     }
 
     /**
-     * A test-only tool that reports what the transport's {@code contextExtractor} put into the
-     * {@link McpTransportContext} (read directly, without {@code CurrentPlayer}'s SecurityContextHolder fallback).
-     * Registered as an extra tool list, outside the §20.3 catalog.
+     * Test-only tools, registered as an extra tool list outside the §20.3 catalog: one reports what the transport's
+     * {@code contextExtractor} put into the {@link McpTransportContext} (read directly, without
+     * {@code CurrentPlayer}'s SecurityContextHolder fallback); the other needs {@code account:read}, like the
+     * account tools of §20.3, so the per-call scope check runs through the real server.
      */
     @Bean
     List<SyncToolSpecification> contextProbeTool(@Qualifier("mcpServerJsonMapper") JsonMapper mapper)
         throws NoSuchMethodException {
       ContextProbe probe = new ContextProbe();
-      return List.of(McpToolCatalog.specification(probe,
-          ContextProbe.class.getMethod("probe", McpTransportContext.class), mapper));
+      return List.of(
+          McpToolCatalog.specification(probe, ContextProbe.class.getMethod("probe", McpTransportContext.class),
+              mapper, McpToolCatalog.NO_SCOPE),
+          McpToolCatalog.specification(probe, ContextProbe.class.getMethod("scoped", McpTransportContext.class),
+              mapper, Scopes.ACCOUNT_READ));
     }
 
     @Bean
@@ -189,9 +193,16 @@ class McpServerIT {
       return new ContextProbeDto(p == null ? null : p.handle(), p == null ? null : p.authMethod().name(),
           m.channel().name(), m.mcpClient(), m.mcpTool(), m.requestId(), m.ip());
     }
+
+    @McpTool(name = SCOPED_PROBE, generateOutputSchema = true, annotations = @McpTool.McpAnnotations(
+        readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false))
+    public ContextProbeDto scoped(McpTransportContext ctx) {
+      return probe(ctx);
+    }
   }
 
   static final String PROBE = "__context_probe";
+  static final String SCOPED_PROBE = "__account_read_probe";
 
   @LocalServerPort int port;
   @Autowired JdbcClient jdbc;
@@ -232,7 +243,7 @@ class McpServerIT {
       assertThat(init.capabilities().prompts()).isNull();
 
       List<Tool> tools = client.listTools().tools();
-      assertThat(tools).extracting(Tool::name).containsExactly("whoami", PROBE);   // the probe is this test's
+      assertThat(tools).extracting(Tool::name).containsExactly("whoami", PROBE, SCOPED_PROBE); // probes: this test's
       Tool whoami = tools.get(0);
       assertThat(whoami.title()).isEqualTo("Who am I");
       assertThat(whoami.annotations().readOnlyHint()).isTrue();
@@ -279,6 +290,34 @@ class McpServerIT {
       assertThat(me.get("handle").asString()).isEqualTo(human.handle());
       assertThat(me.get("kind").asString()).isEqualTo("HUMAN");
       assertThat(me.get("scopes").valueStream().map(JsonNode::asString)).containsExactly("market:read");
+    }
+  }
+
+  @Test
+  void toolsEnforceTheirScopeAndWhoamiHidesTheAccountWithoutAccountRead() throws Exception {
+    // §20.3: chain 2 lets any authenticated key reach /mcp, so each tool checks its own scope (as REST does, §17.1)
+    String marketOnly = fx.apiKey(bot, Set.of(Scopes.MARKET_READ), properties.security().apiKeyPepper());
+    try (McpSyncClient client = client(marketOnly)) {
+      client.initialize();
+      CallToolResult denied = client.callTool(new CallToolRequest(SCOPED_PROBE, Map.of()));
+      assertThat(denied.isError()).isTrue();
+      assertThat(denied.structuredContent()).isNull();
+      JsonNode error = jsonMapper.readTree(((TextContent) denied.content().get(0)).text());
+      assertThat(error.get("code").asString()).isEqualTo("FORBIDDEN_SCOPE");
+      assertThat(error.get("message").asString()).contains("account:read");
+
+      CallToolResult whoami = client.callTool(new CallToolRequest("whoami", Map.of()));
+      assertThat(whoami.isError()).as(String.valueOf(whoami.content())).isFalse();
+      JsonNode structured = jsonMapper.valueToTree(whoami.structuredContent());
+      assertThat(structured.get("me").get("accountId").asString()).isEqualTo(botAccount.publicId());
+      assertThat(structured.get("account").isNull()).as("GET /account needs account:read").isTrue();
+    }
+    try (McpSyncClient client = client(botKey)) {   // all four scopes
+      client.initialize();
+      CallToolResult allowed = client.callTool(new CallToolRequest(SCOPED_PROBE, Map.of()));
+      assertThat(allowed.isError()).as(String.valueOf(allowed.content())).isFalse();
+      assertThat(jsonMapper.valueToTree(allowed.structuredContent()).get("mcpTool").asString())
+          .isEqualTo(SCOPED_PROBE);
     }
   }
 

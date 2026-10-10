@@ -26,6 +26,19 @@ class ArchitectureRulesSelfTest {
   }
 
   @Test
+  void rule4CatchesFloatingPointInArraysAndGenericArguments() {
+    EvaluationResult r = ArchitectureRules.noFloatingPoint("com.stocks.arch.fixtures..")
+        .evaluate(of(Violations.HiddenFloatingMoney.class));
+    assertThat(r.getFailureReport().getDetails())
+        .anySatisfy(d -> assertThat(d).contains("prices").contains("double[]"))
+        .anySatisfy(d -> assertThat(d).contains("marks").contains("java.lang.Double"))
+        .anySatisfy(d -> assertThat(d).contains("weights").contains("returns").contains("java.lang.Float"))
+        .anySatisfy(d -> assertThat(d).contains("weights").contains("takes").contains("double"));
+    assertThat(ArchitectureRules.noFloatingPoint("com.stocks.arch.fixtures..")
+        .evaluate(of(Violations.DecimalMoney.class)).hasViolation()).isFalse();
+  }
+
+  @Test
   void rule5CatchesSystemClockCalls() {
     EvaluationResult r = ArchitectureRules.noSystemClock().evaluate(of(Violations.SystemClock.class));
     assertThat(r.getFailureReport().getDetails()).hasSize(3);

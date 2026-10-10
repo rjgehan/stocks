@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.stocks.config.JacksonConfig;
+import com.stocks.contract.security.Scopes;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures.SyncToolSpecification;
 import java.util.List;
@@ -61,6 +62,20 @@ class McpToolCatalogTest {
   void duplicateNamesFailTheBoot() {
     assertThatThrownBy(() -> McpToolCatalog.specifications(List.of(new First(), new First()), MAPPER))
         .isInstanceOf(IllegalStateException.class).hasMessageContaining("Duplicate");
+  }
+
+  @Test
+  void everyToolHasTheScopeRestRequiresForTheSameData() {
+    assertThat(McpToolCatalog.SCOPES).containsOnlyKeys(McpToolCatalog.ORDER);
+    assertThat(McpToolCatalog.SCOPES.values()).allMatch(s -> s.isEmpty() || Scopes.ALL.contains(s));
+    assertThat(McpToolCatalog.SCOPES).containsEntry("whoami", McpToolCatalog.NO_SCOPE)
+        .containsEntry("get_rules", Scopes.MARKET_READ).containsEntry("get_bars", Scopes.MARKET_READ)
+        .containsEntry("get_account", Scopes.ACCOUNT_READ).containsEntry("preview_order", Scopes.ACCOUNT_READ)
+        .containsEntry("get_watchlists", Scopes.ACCOUNT_READ)
+        .containsEntry("mark_notifications_read", Scopes.ACCOUNT_READ)
+        .containsEntry("get_leaderboard", Scopes.LEAGUE_READ).containsEntry("get_league_feed", Scopes.LEAGUE_READ)
+        .containsEntry("place_order", Scopes.TRADE).containsEntry("update_watchlist", Scopes.TRADE)
+        .containsEntry("delete_watchlist", Scopes.TRADE);
   }
 
   @Test

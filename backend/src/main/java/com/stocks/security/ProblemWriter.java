@@ -2,6 +2,7 @@ package com.stocks.security;
 
 import com.stocks.common.error.ErrorCode;
 import com.stocks.common.error.Problem;
+import com.stocks.common.error.ProblemDetailsAdvice;
 import com.stocks.common.web.RequestIds;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -19,7 +20,7 @@ import tools.jackson.databind.json.JsonMapper;
 public final class ProblemWriter {
 
   /** The {@code WWW-Authenticate} value on chain-2 401s (§17.1; Phase 2 adds {@code resource_metadata}). */
-  public static final String BEARER_CHALLENGE = "Bearer realm=\"stocks\"";
+  public static final String BEARER_CHALLENGE = ProblemDetailsAdvice.BEARER_CHALLENGE;
 
   private final JsonMapper jsonMapper;
 

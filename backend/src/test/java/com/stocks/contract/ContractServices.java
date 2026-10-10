@@ -2,6 +2,7 @@ package com.stocks.contract;
 
 import com.stocks.contract.calendar.CalendarAdmin;
 import com.stocks.contract.calendar.MarketCalendar;
+import com.stocks.contract.identity.MeQueries;
 import com.stocks.contract.identity.PlayerQueries;
 import com.stocks.contract.identity.SettingsService;
 import com.stocks.contract.marketdata.DailyMarkService;
@@ -32,7 +33,7 @@ final class ContractServices {
 
   static final List<Class<?>> ALL = List.of(
       // WS1
-      RateLimitService.class, SettingsService.class, PlayerQueries.class,
+      RateLimitService.class, SettingsService.class, PlayerQueries.class, MeQueries.class,
       // WS2
       MarketCalendar.class, CalendarAdmin.class, MarketDataService.class, DailyMarkService.class,
       SplitAdjustments.class,

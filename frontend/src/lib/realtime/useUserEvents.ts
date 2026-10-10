@@ -59,6 +59,9 @@ export function useSessionTopic(): void {
     () =>
       realtime().subscribe('/topic/market.session', (body) => {
         const e = body as SessionEvent
+        // Keep the fetch time with the data: `Clock.now` is still the server time of that fetch, and the
+        // SessionChip derives the server's current time from the pair (now + time since dataUpdatedAt).
+        const updatedAt = qc.getQueryState(queryKeys.clock)?.dataUpdatedAt
         qc.setQueryData<Clock>(queryKeys.clock, (prev) =>
           prev
             ? {
@@ -71,6 +74,7 @@ export function useSessionTopic(): void {
                 earlyClose: e.earlyClose,
               }
             : prev,
+          { updatedAt },
         )
       }),
     [qc],

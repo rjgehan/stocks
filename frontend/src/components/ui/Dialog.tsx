@@ -1,24 +1,16 @@
-import { useEffect, useId, useRef } from 'react'
+import { useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { IconClose } from './icons'
+import { ModalDepthContext, useModal } from './useModal'
 
-/** Centered modal dialog (review sheet on desktop, confirmations). Escape closes; focus is restored. */
+/**
+ * Centered modal dialog (review sheet on desktop, confirmations). Focus moves in once on open, is trapped inside,
+ * and returns on close; Escape closes only this dialog even when it sits on top of a sheet (`useModal`).
+ */
 export function Dialog({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode }) {
   const titleId = useId()
   const panel = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const previous = document.activeElement as HTMLElement | null
-    panel.current?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      previous?.focus?.()
-    }
-  }, [open, onClose])
+  const childDepth = useModal(open, onClose, panel)
   if (!open) return null
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 tablet:items-center tablet:p-6">
@@ -39,8 +31,10 @@ export function Dialog({ open, onClose, title, children, footer }: { open: boole
             <IconClose />
           </button>
         </div>
-        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">{children}</div>
-        {footer ? <div className="shrink-0 border-t border-divider p-4">{footer}</div> : null}
+        <ModalDepthContext.Provider value={childDepth}>
+          <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">{children}</div>
+          {footer ? <div className="shrink-0 border-t border-divider p-4">{footer}</div> : null}
+        </ModalDepthContext.Provider>
       </div>
     </div>,
     document.body,

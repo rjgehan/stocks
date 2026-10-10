@@ -2,7 +2,8 @@
 #
 # One file, two consumers:
 #   A. plain Docker Compose: `docker compose -p stocks up -d` in a directory that also holds `.env`
-#      (copied from .env.example). This is what the GitHub Actions deploy job runs on the CasaOS host.
+#      (copied from .env.example). This is what the GitHub Actions deploy job runs on the CasaOS host, in the
+#      project directory /DATA/AppData/stocks/compose/.
 #   B. CasaOS "App Store → Custom Install → Import". CasaOS reads the `x-casaos` blocks; Docker Compose ignores
 #      every `x-` key.
 #
@@ -15,7 +16,11 @@
 #   - optional services sit behind profiles (`agents`); CasaOS Import leaves them out.
 #
 # Host layout (deploy/scripts/init-host.sh creates it; each deploy refreshes docker-compose.yml and the script):
-#   /DATA/AppData/stocks/{.env, docker-compose.yml, pgdata/, backups/, scripts/pg_backup.sh, agent-data/}
+#   /DATA/AppData/stocks/{.env, pgdata/, backups/, scripts/pg_backup.sh, agent-data/}            the data root
+#   /DATA/AppData/stocks/compose/{docker-compose.yml, .deploy-state, .env -> ../.env}          the project directory
+# The project directory is NOT the data root: CasaOS lists every Compose project, and its Uninstall deletes the
+# project directory even when told to keep the data. Never Uninstall (or "Save" the settings of) this app in CasaOS;
+# stop it with `docker compose -p stocks --project-directory /DATA/AppData/stocks/compose down` (docs/deploy.md §7).
 
 name: stocks
 
@@ -30,6 +35,8 @@ services:
     image: postgres:18.6-alpine
     container_name: stocks-db
     restart: unless-stopped
+    labels:  # Watchtower: never auto-restart the database
+      com.centurylinklabs.watchtower.enable: "false"
     environment:
       POSTGRES_DB: stocks
       POSTGRES_USER: stocks
@@ -64,6 +71,8 @@ services:
     image: ${STOCKS_IMAGE:?set STOCKS_IMAGE in .env, e.g. ghcr.io/OWNER/stocks}:${STOCKS_TAG:-latest}
     container_name: stocks-app
     restart: unless-stopped
+    labels:  # Watchtower: pull and restart on every new image pushed to GHCR
+      com.centurylinklabs.watchtower.enable: "true"
     depends_on:
       db:
         condition: service_healthy
@@ -176,6 +185,8 @@ services:
     image: postgres:18.6-alpine
     container_name: stocks-backup
     restart: unless-stopped
+    labels:  # Watchtower: leave the backup job alone
+      com.centurylinklabs.watchtower.enable: "false"
     depends_on:
       db:
         condition: service_healthy
@@ -235,6 +246,8 @@ services:
     image: ${STOCKS_IMAGE:?set STOCKS_IMAGE in .env, e.g. ghcr.io/OWNER/stocks}-agent-runner:${STOCKS_TAG:-latest}
     container_name: stocks-agent-runner
     restart: unless-stopped
+    labels:  # Watchtower: update together with the app
+      com.centurylinklabs.watchtower.enable: "true"
     depends_on:
       app:
         condition: service_healthy
@@ -279,9 +292,12 @@ x-casaos:
   icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjExMiIgZmlsbD0iIzE1MTgxRSIvPgogIDxwb2x5Z29uIHBvaW50cz0iMTEyLDM0MCAyMDAsMjY4IDI2MiwzMDYgNDAwLDE3MCA0MDAsMzkyIDExMiwzOTIiIGZpbGw9IiMyMkM5OEEiIGZpbGwtb3BhY2l0eT0iMC4xNiIvPgogIDxwb2x5bGluZSBwb2ludHM9IjExMiwzNDAgMjAwLDI2OCAyNjIsMzA2IDQwMCwxNzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzIyQzk4QSIgc3Ryb2tlLXdpZHRoPSI0MCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPGNpcmNsZSBjeD0iNDAwIiBjeT0iMTcwIiByPSIzNCIgZmlsbD0iIzIyQzk4QSIvPgo8L3N2Zz4K
   thumbnail: ""
   screenshot_link: []
+  # The dashboard tile opens scheme://hostname:port_map/index: the tunnel hostname over https. The host port is
+  # bound to 127.0.0.1 and the session cookie is Secure, so http://<casaos-host>:8080 could not sign in anyway.
+  hostname: ${APP_PUBLIC_HOST:-}
   index: /
-  port_map: "8080"
-  scheme: http
+  port_map: "443"
+  scheme: https
   title:
     en_us: Stocks
     en_US: Stocks
@@ -302,8 +318,10 @@ x-casaos:
       en_us: >-
         Before importing, run deploy/scripts/init-host.sh with --casaos-link on the server. It creates
         /DATA/AppData/stocks (with .env and scripts/pg_backup.sh) and links that .env into
-        /var/lib/casaos/apps/stocks/. Fill in .env first; every key must be set. Guide: docs/deploy.md.
+        /var/lib/casaos/apps/stocks/. Fill in .env first; every key must be set. Never Uninstall this app in
+        CasaOS: an Uninstall that does not keep the data deletes /DATA/AppData/stocks. Guide: docs/deploy.md.
       en_US: >-
         Before importing, run deploy/scripts/init-host.sh with --casaos-link on the server. It creates
         /DATA/AppData/stocks (with .env and scripts/pg_backup.sh) and links that .env into
-        /var/lib/casaos/apps/stocks/. Fill in .env first; every key must be set. Guide: docs/deploy.md.
+        /var/lib/casaos/apps/stocks/. Fill in .env first; every key must be set. Never Uninstall this app in
+        CasaOS: an Uninstall that does not keep the data deletes /DATA/AppData/stocks. Guide: docs/deploy.md.

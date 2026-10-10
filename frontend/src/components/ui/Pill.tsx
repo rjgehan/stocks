@@ -11,8 +11,8 @@ const TONES: Record<PillTone, string> = {
   warn: 'bg-warn/15 text-warn',
   ai: 'bg-ai-bg text-ai',
   neutral: 'bg-bg-2 text-text-2',
-  'solid-up': 'bg-up text-white',
-  'solid-down': 'bg-down text-white',
+  'solid-up': 'bg-up text-on-updown',
+  'solid-down': 'bg-down text-on-updown',
   'solid-flat': 'bg-bg-3 text-text-1',
 }
 

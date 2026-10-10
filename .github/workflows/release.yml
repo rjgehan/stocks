@@ -1,13 +1,17 @@
 # Release and deploy (ARCHITECTURE §24.7, docs/deploy.md).
 #
 #   push to main       → CI (ci.yml) → multi-arch image to GHCR (latest + sha-<7>) → deploy to the CasaOS server
-#   push of a v* tag   → CI → image (X.Y.Z, X.Y, sha-<7>); no deploy (dispatch one if you want it)
+#   push of a v* tag   → CI → image (X.Y.Z, X.Y, sha-<7>; never `latest`); no deploy (dispatch one if you want it)
 #   workflow_dispatch  → tag empty: CI → image (sha-<7>) → deploy; tag set: deploy/roll back to that existing tag
 #
+# `latest` comes only from the default branch (flavor latest=false: metadata-action would otherwise add it for every
+# semver tag, so tagging an old commit would move `latest`, which Watchtower and CasaOS Import installs follow).
 # The deploy job runs on the owner's self-hosted runner [self-hosted, casaos] and only when the repository
-# variable DEPLOY_ENABLED is 'true'. It never runs for pull requests (this workflow has no pull_request trigger).
-# Repository variables: DEPLOY_ENABLED, DEPLOY_DIR (default /DATA/AppData/stocks), DEPLOY_SYNC_COMPOSE (true),
-# DEPLOY_PROFILES (e.g. agents), DEPLOY_HEALTH_TIMEOUT (420), DEPLOY_PUBLIC_URL (optional smoke test).
+# variable DEPLOY_ENABLED is 'true', for pushes to main and for dispatches from main or a v* tag. It never runs for
+# pull requests (this workflow has no pull_request trigger). A dispatch with `tag` set from main changes only the
+# image (--no-sync-compose); from a v* tag it also installs that tag's docker-compose.yml.
+# Repository variables: DEPLOY_ENABLED, DEPLOY_DIR (default /DATA/AppData/stocks/compose), DEPLOY_SYNC_COMPOSE
+# (true), DEPLOY_PROFILES (e.g. agents), DEPLOY_HEALTH_TIMEOUT (420), DEPLOY_PUBLIC_URL (optional smoke test).
 name: Release
 
 on:
@@ -28,8 +32,11 @@ on:
 permissions:
   contents: read
 
+# Builds of one ref run one at a time. A tag-only dispatch (deploy or roll back an existing image) gets a group of
+# its own, so it neither waits behind a whole build-and-deploy run nor is replaced by a newer pending push; the
+# deploy job's own `deploy-casaos` group still keeps two deploy.sh runs from overlapping on the server.
 concurrency:
-  group: release-${{ github.ref }}
+  group: ${{ inputs.tag != '' && format('release-rollback-{0}', github.run_id) || format('release-{0}', github.ref) }}
   cancel-in-progress: false
 
 jobs:
@@ -104,6 +111,9 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ needs.meta.outputs.image }}
+          # `latest` only from the explicit raw tag below (default branch), never implied by a semver tag
+          flavor: |
+            latest=false
           tags: |
             type=raw,value=sha-${{ needs.meta.outputs.short_sha }}
             type=semver,pattern={{version}}
@@ -134,6 +144,8 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ needs.meta.outputs.image }}-agent-runner
+          flavor: |
+            latest=false
           tags: |
             type=raw,value=sha-${{ needs.meta.outputs.short_sha }}
             type=semver,pattern={{version}}
@@ -176,7 +188,8 @@ jobs:
       !cancelled() && vars.DEPLOY_ENABLED == 'true' &&
       (needs.image.result == 'success' || (needs.image.result == 'skipped' && needs.meta.outputs.build == 'false')) &&
       ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-       (github.event_name == 'workflow_dispatch' && inputs.deploy))
+       (github.event_name == 'workflow_dispatch' && inputs.deploy &&
+        (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))))
     runs-on: [self-hosted, casaos]
     timeout-minutes: 30
     permissions:
@@ -188,7 +201,7 @@ jobs:
     env:
       STOCKS_IMAGE: ${{ needs.meta.outputs.image }}
       DEPLOY_TAG: ${{ needs.meta.outputs.deploy_tag }}
-      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/DATA/AppData/stocks' }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/DATA/AppData/stocks/compose' }}
       DEPLOY_SYNC_COMPOSE: ${{ vars.DEPLOY_SYNC_COMPOSE || 'true' }}
       DEPLOY_HEALTH_TIMEOUT: ${{ vars.DEPLOY_HEALTH_TIMEOUT || '420' }}
       COMPOSE_PROFILES: ${{ vars.DEPLOY_PROFILES }}
@@ -210,7 +223,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Deploy ${{ needs.meta.outputs.deploy_tag }}
-        run: bash deploy/scripts/deploy.sh --tag "$DEPLOY_TAG" --sync-from "$GITHUB_WORKSPACE"
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          args=(--tag "$DEPLOY_TAG" --sync-from "$GITHUB_WORKSPACE")
+          if [ -n "$INPUT_TAG" ] && [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            # A rollback (or redeploy) of an existing image from main: change only the image. main's newest
+            # docker-compose.yml may not fit an older image; dispatch from the matching v* tag to take its compose file.
+            args+=(--no-sync-compose)
+          fi
+          bash deploy/scripts/deploy.sh "${args[@]}"
       - name: Public URL smoke test
         if: success() && vars.DEPLOY_PUBLIC_URL != ''
         continue-on-error: true

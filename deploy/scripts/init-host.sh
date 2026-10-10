@@ -6,10 +6,16 @@
 #        --url https://stocks.example.com [--casaos-link] [--dir /DATA/AppData/stocks]
 #
 # It creates DIR (default /DATA/AppData/stocks) with pgdata/, backups/, scripts/pg_backup.sh and agent-data/,
-# creates DIR/.env from .env.example with fresh DB_PASSWORD, API_KEY_PEPPER and ENGINE_SEED (mode 600), and gives
-# the runner user (--owner) DIR itself, .env and scripts/ so the deploy job can update them. pgdata/ and
-# backups/ stay with root and the postgres container. --casaos-link also links DIR/.env into
-# /var/lib/casaos/apps/stocks/ for a CasaOS "Import" install.
+# creates DIR/.env from .env.example with fresh DB_PASSWORD, API_KEY_PEPPER and ENGINE_SEED (mode 600), and
+# creates the Compose project directory DIR/compose/ with the link compose/.env -> ../.env. The project directory
+# is kept apart from the data on purpose: CasaOS lists every Compose project, and its "Uninstall" deletes the
+# project directory (os.RemoveAll) even when you keep the data; that now removes only compose/ and the link. (An
+# Uninstall that does not keep the data still deletes DIR: never uninstall this app in CasaOS.)
+# A host set up with the old layout (docker-compose.yml directly in DIR) is migrated: the compose file, its .bak and
+# .deploy-state move into compose/. The runner user (--owner) gets DIR itself, .env, compose/, scripts/ and
+# agent-data/ so the deploy job can update them; pgdata/ and backups/ stay with root and the postgres container.
+# --url also sets APP_PUBLIC_HOST (the CasaOS dashboard tile opens https://APP_PUBLIC_HOST). --casaos-link links
+# DIR/.env into /var/lib/casaos/apps/stocks/ for a CasaOS "Import" install.
 #
 # Run it from a checkout of the repository, or from a folder holding .env.example, init-host.sh and
 # pg_backup.sh (use --from FOLDER).
@@ -22,7 +28,7 @@ URL=""
 CASAOS_LINK=false
 FROM=""
 
-usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -75,7 +81,7 @@ set_key() { # set_key FILE KEY VALUE (only when the key is empty or missing)
 }
 
 echo "== $DIR"
-mkdir -p "$DIR" "$DIR/pgdata" "$DIR/backups" "$DIR/scripts" "$DIR/agent-data"
+mkdir -p "$DIR" "$DIR/pgdata" "$DIR/backups" "$DIR/scripts" "$DIR/agent-data" "$DIR/compose"
 install -m 0755 "$BACKUP_SCRIPT" "$DIR/scripts/pg_backup.sh"
 echo "   scripts/pg_backup.sh installed"
 
@@ -94,14 +100,39 @@ if [[ -n "$IMAGE" ]]; then
     && cat "$DIR/.env.tmp" > "$DIR/.env" && rm -f "$DIR/.env.tmp"
 fi
 if [[ -n "$URL" ]]; then
-  awk -v v="$URL" '/^APP_PUBLIC_URL=/ { print "APP_PUBLIC_URL=" v; next } { print }' "$DIR/.env" > "$DIR/.env.tmp" \
-    && cat "$DIR/.env.tmp" > "$DIR/.env" && rm -f "$DIR/.env.tmp"
+  host="${URL#https://}"; host="${host%%/*}"
+  for kv in "APP_PUBLIC_URL=$URL" "APP_PUBLIC_HOST=$host"; do
+    k="${kv%%=*}"
+    if grep -qE "^${k}=" "$DIR/.env"; then
+      awk -v k="$k" -v line="$kv" '$0 ~ "^" k "=" { print line; next } { print }' "$DIR/.env" > "$DIR/.env.tmp" \
+        && cat "$DIR/.env.tmp" > "$DIR/.env" && rm -f "$DIR/.env.tmp"
+    else
+      echo "$kv" >> "$DIR/.env"
+    fi
+  done
+fi
+
+# The Compose project directory (deploy.sh's DEPLOY_DIR). Its .env is a relative link to the real one.
+if [[ -f "$DIR/docker-compose.yml" && ! -e "$DIR/compose/docker-compose.yml" ]]; then
+  for f in docker-compose.yml docker-compose.yml.bak .deploy-state; do
+    if [[ -e "$DIR/$f" ]]; then mv "$DIR/$f" "$DIR/compose/$f"; fi
+  done
+  echo "   migrated docker-compose.yml (+ .bak, .deploy-state) into compose/. The running containers keep their old"
+  echo "   project-directory labels until recreated: run once, as the runner user,"
+  echo "   docker compose -p stocks --project-directory $DIR/compose -f $DIR/compose/docker-compose.yml up -d --force-recreate"
+fi
+if [[ -L "$DIR/compose/.env" || ! -e "$DIR/compose/.env" ]]; then
+  ln -sfn ../.env "$DIR/compose/.env"
+  echo "   compose/.env -> ../.env"
+else
+  echo "   WARNING: $DIR/compose/.env is a regular file, not a link to ../.env; leaving it alone" >&2
 fi
 
 if [[ -n "$OWNER" ]]; then
   chown "$OWNER": "$DIR" "$DIR/.env" "$DIR/agent-data"
-  chown -R "$OWNER": "$DIR/scripts"
-  echo "   $DIR, .env, scripts/ and agent-data/ now belong to $OWNER"
+  chown -R "$OWNER": "$DIR/scripts" "$DIR/compose"
+  chown -h "$OWNER": "$DIR/compose/.env"
+  echo "   $DIR, .env, compose/, scripts/ and agent-data/ now belong to $OWNER"
 fi
 
 if [[ "$CASAOS_LINK" == "true" ]]; then
@@ -110,7 +141,9 @@ if [[ "$CASAOS_LINK" == "true" ]]; then
   echo "   linked /var/lib/casaos/apps/stocks/.env -> $DIR/.env (for CasaOS Import)"
 fi
 
-missing="$(grep -E '^(APP_PUBLIC_URL|STOCKS_IMAGE|ALPACA_KEY_ID|ALPACA_SECRET_KEY|FINNHUB_TOKEN|ADMIN_BOOTSTRAP_USERNAME|ADMIN_BOOTSTRAP_PASSWORD)=(.*example\.com.*|.*your-github-user.*)?$' "$DIR/.env" | cut -d= -f1 | tr '\n' ' ' || true)"
+missing="$(grep -E '^(APP_PUBLIC_URL|APP_PUBLIC_HOST|STOCKS_IMAGE|ALPACA_KEY_ID|ALPACA_SECRET_KEY|FINNHUB_TOKEN|ADMIN_BOOTSTRAP_USERNAME|ADMIN_BOOTSTRAP_PASSWORD)=(.*example\.com.*|.*your-github-user.*)?$' "$DIR/.env" | cut -d= -f1 | tr '\n' ' ' || true)"
 echo
 echo "Done. Edit $DIR/.env next (sudo -u ${OWNER:-<owner>} nano $DIR/.env)."
+echo "Never use Uninstall or the settings dialog of this app in CasaOS; stop it with"
+echo "  docker compose -p stocks --project-directory $DIR/compose down   (docs/deploy.md §7)"
 if [[ -n "$missing" ]]; then echo "Still to fill in: $missing"; fi

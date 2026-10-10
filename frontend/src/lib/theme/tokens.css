@@ -15,6 +15,9 @@
   --text-1: #11141a; --text-2: #5b6270; --text-3: #8a919e; --text-inverse: #ffffff;
   --up: #0fa968; --up-bg: rgba(15, 169, 104, 0.1); --up-strong: #0b8a55;
   --down: #e23b4e; --down-bg: rgba(226, 59, 78, 0.1); --down-strong: #c22a3c; --flat: #8a919e;
+  /* text on solid --up/--down fills (Buy/Sell buttons, pills): ≥ 4.5:1 on all four fills in both themes, which
+     white is not (2.15:1 on dark --up). Same value in every theme, so the dark blocks do not repeat it. */
+  --on-updown: #0d0f13;
   --accent: #2f6bff; --accent-hover: #2559db; --accent-bg: rgba(47, 107, 255, 0.1);
   --warn: #d98a00; --session-ext: #d98a00; --session-overnight: #7c5cff; --session-closed: #8a919e;
   --ai: #8b5cf6; --ai-bg: rgba(139, 92, 246, 0.12); --human: #2f6bff;

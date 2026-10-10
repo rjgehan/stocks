@@ -58,6 +58,7 @@
   --color-down: var(--down);
   --color-down-bg: var(--down-bg);
   --color-down-strong: var(--down-strong);
+  --color-on-updown: var(--on-updown);
   --color-flat: var(--flat);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);

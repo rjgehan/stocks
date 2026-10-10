@@ -5,6 +5,7 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { routeTree } from './routeTree.gen'
 import { isApiError } from './lib/api/problem'
 import { queryKeys } from './lib/api/queryKeys'
+import { stopRealtime } from './lib/realtime/stomp'
 import { initTheme } from './lib/theme/theme'
 import './styles.css'
 
@@ -13,8 +14,10 @@ initTheme()
 const queryClient: QueryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error) => {
-      // Session expired mid-use: forget who we were and send the player to /login (§22.2).
+      // Session expired mid-use: forget who we were, close the realtime connection that belonged to that session
+      // (§19), and send the player to /login (§22.2).
       if (isApiError(error) && error.status === 401 && router.state.location.pathname !== '/login') {
+        stopRealtime()
         queryClient.setQueryData(queryKeys.me, null)
         void router.navigate({ to: '/login', search: { redirect: router.state.location.href } })
       }

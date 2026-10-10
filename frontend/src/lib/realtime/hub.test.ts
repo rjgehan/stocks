@@ -60,6 +60,45 @@ describe('RealtimeHub (§19 ref-counted subscriptions)', () => {
   })
 })
 
+describe('RealtimeHub lifetime (one connection per signed-in session)', () => {
+  it('stop() closes the connection and forgets every handler, so the next session starts a fresh CONNECT', () => {
+    const driver = fakeDriver()
+    const hub = new RealtimeHub(driver)
+    const oldAccount = vi.fn<MessageHandler>()
+    const resync = vi.fn<() => void>()
+    const offOld = hub.subscribe('/user/queue/account', oldAccount)
+    hub.onResync(resync)
+    driver.hooks().onConnected()
+
+    hub.stop() // sign-out
+    expect(driver.stop).toHaveBeenCalledTimes(1)
+    expect(hub.getStatus()).toBe('idle')
+    expect(hub.refCount('/user/queue/account')).toBe(0)
+
+    // next sign-in: a new subscription opens a new connection (a new STOMP CONNECT under the new session)
+    const newAccount = vi.fn<MessageHandler>()
+    hub.subscribe('/user/queue/account', newAccount)
+    expect(driver.start).toHaveBeenCalledTimes(2)
+    offOld() // a late unsubscribe from the previous session must not drop the new subscriber
+    expect(hub.refCount('/user/queue/account')).toBe(1)
+    vi.mocked(driver.subscribe).mockClear()
+    driver.hooks().onConnected()
+    expect(driver.subscribe).toHaveBeenCalledWith('/user/queue/account')
+    expect(resync).not.toHaveBeenCalled() // first connect of the new session; old resync callbacks are gone
+    driver.hooks().onMessage('/user/queue/account', { equity: '1.00' })
+    expect(newAccount).toHaveBeenCalledWith({ equity: '1.00' })
+    expect(oldAccount).not.toHaveBeenCalled()
+  })
+
+  it('stop() before anything was started is harmless', () => {
+    const driver = fakeDriver()
+    const hub = new RealtimeHub(driver)
+    hub.stop()
+    expect(driver.stop).not.toHaveBeenCalled()
+    expect(hub.getStatus()).toBe('idle')
+  })
+})
+
 describe('quoteStore', () => {
   const base: Quote = {
     symbol: 'AAPL', bid: '227.39', bidSize: 300, ask: '227.41', askSize: 200, last: '227.40', lastSize: 100,

@@ -42,7 +42,7 @@ import tools.jackson.databind.json.JsonMapper;
  *       403 {@code ADMIN_REQUIRES_SESSION}), then session + {@code ROLE_ADMIN} + CSRF.</li>
  *   <li><b>h2-console</b> (dev only, {@code spring.h2.console.enabled}).</li>
  *   <li><b>api</b> {@code /api/**} (incl. Swagger UI: {@code /api/docs} → {@code /api/swagger-ui/index.html}),
- *       {@code /mcp}, {@code /v3/api-docs/**}: {@code Bearer stk_…}
+ *       {@code /mcp}, {@code /v3/**} (the OpenAPI JSON and YAML): {@code Bearer stk_…}
  *       ({@link BearerTokenFilter}: stateless, cookies ignored, no CSRF) or a session cookie + CSRF. Public: only
  *       {@code GET /auth/csrf}, {@code POST /auth/login}, {@code POST /auth/signup}. Per-route scopes and
  *       session-only routes per §18 ({@link RouteAuthorization}).</li>
@@ -63,8 +63,11 @@ public class SecurityConfig {
       + "connect-src 'self' wss:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; "
       + "form-action 'self'";
 
-  static final String[] API_PATHS = {
-      "/api/**", "/mcp", "/mcp/**", "/v3/api-docs", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"};
+  /**
+   * Chain 2. {@code /v3/**} covers every springdoc document path: {@code /v3/api-docs}, its groups and the YAML
+   * variants ({@code /v3/api-docs.yaml}), which would otherwise fall through to the public web chain.
+   */
+  static final String[] API_PATHS = {"/api/**", "/mcp", "/mcp/**", "/v3/**", "/swagger-ui/**", "/swagger-ui.html"};
 
   /** Anonymous callers may use these (their CSRF failures stay 403 {@code CSRF_INVALID}). */
   static final RequestMatcher PUBLIC_API = new OrRequestMatcher(
@@ -209,8 +212,8 @@ public class SecurityConfig {
             // §18.2 league:read
             .requestMatchers("/api/v1/leaderboard", "/api/v1/players", "/api/v1/players/**", "/api/v1/feed")
                 .access(RouteAuthorization.scope(Scopes.LEAGUE_READ))
-            // everything else on this chain (incl. /mcp, /v3/api-docs, Swagger UI, /api/v1/test/**): any player.
-            // MCP tools check their own scopes (§20).
+            // everything else on this chain (incl. /mcp, /v3/**, Swagger UI, /api/v1/test/**): any player.
+            // Each MCP tool's scope is checked per call by McpToolHandler (McpToolCatalog.SCOPES, §20.3).
             .anyRequest().authenticated());
     common(http, errors, contexts, true);
     return http.build();

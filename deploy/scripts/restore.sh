@@ -9,10 +9,11 @@
 # The image is not changed. If the dump comes from an OLDER release than the running image, Flyway applies the
 # missing migrations at start; if it comes from a NEWER one, deploy that release's tag first.
 #
-# Environment: DEPLOY_DIR (default /DATA/AppData/stocks), COMPOSE_PROJECT (default stocks).
+# Environment: DEPLOY_DIR, the Compose project directory (default /DATA/AppData/stocks/compose, see deploy.sh),
+# COMPOSE_PROJECT (default stocks).
 set -euo pipefail
 
-DEPLOY_DIR="${DEPLOY_DIR:-/DATA/AppData/stocks}"
+DEPLOY_DIR="${DEPLOY_DIR:-/DATA/AppData/stocks/compose}"
 PROJECT="${COMPOSE_PROJECT:-stocks}"
 DUMP=""
 YES=false
@@ -20,7 +21,7 @@ YES=false
 for a in "$@"; do
   case "$a" in
     --yes) YES=true ;;
-    -h | --help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h | --help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option $a" >&2; exit 64 ;;
     *) DUMP="$a" ;;
   esac

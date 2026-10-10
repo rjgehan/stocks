@@ -3,6 +3,7 @@ package com.stocks.identity;
 import com.stocks.common.domain.TimeInForce;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
+import com.stocks.contract.identity.MeQueries;
 import com.stocks.contract.identity.dto.MeDto;
 import com.stocks.contract.identity.dto.PreferencesDto;
 import com.stocks.contract.security.PlayerPrincipal;
@@ -17,13 +18,13 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Builds §18.3 {@code Me} for {@code GET /me}, login and (later) signup and MCP {@code whoami}. The player fields come
- * from {@code player}; {@code accountId}/{@code runNo} from the player's ACTIVE {@code account} row (a read-only
- * lookup of WS3's table; null and 0 until WS3 opens the account); {@code authMethod} and {@code scopes} from the
- * caller's principal (a session holds all four scopes, a key its own).
+ * {@link MeQueries} (§5.3): builds §18.3 {@code Me} for {@code GET /me}, login, (later) signup and MCP
+ * {@code whoami}. The player fields come from {@code player}; {@code accountId}/{@code runNo} from the player's ACTIVE
+ * {@code account} row (a read-only lookup of WS3's table; null and 0 until WS3 opens the account); {@code authMethod}
+ * and {@code scopes} from the caller's principal (a session holds all four scopes, a key its own).
  */
 @Service
-public class MeService {
+public class MeService implements MeQueries {
 
   private static final Logger log = LoggerFactory.getLogger(MeService.class);
 
@@ -44,6 +45,7 @@ public class MeService {
 
   record ActiveAccount(String publicId, int runNo) {}
 
+  @Override
   public MeDto me(PlayerPrincipal principal) {
     PlayerRecord p = players.byId(principal.playerId())
         .orElseThrow(() -> ApiException.of(ErrorCode.UNAUTHENTICATED, "This player no longer exists."));

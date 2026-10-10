@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.mcp.annotation.McpTool;
@@ -133,6 +134,43 @@ class McpToolHandlerTest {
     CallToolResult r = spec.callHandler().apply(McpTransportContext.EMPTY,
         new CallToolRequest("whoami", Map.of("amount", "1")));
     assertThat(text(r).get("code").asString()).isEqualTo("UNAUTHENTICATED");
+  }
+
+  // ------------------------------------------------------------------------------------------- scopes (§20.3)
+
+  public static class Counting {
+    int calls;
+
+    @McpTool(name = "get_account", generateOutputSchema = true)
+    public EchoDto account(McpTransportContext ctx) {
+      calls++;
+      return new EchoDto(null, null, CurrentPlayer.require(ctx).handle(), null, null);
+    }
+  }
+
+  @Test
+  void aCallerWithoutTheToolsScopeGetsForbiddenScopeAndTheToolNeverRuns() throws Exception {
+    Counting tools = new Counting();
+    SyncToolSpecification account = McpToolCatalog.specification(tools,
+        Counting.class.getMethod("account", McpTransportContext.class), MAPPER);
+    PlayerPrincipal marketOnly = TestPrincipals.apiKey(42, "ply_01", "claude", PlayerKind.AI,
+        Set.of(Scopes.MARKET_READ), 9);
+
+    CallToolResult denied = account.callHandler().apply(CurrentPlayer.mcpContext(marketOnly, META),
+        new CallToolRequest("get_account", Map.of()));
+    assertThat(denied.isError()).isTrue();
+    assertThat(text(denied).get("code").asString()).isEqualTo("FORBIDDEN_SCOPE");
+    assertThat(text(denied).get("message").asString()).contains("account:read");
+
+    CallToolResult anonymous = account.callHandler().apply(McpTransportContext.EMPTY,
+        new CallToolRequest("get_account", Map.of()));
+    assertThat(text(anonymous).get("code").asString()).isEqualTo("UNAUTHENTICATED");
+    assertThat(tools.calls).isZero();
+
+    CallToolResult allowed = account.callHandler().apply(CurrentPlayer.mcpContext(BOT, META),
+        new CallToolRequest("get_account", Map.of()));
+    assertThat(allowed.isError()).isFalse();
+    assertThat(tools.calls).isEqualTo(1);
   }
 
   // ------------------------------------------------------------------------------------------- tool rules

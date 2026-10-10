@@ -7,6 +7,9 @@
  * - Resync: on reconnect, and when the tab becomes visible again, registered callbacks run (the app
  *   invalidates ['account'], ['positions'], ['orders','OPEN'] and ['leaderboard']). Missed messages are
  *   therefore harmless; there is no durable outbox.
+ * - Lifetime: the connection belongs to one signed-in session. STOMP authenticates once, at the handshake, so
+ *   sign-out and an expired session call `stop()`: it closes the socket (no reconnect loop on /login) and forgets
+ *   every handler, so the next sign-in starts a fresh CONNECT under the new player instead of reusing the old one.
  */
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting'
 
@@ -62,7 +65,14 @@ export class RealtimeHub {
     })
   }
 
+  /**
+   * Closes the connection and forgets every subscription and resync callback (sign-out, 401). Unsubscribe
+   * functions handed out before are then no-ops; a later `subscribe` opens a new connection.
+   */
   stop(): void {
+    this.handlers.clear()
+    this.resyncListeners.clear()
+    this.everConnected = false
     if (!this.started) return
     this.started = false
     this.connected = false
@@ -71,22 +81,23 @@ export class RealtimeHub {
   }
 
   subscribe(destination: string, handler: MessageHandler): () => void {
-    let set = this.handlers.get(destination)
-    if (!set) {
-      set = new Set()
-      this.handlers.set(destination, set)
+    let existing = this.handlers.get(destination)
+    if (!existing) {
+      existing = new Set()
+      this.handlers.set(destination, existing)
       if (this.connected) this.driver.subscribe(destination)
     }
+    const set = existing
     set.add(handler)
     this.start()
     let active = true
     return () => {
       if (!active) return
       active = false
-      const current = this.handlers.get(destination)
-      if (!current) return
-      current.delete(handler)
-      if (current.size === 0) {
+      // stop() dropped this set; a newer subscription may own the destination now
+      if (this.handlers.get(destination) !== set) return
+      set.delete(handler)
+      if (set.size === 0) {
         this.handlers.delete(destination)
         if (this.connected) this.driver.unsubscribe(destination)
       }

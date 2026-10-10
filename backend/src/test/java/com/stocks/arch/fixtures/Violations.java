@@ -7,6 +7,9 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * Deliberate §5.2 violations, used only by {@code ArchitectureRulesSelfTest} to prove each rule fires. Test sources
@@ -23,6 +26,26 @@ public final class Violations {
 
     public Double ratio(float f) {
       return (double) f;
+    }
+  }
+
+  /** Rule 4, hidden in arrays and generic type arguments. */
+  public static final class HiddenFloatingMoney {
+    double[] prices;
+    List<Double> marks;
+
+    public Map<String, Optional<Float>> weights(List<double[]> samples) {
+      return Map.of();
+    }
+  }
+
+  /** Fine for rule 4: no floating point anywhere in the signatures. */
+  public static final class DecimalMoney {
+    BigDecimal[] prices;
+    List<BigDecimal> marks;
+
+    public Map<String, Optional<Long>> sizes(List<int[]> samples) {
+      return Map.of();
     }
   }
 

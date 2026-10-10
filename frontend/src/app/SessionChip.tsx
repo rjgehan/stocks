@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useClock } from '@/lib/api/hooks/market'
 import type { SessionType } from '@/lib/api/types'
-import { formatCountdown, formatTimeEt } from '@/lib/format/time'
+import { formatCountdown, formatSessionStartEt, serverNowMs } from '@/lib/format/time'
 import { cx } from '@/components/ui/cx'
 
 const SESSION: Record<SessionType, { label: string; dot: string; verb: string }> = {
@@ -20,14 +20,19 @@ function useNow(intervalMs: number): number {
   return now
 }
 
-/** "● Market Open · closes 2:14:07" (§22.3), driven by GET /market/clock and /topic/market.session. */
+/**
+ * "● Market Open · closes 2:14:07" (§22.3), driven by GET /market/clock and /topic/market.session. The countdown
+ * runs on the server's clock (`Clock.now` plus the time since it was fetched), not the device's: the dev and e2e
+ * backends may run an offset or anchored SIM clock (§15.7).
+ */
 export function SessionChip({ compact, detailClassName }: { compact?: boolean; detailClassName?: string }) {
-  const { data: clock } = useClock()
-  const now = useNow(1000)
+  const { data: clock, dataUpdatedAt } = useClock()
+  const localNow = useNow(1000)
   if (!clock) return <span className="h-7 w-40 animate-pulse rounded-full bg-bg-2" aria-hidden="true" />
+  const now = serverNowMs(clock.now, dataUpdatedAt, localNow)
   const s = SESSION[clock.session]
   const target = clock.session === 'CLOSED' ? null : clock.sessionEndsAt
-  const detail = target ? `${s.verb} ${formatCountdown(Date.parse(target) - now)}` : `opens ${formatTimeEt(clock.nextSessionAt)}`
+  const detail = target ? `${s.verb} ${formatCountdown(Date.parse(target) - now)}` : `opens ${formatSessionStartEt(clock.nextSessionAt, now)}`
   return (
     <span
       className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border bg-bg-2 px-2.5 text-caption font-medium whitespace-nowrap"

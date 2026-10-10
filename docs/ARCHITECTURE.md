@@ -321,7 +321,7 @@ com.stocks
 │   └── domain/      all enums in §7, WireEnum (the §6.3 wire-value enums implement it)
 ├── contract/                                           [owner per sub-package; CONTRACT]  §5.3 interfaces and records
 │   ├── security/    PlayerPrincipal, RequestMeta, CurrentPlayer, RateLimitService, RateLimitStatus, Scopes [WS1]
-│   ├── identity/    SettingsService, PlayerQueries                                                       [WS1]
+│   ├── identity/    SettingsService, PlayerQueries, MeQueries                                            [WS1]
 │   ├── jobs/        ScheduledJob, JobOccurrence, CatchUpPolicy, PeriodicTask                            [WS1]
 │   ├── calendar/    MarketCalendar, CalendarAdmin, TradingDay, SessionState, SessionTransition,
 │   │                CalendarOverride, SessionChanged (event)                                             [WS2]
@@ -353,7 +353,7 @@ com.stocks
 │                                                              SecurityErrors, ProblemWriter, SessionLogin, RequestMetas
 ├── identity/                                           [WS1]  PlayerService, PlayerQueriesImpl, ApiKeyService, InviteService,
 │                                                              SettingsServiceImpl (app_setting), BootstrapAdminRunner, DemoSeeder,
-│                                                              LoginService, MeService, AccountProvisioner (first account via WS3/WS4),
+│                                                              LoginService, MeService (MeQueries), AccountProvisioner (first account via WS3/WS4),
 │                                                              web/{AuthController, MeController, MyApiKeyController}
 ├── admin/                                              [WS1]  AdminPlayerService, web/{AdminPlayerController,
 │                                                              AdminMoneyController, AdminKeyController, AdminSettingsController,
@@ -424,7 +424,7 @@ Dependency direction inside WS1 (rule 7): `identity → security → config`, `i
 1. Only classes in `com.stocks.trading.engine..`, `com.stocks.trading.account..` and `com.stocks.trading.corpactions..` may depend on `com.stocks.trading.engine.write..`. The writers run only inside engine command handlers: each writer method calls `EngineThread.assertCurrent()`, which throws if the caller is not `engine-main` (or `DirectEngineExecutor` in tests).
 2. `..web..`, `com.stocks.mcp..`, `com.stocks.realtime..` and `com.stocks.admin..` must not depend on `..engine..` (other than `EngineCommand` records submitted through services) or on any `*Writer`. They use the `com.stocks.contract..` interfaces.
 3. `com.stocks.mcp..` must not depend on `com.stocks.admin..`.
-4. No field, parameter or return type of `double`, `float`, `Double` or `Float` in `com.stocks.trading..`, `com.stocks.portfolio..`, `com.stocks.league..`, `com.stocks.contract..` or `com.stocks.common.money..`.
+4. No field, parameter or return type of `double`, `float`, `Double` or `Float` in `com.stocks.trading..`, `com.stocks.portfolio..`, `com.stocks.league..`, `com.stocks.contract..` or `com.stocks.common.money..`, including inside arrays and generic type arguments (`double[]`, `List<Double>`, `Map<String, Optional<Float>>`).
 5. Outside `com.stocks.common.time`, these calls are forbidden: `Instant.now()`, `LocalDate.now()`, `LocalDateTime.now()`, `ZonedDateTime.now()`, `System.currentTimeMillis()`, `ZoneId.systemDefault()`, `new java.util.Date()`; also `OffsetDateTime.now()`, `LocalTime.now()`, the `now(ZoneId)` overloads and `Clock.systemUTC()`/`systemDefaultZone()`, which read the same system clock. (`System.nanoTime()` stays allowed: it measures durations, e.g. `PeriodicTask` intervals.)
 6. `new BigDecimal(double)` and `BigDecimal.valueOf(double)` are forbidden everywhere.
 7. `slices().matching("com.stocks.(*)..").should().beFreeOfCycles()`. This passes because every cross-feature call goes through `com.stocks.contract..` (rule 8), and market-data fan-out goes through `List<MarketUpdateListener>` (the engine and `QuoteFanout` both implement it), so `marketdata` never depends on `realtime` or `trading`.
@@ -500,6 +500,9 @@ public interface PlayerQueries {
   Optional<PlayerSummaryDto> byHandle(String handle);  Optional<PlayerSummaryDto> byId(long playerId);
   List<PlayerSummaryDto> all(PlayerKind kindOrNull, boolean includeInactive);
   PlayerStatus status(long playerId);                        // cached; AdminPlayerService evicts synchronously on change
+}
+public interface MeQueries {                                 // identity.MeService; REST GET /me, login, MCP whoami
+  MeDto me(PlayerPrincipal principal);                       // ApiException(UNAUTHENTICATED) if the player is gone
 }
 
 // ===== com.stocks.contract.jobs [WS1]  (§25) =====
@@ -1873,6 +1876,8 @@ Player status (`player.status`, API keys, sessions) belongs to WS1. Account stat
 | Unfreeze | Admin | `status=ACTIVE`; evict caches. Keys that were not revoked work again. | `liftAdminRestriction` → `LiftRestrictionCmd`: restriction becomes NONE, or the GFV restriction recomputed from `account_violation` (§10.4). |
 | Disable | Admin (`PATCH status: DISABLED`) | `status=DISABLED` (login refused); delete sessions; evict caches; revoke keys only if requested. | `restrict(…, FROZEN, PLAYER_DISABLED, reason)`. The player is hidden from the leaderboard (`includeInactive=false`). |
 | Enable | Admin (`PATCH status: ACTIVE`) | `status=ACTIVE` | `liftAdminRestriction` |
+| Role change | Admin (`PATCH role`) | `role=…`; **delete the player's Spring Session rows** (by `PRINCIPAL_NAME`, the player's public id, exactly as freeze does) and evict the caches. `ROLE_ADMIN` is computed once at login and stored in the session (§17.1), so a demoted admin would otherwise keep admin powers for the 14-day session lifetime; a promoted human logs in again to get it. | — |
+| API trading revoked | Admin (`PATCH apiTradingAllowed: false`) | Remove the `trade` scope from the player's personal keys and evict the key cache (§17.2), so a removed privilege ends at once. | — |
 
 What a frozen or disabled bot sees is fixed by the authentication outcome order in §7.2: `403 PLAYER_FROZEN` / `PLAYER_DISABLED`, or `401 API_KEY_REVOKED` if its keys were revoked.
 
@@ -2744,15 +2749,15 @@ excessVsBenchmark(a,b) = TWR(a,b) − (B_b / B_a − 1)      (live B_b uses SPY'
 | # | Matcher | Authentication | Notes |
 |---|---|---|---|
 | 1 | `/api/v1/admin/**` | **Session cookie only**, `hasRole('ADMIN')`, CSRF | `AdminSessionOnlyFilter` returns **403 `ADMIN_REQUIRES_SESSION`** for any request carrying an `Authorization` header, even the admin's own key. `@RecentAuth(15m)` guards cash transfers, resets, freeze, key issuance, role changes and the break-glass live view; when stale it returns 403 `RECENT_AUTH_REQUIRED` and the UI prompts for `POST /api/v1/auth/reauth`. In production, Cloudflare Access with MFA additionally fronts `/admin*` and `/api/v1/admin/*` (§24.5). |
-| 2 | `/api/**`, `/mcp`, `/v3/api-docs/**` (Swagger UI lives under `/api`: `/api/docs` → `/api/swagger-ui/index.html`) | `Authorization: Bearer stk_…` → `ApiKeyAuthenticationProvider` (stateless, no CSRF, cookies ignored). Otherwise a session cookie plus CSRF. | Every 401 in this chain (including `/mcp` with no credentials) carries `WWW-Authenticate: Bearer realm="stocks"` (Phase 2 adds `resource_metadata="…"`). Public in this chain: only `POST /api/v1/auth/login`, `POST /api/v1/auth/signup`, `GET /api/v1/auth/csrf`. springdoc derives the UI root from `springdoc.swagger-ui.path=/api/docs`, so the UI and its assets are under `/api/swagger-ui/**` (verified with springdoc 3.1.1), inside this chain. |
+| 2 | `/api/**`, `/mcp`, `/v3/**` (every springdoc document: `/v3/api-docs`, `/v3/api-docs.yaml`, groups; Swagger UI lives under `/api`: `/api/docs` → `/api/swagger-ui/index.html`) | `Authorization: Bearer stk_…` → `ApiKeyAuthenticationProvider` (stateless, no CSRF, cookies ignored). Otherwise a session cookie plus CSRF. | Every 401 in this chain (including `/mcp` with no credentials) carries `WWW-Authenticate: Bearer realm="stocks"` (Phase 2 adds `resource_metadata="…"`): the security layer's own 401s (`SecurityErrors`, `BearerTokenFilter`) and the 401s that controllers raise (`BAD_CREDENTIALS` from login, `ApiException(UNAUTHENTICATED)`), which `ProblemDetailsAdvice` answers with the same challenge. Public in this chain: only `POST /api/v1/auth/login`, `POST /api/v1/auth/signup`, `GET /api/v1/auth/csrf`. springdoc derives the UI root from `springdoc.swagger-ui.path=/api/docs`, so the UI and its assets are under `/api/swagger-ui/**` (verified with springdoc 3.1.1), inside this chain. |
 | 3 | `/ws` | Session cookie at the handshake. CSRF uses **the same `CookieCsrfTokenRepository.withHttpOnlyFalse()`** as chain 2, and the SPA sends the raw `XSRF-TOKEN` cookie value as `X-XSRF-TOKEN` in the STOMP `CONNECT` headers. | WS5 publishes a bean named `csrfChannelInterceptor` that compares the **unmasked** token, replacing the default `XorCsrfChannelInterceptor` (which expects a masked token and would reject the raw cookie value). A WebSocket IT connects with the raw cookie token and expects success, and without it expects an ERROR frame. Allowed origins: `stocks.public-url` (plus `http://localhost:5173` in dev). |
 | 4 | everything else | none | Static SPA, `index.html` fallback. The SPA shell holds no data. `/h2-console` is dev only. |
 
 Phase 2 adds a chain before chain 1 (`/oauth2/**`, `/.well-known/**`, the Authorization Server) and a JWT branch in chain 2 (`aud = ${public-url}/mcp`).
 
 **Implementation notes** (`security.SecurityConfig`, Phase 0; all chains answer 401/403 with the §6.5 problem body):
-- **Chain order in code:** actuator (management port 8081, `EndpointRequest.toAnyEndpoint()`; the exposed endpoints are open there because the port is never published or tunneled, and the management server has no Spring Session, so no player could authenticate on it anyway), 1 admin, the dev-only `/h2-console/**` chain (`spring.h2.console.enabled`; no CSRF/CSP, frames same-origin), 2 api, 3 ws, 4 web.
-- **Per-route rules in chain 2** (`RouteAuthorization`), so feature controllers need no security code: `market:read` for `/market/**`, `/assets/**`, `/quotes`, `/snapshots/**`, `/bars/**`, `/news`, `/rules`; `account:read` for GET `/account/**`, `/orders/**`, `/watchlists/**`, `POST /orders/preview` and `/me/notifications/**`; `trade` for `POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close` and watchlist writes; `league:read` for `/leaderboard`, `/players/**`, `/feed`; session only for `/me/**` (except `GET /me` and notifications), `/auth/logout`, `/auth/reauth` and `POST /account/reset` (also `trade`). Everything else in the chain (`/mcp`, `/v3/api-docs`, Swagger UI, `/api/v1/test/**`, new routes) needs any authenticated player. A key without the scope gets 403 `FORBIDDEN_SCOPE`; a key on a session-only route 403 `FORBIDDEN`. A session holds all four scopes.
+- **Chain order in code:** actuator (management port 8081, `EndpointRequest.toAnyEndpoint()`; the exposed endpoints are open there because the port is never published or tunneled and, in `prod`, binds to the container's loopback only (`management.server.address: 127.0.0.1`, so other containers on `stocks-edge`/`stocks-backend` cannot read it), and the management server has no Spring Session, so no player could authenticate on it anyway), 1 admin, the dev-only `/h2-console/**` chain (`spring.h2.console.enabled`; no CSRF/CSP, frames same-origin), 2 api, 3 ws, 4 web.
+- **Per-route rules in chain 2** (`RouteAuthorization`), so feature controllers need no security code: `market:read` for `/market/**`, `/assets/**`, `/quotes`, `/snapshots/**`, `/bars/**`, `/news`, `/rules`; `account:read` for GET `/account/**`, `/orders/**`, `/watchlists/**`, `POST /orders/preview` and `/me/notifications/**`; `trade` for `POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close` and watchlist writes; `league:read` for `/leaderboard`, `/players/**`, `/feed`; session only for `/me/**` (except `GET /me` and notifications), `/auth/logout`, `/auth/reauth` and `POST /account/reset` (also `trade`). Everything else in the chain (`/mcp`, `/v3/**`, Swagger UI, `/api/v1/test/**`, new routes) needs any authenticated player. MCP tools enforce the same scopes per call (`McpToolCatalog.SCOPES`, the Scope column of §20.3). A key without the scope gets 403 `FORBIDDEN_SCOPE`; a key on a session-only route 403 `FORBIDDEN`. A session holds all four scopes.
 - **CSRF failures of anonymous callers** on non-public routes answer 401 `UNAUTHENTICATED` (a bot that forgot its key is not told about CSRF); sessions and the public login/signup routes get 403 `CSRF_INVALID`.
 - **Authorities** (`PlayerAuthenticationToken`): `ROLE_PLAYER`; `ROLE_ADMIN` only for a HUMAN ADMIN **on a session** (an API key never has it, even the admin's own: layer 3 of §17.4 twice over); `AUTH_SESSION`/`AUTH_API_KEY`; `SCOPE_<scope>`. `getName()` is the player's public id, which Spring Session JDBC stores in `PRINCIPAL_NAME`, so a player's sessions can be found and deleted (§17.3, §10.5). Authorize admin work with the chain, never with `PlayerPrincipal.isAdmin()` (it reports the role for display, e.g. in `Me`).
 - Headers: `Cache-Control: no-store` on chains 1–3 (instead of Spring Security's default), none from chain 4 (`WebConfig` sets them). Header values that Spring Security's `StrictHttpFirewall` rejects lazily (control characters) answer 400 `VALIDATION_FAILED` (`FirewallRejectionAdvice`); `RequestMetas` drops such a `User-Agent` instead of failing.
@@ -2860,7 +2865,7 @@ Secrets are never logged. Reads are not audited in Phase 1 (structured logs inst
 
 ## 18. REST API (CONTRACT)
 
-- **Base path** `/api/v1`. OpenAPI 3.1 is served at `/v3/api-docs` and Swagger UI at `/api/docs`, which redirects to `/api/swagger-ui/index.html` (all authenticated, chain 2). `docs/openapi.json` is committed, and CI fails if it drifts. It documents `/api/v1/**` only (`springdoc.paths-to-match`), with `info.version = "v1"` and a same-origin server `/`, so it does not change with the build version or the generating host.
+- **Base path** `/api/v1`. OpenAPI 3.1 is served at `/v3/api-docs` (and as YAML at `/v3/api-docs.yaml`) and Swagger UI at `/api/docs`, which redirects to `/api/swagger-ui/index.html` (all authenticated, chain 2). `docs/openapi.json` is committed, and CI fails if it drifts. It documents `/api/v1/**` only (`springdoc.paths-to-match`), with `info.version = "v1"` and a same-origin server `/`, so it does not change with the build version or the generating host.
 - **Errors common to every authenticated endpoint:** 401 `UNAUTHENTICATED`, `INVALID_API_KEY`, `API_KEY_REVOKED`, `API_KEY_EXPIRED`; 403 `FORBIDDEN_SCOPE`, `PLAYER_FROZEN`, `PLAYER_DISABLED`, `CSRF_INVALID`; 429 `RATE_LIMITED`; 500 `INTERNAL_ERROR`; 503 `ENGINE_*` on write endpoints.
 - **Enum inputs** are case-insensitive. Outputs are always UPPER_SNAKE, except the wire-value enums of §6.3 (`HistoryRange`, `ChartRange`, `Timeframe`).
 
@@ -3209,6 +3214,8 @@ The named payload records are Java records in `com.stocks.contract.realtime.dto`
 
 **Client resync.** On reconnect, or when `document.visibilityState` returns to visible, the client invalidates `['account']`, `['positions']`, `['orders','OPEN']` and `['leaderboard']` and resubscribes. Missed messages are therefore harmless, and there is no durable outbox.
 
+**Client connection lifetime.** Reconnects use stompjs's own exponential backoff (`reconnectDelay: 1000`, `reconnectTimeMode: EXPONENTIAL`, `maxReconnectDelay: 30000`; the library ignores changes to `reconnectDelay` made between attempts). The STOMP session is authenticated once, at the handshake, so it belongs to one signed-in session: sign-out and any 401 from the API call `stopRealtime()`, which closes the socket and drops every subscription and resync callback; the next sign-in opens a fresh connection, so `/user/queue/*` can never deliver the previous player's messages.
+
 **The client never computes money.** NAV, P&L and buying power always come from the server's `Account`. The only exception is a cosmetic live position value of qty × tick in the watchlist, which is not shown as NAV.
 
 ---
@@ -3246,6 +3253,7 @@ The named payload records are Java records in `com.stocks.contract.realtime.dto`
 - **Input property names are the Java parameter names** (Spring AI 2.0.1's input-schema generator and our binder both use `Parameter.getName()`; the Boot parent compiles with `-parameters`). snake_case inputs (§20.2) therefore need snake_case parameter names, e.g. `@McpToolParam String client_order_id`.
 - Tools call the same contract services and the same DTO mappers as REST (§18.3).
 - Tools are registered in the **fixed order** of §20.3 (`McpToolCatalog.ORDER`); a tool name outside the catalog, or a duplicate, fails the boot.
+- Every tool has a required scope (`McpToolCatalog.SCOPES`, §20.3), checked by `McpToolHandler` on every call (`FORBIDDEN_SCOPE`); tools never re-check scopes themselves. `whoami` needs none but leaves `account` null without `account:read`.
 
 **Origin.** `Origin` is validated when present, against `stocks.public-url` only. Requests without `Origin` are allowed, since server-to-server calls send none. Implemented with the MCP SDK's `DefaultServerTransportSecurityValidator` (allowed origin = `scheme://host[:port]` of `stocks.public-url`, no Host check); a mismatch answers 403 with the transport's plain-text body (not the §6.5 problem). A browser-based MCP client served from another origin (for example an inspector UI connecting directly from the browser) is refused this way; server-side clients send no `Origin`.
 
@@ -3265,53 +3273,55 @@ The named payload records are Java records in `com.stocks.contract.realtime.dto`
 
 The requirement is that AIs can reach everything a player can. **Coverage test** (CI): every non-admin `GET` in `docs/openapi.json` maps to a tool below or is on the explicit exclusion list in `src/test/resources/golden/mcp/tool-coverage.yml`. That list is: `GET /auth/csrf`; `GET /me` (= `whoami`); `GET /me/api-keys` (session only); `GET /assets/{symbol}/logo` (binary); `GET /market/indices` (= `get_quotes` for SPY, QQQ, DIA, IWM); `GET /account/positions/{symbol}` (= `get_positions`); `GET /orders/by-client-id/{id}` (= `get_order`).
 
+**Scopes.** Chain 2 only requires an authenticated player for `/mcp` (§17.1), so every tool declares the scope that REST requires for the same data (the Scope column; `McpToolCatalog.SCOPES`, a tool without an entry fails the boot), and `McpToolHandler` checks it before binding arguments: a key without it gets the error result `FORBIDDEN_SCOPE`, no caller `UNAUTHENTICATED`. A browser session holds all four scopes. `McpServerIT` calls a tool with a `market:read`-only key.
+
 Read tools (RO): `readOnlyHint=true, destructiveHint=false, idempotentHint=true, openWorldHint=false`.
 
-| # | Tool | Input schema | Output |
-|---|---|---|---|
-| 1 | `whoami` | `{}` | `{me: Me, account: Account, rateLimits: {readsRemaining, writesRemainingMinute, writesRemainingDay}}` (from `RateLimitService.remaining`). Java: `mcp.tools.WhoamiDto`. `account` is null until the player has an ACTIVE account (like `Me.accountId`); until WS1/WS3 replace the Day-0 stubs, `account` and `rateLimits` are null instead of a 501 |
-| 2 | `get_rules` | `{}` | `Rules` |
-| 3 | `get_market_clock` | `{}` | `Clock` |
-| 4 | `get_calendar` | `{start: date, end: date}` (≤ 400 days) | `TradingDay[]` |
-| 5 | `search_symbols` | `{query: string(1..50), limit?: int(1..20)=10}` | `AssetSummary[]` |
-| 6 | `get_asset` | `{symbol: string}` | `Asset` |
-| 7 | `get_quotes` | `{symbols: string[1..50]}` | `{quotes: Quote[]}` (also takes a 60 s LIST lease per symbol) |
-| 8 | `get_snapshot` | `{symbol}` | `Snapshot` |
-| 9 | `get_bars` | `{symbol, timeframe: "1Min"\|"5Min"\|"15Min"\|"30Min"\|"1Hour"\|"1Day"\|"1Week"\|"1Month", start?: datetime, end?: datetime, limit?: int(1..1000)=100, adjustment?: "RAW"\|"SPLIT"\|"ALL"="SPLIT", extended_hours?: bool=true}` | `{symbol, timeframe, columns:["t","o","h","l","c","v"], rows: [[Ts,Dec,Dec,Dec,Dec,int]], tailFrom, source}` |
-| 10 | `get_movers` | `{list: "GAINERS"\|"LOSERS"\|"ACTIVES", limit?: int(1..50)=20}` | `Movers` |
-| 11 | `get_news` | `{symbols?: string[≤10], limit?: int(1..20)=10, before?: datetime}` | `{items: NewsItem[]}` |
-| 12 | `get_fundamentals` | `{symbol}` | `Fundamentals` or an error `NOT_FOUND` |
-| 13 | `get_account` | `{}` | `Account` |
-| 14 | `get_positions` | `{}` | `Position[]` |
-| 15 | `get_orders` | `{status?: "OPEN"\|"CLOSED"\|"ALL"="OPEN", symbol?: string, limit?: int(1..100)=50, cursor?: string}` | `Page<Order>` |
-| 16 | `get_order` | `{order_id?: string, client_order_id?: string}` (exactly one) | `Order` with executions and events |
-| 17 | `get_executions` | `{symbol?: string, from?: datetime, to?: datetime, limit?: int(1..100)=50, cursor?: string}` | `Page<Execution>` |
-| 18 | `get_activity` | `{types?: ActivityType[], from?: date, to?: date, limit?: int(1..100)=50, cursor?: string}` | `Page<Activity>` |
-| 19 | `get_violations` | `{}` | `{restriction, restrictionUntil, active: Violation[], expired: Violation[]}` |
-| 20 | `get_runs` | `{}` | `Run[]` |
-| 21 | `get_portfolio_history` | `{range: "1D"\|"1W"\|"1M"\|"3M"\|"YTD"\|"1Y"\|"ALL"}` | `PortfolioHistory` |
-| 22 | `get_notifications` | `{unread_only?: bool=false, limit?: int(1..100)=50, cursor?: string}` | `Page<Notification>` (orders cancelled by a corporate action, GFVs issued, admin deposits, …) |
-| 23 | `preview_order` | same as `place_order`; `client_order_id` and `rationale` optional | `Preview` |
-| 24 | `get_leaderboard` | `{period?: "TODAY"\|"WEEK"\|"MONTH"\|"YTD"\|"SEASON"\|"ALL"="WEEK", metric?: "RETURN"\|"PNL"="RETURN", kind?: "ALL"\|"HUMAN"\|"AI"="ALL", limit?: int(1..100)=50}` | `Leaderboard` |
-| 25 | `list_players` | `{kind?: "HUMAN"\|"AI"}` | `PlayerSummary[]` |
-| 26 | `get_player_profile` | `{handle: string}` | `PlayerProfile` |
-| 27 | `get_player_history` | `{handle: string, range: "1D"\|"1W"\|"1M"\|"3M"\|"YTD"\|"1Y"\|"ALL"}` | `PublicHistory` |
-| 28 | `get_player_trades` | `{handle: string, limit?: int(1..100)=50, cursor?: string}` | `Page<PublicTrade>` (delayed) |
-| 29 | `get_league_feed` | `{limit?: int(1..100)=50, cursor?: string}` | `Page<FeedItem>` |
-| 30 | `get_watchlists` | `{}` | `Watchlist[]` |
+| # | Tool | Scope | Input schema | Output |
+|---|---|---|---|---|
+| 1 | `whoami` | none (`account` is null without `account:read`) | `{}` | `{me: Me, account: Account, rateLimits: {readsRemaining, writesRemainingMinute, writesRemainingDay}}` (from `RateLimitService.remaining`). Java: `mcp.tools.WhoamiDto`. `account` is null until the player has an ACTIVE account (like `Me.accountId`) and when the caller lacks `account:read`; until WS1/WS3 replace the Day-0 stubs, `account` and `rateLimits` are null instead of a 501 |
+| 2 | `get_rules` | `market:read` | `{}` | `Rules` |
+| 3 | `get_market_clock` | `market:read` | `{}` | `Clock` |
+| 4 | `get_calendar` | `market:read` | `{start: date, end: date}` (≤ 400 days) | `TradingDay[]` |
+| 5 | `search_symbols` | `market:read` | `{query: string(1..50), limit?: int(1..20)=10}` | `AssetSummary[]` |
+| 6 | `get_asset` | `market:read` | `{symbol: string}` | `Asset` |
+| 7 | `get_quotes` | `market:read` | `{symbols: string[1..50]}` | `{quotes: Quote[]}` (also takes a 60 s LIST lease per symbol) |
+| 8 | `get_snapshot` | `market:read` | `{symbol}` | `Snapshot` |
+| 9 | `get_bars` | `market:read` | `{symbol, timeframe: "1Min"\|"5Min"\|"15Min"\|"30Min"\|"1Hour"\|"1Day"\|"1Week"\|"1Month", start?: datetime, end?: datetime, limit?: int(1..1000)=100, adjustment?: "RAW"\|"SPLIT"\|"ALL"="SPLIT", extended_hours?: bool=true}` | `{symbol, timeframe, columns:["t","o","h","l","c","v"], rows: [[Ts,Dec,Dec,Dec,Dec,int]], tailFrom, source}` |
+| 10 | `get_movers` | `market:read` | `{list: "GAINERS"\|"LOSERS"\|"ACTIVES", limit?: int(1..50)=20}` | `Movers` |
+| 11 | `get_news` | `market:read` | `{symbols?: string[≤10], limit?: int(1..20)=10, before?: datetime}` | `{items: NewsItem[]}` |
+| 12 | `get_fundamentals` | `market:read` | `{symbol}` | `Fundamentals` or an error `NOT_FOUND` |
+| 13 | `get_account` | `account:read` | `{}` | `Account` |
+| 14 | `get_positions` | `account:read` | `{}` | `Position[]` |
+| 15 | `get_orders` | `account:read` | `{status?: "OPEN"\|"CLOSED"\|"ALL"="OPEN", symbol?: string, limit?: int(1..100)=50, cursor?: string}` | `Page<Order>` |
+| 16 | `get_order` | `account:read` | `{order_id?: string, client_order_id?: string}` (exactly one) | `Order` with executions and events |
+| 17 | `get_executions` | `account:read` | `{symbol?: string, from?: datetime, to?: datetime, limit?: int(1..100)=50, cursor?: string}` | `Page<Execution>` |
+| 18 | `get_activity` | `account:read` | `{types?: ActivityType[], from?: date, to?: date, limit?: int(1..100)=50, cursor?: string}` | `Page<Activity>` |
+| 19 | `get_violations` | `account:read` | `{}` | `{restriction, restrictionUntil, active: Violation[], expired: Violation[]}` |
+| 20 | `get_runs` | `account:read` | `{}` | `Run[]` |
+| 21 | `get_portfolio_history` | `account:read` | `{range: "1D"\|"1W"\|"1M"\|"3M"\|"YTD"\|"1Y"\|"ALL"}` | `PortfolioHistory` |
+| 22 | `get_notifications` | `account:read` | `{unread_only?: bool=false, limit?: int(1..100)=50, cursor?: string}` | `Page<Notification>` (orders cancelled by a corporate action, GFVs issued, admin deposits, …) |
+| 23 | `preview_order` | `account:read` | same as `place_order`; `client_order_id` and `rationale` optional | `Preview` |
+| 24 | `get_leaderboard` | `league:read` | `{period?: "TODAY"\|"WEEK"\|"MONTH"\|"YTD"\|"SEASON"\|"ALL"="WEEK", metric?: "RETURN"\|"PNL"="RETURN", kind?: "ALL"\|"HUMAN"\|"AI"="ALL", limit?: int(1..100)=50}` | `Leaderboard` |
+| 25 | `list_players` | `league:read` | `{kind?: "HUMAN"\|"AI"}` | `PlayerSummary[]` |
+| 26 | `get_player_profile` | `league:read` | `{handle: string}` | `PlayerProfile` |
+| 27 | `get_player_history` | `league:read` | `{handle: string, range: "1D"\|"1W"\|"1M"\|"3M"\|"YTD"\|"1Y"\|"ALL"}` | `PublicHistory` |
+| 28 | `get_player_trades` | `league:read` | `{handle: string, limit?: int(1..100)=50, cursor?: string}` | `Page<PublicTrade>` (delayed) |
+| 29 | `get_league_feed` | `league:read` | `{limit?: int(1..100)=50, cursor?: string}` | `Page<FeedItem>` |
+| 30 | `get_watchlists` | `account:read` | `{}` | `Watchlist[]` |
 
 Write tools:
 
-| # | Tool | Hints | Input schema | Output |
-|---|---|---|---|---|
-| 31 | `place_order` | RO=false, destructive=false, **idempotent=true** | `{client_order_id: string*, symbol: string*, side: "BUY"\|"SELL"*, type: "MARKET"\|"LIMIT"\|"STOP"\|"STOP_LIMIT"\|"TRAILING_STOP"*, qty?: decimal-string, notional?: decimal-string, limit_price?, stop_price?, trail_amount?, trail_percent?, time_in_force?: "DAY"\|"GTC"="DAY", extended_hours?: bool=false, rationale: string(1..1000)* (AI), share_note?: bool (humans), acknowledge?: ["GFV_RISK"]}` | `PlaceOrderResponse` (`replayed: true` on an idempotent hit) |
-| 32 | `replace_order` | RO=false, destructive=true, idempotent=true | `{order_id*, client_order_id* (new), qty?, limit_price?, stop_price?, trail_amount?, trail_percent?, time_in_force?, extended_hours?, rationale?}` | `PlaceOrderResponse` (new order) |
-| 33 | `cancel_order` | RO=false, destructive=true, idempotent=true | `{order_id*}` | `Order` |
-| 34 | `cancel_all_orders` | RO=false, destructive=true, idempotent=true | `{symbol?}` | `{cancelled: Order[]}` |
-| 35 | `close_position` | RO=false, destructive=true, idempotent=true | `{symbol*, client_order_id*, rationale* (AI)}` | `PlaceOrderResponse` |
-| 36 | `update_watchlist` | RO=false, destructive=false, idempotent=true | `{name*, add?: string[], remove?: string[]}` (creates the list if missing) | `Watchlist` |
-| 37 | `delete_watchlist` | RO=false, destructive=true, idempotent=true | `{name*}` | `{deleted: boolean}` (false if it did not exist) |
-| 38 | `mark_notifications_read` | RO=false, destructive=false, idempotent=true | `{ids?: string[], all?: bool}` (exactly one) | `{marked: int}` |
+| # | Tool | Scope | Hints | Input schema | Output |
+|---|---|---|---|---|---|
+| 31 | `place_order` | `trade` | RO=false, destructive=false, **idempotent=true** | `{client_order_id: string*, symbol: string*, side: "BUY"\|"SELL"*, type: "MARKET"\|"LIMIT"\|"STOP"\|"STOP_LIMIT"\|"TRAILING_STOP"*, qty?: decimal-string, notional?: decimal-string, limit_price?, stop_price?, trail_amount?, trail_percent?, time_in_force?: "DAY"\|"GTC"="DAY", extended_hours?: bool=false, rationale: string(1..1000)* (AI), share_note?: bool (humans), acknowledge?: ["GFV_RISK"]}` | `PlaceOrderResponse` (`replayed: true` on an idempotent hit) |
+| 32 | `replace_order` | `trade` | RO=false, destructive=true, idempotent=true | `{order_id*, client_order_id* (new), qty?, limit_price?, stop_price?, trail_amount?, trail_percent?, time_in_force?, extended_hours?, rationale?}` | `PlaceOrderResponse` (new order) |
+| 33 | `cancel_order` | `trade` | RO=false, destructive=true, idempotent=true | `{order_id*}` | `Order` |
+| 34 | `cancel_all_orders` | `trade` | RO=false, destructive=true, idempotent=true | `{symbol?}` | `{cancelled: Order[]}` |
+| 35 | `close_position` | `trade` | RO=false, destructive=true, idempotent=true | `{symbol*, client_order_id*, rationale* (AI)}` | `PlaceOrderResponse` |
+| 36 | `update_watchlist` | `trade` | RO=false, destructive=false, idempotent=true | `{name*, add?: string[], remove?: string[]}` (creates the list if missing) | `Watchlist` |
+| 37 | `delete_watchlist` | `trade` | RO=false, destructive=true, idempotent=true | `{name*}` | `{deleted: boolean}` (false if it did not exist) |
+| 38 | `mark_notifications_read` | `account:read` | RO=false, destructive=false, idempotent=true | `{ids?: string[], all?: bool}` (exactly one) | `{marked: int}` |
 
 Decimal inputs are accepted as strings or numbers, and numbers are parsed as `BigDecimal` (§6.3). There are no admin tools.
 
@@ -3358,7 +3368,7 @@ Phase 2 adds an `agent_run` table and an admin UI over the same runner.
 | `GET /players/{handle}` | | → `AdminPlayerDetail` (runs, balances, EOD holdings, transfers, keys, recent audit; **no live positions or orders**) | `PLAYER_NOT_FOUND` |
 | `POST /players/{handle}/live-view` | R | `{reason: string(5..200)}` → `AdminPlayerLiveView` (live positions and open orders). **Break-glass**: writes `audit_log` `ADMIN/PLAYER_LIVE_VIEW` and an `ADMIN_VIEW` `account_event` that the player sees in their activity (§16.7). | `PLAYER_NOT_FOUND` |
 | `POST /players` | R | `CreatePlayerRequest` → 201 `CreatePlayerResponse` (creates the player, the funded account, the default watchlist, and optionally a key) | `HANDLE_TAKEN`, `VALIDATION_FAILED`, `WEAK_PASSWORD` |
-| `PATCH /players/{handle}` | R | `{displayName?, aiModel?, status?: "ACTIVE"\|"DISABLED", role?: "PLAYER"\|"ADMIN", apiTradingAllowed?: boolean}` → `AdminPlayer` (the role can be ADMIN only for a HUMAN; a status change follows §10.5) | `FORBIDDEN`, `VALIDATION_FAILED` |
+| `PATCH /players/{handle}` | R | `{displayName?, aiModel?, status?: "ACTIVE"\|"DISABLED", role?: "PLAYER"\|"ADMIN", apiTradingAllowed?: boolean}` → `AdminPlayer` (the role can be ADMIN only for a HUMAN; a status change follows §10.5; a role change deletes the player's sessions and `apiTradingAllowed: false` drops `trade` from their personal keys, §10.5) | `FORBIDDEN`, `VALIDATION_FAILED` |
 | `POST /players/{handle}/freeze` | R | `{reason, revokeKeys?: boolean = false}` → `AdminPlayer` (kill switch, §10.5) | |
 | `POST /players/{handle}/unfreeze` | R | → `AdminPlayer` | |
 | `POST /players/{handle}/password` | R | `{newPassword}` → 204 (humans; deletes their sessions and revokes their personal keys) | `WEAK_PASSWORD` |
@@ -3510,7 +3520,7 @@ frontend/src/
     format/     decimal.ts (string-decimal compare/add for display only), money.ts, number.ts, time.ts (ET)
     theme/      tokens.css (§22.8), theme.ts (data-theme, data-updown)
   components/ui/ Button, IconButton, Segmented, Stepper, Pill, Tabs, Table (virtualized > 100 rows), Sheet, Dialog,
-                 Popover, Toast, Skeleton, EmptyState, Tooltip, Kbd
+                 useModal (focus, focus trap, topmost-only Escape), Popover, Toast, Skeleton, EmptyState, Tooltip, Kbd
 ```
 
 ### 22.2 Routes
@@ -3522,7 +3532,7 @@ frontend/src/
 | `/watchlist` | `list?` | The left panel is always visible; the center shows the last symbol | **Tab: Watchlist** |
 | `/markets` | `tab=MOVERS\|NEWS` | Index cards, movers tabs (Gainers / Losers / Most Active), news | **Tab: Markets** |
 | `/stock/$symbol` | `range=1D`, `tf?`, `tab=OVERVIEW\|NEWS\|POSITION`, `ticket=BUY\|SELL?` | 3-pane: watchlist, quote and chart, docked ticket, plus a bottom dock | Pushed screen with a sticky header and a Trade bar that opens a bottom sheet |
-| `/search` | `q` | ⌘K palette (the route exists for deep links) | Full-screen search |
+| `/search` | `q` | ⌘K palette (the route exists for deep links: `?q=` prefills the field, and typing keeps it current with `replace`) | Full-screen search |
 | `/league` | `period=WEEK`, `metric=RETURN`, `kind=ALL`, `view=BOARD\|FEED` | Full-width board, Arena card, my pinned row | **Tab: League** (cards) |
 | `/players/$handle` | `range` | Profile | Stacked profile |
 | `/account` (+ `/positions`, `/orders?status=OPEN`, `/orders/$orderId`, `/activity?types`, `/history?range`) | | Overview with tabs; the watchlist panel stays | **Tab: Account** |
@@ -3619,6 +3629,7 @@ frontend/src/
   --text-1:#11141A; --text-2:#5B6270; --text-3:#8A919E; --text-inverse:#FFFFFF;
   --up:#0FA968; --up-bg:rgba(15,169,104,.10); --up-strong:#0B8A55;
   --down:#E23B4E; --down-bg:rgba(226,59,78,.10); --down-strong:#C22A3C; --flat:#8A919E;
+  --on-updown:#0D0F13;   /* text on solid --up/--down fills, every theme: ≥ 4.54:1 on all four (white: 2.15 on dark --up) */
   --accent:#2F6BFF; --accent-hover:#2559DB; --accent-bg:rgba(47,107,255,.10);
   --warn:#D98A00; --session-ext:#D98A00; --session-overnight:#7C5CFF; --session-closed:#8A919E;
   --ai:#8B5CF6; --ai-bg:rgba(139,92,246,.12); --human:#2F6BFF;
@@ -3654,10 +3665,10 @@ body { background: var(--bg-0); color: var(--text-1); font-family: var(--font-sa
 
 **Motion:**
 - Price flash: 400 ms background fade.
-- Sheets: 200 ms ease-out.
+- Sheets: 200 ms ease-out. Sheets and dialogs (`components/ui/useModal`) move focus in once when they open (never again on a parent re-render, e.g. a quote tick), trap Tab inside the panel, return focus on close, and only the topmost one reacts to Escape (the review dialog over the phone/tablet trade sheet closes alone).
 - The NAV number rolls on change.
 - All motion is disabled under `prefers-reduced-motion`.
-- Buy buttons use `--up`, Sell buttons `--down`, and other primary actions `--accent`.
+- Buy buttons use `--up`, Sell buttons `--down`, and other primary actions `--accent`. Text on a solid `--up`/`--down` fill (Buy/Sell buttons and segments, the watchlist % pill, solid pills) is `--on-updown`, never white (WCAG AA 4.5:1); their hover brightens the fill (`--up-strong`/`--down-strong` would drop dark text below 4.5:1 in the light theme).
 - The heatmap ramp (Phase 2) runs `--down-strong → --bg-3 → --up-strong`, clamped at ±3%.
 
 ### 22.9 Parallel-development mock mode
@@ -3834,9 +3845,10 @@ stocks:
 | `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY` | hybrid | Alpaca **paper** account keys (Basic data plan) |
 | `ALPACA_FEED` | no | `iex` (default) or `sip` |
 | `FINNHUB_TOKEN` | recommended | Finnhub free key |
-| `TRUSTED_PROXIES` | no | Peers whose forwarded headers are trusted (Tomcat `internal-proxies`): a regex (the default: loopback + 10/8, 172.16/12, 192.168/16) **or a comma-separated CIDR list** (any value containing `/`, Tomcat 11), e.g. `172.18.0.0/16` for a cloudflared container on another Docker network. A CIDR list also avoids the Compose `}` problem of §24.3. |
+| `TRUSTED_PROXIES` | no | Peers whose forwarded headers are trusted (Tomcat `internal-proxies`): a regex (the default: loopback + 10/8, 172.16/12, 192.168/16) **or a comma-separated CIDR list** (any value containing `/`, Tomcat 11), e.g. `172.18.0.0/16` for a cloudflared container on another Docker network. A CIDR list also avoids the Compose `}` problem of §24.3. **Required narrowing** with `STOCKS_BIND_IP=0.0.0.0`: the broad default would then trust every LAN device (§24.3). |
 | `STOCKS_IMAGE`, `STOCKS_TAG` | compose | Image repository without tag (`ghcr.io/<owner>/stocks`, lowercase) and the tag to run; every deploy rewrites `STOCKS_TAG` (§24.7) |
 | `STOCKS_BIND_IP`, `STOCKS_PORT` | no | Published host address and port of the app (`127.0.0.1`, `8080`; §24.2) |
+| `APP_PUBLIC_HOST` | compose | The host of `APP_PUBLIC_URL` (e.g. `stocks.example.com`); the CasaOS dashboard tile opens `https://` it (§24.2). `init-host.sh --url` sets both. |
 | `BACKUP_KEEP_DAYS`, `BACKUP_TIME_UTC` | no | Backup service: retention (`14`) and daily dump time (`05:00` UTC) (§24.2) |
 | `JDK_JAVA_OPTIONS` | no | Extra JVM flags, applied after the image's `JAVA_TOOL_OPTIONS` baseline (§24.1); usually empty |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | agent-runner (Phase 1) | LLM provider keys, read only by the `agent-runner` service (§20.5) |
@@ -3879,20 +3891,26 @@ FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS build
 WORKDIR /src/backend
 COPY backend/.mvn .mvn
 COPY backend/mvnw backend/pom.xml ./
-RUN --mount=type=cache,target=/root/.m2 chmod +x mvnw && ./mvnw -B -q dependency:go-offline
+# No cache mount here on purpose: ~/.m2 (the Maven distribution the wrapper fetches and every dependency) must be
+# part of this layer, so CI's `cache-to: type=gha` exports it and a build with an unchanged pom.xml downloads
+# nothing. GitHub-hosted builders start empty and never keep BuildKit cache mounts.
+RUN chmod +x mvnw && ./mvnw -B -q dependency:go-offline
 COPY backend/src src
 # Never ship whatever a local `make jar` left in static/: the SPA always comes from the web stage.
 RUN rm -rf src/main/resources/static
 COPY --from=web /src/frontend/dist src/main/resources/static
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -DskipTests package \
+# Reads ~/.m2 from the layer above (a cache mount would hide it behind an empty directory).
+RUN ./mvnw -B -q -DskipTests package \
  && java -Djarmode=tools -jar target/stocks.jar extract --layers --launcher --destination target/extracted
 
 FROM eclipse-temurin:21-jre
 LABEL org.opencontainers.image.title="stocks" \
       org.opencontainers.image.description="Multiplayer paper-trading league (Spring Boot API + React SPA, one origin)"
-# curl only serves the HEALTHCHECK; the base image's security updates come with each rebuild.
+# The HEALTHCHECK needs curl, which the eclipse-temurin (Ubuntu) base already ships; install it only if a future
+# base drops it, so a normal build runs no apt-get (slow under QEMU for arm64).
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
+RUN (command -v curl > /dev/null \
+     || (apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*)) \
  && groupadd -r -g 10001 stocks && useradd -r -g stocks -u 10001 -M -d /app -s /usr/sbin/nologin stocks
 WORKDIR /app
 # Least-changing layers first, so a code-only release re-pushes only the small application layer.
@@ -3920,7 +3938,7 @@ ENTRYPOINT ["java","org.springframework.boot.loader.launch.JarLauncher"]
 
 ### 24.2 `docker-compose.yml` (production: plain Compose and CasaOS Import)
 
-The owner self-hosts on a **CasaOS** server that already runs Cloudflare Tunnels. One compose file serves two consumers: plain `docker compose -p stocks up -d` with a `.env` next to it (what the deploy job of §24.7 runs), and CasaOS "App Store → Custom Install → Import". CasaOS reads the `x-casaos` blocks (top level: `main: app`, `port_map: "8080"`, `title`, `icon`, `category`, `architectures: [amd64, arm64]`, `tips`; per service: `envs`/`ports`/`volumes` descriptions); Compose ignores every `x-` key. Abridged (the file in the repository is authoritative for the metadata):
+The owner self-hosts on a **CasaOS** server that already runs Cloudflare Tunnels. One compose file serves two consumers: plain `docker compose -p stocks up -d` with a `.env` next to it (what the deploy job of §24.7 runs), and CasaOS "App Store → Custom Install → Import". CasaOS reads the `x-casaos` blocks (top level: `main: app`, `scheme: https`, `hostname: ${APP_PUBLIC_HOST:-}`, `port_map: "443"`, `index: /`, `title`, `icon`, `category`, `architectures: [amd64, arm64]`, `tips`; per service: `envs`/`ports`/`volumes` descriptions); Compose ignores every `x-` key. The dashboard tile opens `scheme://hostname:port_map/index`, i.e. the tunnel hostname: the host port is bound to `127.0.0.1` and the session cookie is `Secure`, so `http://<casaos-host>:8080` could not sign in. Abridged (the file in the repository is authoritative for the metadata):
 
 ```yaml
 name: stocks
@@ -4001,11 +4019,14 @@ networks:
 **Host layout** (`deploy/scripts/init-host.sh` creates it, generates the secrets in `.env` and hands the directory to the runner user):
 
 ```
-/DATA/AppData/stocks/  .env (600) · docker-compose.yml (synced by each deploy) · .deploy-state
-                       scripts/pg_backup.sh (synced) · pgdata/ · backups/ · agent-data/
+/DATA/AppData/stocks/          .env (600) · scripts/pg_backup.sh (synced) · pgdata/ · backups/ · agent-data/
+/DATA/AppData/stocks/compose/  docker-compose.yml (synced by each deploy) · docker-compose.yml.bak · .deploy-state
+                               .env -> ../.env
 ```
 
-**Environment.** `.env.example` documents every key of §23.3 plus the compose-only keys `STOCKS_IMAGE` (lowercase repository without tag), `STOCKS_TAG` (rewritten by every deploy), `STOCKS_BIND_IP` (default `127.0.0.1`), `STOCKS_PORT` (8080), `BACKUP_KEEP_DAYS`, `BACKUP_TIME_UTC` and `JDK_JAVA_OPTIONS`. Optional variables are never passed empty when Spring has a non-empty default (an empty `TRUSTED_PROXIES` would trust no proxy).
+The Compose **project directory** (`compose/`, the deploy job's `DEPLOY_DIR`) is deliberately not the data root. CasaOS lists every Compose project (`docker compose ls`), and its Uninstall always runs `os.RemoveAll` on the project's working directory, even when the user keeps the data (verified in CasaOS-AppManagement; it also rewrites the compose file as root, mode 600, on a settings save). With this layout an Uninstall removes only `compose/` and the `.env` link, never `pgdata/`, the dumps or the real `.env` (with `API_KEY_PEPPER`). An Uninstall that does **not** keep the data still deletes the bind-source parent `/DATA/AppData/stocks`, so `docs/deploy.md` and the runbook say: never Uninstall or save this app's settings in CasaOS; stop it with `docker compose -p stocks down`. `init-host.sh` migrates a host from the earlier layout (compose file in the data root), and `deploy.sh` refuses to run on it.
+
+**Environment.** `.env.example` documents every key of §23.3 plus the compose-only keys `STOCKS_IMAGE` (lowercase repository without tag), `STOCKS_TAG` (rewritten by every deploy), `STOCKS_BIND_IP` (default `127.0.0.1`), `STOCKS_PORT` (8080), `APP_PUBLIC_HOST` (the host of `APP_PUBLIC_URL`, for the CasaOS tile), `BACKUP_KEEP_DAYS`, `BACKUP_TIME_UTC` and `JDK_JAVA_OPTIONS`. Optional variables are never passed empty when Spring has a non-empty default (an empty `TRUSTED_PROXIES` would trust no proxy).
 
 **`deploy/backup/pg_backup.sh`** (mounted read-only at `/opt/stocks`; busybox `sh`): `pg_backup.sh [LABEL]` writes `/backups/stocks-YYYY-MM-DD[-LABEL].dump` (`pg_dump -Fc` through a `.tmp` file), records `/backups/.last-success` and deletes dumps older than `KEEP_DAYS`; `pg_backup.sh --daemon` runs one at start when today's dump is missing, then daily at `BACKUP_TIME_UTC` (05:00 UTC, after the 20:20 ET snapshots). Every deploy adds a `predeploy-<tag>` dump.
 
@@ -4026,7 +4047,7 @@ server:
 logging.structured.format.console: ecs
 ```
 
-- The host port binds to `127.0.0.1` by default (`STOCKS_BIND_IP`, §24.2), so only a host-network `cloudflared` can reach it; a `cloudflared` container joined to the `stocks-edge` network uses `http://stocks-app:8080` and needs no published port. Either way the peer is loopback, a Docker bridge address (172.x) or the cloudflared container's address, all covered by the default internal-proxies regex. Compose passes `TRUSTED_PROXIES` with an equivalent default (`\d+` instead of `\d{1,3}`, because a `}` cannot appear inside a Compose `${…:-…}` default) and never empty. **CIDR lists work too:** Tomcat 11's `RemoteIpValve` treats a value containing `/` as a comma-separated CIDR list (`NetMaskSet`), e.g. `TRUSTED_PROXIES=127.0.0.0/8, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16` (verified by `ForwardedHeadersIT` with both forms; an untrusted peer's headers are ignored).
+- The host port binds to `127.0.0.1` by default (`STOCKS_BIND_IP`, §24.2), so only a host-network `cloudflared` can reach it (the broad default regex is safe only while nothing on the LAN can reach the app port: with `STOCKS_BIND_IP=0.0.0.0`, Docker keeps LAN clients' source addresses, so `TRUSTED_PROXIES` must then be narrowed to cloudflared's Docker network, e.g. `172.18.0.0/16`; `docs/deploy.md` §8); a `cloudflared` container joined to the `stocks-edge` network uses `http://stocks-app:8080` and needs no published port. Either way the peer is loopback, a Docker bridge address (172.x) or the cloudflared container's address, all covered by the default internal-proxies regex. Compose passes `TRUSTED_PROXIES` with an equivalent default (`\d+` instead of `\d{1,3}`, because a `}` cannot appear inside a Compose `${…:-…}` default) and never empty. **CIDR lists work too:** Tomcat 11's `RemoteIpValve` treats a value containing `/` as a comma-separated CIDR list (`NetMaskSet`), e.g. `TRUSTED_PROXIES=127.0.0.0/8, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16` (verified by `ForwardedHeadersIT` with both forms; an untrusted peer's headers are ignored).
 - `ClientIp.resolve()` uses `request.getRemoteAddr()` after the valve. It feeds rate limiting, audit and `last_used_ip`.
 
 **Security headers** (Spring Security):
@@ -4058,11 +4079,11 @@ HSTS is sent when `isSecure()` is true, and is also set at Cloudflare.
 |---|---|
 | `/`, `/assets/*`, SPA routes | static files from the jar (`classpath:/static`) |
 | `/api/v1/**`, `/api/v1/admin/**` | REST |
-| `/api/docs` → `/api/swagger-ui/index.html`, `/api/swagger-ui/**`, `/v3/api-docs` | Swagger UI (springdoc redirects `/api/docs` and serves the UI under `/api/swagger-ui/**`) and OpenAPI, all authenticated in chain 2 |
+| `/api/docs` → `/api/swagger-ui/index.html`, `/api/swagger-ui/**`, `/v3/**` (`/v3/api-docs`, `/v3/api-docs.yaml`) | Swagger UI (springdoc redirects `/api/docs` and serves the UI under `/api/swagger-ui/**`) and OpenAPI (JSON and YAML), all authenticated in chain 2 |
 | `/ws` | STOMP over WebSocket |
 | `/mcp` | MCP Streamable HTTP (stateless) |
 | `/oauth2/**`, `/.well-known/**` | Phase 2 OAuth |
-| `:8081/actuator/**` | health, info, metrics, prometheus: **not published or tunneled**, so open on that port |
+| `:8081/actuator/**` | health, info, metrics, prometheus: **not published or tunneled**, and in `prod` bound to the container's loopback (`127.0.0.1`), so open on that port |
 
 ### 24.5 Cloudflare Tunnel ingress (owner-managed; documented in `docs/deploy.md`)
 
@@ -4113,20 +4134,22 @@ The repository lives on GitHub (private). GitHub-hosted runners test and build; 
 
 Actions are pinned to their current major versions: `actions/checkout@v7`, `actions/setup-java@v6`, `actions/setup-node@v7`, `actions/upload-artifact@v7`, `docker/setup-qemu-action@v4`, `docker/setup-buildx-action@v4`, `docker/login-action@v4`, `docker/metadata-action@v6`, `docker/build-push-action@v7` (all Node 24; the self-hosted runner must be ≥ 2.327.1 and auto-updates).
 
-**Image tags** (`ghcr.io/<owner lowercased>/stocks`, plus `…/stocks-agent-runner` once `tools/agent-runner/Dockerfile` exists): `sha-<7 hex>` always; `latest` on the default branch; `X.Y.Z` and `X.Y` for a `vX.Y.Z` tag. Deploys always use the immutable `sha-…` (or version) tag, never `latest`.
+**Image tags** (`ghcr.io/<owner lowercased>/stocks`, plus `…/stocks-agent-runner` once `tools/agent-runner/Dockerfile` exists): `sha-<7 hex>` always; `latest` on the default branch only (`docker/metadata-action` with `flavor: latest=false`, because its default `latest=auto` also tags every semver push `latest`, so tagging an old commit would roll Watchtower and CasaOS Import installs back); `X.Y.Z` and `X.Y` for a `vX.Y.Z` tag. Deploys always use the immutable `sha-…` (or version) tag, never `latest`.
+
+**Concurrency.** Builds of one ref are serialized (`release-<ref>`); a tag-only dispatch (deploy or roll back an existing image) gets its own group (`release-rollback-<run id>`), so it neither waits behind a build-and-deploy run nor is replaced by a newer pending push. The deploy job's `deploy-casaos` group serializes the server.
 
 **Deploy job** (`runs-on: [self-hosted, casaos]`, `permissions: { contents: read, packages: read }`, `concurrency: deploy-casaos` without cancellation):
-- Runs only when the repository variable `DEPLOY_ENABLED == 'true'` and the event is a push to `main` or a `workflow_dispatch` with `deploy: true`; never for pull requests or tag pushes. With the `tag` input set, it skips CI and the build and deploys or rolls back to that existing tag.
+- Runs only when the repository variable `DEPLOY_ENABLED == 'true'` and the event is a push to `main` or a `workflow_dispatch` with `deploy: true` **from `main` or a `v*` tag** (a guard against deploying a feature branch by mistake, not a security boundary: a branch runs its own copy of the workflow); never for pull requests or tag pushes. With the `tag` input set, it skips CI and the build and deploys or rolls back to that existing tag: dispatched from `main` it changes only the image (`--no-sync-compose`, keeping the server's compose file); dispatched from a `v*` tag it also installs that tag's compose file.
 - Logs in to GHCR with the job's own `GITHUB_TOKEN` in a job-scoped `DOCKER_CONFIG`, sparse-checks out `docker-compose.yml` and `deploy/`, and runs `deploy/scripts/deploy.sh --tag <tag> --sync-from $GITHUB_WORKSPACE`:
-  1. preflight (`.env` present and writable, tag format, `docker compose config`);
-  2. copy `docker-compose.yml` into `DEPLOY_DIR` (keeping `.bak`; skipped when `DEPLOY_SYNC_COMPOSE=false`) and `pg_backup.sh` into `/DATA/AppData/stocks/scripts/`;
+  1. preflight (`.env` present and writable, tag format, refuses the pre-`compose/` layout);
+  2. **stage** `docker-compose.yml` (skipped when `DEPLOY_SYNC_COMPOSE=false` or `--no-sync-compose`) and `pg_backup.sh` next to the live files and run `docker compose config` on the staged compose file with `.env`; nothing live changes yet;
   3. tag the running image `<image>:rollback`, pull the new tag (and the agent-runner image when the `agents` profile is on);
-  4. pre-deploy `pg_dump` when the database is running (failure aborts with nothing changed);
-  5. write `STOCKS_IMAGE` and `STOCKS_TAG` into `.env`, `docker compose -p stocks up -d`, then wait up to `DEPLOY_HEALTH_TIMEOUT` (420 s) for the `app` healthcheck (Spring readiness on 8081); unhealthy, exited, restarting or timed out = failure;
+  4. pre-deploy `pg_dump` when the database is running; a failure in steps 1–4 aborts with every live file unchanged;
+  5. install the staged files (`docker-compose.yml` into `DEPLOY_DIR`, keeping `.bak`; `pg_backup.sh` into `/DATA/AppData/stocks/scripts/`), write `STOCKS_IMAGE` and `STOCKS_TAG` into `.env`, `docker compose -p stocks up -d`, then wait up to `DEPLOY_HEALTH_TIMEOUT` (420 s) for the `app` healthcheck (Spring readiness on 8081); unhealthy, exited, restarting or timed out = failure;
   6. on failure: print the app log, restore the previous compose file, `up -d app` on `<image>:rollback`, wait for health, record the previous immutable tag in `.env`, exit 1; if the rollback is not healthy either, exit 2 (runbook "Failed deploy");
   7. on success: write `.deploy-state`, keep the three newest older `sha-…`/version images and remove the rest.
 - Optional `DEPLOY_PUBLIC_URL` smoke test through the tunnel (warning only).
-- Repository variables: `DEPLOY_ENABLED`, `DEPLOY_DIR` (default `/DATA/AppData/stocks`), `DEPLOY_SYNC_COMPOSE` (`true`), `DEPLOY_PROFILES` (e.g. `agents`), `DEPLOY_HEALTH_TIMEOUT` (`420`), `DEPLOY_PUBLIC_URL`. No repository secrets: runtime secrets live only in the server's `.env`.
+- Repository variables: `DEPLOY_ENABLED`, `DEPLOY_DIR` (default `/DATA/AppData/stocks/compose`), `DEPLOY_SYNC_COMPOSE` (`true`), `DEPLOY_PROFILES` (e.g. `agents`), `DEPLOY_HEALTH_TIMEOUT` (`420`), `DEPLOY_PUBLIC_URL`. No repository secrets: runtime secrets live only in the server's `.env`.
 - Rollback restores the image, never the schema: Flyway is forward-only. The pre-deploy dump is the way back from an incompatible migration.
 
 **Runner security.** The runner is the official binary as a systemd service, registered to this repository only, running as an unprivileged user in the `docker` group (root-equivalent, so write access to the repository = control of the server). Fork pull request workflows stay disabled, `main` is protected, and only `release.yml`'s deploy job targets the `casaos` label (`.github/actionlint.yaml` declares it).

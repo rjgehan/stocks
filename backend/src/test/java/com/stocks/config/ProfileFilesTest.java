@@ -43,6 +43,10 @@ class ProfileFilesTest {
     assertThat(env.getProperty("server.servlet.session.cookie.name")).isEqualTo("__Host-stocks_sid");
     assertThat(env.getProperty("server.servlet.session.cookie.secure")).isEqualTo("true");
     assertThat(env.getProperty("server.forward-headers-strategy")).isEqualTo("native");
+    // the actuator is reachable from inside the app container only (not from stocks-edge/stocks-backend peers)
+    assertThat(env.getProperty("management.server.port")).isEqualTo("8081");
+    assertThat(env.getProperty("management.server.address")).isEqualTo("127.0.0.1");
+    assertThat(env.getProperty("management.endpoint.health.show-details")).isEqualTo("always");
   }
 
   @Test

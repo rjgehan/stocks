@@ -1,11 +1,14 @@
 package com.stocks.mcp;
 
+import com.stocks.contract.security.Scopes;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,7 +24,9 @@ import tools.jackson.databind.json.JsonMapper;
  * name, title, description and the four hints from the annotation; the input schema from Spring AI's generator; the
  * output schema from the return type, post-processed by {@link McpOutputSchemas}; the call handler is
  * {@link McpToolHandler} (Boot's {@code JsonMapper}). Tools are registered in the <b>fixed order of §20.3</b>
- * ({@link #ORDER}); a tool that is not in the catalog fails the boot.
+ * ({@link #ORDER}); a tool that is not in the catalog fails the boot. Every tool has a required scope
+ * ({@link #SCOPES}, the "Scope" column of §20.3, mirroring the REST routes of §17.1), checked by
+ * {@link McpToolHandler} on every call; a tool without an entry fails the boot.
  */
 public final class McpToolCatalog {
 
@@ -36,6 +41,41 @@ public final class McpToolCatalog {
       // write tools
       "place_order", "replace_order", "cancel_order", "cancel_all_orders", "close_position", "update_watchlist",
       "delete_watchlist", "mark_notifications_read");
+
+  /** {@link #SCOPES} value of a tool any authenticated caller may use ({@code whoami}). */
+  public static final String NO_SCOPE = "";
+
+  /**
+   * The scope each tool needs (§20.3), as REST requires it for the same data (§17.1): a key without it gets
+   * {@code FORBIDDEN_SCOPE}. A browser session holds all four scopes.
+   */
+  public static final Map<String, String> SCOPES = scopes();
+
+  private static Map<String, String> scopes() {
+    Map<String, String> m = new LinkedHashMap<>();
+    m.put("whoami", NO_SCOPE);   // its account member is null without account:read (AccountIdentityTools)
+    for (String t : List.of("get_rules", "get_market_clock", "get_calendar", "search_symbols", "get_asset",
+        "get_quotes", "get_snapshot", "get_bars", "get_movers", "get_news", "get_fundamentals")) {
+      m.put(t, Scopes.MARKET_READ);
+    }
+    for (String t : List.of("get_account", "get_positions", "get_orders", "get_order", "get_executions",
+        "get_activity", "get_violations", "get_runs", "get_portfolio_history", "get_notifications", "preview_order",
+        "get_watchlists", "mark_notifications_read")) {
+      m.put(t, Scopes.ACCOUNT_READ);
+    }
+    for (String t : List.of("get_leaderboard", "list_players", "get_player_profile", "get_player_history",
+        "get_player_trades", "get_league_feed")) {
+      m.put(t, Scopes.LEAGUE_READ);
+    }
+    for (String t : List.of("place_order", "replace_order", "cancel_order", "cancel_all_orders", "close_position",
+        "update_watchlist", "delete_watchlist")) {
+      m.put(t, Scopes.TRADE);
+    }
+    if (!m.keySet().equals(new HashSet<>(ORDER))) {
+      throw new IllegalStateException("McpToolCatalog.SCOPES must name exactly the tools of ORDER");
+    }
+    return Collections.unmodifiableMap(m);
+  }
 
   private static final TypeReference<LinkedHashMap<String, Object>> MAP = new TypeReference<>() {};
 
@@ -67,9 +107,23 @@ public final class McpToolCatalog {
     return ORDER.stream().filter(byName::containsKey).map(byName::get).toList();
   }
 
+  /** The specification of one catalog tool; its scope comes from {@link #SCOPES} (none = boot failure). */
   static SyncToolSpecification specification(Object bean, Method method, JsonMapper mapper) {
+    String name = toolName(method);
+    String scope = SCOPES.get(name);
+    if (scope == null) {
+      throw new IllegalStateException("MCP tool " + name + " has no required scope in McpToolCatalog.SCOPES (§20.3)");
+    }
+    return specification(bean, method, mapper, scope);
+  }
+
+  /**
+   * The specification of one tool that needs {@code requiredScope} ({@link #NO_SCOPE} for none). Catalog tools go
+   * through {@link #specification(Object, Method, JsonMapper)}; this overload exists for test-only tools.
+   */
+  static SyncToolSpecification specification(Object bean, Method method, JsonMapper mapper, String requiredScope) {
     McpTool annotation = method.getAnnotation(McpTool.class);
-    String name = StringUtils.hasText(annotation.name()) ? annotation.name() : method.getName();
+    String name = toolName(method);
     if (!Modifier.isPublic(method.getModifiers())) {
       throw new IllegalStateException("MCP tool " + name + " must be public: " + method);
     }
@@ -93,7 +147,13 @@ public final class McpToolCatalog {
             .openWorldHint(hints.openWorldHint())
             .build())
         .build();
-    return SyncToolSpecification.builder().tool(tool).callHandler(new McpToolHandler(name, bean, method, mapper))
+    return SyncToolSpecification.builder().tool(tool)
+        .callHandler(new McpToolHandler(name, requiredScope, bean, method, mapper))
         .build();
+  }
+
+  private static String toolName(Method method) {
+    McpTool annotation = method.getAnnotation(McpTool.class);
+    return StringUtils.hasText(annotation.name()) ? annotation.name() : method.getName();
   }
 }

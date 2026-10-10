@@ -20,8 +20,8 @@ export interface SegmentedProps<T extends string> {
 
 const TONES = {
   accent: 'bg-bg-1 text-text-1 shadow-sm',
-  up: 'bg-up text-white',
-  down: 'bg-down text-white',
+  up: 'bg-up text-on-updown',
+  down: 'bg-down text-on-updown',
 } as const
 
 export function Segmented<T extends string>({ value, options, onChange, label, size = 'md', block }: SegmentedProps<T>) {

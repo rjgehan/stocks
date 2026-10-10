@@ -4,9 +4,14 @@ import com.stocks.common.domain.WireEnum;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.web.WebProperties;
+import org.springframework.boot.web.server.MimeMappings;
+import org.springframework.boot.web.server.WebServerFactoryCustomizer;
+import org.springframework.boot.web.server.servlet.ConfigurableServletWebServerFactory;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.convert.converter.ConverterFactory;
@@ -36,6 +41,9 @@ import org.springframework.web.servlet.resource.ResourceResolverChain;
  *             Anything else that does not exist is a 404 problem.</li>
  *       </ul>
  *       {@code /api/**} and {@code /mcp} responses get {@code Cache-Control: no-store} from the security chain.</li>
+ *   <li><b>MIME types</b> the servlet container does not know: {@code .webmanifest} →
+ *       {@code application/manifest+json} (the §22.3 PWA manifest; Tomcat would send
+ *       {@code application/octet-stream}, which {@code nosniff} makes final).</li>
  * </ul>
  */
 @Configuration(proxyBeanMethods = false)
@@ -57,6 +65,14 @@ public class WebConfig implements WebMvcConfigurer {
   @Autowired
   public WebConfig(WebProperties webProperties) {
     this.webProperties = webProperties;
+  }
+
+  /** Extension → content type, added to the embedded server's defaults. */
+  static final Map<String, String> EXTRA_MIME_TYPES = Map.of("webmanifest", "application/manifest+json");
+
+  @Bean
+  WebServerFactoryCustomizer<ConfigurableServletWebServerFactory> extraMimeMappings() {
+    return factory -> factory.addMimeMappings(new MimeMappings(EXTRA_MIME_TYPES));
   }
 
   @Override

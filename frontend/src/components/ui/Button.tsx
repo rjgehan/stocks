@@ -5,10 +5,11 @@ export type ButtonVariant = 'primary' | 'buy' | 'sell' | 'secondary' | 'ghost' |
 export type ButtonSize = 'sm' | 'md' | 'lg'
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  // §22.8: Buy uses --up, Sell --down, other primary actions --accent.
+  // §22.8: Buy uses --up, Sell --down, other primary actions --accent. Text on up/down fills is --on-updown
+  // (white fails 4.5:1 there); hover brightens the fill, since the -strong shades would lower the contrast.
   primary: 'bg-accent text-white hover:bg-accent-hover',
-  buy: 'bg-up text-white hover:bg-up-strong',
-  sell: 'bg-down text-white hover:bg-down-strong',
+  buy: 'bg-up text-on-updown hover:brightness-110',
+  sell: 'bg-down text-on-updown hover:brightness-110',
   secondary: 'bg-bg-2 text-text-1 hover:bg-bg-3 border border-border',
   ghost: 'bg-transparent text-text-2 hover:bg-bg-2 hover:text-text-1',
   danger: 'bg-transparent text-down border border-down/40 hover:bg-down-bg',

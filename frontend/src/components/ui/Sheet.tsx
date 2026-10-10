@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef } from 'react'
+import { useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { IconClose } from './icons'
 import { cx } from './cx'
+import { ModalDepthContext, useModal } from './useModal'
 
 export interface SheetProps {
   open: boolean
@@ -14,27 +15,14 @@ export interface SheetProps {
   className?: string
 }
 
-/** Modal sheet with backdrop, Escape to close, focus moved in and restored on close. 200 ms ease-out. */
+/**
+ * Modal sheet with backdrop, 200 ms ease-out. Focus moves in once on open, is trapped inside, and returns on close;
+ * Escape closes it unless a dialog is open on top (`useModal`). Page scroll is locked while open.
+ */
 export function Sheet({ open, onClose, title, side = 'bottom', children, footer, className }: SheetProps) {
   const titleId = useId()
   const panel = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const previous = document.activeElement as HTMLElement | null
-    panel.current?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = overflow
-      previous?.focus?.()
-    }
-  }, [open, onClose])
+  const childDepth = useModal(open, onClose, panel, { lockScroll: true })
 
   if (!open) return null
   return createPortal(
@@ -68,8 +56,10 @@ export function Sheet({ open, onClose, title, side = 'bottom', children, footer,
             <IconClose />
           </button>
         </div>
-        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">{children}</div>
-        {footer ? <div className="shrink-0 border-t border-divider p-4">{footer}</div> : null}
+        <ModalDepthContext.Provider value={childDepth}>
+          <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">{children}</div>
+          {footer ? <div className="shrink-0 border-t border-divider p-4">{footer}</div> : null}
+        </ModalDepthContext.Provider>
       </div>
     </div>,
     document.body,

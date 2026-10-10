@@ -10,6 +10,8 @@ const dateTimeEt = new Intl.DateTimeFormat('en-US', {
   minute: '2-digit',
 })
 const monthDayYear = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' })
+const weekdayEt = new Intl.DateTimeFormat('en-US', { timeZone: MARKET_TZ, weekday: 'short' })
+const ymdEt = new Intl.DateTimeFormat('en-CA', { timeZone: MARKET_TZ, year: 'numeric', month: '2-digit', day: '2-digit' })
 
 function toDate(ts: string | number | Date): Date | null {
   const d = ts instanceof Date ? ts : new Date(ts)
@@ -42,4 +44,23 @@ export function formatCountdown(ms: number): string {
   const s = total % 60
   const ss = String(s).padStart(2, '0')
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
+}
+
+/**
+ * The server's "now" in epoch ms, from `Clock.now` and when that clock was fetched (`dataUpdatedAt`), advanced by
+ * the local time elapsed since. Countdowns use it instead of `Date.now()`, so they stay right when the server runs
+ * an offset or anchored SIM clock (§15.7, the e2e profile) or the device clock is off.
+ */
+export function serverNowMs(clockNow: string, fetchedAt: number, localNow: number): number {
+  const server = Date.parse(clockNow)
+  if (Number.isNaN(server) || !fetchedAt) return localNow
+  return server + Math.max(0, localNow - fetchedAt)
+}
+
+/** "4:00 AM ET" when `ts` falls on the same ET date as `nowMs`, otherwise with the weekday: "Mon 4:00 AM ET". */
+export function formatSessionStartEt(ts: string | null | undefined, nowMs: number): string {
+  const d = ts == null ? null : toDate(ts)
+  if (!d) return '--'
+  const sameDay = ymdEt.format(d) === ymdEt.format(new Date(nowMs))
+  return sameDay ? `${timeEt.format(d)} ET` : `${weekdayEt.format(d)} ${timeEt.format(d)} ET`
 }

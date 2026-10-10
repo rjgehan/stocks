@@ -6,6 +6,14 @@ deploys itself**, and a version that does not become healthy is rolled back auto
 
 Spec: ARCHITECTURE §24 (deployment) and §26 (CI). Day-2 operations: [runbook.md](runbook.md).
 
+> **How `stocks.gehan.cloud` deploys: Watchtower (no runner).** The production server already runs Watchtower,
+> so the self-hosted runner is optional and `DEPLOY_ENABLED` is left unset. Every push to `main` publishes
+> `ghcr.io/rjgehan/stocks:latest` (a public package), and Watchtower restarts `stocks-app` on the new image. The
+> app and agent-runner services carry `com.centurylinklabs.watchtower.enable: "true"`; the database and backup
+> services carry `"false"`, so they are never restarted by Watchtower. Short path: §1 → §4 (skip the
+> `gha-runner` user; use `--owner` with your own user) → §7 "without GitHub" or §7B → §8 → §11. The runner
+> (§5, §6) adds a pre-deploy dump and automatic rollback if you ever want them.
+
 ```
  git push main ─► GitHub Actions (GitHub-hosted)                    your CasaOS server
                   ci.yml: backend H2 + PG, frontend, contract     ┌───────────────────────────────────────────┐
@@ -33,7 +41,7 @@ the tunnel. Secrets stay in `/DATA/AppData/stocks/.env` on the server; GitHub ho
 8. [Cloudflare Tunnel](#8-cloudflare-tunnel)
 9. [Upgrades, releases and rollbacks](#9-upgrades-releases-and-rollbacks)
 10. [Backups](#10-backups)
-11. [Alternative without a runner: Watchtower](#11-alternative-without-a-runner-watchtower)
+11. [Watchtower (no runner; used in production)](#11-watchtower-no-runner-used-in-production)
 12. [Troubleshooting](#12-troubleshooting)
 
 ## 1. What you need
@@ -106,14 +114,21 @@ Everything lives in `/DATA/AppData/stocks` (the CasaOS AppData convention):
 
 ```
 /DATA/AppData/stocks/
-├── .env                  your configuration and secrets (mode 600; from .env.example)
-├── docker-compose.yml    copied from the repository by every deploy
-├── .deploy-state         last deploy (written by deploy.sh)
-├── scripts/pg_backup.sh  copied from the repository by every deploy
-├── pgdata/               PostgreSQL 18 data
-├── backups/              nightly and pre-deploy dumps
-└── agent-data/           bot notes and run logs (Phase 1)
+├── .env                        your configuration and secrets (mode 600; from .env.example)
+├── compose/                    the Compose project directory (the deploy job's DEPLOY_DIR)
+│   ├── docker-compose.yml      copied from the repository by every deploy (previous copy: .bak)
+│   ├── .deploy-state           last deploy (written by deploy.sh)
+│   └── .env -> ../.env         a link, so Compose finds the configuration next to the compose file
+├── scripts/pg_backup.sh        copied from the repository by every deploy
+├── pgdata/                     PostgreSQL 18 data
+├── backups/                    nightly and pre-deploy dumps
+└── agent-data/                 bot notes and run logs (Phase 1)
 ```
+
+The compose file sits in its own `compose/` directory on purpose. CasaOS lists every Compose project Docker runs,
+and its **Uninstall** always deletes the project's directory, even when you choose to keep the data. With this
+layout that removes only `compose/` and the link, never the database, the dumps or `.env` (whose
+`API_KEY_PEPPER` every API key depends on). See the warning in step 7.
 
 1. Create the user the runner will run as, and let it use Docker:
 
@@ -138,14 +153,16 @@ Everything lives in `/DATA/AppData/stocks` (the CasaOS AppData convention):
         --image ghcr.io/<owner>/stocks --url https://stocks.<your-domain>
    ```
 
-   It never overwrites an existing `.env`; it generates `DB_PASSWORD`, `API_KEY_PEPPER` and `ENGINE_SEED`, and
-   lists what is still empty. Add `--casaos-link` if you will install through CasaOS Import (step 7B).
+   It never overwrites an existing `.env`; it generates `DB_PASSWORD`, `API_KEY_PEPPER` and `ENGINE_SEED`, sets
+   `APP_PUBLIC_URL` and `APP_PUBLIC_HOST` from `--url`, creates `compose/` with the `.env` link, and lists what is
+   still empty. Add `--casaos-link` if you will install through CasaOS Import (step 7B).
 
 4. Fill in the rest: `sudo -u gha-runner nano /DATA/AppData/stocks/.env`
 
    | Variable | Value |
    |---|---|
    | `APP_PUBLIC_URL` | `https://stocks.<your-domain>`, exactly the tunnel hostname |
+   | `APP_PUBLIC_HOST` | `stocks.<your-domain>` (the same host, without `https://`; the CasaOS tile opens it) |
    | `ADMIN_BOOTSTRAP_USERNAME`, `ADMIN_BOOTSTRAP_PASSWORD` | your admin login (password ≥ 10 characters); used on first boot only, clear both afterwards |
    | `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY` | Alpaca paper keys |
    | `FINNHUB_TOKEN` | Finnhub key |
@@ -209,7 +226,7 @@ and adds another image to trust and keep updated; the service auto-updates and s
 | Variable | Value | Meaning |
 |---|---|---|
 | `DEPLOY_ENABLED` | `true` | Master switch. Anything else skips the deploy job (images are still pushed). |
-| `DEPLOY_DIR` | `/DATA/AppData/stocks` (default) | Directory with `docker-compose.yml` and `.env` on the server |
+| `DEPLOY_DIR` | `/DATA/AppData/stocks/compose` (default) | The Compose project directory on the server (`docker-compose.yml` and the `.env` link) |
 | `DEPLOY_SYNC_COMPOSE` | `true` (default) | Copy the repository's `docker-compose.yml` into `DEPLOY_DIR` on every deploy (the old one is kept as `.bak`). Set `false` to manage the file by hand. |
 | `DEPLOY_PROFILES` | empty (default) | Extra Compose profiles; `agents` once the Phase 1 agent runner exists |
 | `DEPLOY_HEALTH_TIMEOUT` | `420` (default) | Seconds to wait for the app's readiness check before rolling back |
@@ -221,23 +238,34 @@ and adds another image to trust and keep updated; the service auto-updates and s
 
 **Actions → Release → Run workflow** on `main` with the tag empty (or push any commit to `main`). The deploy job:
 
-1. checks out `docker-compose.yml` and `deploy/`, copies the compose file and `pg_backup.sh` into
-   `/DATA/AppData/stocks`;
+1. checks out `docker-compose.yml` and `deploy/`, stages the compose file and `pg_backup.sh` next to the live
+   copies and validates the new compose file against `.env` (nothing live changes yet);
 2. pulls `ghcr.io/<owner>/stocks:sha-<7 hex>` and remembers the running image;
 3. dumps the database (`backups/stocks-<date>-predeploy-<tag>.dump`) when it is already running;
-4. writes `STOCKS_TAG=<tag>` into `.env` and runs `docker compose -p stocks up -d`;
+4. installs the staged files into `/DATA/AppData/stocks/compose` and `scripts/`, writes `STOCKS_TAG=<tag>` into
+   `.env` and runs `docker compose -p stocks up -d`;
 5. waits until `stocks-app` reports healthy (Spring readiness on port 8081, inside the container);
 6. if not, prints the app logs, puts the previous image and compose file back, waits for health again and fails
    the job.
 
+If step 1 fails (a variable missing from `.env`), or the pull or the backup fails, the job stops before
+changing anything on the server.
+
 The first boot creates the schema (Flyway) and your admin. CasaOS lists every Compose project Docker runs, so the
-stack appears on the CasaOS dashboard, with the title and icon from the `x-casaos` block. Manage it through
-`.env` and the pipeline, not through CasaOS's settings dialog: the next deploy replaces `docker-compose.yml`.
+stack appears on the CasaOS dashboard, with the title and icon from the `x-casaos` block; its tile opens
+`https://<APP_PUBLIC_HOST>/`, your tunnel hostname.
+
+> **Warning: never click Uninstall, and never save this app's settings, in CasaOS.** Manage the stack through
+> `.env` and the pipeline only. CasaOS's Uninstall deletes the app's directory even when you keep the data, and an
+> Uninstall that does not keep the data deletes `/DATA/AppData/stocks` itself: the database, every dump and
+> `.env`. Saving the settings makes CasaOS rewrite `docker-compose.yml` as root (mode 600) next to its own `.bak`,
+> which breaks the next deploy. To stop or remove the stack, run `sudo -u gha-runner docker compose -p stocks down`
+> (the data stays); `up -d` from `/DATA/AppData/stocks/compose` starts it again.
 
 Without GitHub, the same thing by hand on the server (after step 3's login or a public package):
 
 ```sh
-cd /DATA/AppData/stocks && sudo -u gha-runner cp /path/to/repo/docker-compose.yml .
+cd /DATA/AppData/stocks/compose && sudo -u gha-runner cp /path/to/repo/docker-compose.yml .
 sudo -u gha-runner docker compose -p stocks up -d
 ```
 
@@ -253,11 +281,11 @@ If you prefer to install through the CasaOS UI first:
    paste the whole `docker-compose.yml` → **Submit**. Values show as `$VARIABLE` placeholders; leave them, they
    come from `.env`. → **Install**.
 4. Check what CasaOS created: `docker inspect -f '{{.State.Health.Status}}' stocks-app` must become `healthy`,
-   and `docker network inspect -f '{{.Internal}}' stocks-backend` must print `true`. If not, remove the app in
-   CasaOS (keep the data) and use 7A.
+   and `docker network inspect -f '{{.Internal}}' stocks-backend` must print `true`. If not, stop it with
+   `sudo docker compose -p stocks down` (not CasaOS's Uninstall, see the warning in 7A) and use 7A.
 
-Keep `DEPLOY_DIR` at `/DATA/AppData/stocks`: the next pipeline deploy takes the same Compose project (`stocks`,
-same container names) over from there. Do not point `DEPLOY_DIR` at `/var/lib/casaos/apps/stocks`: CasaOS writes
+Keep `DEPLOY_DIR` at `/DATA/AppData/stocks/compose`: the next pipeline deploy takes the same Compose project
+(`stocks`, same container names) over from there. Do not point `DEPLOY_DIR` at `/var/lib/casaos/apps/stocks`: CasaOS writes
 that compose file as root with mode 600 and may rewrite it, so the unprivileged runner can neither read nor safely
 update it.
 
@@ -270,7 +298,7 @@ out services behind a profile (the `agents` runner). CI enforces these rules (`m
 
 1. Open `https://stocks.<your-domain>` (after step 8) and log in with the bootstrap admin.
 2. Clear `ADMIN_BOOTSTRAP_USERNAME` and `ADMIN_BOOTSTRAP_PASSWORD` in `.env`; they are applied at the next deploy
-   or with `docker compose -p stocks up -d` in `/DATA/AppData/stocks`.
+   or with `docker compose -p stocks up -d` in `/DATA/AppData/stocks/compose`.
 3. Check the admin System page: market-data probe, jobs, engine status.
 
 ## 8. Cloudflare Tunnel
@@ -282,7 +310,7 @@ runs:
 |---|---|---|
 | **as a container, joined to the `stocks-edge` network** (recommended with the CasaOS cloudflared app) | `http://stocks-app:8080` | defaults (the published port is not even used) |
 | on the host network, or as a system service | `http://localhost:8080` | `STOCKS_BIND_IP=127.0.0.1` (default) |
-| as a container on another network that cannot join `stocks-edge` | `http://<server-lan-ip>:8080` | `STOCKS_BIND_IP=0.0.0.0` (then any LAN device can reach port 8080 over plain HTTP) |
+| as a container on another network that cannot join `stocks-edge` | `http://<server-lan-ip>:8080` | `STOCKS_BIND_IP=0.0.0.0` **and** `TRUSTED_PROXIES` narrowed to cloudflared's Docker network, e.g. `172.18.0.0/16` (from `docker network inspect <its network>`). Any LAN device can then reach port 8080 over plain HTTP; with the broad default it could also forge `CF-Connecting-IP` (rate limits, lockout, audit) and `X-Forwarded-Proto: https`. |
 
 **Joining `stocks-edge`.** The stack creates the Docker network `stocks-edge`. Quick test:
 `docker network connect stocks-edge <cloudflared-container>`. That is lost when the cloudflared container is
@@ -325,8 +353,10 @@ networks:
   these settings are wrong; the settings matter for the documented Claude API and OpenAI Responses recipes.
 
 **Proxy headers.** The app trusts `X-Forwarded-Proto` and `CF-Connecting-IP` only from addresses matching
-`TRUSTED_PROXIES` (default: loopback, the Docker bridges and private LAN ranges), which covers all three
-placements above. `APP_PUBLIC_URL` must be the exact `https://` hostname.
+`TRUSTED_PROXIES` (default: loopback, the Docker bridges and private LAN ranges). That default is safe for the first
+two placements, where nothing on the LAN can reach the app port; the `stocks-edge` placement is the recommended
+one. With `STOCKS_BIND_IP=0.0.0.0`, Docker keeps LAN clients' source addresses, so narrow `TRUSTED_PROXIES` to
+cloudflared's network as a CIDR list (ARCHITECTURE §24.3). `APP_PUBLIC_URL` must be the exact `https://` hostname.
 
 **Check it** from outside your network (a phone on mobile data, or a cloud VM):
 
@@ -342,15 +372,27 @@ In the browser, the dev tools' Network tab shows `/ws` with status 101 after log
 - **Upgrade = merge to `main`.** CI must pass before the image is pushed and deployed. While the single instance
   restarts (it holds a PostgreSQL advisory lock, §12.9) the site is down for about a minute; orders do not fill
   during that time and are never filled retroactively. Flyway migrates the database on start.
-- **Versioned releases:** `git tag v1.2.0 && git push origin v1.2.0` builds `1.2.0` and `1.2`. Deploy it with
-  **Actions → Release → Run workflow**, tag `1.2.0`, from the `v1.2.0` tag (so that tag's compose file is used).
+- **Versioned releases:** `git tag v1.2.0 && git push origin v1.2.0` builds `1.2.0` and `1.2` (never `latest`,
+  which only `main` moves). Deploy it with **Actions → Release → Run workflow**, tag `1.2.0`, from the `v1.2.0` tag
+  (so that tag's compose file is used). Run workflow deploys only from `main` or a `v*` tag; from any other
+  branch it builds and pushes the image but skips the deploy.
 - **Automatic rollback:** a deploy whose app is not healthy within `DEPLOY_HEALTH_TIMEOUT` is rolled back to the
   image that was running and the job fails (exit 1). If the old version does not come back either (exit 2), see
   [runbook.md](runbook.md#failed-deploy).
-- **Manual rollback:** **Actions → Release → Run workflow**, `tag` = an older `sha-…` (listed in each run's
-  summary and on the package page). The deploy job pulls it and runs the same health-gated procedure. On the
-  server, without GitHub:
-  `STOCKS_IMAGE=ghcr.io/<owner>/stocks deploy/scripts/deploy.sh --tag sha-1a2b3c4` from a checkout.
+- **Manual rollback:** **Actions → Release → Run workflow** on `main`, `tag` = an older `sha-…` (listed in each
+  run's summary and on the package page). The deploy job pulls it and runs the same health-gated procedure, and
+  changes only the image: it keeps the server's `docker-compose.yml`. It runs on its own, without waiting for a
+  build in progress. **To roll back across a compose change** (a release that added a service or a variable),
+  dispatch from the `v*` tag of that release instead (tag one if needed), so its compose file is installed with
+  its image. On the server, without GitHub, from the runner's checkout (the server has no other checkout):
+
+  ```sh
+  cd /home/gha-runner/actions-runner/_work/stocks/stocks
+  sudo -u gha-runner bash deploy/scripts/deploy.sh --tag sha-1a2b3c4
+  ```
+
+  `STOCKS_IMAGE` comes from `.env`. This needs the package to be public, or step 3's `docker login ghcr.io` run as
+  `gha-runner` (the pipeline's own login lasts only for its job).
 - **Database migrations are not rolled back.** Flyway is forward-only. An older image usually starts on a newer
   schema (new tables and columns are ignored), but if a release changed the schema incompatibly, restore that
   deploy's `predeploy` dump together with the older image ([runbook.md](runbook.md#restore)).
@@ -369,39 +411,50 @@ turns *unhealthy* when no backup succeeded for 25 hours.
 Copy `backups/` off the server too (another disk, a NAS share, or `rclone` to cloud storage): a dump on the same
 disk does not survive that disk. Restore and the restore rehearsal: [runbook.md](runbook.md#restore).
 
-## 11. Alternative without a runner: Watchtower
+## 11. Watchtower (no runner; used in production)
 
-If you would rather not run a GitHub runner on the server, a Watchtower container can poll GHCR and restart
-`stocks-app` when `latest` changes.
+Watchtower polls GHCR and restarts `stocks-app` when `latest` changes. `docker-compose.yml` already labels the
+services for it:
 
-1. Set `DEPLOY_ENABLED` to `false` (or delete it). Images keep being pushed.
-2. Make the package public, or `docker login ghcr.io` as root (step 3).
-3. Start the stack by hand once (7A "without GitHub", or 7B) with `STOCKS_TAG=latest` in `.env`.
-4. Run Watchtower, limited to the app container. The original `containrrr/watchtower` was archived in December
-   2025; use the maintained fork and pin a release you have reviewed:
+| Service | Label `com.centurylinklabs.watchtower.enable` |
+|---|---|
+| `app`, `agent-runner` | `"true"`: updated on every push to `main` |
+| `db`, `backup` | `"false"`: never touched (PostgreSQL upgrades are deliberate, see the runbook) |
+
+1. Leave `DEPLOY_ENABLED` unset (or `false`). Images keep being pushed.
+2. The package `ghcr.io/rjgehan/stocks` must be public (Package settings → Change visibility), or log the server
+   in with `docker login ghcr.io` as root (step 3).
+3. Start the stack once (7A "without GitHub", or 7B) with `STOCKS_TAG=latest` in `.env`.
+4. **An existing Watchtower needs nothing else.** If it runs with label filtering (`--label-enable` /
+   `WATCHTOWER_LABEL_ENABLE=true`) it picks up `stocks-app` through the label; if it watches every container, the
+   `"false"` labels keep it away from the database. If you don't run one yet, the original
+   `containrrr/watchtower` was archived in December 2025; use the maintained fork and pin a release you have
+   reviewed:
 
    ```sh
    sudo docker run -d --name watchtower --restart unless-stopped \
      -v /var/run/docker.sock:/var/run/docker.sock \
-     -v /root/.docker/config.json:/config.json:ro \
-     nickfedor/watchtower:<pinned-version> --interval 300 --cleanup stocks-app
+     nickfedor/watchtower:<pinned-version> --label-enable --interval 300 --cleanup
    ```
 
-   (Drop the `config.json` line if the package is public.)
+   (Add `-v /root/.docker/config.json:/config.json:ro` if the package is private.)
 
-What you give up: no health-gated rollback (a broken `latest` stays broken until you push a fix or pin
-`STOCKS_TAG`), no pre-deploy dump, up to five minutes of delay, and changes to `docker-compose.yml` or
-`pg_backup.sh` are never applied. Watchtower also has full Docker access.
+What you give up compared with the runner: no health-gated rollback (a broken `latest` stays broken until you
+push a fix or pin `STOCKS_TAG` to an older `sha-…` tag in `.env` and run `docker compose -p stocks up -d`), no
+pre-deploy dump (the nightly backup still runs), up to five minutes of delay, and changes to `docker-compose.yml`
+or `pg_backup.sh` are not applied automatically: re-import or copy them by hand when a release notes it.
+Database migrations run automatically when the new app starts (Flyway).
 
 ## 12. Troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
 | Deploy job waits "for a runner" | The runner is offline: `sudo systemctl status 'actions.runner.*'` on the server. Its labels must include `casaos`. |
-| Deploy job skipped | `DEPLOY_ENABLED` is not exactly `true`, CI failed, or it was a tag push (tags do not deploy). |
+| Deploy job skipped | `DEPLOY_ENABLED` is not exactly `true`, CI failed, it was a tag push (tags do not deploy), or Run workflow was started from a branch other than `main` or a `v*` tag. |
 | `cannot pull …: denied` | Package access: step 3 ("Manage Actions access"), or the tag does not exist. |
-| `.env is missing` / `not writable` | Run `init-host.sh` (step 4); `.env` must belong to `gha-runner`. |
-| `docker compose config failed` | A variable is missing from `.env`, or a `$` is in a value. Compare with `.env.example`. |
+| `.env is missing` / `not writable` | Run `init-host.sh` (step 4); `.env` must belong to `gha-runner`, and `compose/.env` must be the link to it. |
+| `… still uses the old layout` | The host was set up with `docker-compose.yml` directly in `/DATA/AppData/stocks`. Re-run `init-host.sh` (step 4.3): it moves the file into `compose/` and prints the one-time `up -d --force-recreate` that relabels the containers ([runbook.md](runbook.md#host-layout)). |
+| `docker compose config failed` | A variable is missing from `.env`, or a `$` is in a value. Compare with `.env.example`. Nothing was changed on the server; fix `.env` and re-run the job. |
 | App unhealthy, rolled back | Read the app log in the job output (or `docker logs stocks-app`). The prod profile fails fast on a missing or invalid `APP_PUBLIC_URL`, `API_KEY_PEPPER` (< 32 bytes), `ENGINE_SEED`, missing Alpaca keys in `hybrid`, or no admin and no bootstrap variables (§23.2). |
 | `port is already allocated` | Another app uses 8080 on that address: change `STOCKS_PORT` (and the tunnel URL if it uses the port). |
 | Tunnel returns 502 | cloudflared cannot reach the URL: check the table in step 8. Test the path from that network: `docker run --rm --network stocks-edge busybox wget -qO- http://stocks-app:8080/ \| head -c 200`. |

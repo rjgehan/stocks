@@ -3,6 +3,7 @@ import { api, unwrap } from '../client'
 import { isApiError } from '../problem'
 import { queryKeys } from '../queryKeys'
 import type { Me, Preferences } from '../types'
+import { stopRealtime } from '../../realtime/stomp'
 
 /** The signed-in player, or `null` when the session is anonymous (401). */
 export function useMe() {
@@ -35,6 +36,9 @@ export function useLogout() {
   return useMutation({
     mutationFn: () => unwrap(api.POST('/api/v1/auth/logout')),
     onSettled: () => {
+      // The STOMP session was authenticated as this player at its handshake: close it, so the next sign-in on this
+      // tab gets a fresh CONNECT and never another player's /user/queue/* messages (§19).
+      stopRealtime()
       qc.clear()
       qc.setQueryData(queryKeys.me, null)
     },

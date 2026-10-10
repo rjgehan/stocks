@@ -12,6 +12,7 @@ import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaCodeUnit;
 import com.tngtech.archunit.core.domain.JavaField;
+import com.tngtech.archunit.core.domain.JavaType;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
@@ -30,6 +31,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.scheduling.annotation.Scheduled;
 
@@ -94,25 +96,28 @@ public final class ArchitectureRules {
         .allowEmptyShould(true);
   }
 
-  /** Rule 4: no {@code double}/{@code float}/{@code Double}/{@code Float} field, parameter or return type. */
+  /** Rule 4's banned types. */
+  private static final Set<String> FLOATING_POINT = Set.of("double", "float", "java.lang.Double", "java.lang.Float");
+
+  /**
+   * Rule 4: no {@code double}/{@code float}/{@code Double}/{@code Float} field, parameter or return type, including
+   * inside arrays and generic type arguments ({@code double[]}, {@code List<Double>}, {@code Map<String, Float>},
+   * {@code Optional<Double>}, bounds of type variables).
+   */
   public static ArchRule noFloatingPoint(String... packages) {
-    Set<String> banned = Set.of("double", "float", "java.lang.Double", "java.lang.Float");
     ArchCondition<JavaClass> noFloats = new ArchCondition<>("not use double, float, Double or Float") {
       @Override
       public void check(JavaClass c, ConditionEvents events) {
         for (JavaField f : c.getFields()) {
-          if (banned.contains(f.getRawType().getName())) {
-            events.add(SimpleConditionEvent.violated(f, f.getFullName() + " is " + f.getRawType().getName()));
-          }
+          floatingPointIn(f.getType()).ifPresent(t ->
+              events.add(SimpleConditionEvent.violated(f, f.getFullName() + " is " + describe(f.getType(), t))));
         }
         for (JavaCodeUnit m : c.getCodeUnits()) {
-          if (banned.contains(m.getRawReturnType().getName())) {
-            events.add(SimpleConditionEvent.violated(m, m.getFullName() + " returns " + m.getRawReturnType().getName()));
-          }
-          for (JavaClass p : m.getRawParameterTypes()) {
-            if (banned.contains(p.getName())) {
-              events.add(SimpleConditionEvent.violated(m, m.getFullName() + " takes " + p.getName()));
-            }
+          floatingPointIn(m.getReturnType()).ifPresent(t -> events.add(SimpleConditionEvent.violated(m,
+              m.getFullName() + " returns " + describe(m.getReturnType(), t))));
+          for (JavaType p : m.getParameterTypes()) {
+            floatingPointIn(p).ifPresent(t -> events.add(SimpleConditionEvent.violated(m,
+                m.getFullName() + " takes " + describe(p, t))));
           }
         }
       }
@@ -120,6 +125,31 @@ public final class ArchitectureRules {
     return classes().that().resideInAnyPackage(packages).should(noFloats)
         .because("§5.2 rule 4 / D4: money is BigDecimal")
         .allowEmptyShould(true);
+  }
+
+  /**
+   * Rule 4 for one type: the first banned type involved in it (the type itself, an array's base component type, a
+   * generic type argument at any depth, or a type variable's bound), if any. Shared with
+   * {@code ContractArchitectureTest}.
+   */
+  public static Optional<String> floatingPointIn(JavaType type) {
+    return type.getAllInvolvedRawTypes().stream()
+        .map(JavaClass::getBaseComponentType)
+        .map(JavaClass::getName)
+        .filter(FLOATING_POINT::contains)
+        .findFirst();
+  }
+
+  private static String describe(JavaType type, String banned) {
+    String name = type.getName();
+    if (type instanceof JavaClass c && c.isArray()) {   // "[D" → "double[]"
+      int dims = 0;
+      while (name.charAt(dims) == '[') {
+        dims++;
+      }
+      name = c.getBaseComponentType().getName() + "[]".repeat(dims);
+    }
+    return name.equals(banned) ? banned : name + " (" + banned + ")";
   }
 
   /** Rule 5: "now" comes from TimeSource; the system clock is read only in {@code com.stocks.common.time}. */

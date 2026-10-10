@@ -8,7 +8,7 @@ import { usePriceFlash } from '@/features/market/usePriceFlash'
 
 export type PillMode = 'pct' | 'change'
 
-const PILL = { up: 'bg-up text-white', down: 'bg-down text-white', flat: 'bg-bg-3 text-text-1' } as const
+const PILL = { up: 'bg-up text-on-updown', down: 'bg-down text-on-updown', flat: 'bg-bg-3 text-text-1' } as const
 
 /**
  * One watchlist row (§22.4): symbol, name, last price with a 400 ms flash, and a % change pill that cycles

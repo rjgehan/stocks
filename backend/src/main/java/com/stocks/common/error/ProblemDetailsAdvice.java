@@ -35,6 +35,9 @@ import tools.jackson.databind.exc.MismatchedInputException;
  *
  * <ul>
  *   <li>{@link ApiException} → its code, status, detail, hint, fields and {@code retryAfterS} (+ {@code Retry-After}).</li>
+ *   <li>Every 401 carries {@code WWW-Authenticate: Bearer realm="stocks"} (§17.1, RFC 9110 §15.5.2), e.g.
+ *       {@code BAD_CREDENTIALS} from login or {@code UNAUTHENTICATED} from a controller, like the 401s the security
+ *       layer writes itself.</li>
  *   <li>Malformed JSON, wrong types, unknown enum values, bean-validation failures, bad parameters
  *       → 400 {@code VALIDATION_FAILED} with {@code fields}.</li>
  *   <li>Other Spring MVC exceptions ({@link ErrorResponse}) keep their HTTP status; the code is derived from it
@@ -54,6 +57,12 @@ import tools.jackson.databind.exc.MismatchedInputException;
 public class ProblemDetailsAdvice {
 
   private static final Logger log = LoggerFactory.getLogger(ProblemDetailsAdvice.class);
+
+  /**
+   * The {@code WWW-Authenticate} challenge of every 401 (§17.1; Phase 2 adds {@code resource_metadata}). Lives here
+   * because {@code common} may not depend on {@code security} (§5.2 rule 8); {@code security.ProblemWriter} reuses it.
+   */
+  public static final String BEARER_CHALLENGE = "Bearer realm=\"stocks\"";
 
   @ExceptionHandler(ApiException.class)
   public ResponseEntity<Problem> apiException(ApiException e, HttpServletRequest request) {
@@ -176,6 +185,9 @@ public class ProblemDetailsAdvice {
     }
     if (problem.requestId() != null) {
       builder.header(RequestIds.HEADER, problem.requestId());
+    }
+    if (problem.status() == 401 && !extraHeaders.containsHeader(HttpHeaders.WWW_AUTHENTICATE)) {
+      builder.header(HttpHeaders.WWW_AUTHENTICATE, BEARER_CHALLENGE);
     }
     return builder.body(problem);
   }

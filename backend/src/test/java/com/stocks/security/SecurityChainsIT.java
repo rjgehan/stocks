@@ -151,6 +151,8 @@ class SecurityChainsIT {
       MvcResult r = s.login(attempt[0], attempt[1]);
       assertThat(r.getResponse().getStatus()).as(attempt[0]).isEqualTo(401);
       assertThat(code(r)).isEqualTo("BAD_CREDENTIALS");
+      // §17.1 / RFC 9110: a 401 raised by a controller carries the challenge too, not only the security layer's
+      assertThat(r.getResponse().getHeader("WWW-Authenticate")).as(attempt[0]).isEqualTo("Bearer realm=\"stocks\"");
     }
     assertThat(s.sessionId()).isNull();
   }
@@ -363,6 +365,12 @@ class SecurityChainsIT {
     assertThat(mcp.getResponse().getStatus()).isEqualTo(401);
     assertThat(mcp.getResponse().getHeader("WWW-Authenticate")).isEqualTo("Bearer realm=\"stocks\"");
     assertThat(call(get("/v3/api-docs")).getResponse().getStatus()).isEqualTo(401);
+    // springdoc also serves ${springdoc.api-docs.path}.yaml: it must not fall through to the public web chain
+    MvcResult yaml = call(get("/v3/api-docs.yaml"));
+    assertThat(yaml.getResponse().getStatus()).isEqualTo(401);
+    assertThat(yaml.getResponse().getHeader("WWW-Authenticate")).isEqualTo("Bearer realm=\"stocks\"");
+    assertThat(code(yaml)).isEqualTo("UNAUTHENTICATED");
+    assertThat(call(get("/v3/api-docs/swagger-config")).getResponse().getStatus()).isEqualTo(401);
     assertThat(call(get("/api/docs")).getResponse().getStatus()).isEqualTo(401);
     assertThat(call(get("/api/swagger-ui/index.html")).getResponse().getStatus()).isEqualTo(401);
 
@@ -372,6 +380,9 @@ class SecurityChainsIT {
     assertThat(docs.getResponse().getStatus()).isEqualTo(302);
     assertThat(docs.getResponse().getHeader("Location")).isEqualTo("/api/swagger-ui/index.html");
     assertThat(s.perform(get("/v3/api-docs")).getResponse().getStatus()).isEqualTo(200);
+    MvcResult yamlDocs = s.perform(get("/v3/api-docs.yaml"));
+    assertThat(yamlDocs.getResponse().getStatus()).isEqualTo(200);
+    assertThat(WebSession.contentOf(yamlDocs)).startsWith("openapi:");
 
     String key = fx.apiKey(fx.ai(handle("mcpbot"), p), pepper);
     MvcResult authed = bearer(post("/mcp").contentType(MediaType.APPLICATION_JSON)

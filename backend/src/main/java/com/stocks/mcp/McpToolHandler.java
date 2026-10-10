@@ -1,6 +1,7 @@
 package com.stocks.mcp;
 
 import com.stocks.common.error.ApiException;
+import com.stocks.common.error.ErrorCode;
 import com.stocks.contract.security.CurrentPlayer;
 import com.stocks.contract.security.PlayerPrincipal;
 import com.stocks.contract.security.RequestMeta;
@@ -32,6 +33,10 @@ import tools.jackson.databind.json.JsonMapper;
  * Spring AI generates) and converted with Boot's mapper (§6.3: a decimal may arrive as a string or a number). The
  * context handed to the tool carries the tool name in {@code RequestMeta.mcpTool}.
  *
+ * <p>Scope (§20.3): before anything else, the caller must hold the tool's scope ({@code McpToolCatalog.SCOPES}, the
+ * same scope REST requires for the same data, §17.1); otherwise the result is {@code FORBIDDEN_SCOPE}, and without
+ * a caller {@code UNAUTHENTICATED}. Chain 2 only requires an authenticated player for {@code /mcp}.
+ *
  * <p>Errors: an {@link ApiException} becomes a §20.2 error result ({@link McpErrors}); anything else is logged and
  * answered with {@code INTERNAL_ERROR}.
  */
@@ -40,13 +45,16 @@ final class McpToolHandler implements BiFunction<McpTransportContext, CallToolRe
   private static final Logger log = LoggerFactory.getLogger(McpToolHandler.class);
 
   private final String toolName;
+  private final String requiredScope;
   private final Object bean;
   private final Method method;
   private final JsonMapper mapper;
   private final List<Binder> binders;
 
-  McpToolHandler(String toolName, Object bean, Method method, JsonMapper mapper) {
+  /** {@code requiredScope}: a §7.1 scope, or {@code McpToolCatalog.NO_SCOPE}. */
+  McpToolHandler(String toolName, String requiredScope, Object bean, Method method, JsonMapper mapper) {
     this.toolName = toolName;
+    this.requiredScope = requiredScope;
     this.bean = bean;
     this.method = method;
     this.mapper = mapper;
@@ -95,6 +103,7 @@ final class McpToolHandler implements BiFunction<McpTransportContext, CallToolRe
   public CallToolResult apply(McpTransportContext ctx, CallToolRequest request) {
     McpTransportContext callContext = withTool(ctx);
     try {
+      checkScope(callContext);
       Object[] args = new Object[binders.size()];
       for (int i = 0; i < args.length; i++) {
         args[i] = binders.get(i).bind(callContext, request.arguments());
@@ -122,6 +131,18 @@ final class McpToolHandler implements BiFunction<McpTransportContext, CallToolRe
     } catch (IllegalAccessException | RuntimeException e) {
       log.error("MCP tool {} failed (request {})", toolName, requestId(callContext), e);
       return McpErrors.internal(mapper);
+    }
+  }
+
+  /** §20.3: the caller holds this tool's scope (a session holds all four). */
+  private void checkScope(McpTransportContext ctx) {
+    if (requiredScope == null || requiredScope.isEmpty()) {
+      return;
+    }
+    PlayerPrincipal caller = CurrentPlayer.require(ctx);   // UNAUTHENTICATED without a caller
+    if (!caller.hasScope(requiredScope)) {
+      throw ApiException.of(ErrorCode.FORBIDDEN_SCOPE,
+          "This API key lacks the '" + requiredScope + "' scope that " + toolName + " needs.");
     }
   }
 

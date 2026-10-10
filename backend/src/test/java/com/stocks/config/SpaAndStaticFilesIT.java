@@ -11,7 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.tomcat.servlet.TomcatServletWebServerFactory;
+import org.springframework.boot.web.server.WebServerFactoryCustomizer;
+import org.springframework.boot.web.server.servlet.ConfigurableServletWebServerFactory;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -51,6 +55,8 @@ class SpaAndStaticFilesIT {
   }
 
   @Autowired MockMvc mvc;
+  @Autowired @Qualifier("extraMimeMappings")
+  WebServerFactoryCustomizer<ConfigurableServletWebServerFactory> extraMimeMappings;
 
   MockHttpServletResponse fetch(String path) throws Exception {
     return mvc.perform(get(path)).andReturn().getResponse();
@@ -75,6 +81,16 @@ class SpaAndStaticFilesIT {
     assertThat(r.getStatus()).isEqualTo(200);
     assertThat(r.getHeader("Cache-Control")).isEqualTo("max-age=31536000, public, immutable");
     assertThat(fetch("/manifest.webmanifest").getStatus()).isEqualTo(200);
+  }
+
+  @Test
+  void theEmbeddedServerServesTheManifestAsManifestJson() {
+    // MockMvc's servlet context ignores the container's MIME table, so check the customizer on a real factory
+    TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
+    assertThat(factory.getSettings().getMimeMappings().get("webmanifest")).isNull();   // Tomcat's own table lacks it
+    extraMimeMappings.customize(factory);
+    assertThat(factory.getSettings().getMimeMappings().get("webmanifest")).isEqualTo("application/manifest+json");
+    assertThat(factory.getSettings().getMimeMappings().get("json")).isEqualTo("application/json");   // defaults kept
   }
 
   @Test

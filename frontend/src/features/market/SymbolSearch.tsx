@@ -10,8 +10,22 @@ import { cx } from '@/components/ui/cx'
  * same component full-screen on phones. Results come from GET /assets/search. WAI-ARIA combobox pattern:
  * the input owns the keyboard (↑ ↓ Enter Esc) and points at the active option with aria-activedescendant.
  */
-export function SymbolSearch({ focusOnMount, variant = 'bar', onDone }: { focusOnMount?: boolean; variant?: 'bar' | 'page'; onDone?: () => void }) {
-  const [q, setQ] = useState('')
+export function SymbolSearch({
+  focusOnMount,
+  variant = 'bar',
+  onDone,
+  initialQuery = '',
+  onQueryChange,
+}: {
+  focusOnMount?: boolean
+  variant?: 'bar' | 'page'
+  onDone?: () => void
+  /** Starting text, e.g. the `/search?q=` deep link (§22.2). */
+  initialQuery?: string
+  /** Called as the user types (the /search page mirrors it into `?q=`). */
+  onQueryChange?: (q: string) => void
+}) {
+  const [q, setQ] = useState(initialQuery)
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const input = useRef<HTMLInputElement>(null)
@@ -58,6 +72,7 @@ export function SymbolSearch({ focusOnMount, variant = 'bar', onDone }: { focusO
             setQ(e.target.value)
             setActive(0)
             setOpen(true)
+            onQueryChange?.(e.target.value)
           }}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 120)}

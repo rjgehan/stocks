@@ -13,6 +13,7 @@ import com.stocks.common.domain.PlayerStatus;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.config.stubs.NotImplementedStub;
+import com.stocks.contract.identity.MeQueries;
 import com.stocks.contract.identity.dto.MeDto;
 import com.stocks.contract.security.CurrentPlayer;
 import com.stocks.contract.security.PlayerPrincipal;
@@ -20,11 +21,11 @@ import com.stocks.contract.security.RateLimitService;
 import com.stocks.contract.security.RateLimitStatus;
 import com.stocks.contract.security.Scopes;
 import com.stocks.contract.trading.AccountQueries;
-import com.stocks.identity.MeService;
 import com.stocks.testkit.TestPrincipals;
 import com.stocks.testkit.TestTimes;
 import io.modelcontextprotocol.common.McpTransportContext;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -34,7 +35,7 @@ class AccountIdentityToolsTest {
 
   static final PlayerPrincipal BOT = TestPrincipals.apiKey(42, "ply_01", "claude", PlayerKind.AI, Scopes.ALL, 9);
 
-  MeService meService = mock(MeService.class);
+  MeQueries meService = mock(MeQueries.class);
 
   @BeforeEach
   void setUp() {
@@ -70,6 +71,21 @@ class AccountIdentityToolsTest {
 
     assertThat(result.account()).isNull();
     assertThat(result.rateLimits()).isEqualTo(new WhoamiDto.WhoamiRateLimitsDto(120, 20, 300));
+    org.mockito.Mockito.verifyNoInteractions(accounts);
+  }
+
+  @Test
+  void withoutAccountReadTheAccountIsNotReturned() {
+    PlayerPrincipal marketOnly = TestPrincipals.apiKey(42, "ply_01", "claude", PlayerKind.AI,
+        Set.of(Scopes.MARKET_READ), 9);
+    when(meService.me(marketOnly)).thenReturn(me("acc_01"));
+    AccountQueries accounts = mock(AccountQueries.class);
+
+    WhoamiDto result = new AccountIdentityTools(meService, accounts, NotImplementedStub.of(RateLimitService.class,
+        "WS1")).whoami(CurrentPlayer.mcpContext(marketOnly, null));
+
+    assertThat(result.me().accountId()).isEqualTo("acc_01");
+    assertThat(result.account()).as("GET /account needs account:read (§17.1)").isNull();
     org.mockito.Mockito.verifyNoInteractions(accounts);
   }
 

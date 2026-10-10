@@ -3,15 +3,16 @@ package com.stocks.contract;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.stocks.arch.ArchitectureRules;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaCodeUnit;
 import com.tngtech.archunit.core.domain.JavaField;
+import com.tngtech.archunit.core.domain.JavaType;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -26,22 +27,17 @@ class ContractArchitectureTest {
 
   @Test
   void noDoubleOrFloat() {
-    Set<String> banned = Set.of("double", "float", "java.lang.Double", "java.lang.Float");
+    // §5.2 rule 4, with the arch rule's own type walk (arrays and generic arguments included)
     List<String> violations = new ArrayList<>();
     for (JavaClass c : CONTRACT) {
       for (JavaField f : c.getFields()) {
-        if (banned.contains(f.getRawType().getName())) {
-          violations.add(f.getFullName());
-        }
+        ArchitectureRules.floatingPointIn(f.getType()).ifPresent(t -> violations.add(f.getFullName() + " is " + t));
       }
       for (JavaCodeUnit m : c.getCodeUnits()) {
-        if (banned.contains(m.getRawReturnType().getName())) {
-          violations.add(m.getFullName() + " returns " + m.getRawReturnType().getName());
-        }
-        for (JavaClass p : m.getRawParameterTypes()) {
-          if (banned.contains(p.getName())) {
-            violations.add(m.getFullName() + " takes " + p.getName());
-          }
+        ArchitectureRules.floatingPointIn(m.getReturnType())
+            .ifPresent(t -> violations.add(m.getFullName() + " returns " + t));
+        for (JavaType p : m.getParameterTypes()) {
+          ArchitectureRules.floatingPointIn(p).ifPresent(t -> violations.add(m.getFullName() + " takes " + t));
         }
       }
     }

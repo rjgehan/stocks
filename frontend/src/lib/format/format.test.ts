@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { formatMoney, formatMoneyCompact } from './money'
 import { abbreviate, arrow, direction, formatChange, formatInteger, formatPct, formatPrice, formatQty } from './number'
-import { formatCountdown, formatDateEt, formatTimeEt } from './time'
+import { formatCountdown, formatDateEt, formatSessionStartEt, formatTimeEt, serverNowMs } from './time'
 
 const MINUS = '−'
 
@@ -86,5 +86,21 @@ describe('time (ET)', () => {
     expect(formatCountdown(((2 * 60 + 14) * 60 + 7) * 1000)).toBe('2:14:07')
     expect(formatCountdown(65_000)).toBe('1:05')
     expect(formatCountdown(-5)).toBe('0:00')
+  })
+  it('runs countdowns on the server clock (an offset SIM clock, a wrong device clock)', () => {
+    // the server says 14:00Z (e.g. the e2e anchor) while the device thinks it is a day later
+    const fetchedAt = Date.parse('2026-10-10T14:00:00Z')
+    const now = serverNowMs('2026-10-09T14:00:00.000Z', fetchedAt, fetchedAt + 65_000)
+    expect(new Date(now).toISOString()).toBe('2026-10-09T14:01:05.000Z')
+    expect(formatCountdown(Date.parse('2026-10-09T20:00:00Z') - now)).toBe('5:58:55')
+    expect(serverNowMs('garbage', fetchedAt, 42)).toBe(42) // unusable clock: fall back to the device
+  })
+  it('names the day of a session start that is not today (ET)', () => {
+    const fridayEvening = Date.parse('2026-10-09T22:00:00Z') // Fri 6:00 PM ET
+    expect(formatSessionStartEt('2026-10-12T08:00:00Z', fridayEvening)).toBe('Mon 4:00 AM ET')
+    expect(formatSessionStartEt('2026-10-09T23:30:00Z', fridayEvening)).toBe('7:30 PM ET')
+    // 03:00Z on Oct 10 is still Friday evening in New York
+    expect(formatSessionStartEt('2026-10-10T01:00:00Z', Date.parse('2026-10-10T03:00:00Z'))).toBe('9:00 PM ET')
+    expect(formatSessionStartEt(null, fridayEvening)).toBe('--')
   })
 })

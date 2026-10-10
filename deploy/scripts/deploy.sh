@@ -2,23 +2,33 @@
 # Deploy (or roll back to) one image tag of stocks on the server (ARCHITECTURE §24.7, docs/deploy.md).
 #
 # Run by the `deploy` job of .github/workflows/release.yml on the self-hosted runner [self-hosted, casaos], or by
-# hand on the server from a checkout of this repository:
+# hand on the server as the runner user, from the runner's checkout (docs/deploy.md §9):
 #
-#   STOCKS_IMAGE=ghcr.io/<owner>/stocks deploy/scripts/deploy.sh --tag sha-1a2b3c4 [--sync-from .]
+#   cd /home/gha-runner/actions-runner/_work/stocks/stocks
+#   sudo -u gha-runner bash deploy/scripts/deploy.sh --tag sha-1a2b3c4 [--sync-from .]
+#
+# Host layout (ARCHITECTURE §24.2): the Compose project directory DEPLOY_DIR (compose/) is NOT the data root, so
+# removing the project directory (CasaOS "Uninstall" always deletes it) never takes pgdata/, backups/ or .env along:
+#   /DATA/AppData/stocks/{.env, pgdata/, backups/, scripts/pg_backup.sh, agent-data/}
+#   /DATA/AppData/stocks/compose/{docker-compose.yml, docker-compose.yml.bak, .deploy-state, .env -> ../.env}
 #
 # Steps:
-#   1. preflight (docker, compose file, .env, tag format)
-#   2. --sync-from DIR: copy DIR/docker-compose.yml into the deploy dir (unless DEPLOY_SYNC_COMPOSE=false) and
-#      DIR/deploy/backup/pg_backup.sh into $STOCKS_DATA_ROOT/scripts/
+#   1. preflight (docker, .env, tag format, the pre-compose/ layout)
+#   2. --sync-from DIR: STAGE DIR/docker-compose.yml (unless DEPLOY_SYNC_COMPOSE=false) and
+#      DIR/deploy/backup/pg_backup.sh next to the live files, and validate the staged compose file against .env;
+#      nothing live changes yet
 #   3. pull <image>:<tag>, remember the running image (local tag <image>:rollback)
 #   4. pre-deploy pg_dump (backups/stocks-<date>-predeploy-<tag>.dump) when the database is running
-#   5. write STOCKS_TAG=<tag> into .env, `docker compose up -d`, wait for the app healthcheck (readiness, :8081)
+#   5. install the staged files (the previous compose file becomes docker-compose.yml.bak), write STOCKS_TAG=<tag>
+#      into .env, `docker compose up -d`, wait for the app healthcheck (readiness, :8081)
 #   6. on failure: print the app logs, restore the previous compose file and image, wait for health again,
 #      exit 1 (rolled back) or 2 (rollback failed too; see docs/runbook.md "Failed deploy")
+# A failure in steps 1-4 (bad .env, failed pull, failed backup) exits 1 with every live file unchanged.
 #
 # Environment (all optional except STOCKS_IMAGE, which may also come from .env):
 #   STOCKS_IMAGE           lowercase repository without tag, e.g. ghcr.io/alice/stocks
-#   DEPLOY_DIR             directory holding docker-compose.yml and .env    (default /DATA/AppData/stocks)
+#   DEPLOY_DIR             Compose project directory: docker-compose.yml and .env (a link to the data root's)
+#                                                                            (default /DATA/AppData/stocks/compose)
 #   STOCKS_DATA_ROOT       host data root used by docker-compose.yml         (default /DATA/AppData/stocks)
 #   COMPOSE_PROJECT        compose project name                              (default stocks)
 #   COMPOSE_PROFILES       extra compose profiles, e.g. "agents"             (default none)
@@ -30,7 +40,7 @@ set -euo pipefail
 
 TAG=""
 SYNC_FROM=""
-DEPLOY_DIR="${DEPLOY_DIR:-/DATA/AppData/stocks}"
+DEPLOY_DIR="${DEPLOY_DIR:-/DATA/AppData/stocks/compose}"
 DATA_ROOT="${STOCKS_DATA_ROOT:-/DATA/AppData/stocks}"
 PROJECT="${COMPOSE_PROJECT:-stocks}"
 SYNC_COMPOSE="${DEPLOY_SYNC_COMPOSE:-true}"
@@ -39,7 +49,7 @@ BACKUP="${DEPLOY_BACKUP:-true}"
 KEEP_IMAGES="${DEPLOY_KEEP_IMAGES:-3}"
 SERVICE="app"
 
-usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -67,11 +77,14 @@ group() { if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then echo "::group::$*"; els
 endgroup() { if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then echo "::endgroup::"; fi; }
 is_true() { case "$1" in [Tt][Rr][Uu][Ee] | 1 | [Yy][Ee][Ss]) return 0 ;; *) return 1 ;; esac; }
 
-COMPOSE_FILE_PATH=""
+COMPOSE_FILE_PATH=""   # the live compose file
+ACTIVE_COMPOSE=""      # what compose() reads: the live file, or the staged one before the first install
 ENV_FILE=""
-compose() {
-  docker compose -p "$PROJECT" --project-directory "$DEPLOY_DIR" -f "$COMPOSE_FILE_PATH" --env-file "$ENV_FILE" "$@"
+compose_with() {
+  local file="$1"; shift
+  docker compose -p "$PROJECT" --project-directory "$DEPLOY_DIR" -f "$file" --env-file "$ENV_FILE" "$@"
 }
+compose() { compose_with "$ACTIVE_COMPOSE" "$@"; }
 
 # Print the value of KEY from the .env file (last assignment wins; surrounding quotes removed).
 env_get() {
@@ -100,7 +113,7 @@ env_set() {
   rm -f "$tmp"
 }
 
-container_id() { compose ps -q "$1" 2>/dev/null | head -n 1; }
+container_id() { { compose ps -q "$1" 2> /dev/null || true; } | head -n 1; }
 
 # Wait until the app container reports healthy. Returns 1 on unhealthy, exit, crash loop or timeout.
 wait_healthy() {
@@ -159,54 +172,60 @@ write_summary() {
 command -v docker > /dev/null || die "docker is not installed or not on PATH"
 docker compose version > /dev/null 2>&1 || die "the docker compose plugin is missing"
 docker info > /dev/null 2>&1 || die "cannot talk to the Docker daemon (is this user in the docker group?)"
+if [[ ! -d "$DEPLOY_DIR" && -f "$DATA_ROOT/docker-compose.yml" ]]; then
+  die "$DATA_ROOT still uses the old layout (Compose project directory = data root, which a CasaOS Uninstall deletes): run deploy/scripts/init-host.sh again to move it to $DEPLOY_DIR (docs/runbook.md)"
+fi
 [[ -d "$DEPLOY_DIR" ]] || die "DEPLOY_DIR $DEPLOY_DIR does not exist (run deploy/scripts/init-host.sh first)"
 COMPOSE_FILE_PATH="$DEPLOY_DIR/docker-compose.yml"
+ACTIVE_COMPOSE="$COMPOSE_FILE_PATH"
 ENV_FILE="$DEPLOY_DIR/.env"
-[[ -f "$ENV_FILE" ]] || die "$ENV_FILE is missing (copy .env.example, fill it in, chmod 600)"
+[[ -f "$ENV_FILE" ]] || die "$ENV_FILE is missing (init-host.sh links it to $DATA_ROOT/.env; copy .env.example there, fill it in, chmod 600)"
 [[ -w "$ENV_FILE" ]] || die "$ENV_FILE is not writable by $(id -un) (the deploy records STOCKS_TAG there)"
 
 IMAGE="${STOCKS_IMAGE:-$(env_get STOCKS_IMAGE)}"
 [[ "$IMAGE" =~ ^[a-z0-9]+([._:/-][a-z0-9]+)*$ ]] || die "STOCKS_IMAGE '$IMAGE' is not a lowercase image repository"
 [[ "$IMAGE" != *your-github-user* ]] || die "STOCKS_IMAGE still has the .env.example placeholder"
 
-# ------------------------------------------------------------------------------------------------ sync files
+# ------------------------------------------------------------------------------------------------ stage files
+# Nothing live changes until step 5: a bad .env, a failed pull or a failed backup leaves every file as it was.
+STAGED_COMPOSE="$DEPLOY_DIR/.docker-compose.yml.new"
+STAGED_BACKUP_SCRIPT="$DEPLOY_DIR/.pg_backup.sh.new"
+rm -f "$STAGED_COMPOSE" "$STAGED_BACKUP_SCRIPT"
+trap 'rm -f "$STAGED_COMPOSE" "$STAGED_BACKUP_SCRIPT"' EXIT
 COMPOSE_CHANGED=false
 BACKUP_SCRIPT_CHANGED=false
 if [[ -n "$SYNC_FROM" ]]; then
   [[ -f "$SYNC_FROM/docker-compose.yml" ]] || die "--sync-from $SYNC_FROM has no docker-compose.yml"
   if is_true "$SYNC_COMPOSE"; then
     if ! cmp -s "$SYNC_FROM/docker-compose.yml" "$COMPOSE_FILE_PATH"; then
-      if [[ -f "$COMPOSE_FILE_PATH" ]]; then
-        cp -p "$COMPOSE_FILE_PATH" "$COMPOSE_FILE_PATH.bak"
-        log "updating $COMPOSE_FILE_PATH from the repository (previous copy: docker-compose.yml.bak)"
-      else
-        log "installing $COMPOSE_FILE_PATH from the repository"
-      fi
-      cp "$SYNC_FROM/docker-compose.yml" "$COMPOSE_FILE_PATH.tmp"
-      mv -f "$COMPOSE_FILE_PATH.tmp" "$COMPOSE_FILE_PATH"
+      cp "$SYNC_FROM/docker-compose.yml" "$STAGED_COMPOSE"
       COMPOSE_CHANGED=true
+      log "staged docker-compose.yml from the repository (installed after the pull and the pre-deploy backup)"
     fi
   else
     log "DEPLOY_SYNC_COMPOSE=false: keeping $COMPOSE_FILE_PATH as is"
   fi
-  if [[ -f "$SYNC_FROM/deploy/backup/pg_backup.sh" ]]; then
-    mkdir -p "$DATA_ROOT/scripts"
-    if ! cmp -s "$SYNC_FROM/deploy/backup/pg_backup.sh" "$DATA_ROOT/scripts/pg_backup.sh"; then
-      # Replace by rename: the running backup loop keeps reading its old copy until it is restarted.
-      cp "$SYNC_FROM/deploy/backup/pg_backup.sh" "$DATA_ROOT/scripts/pg_backup.sh.tmp"
-      chmod 0755 "$DATA_ROOT/scripts/pg_backup.sh.tmp"
-      mv -f "$DATA_ROOT/scripts/pg_backup.sh.tmp" "$DATA_ROOT/scripts/pg_backup.sh"
-      BACKUP_SCRIPT_CHANGED=true
-      log "updated $DATA_ROOT/scripts/pg_backup.sh"
-    fi
+  if [[ -f "$SYNC_FROM/deploy/backup/pg_backup.sh" ]] \
+    && ! cmp -s "$SYNC_FROM/deploy/backup/pg_backup.sh" "$DATA_ROOT/scripts/pg_backup.sh"; then
+    cp "$SYNC_FROM/deploy/backup/pg_backup.sh" "$STAGED_BACKUP_SCRIPT"
+    chmod 0755 "$STAGED_BACKUP_SCRIPT"
+    BACKUP_SCRIPT_CHANGED=true
+    log "staged pg_backup.sh from the repository"
   fi
 fi
-[[ -f "$COMPOSE_FILE_PATH" ]] || die "$COMPOSE_FILE_PATH is missing (use --sync-from <repo checkout> or copy it there)"
-[[ -f "$DATA_ROOT/scripts/pg_backup.sh" ]] || die "$DATA_ROOT/scripts/pg_backup.sh is missing (use --sync-from or copy deploy/backup/pg_backup.sh)"
+is_true "$COMPOSE_CHANGED" || [[ -f "$COMPOSE_FILE_PATH" ]] \
+  || die "$COMPOSE_FILE_PATH is missing (use --sync-from <repo checkout> or copy it there)"
+is_true "$BACKUP_SCRIPT_CHANGED" || [[ -f "$DATA_ROOT/scripts/pg_backup.sh" ]] \
+  || die "$DATA_ROOT/scripts/pg_backup.sh is missing (use --sync-from or copy deploy/backup/pg_backup.sh)"
+# Before the first install there is no live file yet: read the project through the staged one.
+[[ -f "$COMPOSE_FILE_PATH" ]] || ACTIVE_COMPOSE="$STAGED_COMPOSE"
+NEW_COMPOSE="$COMPOSE_FILE_PATH"
+if is_true "$COMPOSE_CHANGED"; then NEW_COMPOSE="$STAGED_COMPOSE"; fi
 
 export STOCKS_IMAGE="$IMAGE"
 export STOCKS_TAG="$TAG"
-compose config -q || die "docker compose config failed for $COMPOSE_FILE_PATH with $ENV_FILE"
+compose_with "$NEW_COMPOSE" config -q \
+  || die "docker compose config failed for the new docker-compose.yml with $ENV_FILE (a variable missing from .env? Compare with .env.example); nothing was changed"
 
 # ------------------------------------------------------------------------------------------------ previous state
 PREV_ID=""
@@ -247,7 +266,7 @@ if is_true "$BACKUP"; then
   if [[ -n "$(compose ps -q --status running db 2>/dev/null)" && -n "$(compose ps -q --status running backup 2>/dev/null)" ]]; then
     group "pre-deploy backup"
     compose exec -T backup /bin/sh /opt/stocks/pg_backup.sh "predeploy-$TAG" \
-      || die "pre-deploy backup failed; nothing was changed (skip it with DEPLOY_BACKUP=false)"
+      || die "pre-deploy backup failed; the deploy stopped before changing anything (skip it with DEPLOY_BACKUP=false)"
     endgroup
   else
     log "database or backup service not running: skipping the pre-deploy backup"
@@ -281,6 +300,25 @@ rollback() {
   write_summary "FAILED, rollback FAILED"
   exit 2
 }
+
+# ------------------------------------------------------------------------------------------------ install staged files
+if is_true "$COMPOSE_CHANGED"; then
+  if [[ -f "$COMPOSE_FILE_PATH" ]]; then
+    cp -p "$COMPOSE_FILE_PATH" "$COMPOSE_FILE_PATH.bak"
+    log "updating $COMPOSE_FILE_PATH from the repository (previous copy: docker-compose.yml.bak)"
+  else
+    log "installing $COMPOSE_FILE_PATH from the repository"
+  fi
+  mv -f "$STAGED_COMPOSE" "$COMPOSE_FILE_PATH"
+fi
+ACTIVE_COMPOSE="$COMPOSE_FILE_PATH"
+if is_true "$BACKUP_SCRIPT_CHANGED"; then
+  mkdir -p "$DATA_ROOT/scripts"
+  # Replace by rename: the running backup loop keeps reading its old copy until it is restarted.
+  cp "$STAGED_BACKUP_SCRIPT" "$DATA_ROOT/scripts/.pg_backup.sh.tmp"
+  mv -f "$DATA_ROOT/scripts/.pg_backup.sh.tmp" "$DATA_ROOT/scripts/pg_backup.sh"
+  log "updated $DATA_ROOT/scripts/pg_backup.sh"
+fi
 
 env_set STOCKS_IMAGE "$IMAGE"
 env_set STOCKS_TAG "$TAG"

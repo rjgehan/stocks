@@ -22,20 +22,26 @@ FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS build
 WORKDIR /src/backend
 COPY backend/.mvn .mvn
 COPY backend/mvnw backend/pom.xml ./
-RUN --mount=type=cache,target=/root/.m2 chmod +x mvnw && ./mvnw -B -q dependency:go-offline
+# No cache mount here on purpose: ~/.m2 (the Maven distribution the wrapper fetches and every dependency) must be
+# part of this layer, so CI's `cache-to: type=gha` exports it and a build with an unchanged pom.xml downloads
+# nothing. GitHub-hosted builders start empty and never keep BuildKit cache mounts.
+RUN chmod +x mvnw && ./mvnw -B -q dependency:go-offline
 COPY backend/src src
 # Never ship whatever a local `make jar` left in static/: the SPA always comes from the web stage.
 RUN rm -rf src/main/resources/static
 COPY --from=web /src/frontend/dist src/main/resources/static
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -DskipTests package \
+# Reads ~/.m2 from the layer above (a cache mount would hide it behind an empty directory).
+RUN ./mvnw -B -q -DskipTests package \
  && java -Djarmode=tools -jar target/stocks.jar extract --layers --launcher --destination target/extracted
 
 FROM eclipse-temurin:21-jre
 LABEL org.opencontainers.image.title="stocks" \
       org.opencontainers.image.description="Multiplayer paper-trading league (Spring Boot API + React SPA, one origin)"
-# curl only serves the HEALTHCHECK; the base image's security updates come with each rebuild.
+# The HEALTHCHECK needs curl, which the eclipse-temurin (Ubuntu) base already ships; install it only if a future
+# base drops it, so a normal build runs no apt-get (slow under QEMU for arm64).
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
+RUN (command -v curl > /dev/null \
+     || (apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*)) \
  && groupadd -r -g 10001 stocks && useradd -r -g stocks -u 10001 -M -d /app -s /usr/sbin/nologin stocks
 WORKDIR /app
 # Least-changing layers first, so a code-only release re-pushes only the small application layer.

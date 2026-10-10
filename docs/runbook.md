@@ -6,9 +6,12 @@ Operating the running league on the CasaOS server. Setup and deploys: [deploy.md
 All commands run on the server. The shorthand `dc` means:
 
 ```sh
-cd /DATA/AppData/stocks
+cd /DATA/AppData/stocks/compose          # the Compose project directory (its .env links to ../.env)
 alias dc='sudo -u gha-runner docker compose -p stocks --env-file .env'
 ```
+
+**Never use CasaOS's Uninstall or its settings dialog for this app** (deploy.md §7): Uninstall deletes the
+project directory, and without "keep data" the whole `/DATA/AppData/stocks`. Stop the stack with `dc down`.
 
 ## At a glance
 
@@ -16,9 +19,9 @@ alias dc='sudo -u gha-runner docker compose -p stocks --env-file .env'
 |---|---|
 | Containers | `stocks-app` (Spring Boot, :8080 HTTP+WS, :8081 actuator inside the container only), `stocks-db` (PostgreSQL 18.6), `stocks-backup`, later `stocks-agent-runner` (profile `agents`) |
 | Networks | `stocks-backend` (internal: db, backup, app), `stocks-edge` (app egress, cloudflared, agent runner) |
-| Config | `/DATA/AppData/stocks/.env` (mode 600). `docker-compose.yml` there is replaced by every deploy. |
+| Config | `/DATA/AppData/stocks/.env` (mode 600; `compose/.env` is a link to it). `compose/docker-compose.yml` is replaced by every deploy (previous copy `.bak`). |
 | Data | `pgdata/` (database), `backups/` (dumps), `agent-data/` (bots) |
-| What is deployed | `.deploy-state`, `grep STOCKS_TAG .env`, `docker inspect -f '{{.Config.Image}}' stocks-app` |
+| What is deployed | `compose/.deploy-state`, `grep STOCKS_TAG /DATA/AppData/stocks/.env`, `docker inspect -f '{{.Config.Image}}' stocks-app` |
 | Logs | `docker logs -f stocks-app` (ECS JSON: `… 2>&1 \| jq -r '"\(.["@timestamp"]) \(.["log.level"]) \(.message)"'`); rotated at 5 × 10 MB per container |
 | Deploy history | GitHub → Actions → Release (each run's summary lists the image and the previous one) |
 
@@ -27,11 +30,13 @@ alias dc='sudo -u gha-runner docker compose -p stocks --env-file .env'
 ```sh
 dc ps                                                    # STATUS must say (healthy) for app, db, backup
 docker inspect -f '{{.State.Health.Status}}' stocks-app
-docker exec stocks-app curl -fsS http://127.0.0.1:8081/actuator/health            # details: db, diskSpace…
+docker exec stocks-app curl -fsS http://127.0.0.1:8081/actuator/health            # details: db, diskSpace, …
 docker exec stocks-app curl -fsS http://127.0.0.1:8081/actuator/health/readiness
 ```
 
-Port 8081 is never published or tunneled; use `docker exec`. The admin **System** page in the app shows the
+Port 8081 is never published or tunneled, and in production it listens on the container's loopback only
+(`management.server.address: 127.0.0.1`), so other containers (cloudflared, the agent runner) cannot read the
+metrics either; use `docker exec`. The admin **System** page in the app shows the
 engine state, the market-data probe, job runs and invariant results.
 
 Start, stop, restart (the data stays):
@@ -64,7 +69,7 @@ version cannot work with.
 
    `restore.sh` restores the dump and starts the stack on that `rollback` image.
 
-   Then set `STOCKS_TAG` in `.env` to that older `sha-…` tag (see `.deploy-state`, `PREVIOUS_REF`) so later
+   Then set `STOCKS_TAG` in `.env` to that older `sha-…` tag (see `compose/.deploy-state`, `PREVIOUS_REF`) so later
    restarts keep it. Anything players did between that dump and now is lost; tell them.
 
 ## Engine halted / invariant failure
@@ -98,7 +103,8 @@ An admin can also halt the engine on purpose (System page) before risky maintena
 
 - Nightly at `BACKUP_TIME_UTC` (05:00 UTC) and at container start when today's dump is missing; one more before
   every deploy. Files: `/DATA/AppData/stocks/backups/stocks-YYYY-MM-DD[-label].dump`, kept `BACKUP_KEEP_DAYS` (14).
-- Check: `dc ps backup` shows `(healthy)` (unhealthy = no success for 25 h); `cat backups/.last-success`;
+- Check: `dc ps backup` shows `(healthy)` (unhealthy = no success for 25 h);
+  `cat /DATA/AppData/stocks/backups/.last-success`;
   `docker logs stocks-backup`.
 - Backup now: `dc exec -T backup /bin/sh /opt/stocks/pg_backup.sh manual`
 - Verify a dump is readable without touching the database:
@@ -110,8 +116,7 @@ An admin can also halt the engine on purpose (System page) before risky maintena
 ```sh
 # the runner keeps a checkout of deploy/ from the last deploy job:
 cd /home/gha-runner/actions-runner/_work/stocks/stocks
-sudo -u gha-runner DEPLOY_DIR=/DATA/AppData/stocks \
-  deploy/scripts/restore.sh /DATA/AppData/stocks/backups/stocks-2026-10-09.dump
+sudo -u gha-runner deploy/scripts/restore.sh /DATA/AppData/stocks/backups/stocks-2026-10-09.dump
 ```
 
 `restore.sh` asks you to type `RESTORE`, takes a `prerestore` safety dump, stops the app (and the agent runner),
@@ -124,7 +129,7 @@ The manual equivalent (ARCHITECTURE §24.2):
 ```sh
 dc stop app
 dc exec -T db sh -c 'dropdb -U stocks --if-exists --force stocks && createdb -U stocks -O stocks stocks \
-  && pg_restore -U stocks -d stocks --no-owner --exit-on-error' < backups/stocks-YYYY-MM-DD.dump
+  && pg_restore -U stocks -d stocks --no-owner --exit-on-error' < /DATA/AppData/stocks/backups/stocks-YYYY-MM-DD.dump
 dc start app
 ```
 
@@ -149,6 +154,26 @@ balances and the leaderboard.
 - Logs are capped by the Compose logging options. Dumps are pruned after `BACKUP_KEEP_DAYS`.
 - PostgreSQL is small for a 20-player league (tens of MB per year, mostly intraday samples, which are pruned
   after 14 days).
+
+## Host layout
+
+```
+/DATA/AppData/stocks/            .env · pgdata/ · backups/ · scripts/pg_backup.sh · agent-data/   (the data)
+/DATA/AppData/stocks/compose/    docker-compose.yml(.bak) · .deploy-state · .env -> ../.env      (the project)
+```
+
+The Compose project directory is kept apart from the data because CasaOS deletes a project's directory on
+Uninstall, even with "keep data". **A host set up before this layout** (with `docker-compose.yml` directly in
+`/DATA/AppData/stocks`) makes `deploy.sh` stop with "still uses the old layout". Migrate it once:
+
+```sh
+cd /home/gha-runner/actions-runner/_work/stocks/stocks      # or the folder you ran init-host.sh from
+sudo bash deploy/scripts/init-host.sh --owner gha-runner     # moves the compose file, .bak and .deploy-state
+cd /DATA/AppData/stocks/compose                              # into compose/ and links compose/.env
+sudo -u gha-runner docker compose -p stocks up -d --force-recreate   # relabels the containers (about a minute down)
+```
+
+Then set the repository variable `DEPLOY_DIR` to `/DATA/AppData/stocks/compose` if you had set it explicitly.
 
 ## Development notes
 
