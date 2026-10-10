@@ -332,7 +332,7 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
       }
     }
     long k = SimMath.mix(p.key(), 201);
-    BigDecimal shares = BigDecimal.valueOf(StrictMath.round(p.advShares() * (150 + 250 * SimMath.uniform(k))));
+    BigDecimal shares = shares(p);
     BigDecimal pe = SimMath.decimal6(10 + 35 * SimMath.uniform(SimMath.mix(k, 1))).setScale(2, RoundingMode.HALF_EVEN);
     BigDecimal eps = price.divide(pe, 2, RoundingMode.HALF_EVEN);
     BigDecimal yield = SimMath.decimal6(0.03 * SimMath.uniform(SimMath.mix(k, 2))).setScale(4, RoundingMode.HALF_EVEN);
@@ -375,11 +375,27 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
     return out;
   }
 
-  /** §15.10 screener statistics: the SIM's shares outstanding (stocks only); no industry label (sectors are static). */
+  /**
+   * §15.10 screener statistics: the SIM's shares outstanding and market cap now (stocks only; the same numbers as
+   * {@link #fundamentals}, without its 52-week scan); no industry label (sectors are static).
+   */
   @Override
   public Optional<CompanyProfile> profile(String symbol, RefreshPriority priority) {
-    return fundamentals(symbol).filter(f -> f.sharesOutstanding() != null)
-        .map(f -> new CompanyProfile(symbol, f.sharesOutstanding(), f.marketCap(), null, ID));
+    Optional<SimModel.Params> po = model.params(symbol);
+    if (po.isEmpty() || po.get().type() == AssetType.ETF) {
+      return Optional.empty();
+    }
+    SimModel.Params p = po.get();
+    BigDecimal shares = shares(p);
+    BigDecimal price = model.priceAt(p, time.now()).orElse(null);
+    return Optional.of(new CompanyProfile(symbol, shares,
+        price == null ? null : price.multiply(shares).setScale(0, RoundingMode.HALF_EVEN), null, ID));
+  }
+
+  /** Shares outstanding: 150–400 days of average volume, a pure function of (seed, symbol). */
+  private static BigDecimal shares(SimModel.Params p) {
+    long k = SimMath.mix(p.key(), 201);
+    return BigDecimal.valueOf(StrictMath.round(p.advShares() * (150 + 250 * SimMath.uniform(k))));
   }
 
   @Override

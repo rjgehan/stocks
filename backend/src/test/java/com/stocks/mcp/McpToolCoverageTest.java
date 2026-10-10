@@ -84,10 +84,12 @@ class McpToolCoverageTest {
   @Test
   void theSpecExclusionListIsExactlyThis() throws IOException {
     // §20.3: "That list is: GET /auth/csrf; GET /me; GET /me/api-keys; GET /assets/{symbol}/logo;
-    // GET /market/indices; GET /account/positions/{symbol}; GET /orders/by-client-id/{id}."
+    // GET /market/indices; GET /account/positions/{symbol}; GET /orders/by-client-id/{id}; Phase 2:
+    // GET /assets/{symbol}/trades (§15.10)."
     assertThat(coverage().excluded().keySet()).containsExactlyInAnyOrder(
         normalize("/api/v1/auth/csrf"), normalize("/api/v1/me"), normalize("/api/v1/me/api-keys"),
         normalize("/api/v1/assets/{symbol}/logo"), normalize("/api/v1/market/indices"),
-        normalize("/api/v1/account/positions/{symbol}"), normalize("/api/v1/orders/by-client-id/{id}"));
+        normalize("/api/v1/account/positions/{symbol}"), normalize("/api/v1/orders/by-client-id/{id}"),
+        normalize("/api/v1/assets/{symbol}/trades"));
   }
 }

@@ -603,6 +603,10 @@ public interface MarketDataService {
   boolean isHalted(String symbol);                                 // true while halted OR under a corporate-action hold
   default boolean onCorporateActionHold(String symbol) { return false; } // the hold alone: asset DTOs report tradable=false
   MarketDataStatus status();
+  // Phase 2 (§15.10), default methods so test doubles and the Day-0 stub keep compiling:
+  default Tape timeAndSales(String symbol, int limit) { return Tape.none(symbol); }   // stream-delivered prints only
+  default Optional<Recommendations> recommendations(String symbol) { return Optional.empty(); }
+  default ScreenResult screen(ScreenQuery query) { throw new ApiException(ErrorCode.NOT_IMPLEMENTED, …); }
 }
 /** QuoteBook calls every bean of this type (injected as List<MarketUpdateListener>): the engine and QuoteFanout. */
 public interface MarketUpdateListener { void onMarketUpdate(String symbol); }  // MUST NOT block
@@ -1756,6 +1760,12 @@ CREATE TABLE SPRING_SESSION_ATTRIBUTES (
 | I9 | Every `execution` has exactly one `cash_ledger` row with `amount = net_amount`. Every APPLIED `cash_transfer` has exactly one ledger row. |
 | I10 | (Warning only.) Every execution price lies within the SIP 1-minute [low − spread, high + spread] of its minute (spread = the execution's reference-quote spread, at least one tick; RAW bars; a minute with only the IEX tail is retried until the execution is 30 minutes old). Checked by `FillQualityAudit` after the 15-minute embargo; a finding is logged at WARN and written once to `audit_log` as `SYSTEM/FILL_QUALITY_WARNING` (target the execution); it never halts the engine. |
 
+### 8.5 Phase 2 tables
+
+| Migration | Table | Owner | Purpose |
+|---|---|---|---|
+| `V6__p2_charts.sql` (provisional number; the integrator renumbers) | `screener_stat(symbol PK, avg_volume, avg_volume_iex, avg_volume_days, avg_volume_as_of, volume_at, shares_outstanding NUMERIC(20,0), market_cap NUMERIC(22,0), industry VARCHAR(100), profile_source, profile_at, updated_at)` | WS2 | Screener statistics (§15.10): written only by `SCREENER_STATS` through two cast `MERGE`s (volumes; profile), both covered on PostgreSQL by `-Ppg-it`. No foreign key to `asset` (a renamed symbol simply gets a new row; old rows are harmless). |
+
 ---
 
 ## 9. Market calendar and sessions
@@ -2670,6 +2680,45 @@ Results update `Capabilities` and the routes. For example, movers fall back to `
 - **Production never uses simulated prices.** Prod fails fast if `profile=simulated` and `allow-simulated-in-prod=false`.
 - **Outages.** If Alpaca is unreachable at boot, the app still starts (calendar from bundled data, assets from the DB). `/admin/system` shows `DOWN` and the market clock reports `feed.status`.
 
+### 15.10 Phase 2: Time & Sales, analyst trends, merged news and the screener [D]
+
+Four additions behind `MarketDataService` (new default methods `timeAndSales`, `recommendations`, `screen`, §5.3), none of which adds a provider call per request: everything is read from the `QuoteBook`, a cache or the `screener_stat` table, and every upstream call goes through `ProviderRateLimiter` at `UI` or `BACKGROUND` priority.
+
+**Time & Sales** (`QuoteBook` tape; `GET /assets/{symbol}/trades`, `/topic/trades.{SYM}`).
+- The `QuoteBook` keeps a bounded tape of the last **500 stream-delivered prints** per symbol (`TradeEvent`s only). The snapshot poller's sampled `latestTrade` is **never** on the tape, and nothing is synthesized: a symbol no trade stream covers has an empty tape with `source = NONE`. A print seen twice (same `printKey`) is kept once; while consolidated prints flow (≤ 60 s old), IEX prints are skipped because the SIP tape already has them.
+- Each print is classified against the quote in force when it arrived (`TapeClassifier`, pure): `AT_ASK` (price ≥ ask, shown in `--up` with ▲), `AT_BID` (≤ bid, `--down` with ▼), `BETWEEN` (inside, neutral with •), `UNKNOWN` (no two-sided quote). On `hybrid` the quote is IEX's while SIP prints come from every venue, so the side is an approximation of the NBBO side; the panel's info popover says so.
+- `source`: `SIP` (Finnhub trade stream, or Alpaca on `alpaca-sip`), `IEX` (Alpaca IEX stream: a few percent of the volume), `SIMULATED`, or `NONE`; `streaming` is true while a trade stream covers the symbol. The SIM tape is a pure function of time: the latest prints up to now (looking back 2 min, then 15 min, then 2 h), each colored against the SIM quote at its time.
+- `GET /assets/{symbol}/trades?limit=1..200` (default 60) → `TimeAndSales`, newest first. `/topic/trades.{SYM}` (§19) holds a `VIEWING` lease (so the Alpaca stream covers the symbol while someone watches, budget permitting), counts toward the 60-per-session cap, and sends at most 4 messages/s with **only the prints that are new** since the previous message (≤ 50; none when nothing is new). Clients merge REST and STOMP batches by print `id`.
+- Not an MCP tool: the tape exists only while a viewer's stream covers the symbol (excluded in `tool-coverage.yml`; bots use `get_snapshot` and `get_bars`).
+
+**Analyst recommendation trends** (`RecommendationService`; `GET /assets/{symbol}/recommendations`, MCP `get_recommendations`).
+- Source: Finnhub's free `/stock/recommendation` (monthly counts of strong buy, buy, hold, sell, strong sell). Verified 2026-10-10 against Finnhub's OpenAPI (`/static/swagger.json`): no premium flag on it, while `/stock/price-target` and `/stock/upgrade-downgrade` are "Premium required", so **price targets are not shown** (no free source).
+- Cached 12 h per symbol (empty answers too: an ETF costs one call a day), failures 10 min; a 401/403 turns the upstream off for 24 h. Fetched at `UI` priority (a player opened the quote page). The newest 6 months with at least one rating are kept. The SIM serves deterministic simulated trends for stocks (none for ETFs). Without `FINNHUB_TOKEN` the answer is `{source: "none", periods: []}` and the UI hides the card.
+
+**Merged symbol news** (`NewsService`). The primary source (Alpaca/Benzinga; the SIM's recaps) is cached 60 s. For symbol news with 1–3 symbols, Finnhub `company-news` (one call per symbol, free tier: one year) is merged in and cached 10 minutes, so a busy quote page costs Finnhub at most one call per symbol every 10 minutes. Items are deduplicated by URL and by normalized headline (first source wins), newest first. General news (no symbols) stays primary-only; a failing source is skipped, never an error.
+
+**Screener** (`ScreenerService`; `GET /market/screener`, MCP `screen_stocks`).
+- **Universe:** the bundled `universe.csv` (~690 symbols: S&P 500, Nasdaq-100 extras, popular stocks and ADRs, ~100 ETFs), restricted to `asset` rows that are active and tradable. Not the full Alpaca list: ~10,000 symbols cannot be kept priced within the free budget.
+- **Live columns** come from the `QuoteBook` through `MarketFeed.peek` (never waits on a provider), split-adjusted like every quote (§14): `price` (last), `change`, `changePct` (a fraction), `volume` (IEX volume on `hybrid`, so `volumeIsPartial = true`; SIP on `alpaca-sip`; the SIM's full volume). During sessions the universe poll (§15.5, every 60 s) keeps them current. Outside sessions, or after a restart, a screen asks `MarketFeed.warm(universe)` for one background snapshot pass (`BACKGROUND`, batches of 100, about 7 Alpaca calls) over the symbols not polled in the last 60 s, **at most once per 5 minutes**; until it lands the answer carries `warming = true` and only the symbols already priced. The computed universe table is cached 5 s; filters, sorting and paging run in memory.
+- **Statistics** (`screener_stat`, §8, migration `V6__p2_charts.sql` provisional): 20-day average daily volume on two bases (`avg_volume` from SIP daily bars for display, `avg_volume_iex` from IEX daily bars on `hybrid`, so relative volume compares like with like), shares outstanding, the provider's market cap and industry. Written by the `SCREENER_STATS` `PeriodicTask` (every 60 s, all day): (a) when the stored window ends before the last completed trading day, it recomputes the averages for the universe from 22 trading days of `1Day` bars (batches of 100 symbols, `BACKGROUND`; about 7 calls per feed per day; a failed pass is retried after an hour); (b) it fetches at most `stocks.marketdata.screener.profiles-per-minute` (default 3) company profiles (Finnhub `profile2`, one call each, `BACKGROUND`, so at most ~5% of the 55/min Finnhub budget) for stocks and ADRs whose profile is missing or older than 30 days. An empty answer is stored too (no retry for 30 days); a failure is retried after an hour. With no Finnhub token, profiles are skipped (market caps stay null). On the SIM, profiles and averages are local and computed in one pass; the first screen of a fresh SIM process starts that pass in the background.
+- **Derived columns:** `marketCap = sharesOutstanding × price` (moves with the price), else the stored provider market cap, else null (ETFs). `relVolume = volume ÷ average` on the same basis (`avg_volume_iex` when `volumeIsPartial`), scale 2, null without both. `sector`: the static GICS map `marketdata/sectors.csv` (every non-ETF universe symbol; [U] refine as reclassifications happen), else `Sectors.fromIndustry` of the Finnhub industry, else null; ETFs have no sector.
+- **Query** (every filter optional; a filter on a column excludes rows where that column is null): `minPrice`, `maxPrice`, `minMarketCap`, `maxMarketCap` (dollars), `minChangePct`, `maxChangePct` (fractions: `0.05` = +5%), `minVolume`, `minAvgVolume`, `minRelVolume`, `sectors` (`Sector` values), `types` (`COMMON_STOCK`, `ETF`, `ADR`), `sort` (`SYMBOL`, `PRICE`, `CHANGE_PCT`, `VOLUME`, `AVG_VOLUME`, `REL_VOLUME`, `MARKET_CAP`), `order` (`ASC`, `DESC`), `limit` (1..100, default 25) and `cursor` (opaque). Rows without a price are never returned (they are counted in `coverage`). Null sort keys sort last in both orders; ties break by symbol.
+- **Presets** (`ScreenPreset`, server-side so the SPA and the bots share them; an explicit parameter replaces the preset's value for that parameter):
+
+| Preset | Filters | Sort |
+|---|---|---|
+| `TOP_GAINERS` | types COMMON_STOCK, ADR; `minChangePct` > 0 | `CHANGE_PCT` DESC |
+| `TOP_LOSERS` | types COMMON_STOCK, ADR; `maxChangePct` < 0 | `CHANGE_PCT` ASC |
+| `MOST_ACTIVE` | types COMMON_STOCK, ADR | `VOLUME` DESC |
+| `UNUSUAL_VOLUME` | types COMMON_STOCK, ADR; `minRelVolume` 2; `minAvgVolume` 500,000 | `REL_VOLUME` DESC |
+| `LARGE_CAPS_UNDER_50` | `minMarketCap` 10B; `maxPrice` 50 | `MARKET_CAP` DESC |
+| `MEGA_CAPS` | `minMarketCap` 200B | `MARKET_CAP` DESC |
+| `ETFS` | types ETF | `VOLUME` DESC |
+
+  (`minChangePct` > 0 is expressed as the exclusive bound `0.000001`.) Without a preset and a sort, the default is `MARKET_CAP` DESC.
+- **Paging:** `nextCursor` encodes the offset; the result set is a moving snapshot (`asOf`), so paging is best-effort while prices move. `total` counts every matching row.
+- **Cost:** a normal read (§17.5) on REST and MCP. No provider call per request (the warm pass is background and throttled).
+
 ---
 
 ## 16. Valuation, performance and the leaderboard (CONTRACT)
@@ -3014,7 +3063,10 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `GET /quotes?symbols=A,B` (≤ 50) | market:read | → `{quotes: Quote[]}`; unknown symbols get `quality=NONE` | |
 | `GET /snapshots/{symbol}` | market:read | → `Snapshot` | `SYMBOL_NOT_FOUND` |
 | `GET /bars/{symbol}?range=1D…ALL` **or** `?timeframe&start&end&limit≤1000`; also `adjustment=RAW\|SPLIT\|ALL` (default SPLIT) and `extendedHours` (default true). Neither range nor timeframe → `range=1D`; a timeframe with a range overrides the range's default; range together with start → `VALIDATION_FAILED`; a limit keeps the most recent bars | market:read | → `Bars` | `SYMBOL_NOT_FOUND`, `VALIDATION_FAILED` |
-| `GET /news?symbols&limit≤20&before` | market:read | → `{items: NewsItem[]}` (empty if no source) | |
+| `GET /news?symbols&limit≤20&before` | market:read | → `{items: NewsItem[]}` (empty if no source; symbol news merges Alpaca and Finnhub, §15.10) | |
+| `GET /assets/{symbol}/trades?limit≤200` (default 60) — Phase 2 | market:read | → `TimeAndSales` (§15.10; newest first; `source: NONE` and no prints when no trade stream covers the symbol) | `SYMBOL_NOT_FOUND`, `VALIDATION_FAILED` |
+| `GET /assets/{symbol}/recommendations` — Phase 2 | market:read | → `Recommendations` (§15.10; `periods` empty and `source: "none"` without a source) | `SYMBOL_NOT_FOUND` |
+| `GET /market/screener?preset&minPrice&maxPrice&minMarketCap&maxMarketCap&minChangePct&maxChangePct&minVolume&minAvgVolume&minRelVolume&sectors&types&sort&order&cursor&limit≤100` — Phase 2 | market:read | → `ScreenResult` (§15.10) | `VALIDATION_FAILED` (bad number, min > max, unknown enum or cursor) |
 | `GET /account` | account:read | → `Account` | |
 | `GET /account/balances` | account:read | → `Balances` (§10.2: settled/unsettled cash, holds, buying power, withdrawable; ledger and open orders only, no marks). The same numbers are in `Account`, so MCP maps it to `get_account`. | |
 | `GET /account/positions` | account:read | → `Position[]` | |
@@ -3058,7 +3110,7 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `identity.dto` (WS1) | `MeDto`, `PreferencesDto`, `ApiKeyInfoDto`, `ApiKeyCreatedDto` (+ `ApiKeySnippetsDto`), `PlayerSummaryDto`; requests `LoginRequest`, `ReauthRequest`, `SignupRequest`, `UpdateMeRequest` (+ `UpdatePreferencesRequest` = `Partial<Preferences>`), `ChangePasswordRequest`, `CreateApiKeyRequest` (also the admin key body) |
 | `admin.dto` (WS1) | §21.1 `AdminPlayerDto`, `CreatePlayerRequest`, `CreatePlayerResponse`, `AdminPlayerDetailDto` (+ `EodHoldingDto`), `AdminPlayerLiveViewDto`, `SettingsDto`, `UpdateSettingsRequest` (= `Partial<Settings>`), `AuditRowDto`, `SystemStatusDto`, `InviteCreatedDto`, `InviteDto`; inline admin bodies `LiveViewRequest`, `UpdatePlayerRequest`, `FreezePlayerRequest`, `SetPasswordRequest`, `AdminResetRequest`, `CreateInviteRequest`, `RunJobRequest`, `HaltEngineRequest`, `CreateCalendarOverrideRequest`, `ResolveCorporateActionRequest` |
 | `calendar.dto` (WS2) | `CalendarOverrideDto` |
-| `marketdata.dto` (WS2) | `ClockDto`, `TradingDayDto`, `AssetSummaryDto`, `AssetDto`, `FundamentalsDto`, `ExtendedLineDto`, `QuoteDto`, `BarDto`, `SnapshotDto`, `BarsDto`, `MoversDto`, `NewsItemDto`; `QuotesDto` (`{quotes}`), `NewsListDto` (`{items}`); §19 `TickDto` |
+| `marketdata.dto` (WS2) | `ClockDto`, `TradingDayDto`, `AssetSummaryDto`, `AssetDto`, `FundamentalsDto`, `ExtendedLineDto`, `QuoteDto`, `BarDto`, `SnapshotDto`, `BarsDto`, `MoversDto`, `NewsItemDto`; `QuotesDto` (`{quotes}`), `NewsListDto` (`{items}`); §19 `TickDto`; Phase 2 (§15.10) `TimeAndSalesDto` (+ `TapePrintDto`), `RecommendationsDto` (+ `RecommendationPeriodDto`), `ScreenResultDto` (+ `ScreenerRowDto`, `ScreenCoverageDto`) and the enums `TapeSource`, `TapeSide`, `Sector`, `ScreenPreset`, `ScreenSort` |
 | `trading.dto` (WS3) | `FeesDto`, `PlaceOrderRequest`, `ReplaceOrderRequest`, `OrderDto`, `ExecutionDto` (+ `RefQuoteDto`), `OrderEventDto`, `EstimateDto`, `PlaceOrderResponse`, `PreviewDto`, `AccountDto`, `PositionDto`, `ActivityDto`, `ActivityDetailDto` (sealed: `SplitDetailDto`, `NameChangeDetailDto`, `GfvDetailDto`, `ResetDetailDto`, `RestrictionDetailDto`, `AdminViewDetailDto`), `ViolationDto`, `ViolationsDto` (`GET /account/violations`), `RunDto`, `CancelledOrdersDto` (`{cancelled}`), `ClosePositionRequest`, `ResetAccountRequest`; §21.1 `CorporateActionDto`, `CashTransferRequest` (+ sealed `TransferTargetRequest`: `SingleTargetRequest`, `AllTargetRequest`), `CashTransferPreviewDto`, `TransferBatchResultDto`, `TransferRowDto` |
 | `portfolio.dto` (WS4) | `PortfolioHistoryDto`, `LeaderboardRowDto`, `LeaderboardDto`, `PublicTradeDto`, `PlayerProfileDto`, `PublicHistoryDto`, `FeedItemDto` |
 | `watchlist.dto` (WS4) | `WatchlistDto`; requests `CreateWatchlistRequest`, `UpdateWatchlistRequest`, `AddWatchlistSymbolRequest` |
@@ -3130,6 +3182,23 @@ type Movers = { list: MoverList; asOf: Ts; source: string;
   items: { symbol: string; name: string|null; price: Dec; change: Dec; changePct: Dec; volume: number|null }[] };
 type NewsItem = { id: string; publishedAt: Ts; source: string; url: string; symbols: string[]; imageUrl: string|null;
   untrusted: { headline: string; summary: string|null } };
+// Phase 2 (§15.10)
+type TimeAndSales = { symbol: string; source: "SIP"|"IEX"|"SIMULATED"|"NONE"; streaming: boolean; asOf: Ts;
+  prints: { id: string; t: Ts; price: Dec /* as traded, never rounded */; size: number;
+            side: "AT_ASK"|"AT_BID"|"BETWEEN"|"UNKNOWN"; venue: string|null }[] };
+type Recommendations = { symbol: string; source: string /* "finnhub" | "simulated" | "none" */; asOf: Ts|null;
+  periods: { period: DateEt /* first day of the month */; strongBuy: number; buy: number; hold: number; sell: number;
+             strongSell: number; total: number }[] /* newest first, ≤ 6 */ };
+type Sector = "COMMUNICATION_SERVICES"|"CONSUMER_DISCRETIONARY"|"CONSUMER_STAPLES"|"ENERGY"|"FINANCIALS"|"HEALTH_CARE"
+  |"INDUSTRIALS"|"INFORMATION_TECHNOLOGY"|"MATERIALS"|"REAL_ESTATE"|"UTILITIES";
+type ScreenerRow = { symbol: string; name: string|null; type: AssetType; exchange: string|null; sector: Sector|null;
+  price: Dec; change: Dec|null; changePct: Dec|null; volume: number|null; volumeIsPartial: boolean;
+  avgVolume: number|null; relVolume: Dec|null; marketCap: Dec|null; quality: DataQuality; asOf: Ts|null };
+type ScreenResult = { preset: ScreenPreset|null; sort: ScreenSort; order: "ASC"|"DESC"; total: number;
+  items: ScreenerRow[]; nextCursor: string|null; asOf: Ts; warming: boolean;
+  coverage: { universe: number; priced: number; withMarketCap: number; withAvgVolume: number } };
+type ScreenPreset = "TOP_GAINERS"|"TOP_LOSERS"|"MOST_ACTIVE"|"UNUSUAL_VOLUME"|"LARGE_CAPS_UNDER_50"|"MEGA_CAPS"|"ETFS";
+type ScreenSort = "SYMBOL"|"PRICE"|"CHANGE_PCT"|"VOLUME"|"AVG_VOLUME"|"REL_VOLUME"|"MARKET_CAP";
 
 // ---- account
 type Account = { accountId: string; runNo: number; type: "CASH"; status: AccountStatus;
@@ -3301,12 +3370,13 @@ The controller is absent from production by construction (`@Profile("test")`), a
 **Server-side controls.** `StompAuthInterceptor`:
 - enforces that user queues belong to the principal
 - caps subscriptions at 60 quote/tick subscriptions per session and 5 sessions per player
-- maps subscribe and unsubscribe to budget leases through `SubscriptionTracker`: `quote.{SYM}` and `bars.{SYM}.1Min` → VIEWING, `tick.{SYM}` → LIST, owner key `ws:<sessionId>`; disconnect releases all. Bars subscriptions count toward the 60-per-session cap.
+- maps subscribe and unsubscribe to budget leases through `SubscriptionTracker`: `quote.{SYM}`, `bars.{SYM}.1Min` and (Phase 2) `trades.{SYM}` → VIEWING, `tick.{SYM}` → LIST, owner key `ws:<sessionId>`; disconnect releases all. Bars and trades subscriptions count toward the 60-per-session cap.
 
 | Destination | Payload | Cadence |
 |---|---|---|
 | `/topic/quote.{SYM}` | `Quote` (§18.3) | Coalesced per symbol, ≤ 4/s |
 | `/topic/tick.{SYM}` | `TickDto` `{symbol, last, change, changePct, extended: {price, changePct}\|null, asOf, quality}` | ≤ 1/s |
+| `/topic/trades.{SYM}` (Phase 2, §15.10; `VIEWING` lease, counts toward the cap) | `TimeAndSales` with only the prints new since the previous message (≤ 50) | ≤ 4/s, nothing when nothing is new |
 | `/topic/bars.{SYM}.1Min` | `Bar` (the forming minute bar; the suffix is the `Timeframe` wire value) | ≤ 1/s |
 | `/topic/market.session` | `MarketSessionDto` `{session, tradingDate, endsAt, nextSession, nextSessionAt, earlyClose}` | On change and every 60 s |
 | `/topic/leaderboard` | `LeaderboardUpdateDto` `{asOf}`. Clients refetch `GET /leaderboard`, which is cached for 5 s. | ≤ every 5 s when anything changed |
@@ -3381,7 +3451,7 @@ The named payload records are Java records in `com.stocks.contract.realtime.dto`
 
 ### 20.3 Tool catalog
 
-The requirement is that AIs can reach everything a player can. **Coverage test** (CI): every non-admin `GET` in `docs/openapi.json` maps to a tool below or is on the explicit exclusion list in `src/test/resources/golden/mcp/tool-coverage.yml`. That list is: `GET /auth/csrf`; `GET /me` (= `whoami`); `GET /me/api-keys` (session only); `GET /assets/{symbol}/logo` (binary); `GET /market/indices` (= `get_quotes` for SPY, QQQ, DIA, IWM); `GET /account/positions/{symbol}` (= `get_positions`); `GET /orders/by-client-id/{id}` (= `get_order`).
+The requirement is that AIs can reach everything a player can. **Coverage test** (CI): every non-admin `GET` in `docs/openapi.json` maps to a tool below or is on the explicit exclusion list in `src/test/resources/golden/mcp/tool-coverage.yml`. That list is: `GET /auth/csrf`; `GET /me` (= `whoami`); `GET /me/api-keys` (session only); `GET /assets/{symbol}/logo` (binary); `GET /market/indices` (= `get_quotes` for SPY, QQQ, DIA, IWM); `GET /account/positions/{symbol}` (= `get_positions`); `GET /orders/by-client-id/{id}` (= `get_order`); Phase 2: `GET /assets/{symbol}/trades` (a live UI tape that exists only while a viewer's stream covers the symbol, §15.10).
 
 **Scopes.** Chain 2 only requires an authenticated player for `/mcp` (§17.1), so every tool declares the scope that REST requires for the same data (the Scope column; `McpToolCatalog.SCOPES`, a tool without an entry fails the boot), and `McpToolHandler` checks it before binding arguments: a key without it gets the error result `FORBIDDEN_SCOPE`, no caller `UNAUTHENTICATED`. A browser session holds all four scopes. `McpServerIT` calls a tool with a `market:read`-only key.
 
@@ -3433,6 +3503,13 @@ Write tools:
 | 37 | `delete_watchlist` | `trade` | RO=false, destructive=true, idempotent=true | `{name*}` | `{deleted: boolean}` (false if it did not exist) |
 | 38 | `mark_notifications_read` | `account:read` | RO=false, destructive=false, idempotent=true | `{ids?: string[], all?: bool}` (exactly one) | `{marked: int}` |
 
+Phase 2 read tools (§15.10; RO hints as above), registered after #38 so the Phase 1 order never changes:
+
+| # | Tool | Scope | Input schema | Output |
+|---|---|---|---|---|
+| 39 | `screen_stocks` | `market:read` | `{preset?: ScreenPreset, min_price?, max_price?, min_market_cap?, max_market_cap?, min_change_pct?, max_change_pct? (fractions), min_volume?: int, min_avg_volume?: int, min_rel_volume?, sectors?: Sector[], types?: AssetType[], sort?: ScreenSort, order?: "ASC"\|"DESC", limit?: int(1..50)=20, cursor?: string}` (decimals as strings) | `ScreenResult` |
+| 40 | `get_recommendations` | `market:read` | `{symbol}` | `Recommendations` (empty `periods` when no source) |
+
 Decimal inputs are accepted as strings or numbers, and numbers are parsed as `BigDecimal` (§6.3). There are no admin tools. A tool whose backing contract is still a Day-0 stub (or a default method a workstream has not overridden yet, e.g. `PerformanceQueries.feed`) answers the error result `NOT_IMPLEMENTED`; the catalog, schemas and order never change with what has shipped.
 
 ### 20.4 Connection recipes (`docs/agents.md`, WS5)
@@ -3459,7 +3536,7 @@ The Phase 1 exit criteria need a Claude bot and a ChatGPT bot to trade for 5 con
 |---|---|
 | Packaging | Node 22 + strict TypeScript, own `package.json` with exact pins (`@modelcontextprotocol/sdk` 1.30.1, `@anthropic-ai/sdk` 0.128.0, `openai` 7.23.0; each published ≥ 14 days before it was pinned) and lockfile, own multi-stage `Dockerfile` (`node:22.23.2-alpine3.24`, production dependencies only, user `node` = uid 1000). Published by `release.yml` into the **app's own GHCR package** with the tag prefix `agent-runner-` (`agent-runner-sha-<7>`, `agent-runner-latest`, `agent-runner-X.Y.Z`; §24.7), so one public package covers both. Compose service `agent-runner` under **profile `agents`** (`docker compose --profile agents up -d`), §24.2. It never touches the database and never gets admin powers: it holds only the two bots' API keys (and the two LLM keys). |
 | Loop (model-agnostic) | One loop for both bots. The runner connects (MCP Streamable HTTP) to `STOCKS_MCP_URL` (`http://app:8080/mcp`) with `Authorization: Bearer <bot key>` and `X-Stocks-Client: agent-runner/<bot>`, lists tools, converts the MCP input schemas to the vendor's function-calling format (`$schema`/`$id` dropped, always an object schema with `properties`; OpenAI tools `strict: false`), and executes tool calls itself, sequentially. The model only proposes calls. Claude uses the Messages API (custom tools, the whole conversation re-sent with automatic prompt caching, thinking blocks passed back unchanged) and ChatGPT the Responses API (function tools, turns chained with `previous_response_id`), so neither depends on a vendor MCP connector, a beta header or Cloudflare letting vendor clouds in. Tool results go back as the server's text unchanged (`untrusted` envelopes kept; error results keep `{code, message, hint, fields, retry_after_s}`; OpenAI outputs of error results are prefixed `Tool error (isError=true): `); results over 40,000 characters are cut with a note. Runner-side failures use the same error shape (`UNKNOWN_TOOL`, `INVALID_ARGUMENTS`, `VALIDATION_FAILED`, `NOTES_TOO_LARGE`, `RUN_TOOL_BUDGET_EXHAUSTED`, `RUNNER_MCP_ERROR`). A `RATE_LIMITED` result with `retry_after_s` ≤ 15 is retried once after that wait. |
-| Fairness | Same system prompt, same tools (all 38 + `save_notes`), same schedule, same caps, same memory size, same output limit (16,000 tokens per response). Only the model differs (`CLAUDE_MODEL`, `OPENAI_MODEL`, owner's choice). |
+| Fairness | Same system prompt, same tools (every §20.3 tool + `save_notes`), same schedule, same caps, same memory size, same output limit (16,000 tokens per response). Only the model differs (`CLAUDE_MODEL`, `OPENAI_MODEL`, owner's choice). |
 | Schedule | `AGENT_SCHEDULE_ET=09:45,12:30,15:30` (America/New_York wall clock, DST-correct, independent of the container's TZ). Each run first calls `get_market_clock` and a scheduled run skips a non-trading day (`tradingDate` null) before any model call. Runs for the two bots start at the same minute (concurrently). A slot reached more than 10 minutes late (host asleep) is skipped, not caught up. |
 | Caps | Per run: `AGENT_MAX_TOOL_CALLS=40` (every executed call counts, `save_notes` included; calls proposed beyond it are refused with `RUN_TOOL_BUDGET_EXHAUSTED` and the model gets one last turn with tools disabled to write its summary) and `AGENT_MAX_RUN_SECONDS=300` (in-flight model requests are aborted). Per bot per ET day: `AGENT_DAILY_USD_CAP=1.00`, computed exactly (integer pico-dollars) from each response's reported token usage (input, cache reads, cache writes, output) × the model's price, persisted after every response in `/data/<bot>/spend.json` (each write re-reads the file and adds that response's cost, so no writer's spend is ever overwritten); once reached, the run stops before executing that response's calls and the bot's remaining runs that day are skipped and logged (so a day can exceed the cap by at most one response). **One run per bot at a time**, across processes: a run holds `/data/<bot>/run.lock` (created with O_EXCL; pid, host, start time; stale after `AGENT_MAX_RUN_SECONDS` + 60 s or when its process on the same host is gone), and a run that finds it held (a `docker exec … --once` during a scheduled run, or a `docker compose run`) ends as `skipped_busy` before reading the spend (review fix: two overlapping runs both passed the cap check and the last writer lost the other's spend). |
 | Prices | A built-in table for current Claude and OpenAI models (checked against both vendors' pricing pages on 2026-10-10; long-context tiers included; a dated snapshot id falls back to its base model). `AGENT_PRICE_CLAUDE` / `AGENT_PRICE_CHATGPT` override it per bot: `input=<USD/1M>,output=<USD/1M>[,cached_input=…,cache_write=…,cache_write_1h=…]` (missing cache prices default to `input`, 1.25 × and 2 × `input`). **A bot whose model has no price does not run** (logged): its cap could not be enforced. |
@@ -3646,8 +3723,9 @@ frontend/src/
 | `/login`, `/join/$code` (alias `/signup?invite=<code>`) | `redirect?` | Centered card | Full screen |
 | `/` | | Redirect to `/stock/$last` (default SPY) | Redirect to `/watchlist` |
 | `/watchlist` | `list?` | The left panel is always visible; the center shows the last symbol | **Tab: Watchlist** |
-| `/markets` | `tab=MOVERS\|NEWS` | Index cards, movers tabs (Gainers / Losers / Most Active), news | **Tab: Markets** |
-| `/stock/$symbol` | `range=1D`, `tf?`, `tab=OVERVIEW\|NEWS\|POSITION`, `ticket=BUY\|SELL?` | 3-pane: watchlist, quote and chart, docked ticket, plus a bottom dock | Pushed screen with a sticky header and a Trade bar that opens a bottom sheet |
+| `/markets` | `tab=MOVERS\|NEWS` | Index cards, movers tabs (Gainers / Losers / Most Active), news, a Screener card | **Tab: Markets** |
+| `/screener` (Phase 2) | `preset?`, filters, `sort?`, `order?` (§22.10) | Screener table (left-rail item) | Pushed screen from Markets |
+| `/stock/$symbol` | `range=1D`, `tf?`, `tab=OVERVIEW\|NEWS\|TRADES\|POSITION` (`TRADES`: phone and tablet, §22.10), `ticket=BUY\|SELL?` | 3-pane: watchlist, quote and chart, docked ticket, plus a bottom dock | Pushed screen with a sticky header and a Trade bar that opens a bottom sheet |
 | `/search` | `q` | ⌘K palette (the route exists for deep links: `?q=` prefills the field, and typing keeps it current with `replace`) | Full-screen search |
 | `/league` | `period=WEEK`, `metric=RETURN`, `kind=ALL`, `view=BOARD\|FEED` | Full-width board, Arena card, my pinned row | **Tab: League** (cards) |
 | `/players/$handle` | `range` | Profile | Stacked profile |
@@ -3662,7 +3740,7 @@ frontend/src/
 | < 600 | Bottom tab bar (**Watchlist · Markets · League · Account · Menu**, 56 px plus the safe-area inset, root screens only). Pushed screens. The ticket is a 92%-height bottom sheet. Tables become cards. Touch targets ≥ 44 px. In landscape, the quote page shows a full-screen chart. |
 | 600–1023 | A collapsible watchlist drawer plus content. The ticket is a right side sheet (400 px). The dock becomes tabs under the chart. |
 | 1024–1439 | 56 px icon rail, watchlist panel 260 px (collapsible), flexible center, ticket column 340 px, bottom dock (Positions · Orders · Activity), resizable |
-| ≥ 1440 | Same, with a 300 px watchlist and a 380 px ticket. The right column also shows the bid/ask block. Time & Sales is Phase 2. |
+| ≥ 1440 | Same, with a 300 px watchlist and a 380 px ticket. The right column also shows the bid/ask block. Phase 2: Time & Sales sits in the right column under the ticket from 1024 px (§22.10). |
 
 **Phone shell (Phase 1).** `index.html` sets `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`; without `viewport-fit=cover`, `env(safe-area-inset-*)` is always 0 and the tab bar sits under the iPhone home indicator. It also links a static `manifest.webmanifest` (`display: standalone`, name "stocks", dark `background_color`/`theme_color`, 192 and 512 px icons), an `apple-touch-icon` (180 px) and `<meta name="theme-color">` for light and dark. That gives an installable, standalone home-screen app on iOS and Android with no service worker; offline support and Web Push stay Phase 2 (vite-plugin-pwa).
 
@@ -3792,6 +3870,28 @@ body { background: var(--bg-0); color: var(--text-1); font-family: var(--font-sa
 `VITE_API_MOCK=1` switches `lib/api/client.ts` to `lib/api/mock/`. This is an in-memory fake that implements the §18 DTOs, built from the §18.4 example data, with a fake ticking quote stream. It needs no extra dependencies. WS6 can therefore build every screen before the backend endpoints exist. Until a controller lands, its types come from `lib/api/planned.d.ts`; `contract.ts` merges them under the generated `schema.d.ts` per path, HTTP method and schema name, so `make openapi` can regenerate `schema.d.ts` at any time without breaking the build, and a planned entry is deleted once the backend publishes it. Generated response types are stricter than the planned ones about `null` (§18 rule 2: every non-primitive response field is `T | null`), so moving a screen onto a generated type means handling `null`. CI runs the e2e suite against the **real** backend (profiles `test,e2e`: SIM with a wall-advancing clock anchored on a Friday in RTH, always-open, plus the test clock endpoint of §18.5), signed in as the `e2e` profile's bootstrap admin (§23.2).
 
 Mock mode also seeds a corporate-action history (a split, a reverse split paid partly as cash in lieu, a symbol change, a paid and an accrued dividend, a detected split on hold and a merger waiting for the admin), runs a stand-in `TriggerEvaluator` for the stop types, and publishes a league `/topic/feed` event every 20–45 s while the feed is open. Mock builds expose test hooks on `window.stocksMock` (`nudge(symbol, bps)` moves a price through a stop, `emitFeed(kind, handle)`, `expireRecentAuth()`), which the Playwright specs use only when no `E2E_BASE_URL` is set; production builds never include the mock.
+
+### 22.10 Phase 2: charts, Time & Sales, news, watchlist columns and the screener [D]
+
+New code lives in its own folders: `features/charts/` (indicator math, chart types, the picker, extended-hours shading), `features/tape/` (Time & Sales), `features/research/` (analyst ratings, news), `features/screener/`, plus `features/watchlist/` (columns). Mock mode implements every endpoint and `/topic/trades.{SYM}` (`lib/api/mock/phase2.ts`).
+
+**Chart types and indicators** (quote page; lightweight-charts 5.2.1).
+- **Chart type** picker: Candles, Hollow candles, Heikin Ashi, Line (area). Hollow candles: the color follows close vs the previous close and the body is hollow when close ≥ open (per-bar `color`/`borderColor`/`wickColor`). Heikin Ashi bars are computed from the real bars (`HA close = (O+H+L+C)/4`, `HA open = (prev HA open + prev HA close)/2`, the first open `(O+C)/2`, `HA high/low` = max/min of H/L and the HA open and close); the crosshair legend always shows the **real** O/H/L/C/V. The default stays candles (area on the phone's 1D view, §22.4); the choice is remembered per device.
+- **Indicators** (pure functions in `features/charts/indicators.ts` over the bars, display-only numbers, unit-tested against golden vectors): overlays on the price pane — **MA** (simple; up to 3 periods, default 5/10/20), **EMA** (up to 3, default 12/26; seeded with the SMA of the first `n` closes), **BOLL** (SMA `n` ± `k` population standard deviations, default 20/2), **VWAP** (intraday timeframes only, session-anchored: it resets at the first bar of each ET trading day, extended hours included when shown; Σ(price × v) / Σv with the bar's own `vw` when present, else the typical price (H+L+C)/3). Oscillators each get their own pane below the volume pane — **MACD** (EMA fast − EMA slow, signal EMA, histogram; default 12/26/9), **RSI** (Wilder smoothing, default 14, guide lines 70/30), **KDJ** (RSV over `n`, K and D smoothed with 1/`m1` and 1/`m2`, J = 3K − 2D; default 9/3/3; K and D start at 50). Values before an indicator has enough bars are whitespace (no line), never zeros.
+- **Picker:** a toolbar button opens a popover (desktop, tablet) or a bottom sheet (phone) with a switch per indicator and its parameters (bounded integer/decimal inputs). At most 3 oscillator panes at once. The configuration is stored in `localStorage` under `stocks.chart.indicators.<playerId>` (a UI preference per player on that device; not server state).
+- **Extended-hours shading:** on intraday timeframes, bars outside the regular session of their ET date are shaded with a translucent `--session-ext` band (a pane primitive), using `GET /market/calendar` for that date's `rthOpenAt`/`rthCloseAt` (early closes included), else 09:30–16:00 ET.
+
+**Time & Sales** (`features/tape/TimeAndSales`). REST seed `GET /assets/{symbol}/trades?limit=60` plus `/topic/trades.{SYM}`, merged by print `id`, newest first, at most 200 rows kept. Each row: time (`HH:MM:SS` ET), price, size, and the side shown by color **and** a glyph (▲ at ask, ▼ at bid, • between, blank unknown). The header shows the source (`SIP`, `IEX` with a "single venue" hint, `SIM`). Honest empty states: `NONE` → "No live trade stream covers SYM right now" (no prints are ever fabricated); streaming with no prints → "Waiting for the next print". Placement: the desktop right column under the ticket (and the bid/ask block on wide screens), in a fixed-height scroll area; on phone and tablet a **Trades** tab on the quote page (`tab=TRADES`).
+
+**News and analyst ratings** (`features/research/`). News rows show the headline, a two-line summary, the source, a relative time ("12m ago", the full ET time in `title`) and symbol chips; links open only `http(s)` URLs, in a new tab, with `rel="noopener noreferrer nofollow"`; text is rendered from the `untrusted` envelope as plain text. A **"Load more"** button pages with `before` = the oldest item's `publishedAt`. The Overview tab shows an **Analyst ratings** card when `GET /assets/{symbol}/recommendations` has periods: the latest month as a stacked bar (Strong buy … Strong sell, with counts and a consensus label from the weighted mean: ≤ 1.5 Strong buy, ≤ 2.5 Buy, ≤ 3.5 Hold, ≤ 4.5 Sell, else Strong sell), the last months as small stacked columns, and "Source: Finnhub · as of {month}". Hidden when the source is `none`.
+
+**Watchlist columns** (desktop ≥ 1024 only; phone and tablet keep the §22.4 rows).
+- A **Columns** button in the panel header opens a chooser: Last, Change, % Change, Volume, Market cap, Bid/Ask, Day range (Last and % Change on by default). Choices and the panel width are stored in `localStorage` (`stocks.watchlist.columns`, `stocks.watchlist.width`). The panel is resizable from its right edge (260–720 px, default 300 on wide screens and 260 below); columns that do not fit scroll horizontally inside the panel with the symbol column sticky.
+- **Sorting:** clicking a header cycles descending → ascending → list order. A live sort re-orders at most every 3 s, so rows do not jump on every tick; nulls sort last.
+- **Drag reorder:** in list order (no sort), rows have a drag handle and reorder by drag-and-drop (plus ↑/↓ in Edit mode); the new order is saved with `PUT /watchlists/{id}` (optimistic, rolled back on error). While sorted, the handle is hidden and a hint says "Clear the sort to reorder".
+- Volume, bid/ask and day range come from the bulk `GET /quotes` seed, refreshed every 10 s while one of those columns is shown (ticks keep Last and Change live); market cap from the asset's fundamentals.
+
+**Screener** (`/screener`, `features/screener/`). Search params: `preset`, the §15.10 filters, `sort`, `order`. Preset chips (Top gainers, Top losers, Most active, Unusual volume, Large caps under $50, Mega caps, ETFs) and a filter bar (price range, market-cap bucket, % change range, min relative volume, sectors, types); desktop and tablet show a sortable table (Symbol and name, Price, % Change, Volume, Rel. vol, Market cap, Sector), the phone shows cards; "Load more" follows `nextCursor`. Rows open the quote page and have a watchlist star. `warming` shows "Loading the market snapshot…" and refetches after 5 s; the footer shows `asOf` and the coverage counts. Entry points: a desktop left-rail item and a **Screener** card on the Markets page (the phone's five bottom tabs are unchanged).
 
 ---
 
@@ -4320,6 +4420,7 @@ Actions are pinned to their current major versions: `actions/checkout@v7`, `acti
 | 09:30 | `RTH_OPEN` transition | Scheduled (`SESSION_TRANSITION`) | WS3 | **yes** | `date:RTH_OPEN` | ALL_MISSED |
 | every 5 min, 04:00–20:00 trading days | `IntradaySampler` | Scheduled | WS4 | no | timestamp | NONE |
 | every 60 s during sessions | `MoversService` refresh | Periodic | WS2 | no | — | — |
+| every 60 s (Phase 2) | `SCREENER_STATS` (`ScreenerStatsTask`, §15.10): daily volume averages once per trading day, ≤ 3 company profiles per minute | Periodic | WS2 | no | — | — |
 | 16:00 (13:00) | `RTH_CLOSE` transition | Scheduled (`SESSION_TRANSITION`) | WS3 | **yes** | `date:RTH_CLOSE` | ALL_MISSED |
 | 16:20 (13:20) | `DailyMarkJob` official close | Scheduled | WS2 | no | `date:OFFICIAL` | ALL_MISSED |
 | 20:00 (17:00) | `POST_CLOSE` transition | Scheduled (`SESSION_TRANSITION`) | WS3 | **yes** | `date:POST_CLOSE` | ALL_MISSED |

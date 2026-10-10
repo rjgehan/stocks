@@ -24,6 +24,7 @@ import com.stocks.marketdata.core.DailyMarkJob;
 import com.stocks.marketdata.core.HoldingLeases;
 import com.stocks.marketdata.core.MarketDataServiceImpl;
 import com.stocks.marketdata.core.MoversService;
+import com.stocks.marketdata.core.ScreenerStats;
 import com.stocks.marketdata.core.PrevCloseJob;
 import com.stocks.marketdata.core.RemarkJob;
 import com.stocks.marketdata.core.SplitAdjustmentsImpl;
@@ -248,6 +249,12 @@ public class MarketDataAutoConfiguration {
   @Bean
   MoversService moversService(MarketDataRuntime runtime) {
     return runtime.movers();
+  }
+
+  /** §15.10 {@code SCREENER_STATS}: daily volume averages and company profiles for the screener. */
+  @Bean
+  ScreenerStats screenerStats(MarketDataRuntime runtime) {
+    return runtime.screenerStats();
   }
 
   /** Live profiles only: {@code ALPACA_PROBE} at 03:10 ET (it also runs at boot). */

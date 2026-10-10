@@ -26,7 +26,8 @@ public record MarketDataProperties(
     @DefaultValue Poll poll,
     @DefaultValue Alpaca alpaca,
     @DefaultValue Finnhub finnhub,
-    @DefaultValue Sim sim) {
+    @DefaultValue Sim sim,
+    @DefaultValue Screener screener) {
 
   public static final String SIMULATED = "simulated";
   public static final String HYBRID = "hybrid";
@@ -36,12 +37,13 @@ public record MarketDataProperties(
     profile = profile == null || profile.isBlank() ? SIMULATED : profile.trim().toLowerCase(Locale.ROOT);
     pinned = pinned == null ? List.of() : pinned.stream().map(s -> s.trim().toUpperCase(Locale.ROOT)).toList();
     routes = routes == null ? Map.of() : Map.copyOf(routes);
+    screener = screener == null ? Screener.defaults() : screener;
   }
 
   /** Defaults everywhere: the SIM profile with the §23.1 values (unit tests, tools). */
   public static MarketDataProperties defaults() {
     return new MarketDataProperties(SIMULATED, false, List.of("SPY"), Map.of(), Poll.defaults(), Alpaca.defaults(),
-        Finnhub.defaults(), Sim.defaults());
+        Finnhub.defaults(), Sim.defaults(), Screener.defaults());
   }
 
   public boolean simulated() {
@@ -153,6 +155,23 @@ public record MarketDataProperties(
 
     public static Sim defaults() {
       return new Sim(42, "wall", Duration.ZERO, null, "1.0", false, List.of());
+    }
+  }
+
+  /**
+   * The screener's statistics (§15.10, Phase 2).
+   *
+   * @param profilesPerMinute company profiles fetched per minute by {@code SCREENER_STATS} (Finnhub {@code profile2},
+   *                          {@code BACKGROUND} priority); 0 turns profiles (and so market caps) off
+   */
+  public record Screener(@DefaultValue("3") int profilesPerMinute) {
+
+    public Screener {
+      profilesPerMinute = Math.max(0, Math.min(30, profilesPerMinute));
+    }
+
+    public static Screener defaults() {
+      return new Screener(3);
     }
   }
 }

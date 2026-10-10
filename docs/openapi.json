@@ -37,6 +37,10 @@
       "name": "news"
     },
     {
+      "description": "Stock screener over the league's universe (§15.10)",
+      "name": "screener"
+    },
+    {
       "description": "The authenticated player",
       "name": "me"
     },
@@ -2267,6 +2271,101 @@
         ]
       }
     },
+    "/api/v1/assets/{symbol}/recommendations": {
+      "get": {
+        "description": "Phase 2 (§15.10): monthly counts of strong buy, buy, hold, sell and strong sell ratings, newest first (Finnhub's free recommendation trends, cached 12 h). periods is empty and source is \"none\" when no source covers the symbol (no Finnhub token, an ETF). Errors: SYMBOL_NOT_FOUND.",
+        "operationId": "recommendations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recommendations"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Analyst recommendation trends",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/api/v1/assets/{symbol}/trades": {
+      "get": {
+        "description": "Phase 2 (§15.10): the symbol's most recent prints, newest first, each with its side against the quote in force when it arrived (AT_ASK, AT_BID, BETWEEN, UNKNOWN). Only prints a trade stream delivered: source SIP (consolidated), IEX (single venue, a few percent of the volume), SIMULATED, or NONE when no stream covers the symbol right now (streaming=false; the quote page's /topic/trades.{SYM} subscription asks for one). Prices are raw (as traded). Errors: SYMBOL_NOT_FOUND, VALIDATION_FAILED.",
+        "operationId": "trades",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1–200, default 60",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 60
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimeAndSales"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Time & Sales (recent prints)",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
     "/api/v1/auth/csrf": {
       "get": {
         "description": "Sets the XSRF-TOKEN cookie. Send its raw value as X-XSRF-TOKEN on every unsafe request.",
@@ -2896,6 +2995,243 @@
         "summary": "Top movers",
         "tags": [
           "market"
+        ]
+      }
+    },
+    "/api/v1/market/screener": {
+      "get": {
+        "description": "Screens the universe (S&P 500, Nasdaq-100 extras, popular stocks, ADRs and ETFs; ~690 symbols) with the latest quotes and 20-day volume and company statistics. A preset sets filters and a sort; an explicit parameter replaces the preset's value. changePct values are fractions (0.05 = +5%), market caps dollars. A filter on a column excludes rows where it is unknown; rows without a price are never returned. Null sort keys sort last; ties by symbol. warming=true while the first snapshot pass of the universe is still running. Errors: VALIDATION_FAILED.",
+        "operationId": "screen",
+        "parameters": [
+          {
+            "description": "TOP_GAINERS, TOP_LOSERS, MOST_ACTIVE, UNUSUAL_VOLUME, LARGE_CAPS_UNDER_50, MEGA_CAPS or ETFS",
+            "in": "query",
+            "name": "preset",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TOP_GAINERS",
+                "TOP_LOSERS",
+                "MOST_ACTIVE",
+                "UNUSUAL_VOLUME",
+                "LARGE_CAPS_UNDER_50",
+                "MEGA_CAPS",
+                "ETFS"
+              ]
+            }
+          },
+          {
+            "description": "Minimum last price",
+            "in": "query",
+            "name": "minPrice",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "decimal"
+            }
+          },
+          {
+            "description": "Maximum last price",
+            "in": "query",
+            "name": "maxPrice",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "decimal"
+            }
+          },
+          {
+            "description": "Minimum market cap (dollars)",
+            "in": "query",
+            "name": "minMarketCap",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "decimal"
+            }
+          },
+          {
+            "description": "Maximum market cap (dollars)",
+            "in": "query",
+            "name": "maxMarketCap",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "decimal"
+            }
+          },
+          {
+            "description": "Minimum change vs the previous close, a fraction",
+            "in": "query",
+            "name": "minChangePct",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "decimal"
+            }
+          },
+          {
+            "description": "Maximum change vs the previous close, a fraction",
+            "in": "query",
+            "name": "maxChangePct",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "decimal"
+            }
+          },
+          {
+            "description": "Minimum volume today (shares)",
+            "in": "query",
+            "name": "minVolume",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "description": "Minimum 20-day average volume (shares)",
+            "in": "query",
+            "name": "minAvgVolume",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "description": "Minimum relative volume (volume ÷ 20-day average)",
+            "in": "query",
+            "name": "minRelVolume",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "decimal"
+            }
+          },
+          {
+            "description": "GICS sectors, comma-separated",
+            "in": "query",
+            "name": "sectors",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "COMMUNICATION_SERVICES",
+                  "CONSUMER_DISCRETIONARY",
+                  "CONSUMER_STAPLES",
+                  "ENERGY",
+                  "FINANCIALS",
+                  "HEALTH_CARE",
+                  "INDUSTRIALS",
+                  "INFORMATION_TECHNOLOGY",
+                  "MATERIALS",
+                  "REAL_ESTATE",
+                  "UTILITIES"
+                ]
+              }
+            }
+          },
+          {
+            "description": "COMMON_STOCK, ETF and/or ADR, comma-separated",
+            "in": "query",
+            "name": "types",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "COMMON_STOCK",
+                  "ETF",
+                  "ADR",
+                  "OTHER",
+                  "UNKNOWN"
+                ]
+              }
+            }
+          },
+          {
+            "description": "Sort column (default: the preset's, else MARKET_CAP)",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SYMBOL",
+                "PRICE",
+                "CHANGE_PCT",
+                "VOLUME",
+                "AVG_VOLUME",
+                "REL_VOLUME",
+                "MARKET_CAP"
+              ]
+            }
+          },
+          {
+            "description": "ASC or DESC (default: the preset's, else DESC; SYMBOL defaults to ASC)",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ASC",
+                "DESC"
+              ]
+            }
+          },
+          {
+            "description": "Opaque cursor from nextCursor",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1–100, default 25",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreenResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Screen stocks",
+        "tags": [
+          "screener"
         ]
       }
     },
@@ -10374,6 +10710,90 @@
           "password"
         ]
       },
+      "RecommendationPeriod": {
+        "type": "object",
+        "properties": {
+          "buy": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hold": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "period": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "sell": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "strongBuy": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "strongSell": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "buy",
+          "hold",
+          "period",
+          "sell",
+          "strongBuy",
+          "strongSell",
+          "total"
+        ]
+      },
+      "Recommendations": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "periods": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RecommendationPeriod"
+            }
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "asOf",
+          "periods",
+          "source",
+          "symbol"
+        ]
+      },
       "RefQuote": {
         "type": "object",
         "properties": {
@@ -11462,6 +11882,280 @@
           }
         }
       },
+      "ScreenCoverage": {
+        "type": "object",
+        "properties": {
+          "priced": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "universe": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "withAvgVolume": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "withMarketCap": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "priced",
+          "universe",
+          "withAvgVolume",
+          "withMarketCap"
+        ]
+      },
+      "ScreenResult": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScreenCoverage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ScreenerRow"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "order": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ASC",
+              "DESC",
+              null
+            ]
+          },
+          "preset": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "TOP_GAINERS",
+              "TOP_LOSERS",
+              "MOST_ACTIVE",
+              "UNUSUAL_VOLUME",
+              "LARGE_CAPS_UNDER_50",
+              "MEGA_CAPS",
+              "ETFS",
+              null
+            ]
+          },
+          "sort": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "SYMBOL",
+              "PRICE",
+              "CHANGE_PCT",
+              "VOLUME",
+              "AVG_VOLUME",
+              "REL_VOLUME",
+              "MARKET_CAP",
+              null
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "warming": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "asOf",
+          "coverage",
+          "items",
+          "nextCursor",
+          "order",
+          "preset",
+          "sort",
+          "total",
+          "warming"
+        ]
+      },
+      "ScreenerRow": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "avgVolume": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "change": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "changePct": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "exchange": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "marketCap": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "quality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              null
+            ]
+          },
+          "relVolume": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "sector": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "COMMUNICATION_SERVICES",
+              "CONSUMER_DISCRETIONARY",
+              "CONSUMER_STAPLES",
+              "ENERGY",
+              "FINANCIALS",
+              "HEALTH_CARE",
+              "INDUSTRIALS",
+              "INFORMATION_TECHNOLOGY",
+              "MATERIALS",
+              "REAL_ESTATE",
+              "UTILITIES",
+              null
+            ]
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "COMMON_STOCK",
+              "ETF",
+              "ADR",
+              "OTHER",
+              "UNKNOWN",
+              null
+            ]
+          },
+          "volume": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "volumeIsPartial": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "asOf",
+          "avgVolume",
+          "change",
+          "changePct",
+          "exchange",
+          "marketCap",
+          "name",
+          "price",
+          "quality",
+          "relVolume",
+          "sector",
+          "symbol",
+          "type",
+          "volume",
+          "volumeIsPartial"
+        ]
+      },
       "SetPasswordRequest": {
         "type": "object",
         "properties": {
@@ -12233,6 +12927,112 @@
           "marketData",
           "startedAt",
           "version"
+        ]
+      },
+      "TapePrint": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "AT_ASK",
+              "AT_BID",
+              "BETWEEN",
+              "UNKNOWN",
+              null
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "t": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "venue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "price",
+          "side",
+          "size",
+          "t",
+          "venue"
+        ]
+      },
+      "TimeAndSales": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "prints": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TapePrint"
+            }
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "SIP",
+              "IEX",
+              "SIMULATED",
+              "NONE",
+              null
+            ]
+          },
+          "streaming": {
+            "type": "boolean"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "asOf",
+          "prints",
+          "source",
+          "streaming",
+          "symbol"
         ]
       },
       "TradingDay": {

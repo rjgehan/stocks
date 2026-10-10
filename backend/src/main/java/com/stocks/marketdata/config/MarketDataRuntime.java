@@ -32,6 +32,10 @@ import com.stocks.marketdata.core.ProviderHttp;
 import com.stocks.marketdata.core.ProviderRateLimiter;
 import com.stocks.marketdata.core.QuoteBook;
 import com.stocks.marketdata.core.RecommendationService;
+import com.stocks.marketdata.core.ScreenerService;
+import com.stocks.marketdata.core.ScreenerStatRepository;
+import com.stocks.marketdata.core.ScreenerStats;
+import com.stocks.marketdata.core.Sectors;
 import com.stocks.marketdata.core.SimFeed;
 import com.stocks.marketdata.core.SplitAdjustmentsImpl;
 import com.stocks.marketdata.core.SplitGuard;
@@ -107,6 +111,8 @@ public final class MarketDataRuntime implements AutoCloseable {
   private final NewsService news;
   private final FundamentalsService fundamentals;
   private final RecommendationService recommendations;
+  private final ScreenerStats screenerStats;
+  private final ScreenerService screener;
   private final LogoService logos;
   private final AssetSync assetSync;
   private final DailyMarkServiceImpl dailyMarkService;
@@ -197,6 +203,16 @@ public final class MarketDataRuntime implements AutoCloseable {
     this.marks = new MarkService(feed, calendar, time, dailyMarks, splits, holds::exDate, rules.regularConfirmed(),
         rules.extConfirmed());
     QuoteSplitAdjuster splitAdjuster = new QuoteSplitAdjuster(splits, calendar, time);
+    // §15.10 screener: statistics from the primary's daily bars (SIP and, on hybrid, IEX) and company profiles from
+    // Finnhub (or the SIM); none without a profile source
+    boolean iexBasis = !props.simulated() && !"sip".equals(props.effectiveFeed());
+    this.screenerStats = new ScreenerStats(new ScreenerStatRepository(dataSource),
+        new ScreenerStats.Sources(primary, props.simulated() ? null : "sip", iexBasis,
+            props.simulated() ? sim : finnhub, props.simulated()),
+        universe::symbols, s -> universe.get(s).map(Universe.Entry::type).orElse(null), calendar, time,
+        props.screener().profilesPerMinute());
+    this.screener = new ScreenerService(feed, assets, Sectors.load(), screenerStats, splitAdjuster::adjust, time,
+        props.simulated());
     this.movers = new MoversService(primary, feed, assets, calendar, time,
         () -> probe == null || probe.screenerAvailable(), splitAdjuster);
     this.assetSync = new AssetSync(assets, primary, finnhub, props.simulated(), seed, tracked, calendar, time);
@@ -204,7 +220,7 @@ public final class MarketDataRuntime implements AutoCloseable {
     this.splitGuard = new SplitGuard(primary, props.simulated() ? null : "sip", tracked,
         splits instanceof SplitAdjustmentsImpl impl ? impl : null, external.splitFlagger(), calendar, time);
     this.service = new MarketDataServiceImpl(props.profile(), feed, assets, bars, marks, movers, news, fundamentals,
-        budget, dailyMarks, splits, holds, splitAdjuster, calendar, time, sim, recommendations);
+        budget, dailyMarks, splits, holds, splitAdjuster, calendar, time, sim, recommendations, screener);
     log.info("Market data: profile={} feed={} finnhub={} alpaca={}", props.profile(),
         props.simulated() ? "SIM" : props.effectiveFeed(), finnhub != null ? "on" : "off",
         props.simulated() ? "-" : props.alpaca());
@@ -365,6 +381,14 @@ public final class MarketDataRuntime implements AutoCloseable {
 
   public MoversService movers() {
     return movers;
+  }
+
+  public ScreenerStats screenerStats() {
+    return screenerStats;
+  }
+
+  public ScreenerService screener() {
+    return screener;
   }
 
   public LogoService logos() {

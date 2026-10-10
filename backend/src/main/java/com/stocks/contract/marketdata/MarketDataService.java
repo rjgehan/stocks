@@ -2,6 +2,7 @@ package com.stocks.contract.marketdata;
 
 import com.stocks.common.domain.MoverList;
 import com.stocks.common.domain.SessionType;
+import com.stocks.common.error.ApiException;
 import com.stocks.contract.marketdata.model.Asset;
 import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.contract.marketdata.model.Movers;
@@ -89,5 +90,13 @@ public interface MarketDataService {
    */
   default Optional<Recommendations> recommendations(String symbol) {
     return Optional.empty();
+  }
+
+  /**
+   * Phase 2 (§15.10): screens the universe with the latest quotes and the {@code screener_stat} statistics; never
+   * calls a provider on the caller's thread. {@code NOT_IMPLEMENTED} where no market data runtime exists.
+   */
+  default ScreenResult screen(ScreenQuery query) {
+    throw ApiException.notImplemented("screener");
   }
 }

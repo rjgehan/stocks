@@ -39,7 +39,9 @@ public final class McpToolCatalog {
       "get_player_profile", "get_player_history", "get_player_trades", "get_league_feed", "get_watchlists",
       // write tools
       "place_order", "replace_order", "cancel_order", "cancel_all_orders", "close_position", "update_watchlist",
-      "delete_watchlist", "mark_notifications_read");
+      "delete_watchlist", "mark_notifications_read",
+      // Phase 2 read tools (§20.3 #39–#40, §15.10)
+      "screen_stocks", "get_recommendations");
 
   /** {@link #SCOPES} value of a tool any authenticated caller may use ({@code whoami}). */
   public static final String NO_SCOPE = "";
@@ -54,7 +56,8 @@ public final class McpToolCatalog {
     Map<String, String> m = new LinkedHashMap<>();
     m.put("whoami", NO_SCOPE);   // its account member is null without account:read (AccountIdentityTools)
     for (String t : List.of("get_rules", "get_market_clock", "get_calendar", "search_symbols", "get_asset",
-        "get_quotes", "get_snapshot", "get_bars", "get_movers", "get_news", "get_fundamentals")) {
+        "get_quotes", "get_snapshot", "get_bars", "get_movers", "get_news", "get_fundamentals", "screen_stocks",
+        "get_recommendations")) {
       m.put(t, Scopes.MARKET_READ);
     }
     for (String t : List.of("get_account", "get_positions", "get_orders", "get_order", "get_executions",

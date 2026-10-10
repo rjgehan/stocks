@@ -16,6 +16,8 @@ import com.stocks.contract.marketdata.Print;
 import com.stocks.contract.marketdata.QuoteView;
 import com.stocks.contract.marketdata.Recommendations;
 import com.stocks.contract.marketdata.RefreshPriority;
+import com.stocks.contract.marketdata.ScreenQuery;
+import com.stocks.contract.marketdata.ScreenResult;
 import com.stocks.contract.marketdata.Tape;
 import com.stocks.contract.marketdata.SplitAdjustments;
 import com.stocks.contract.marketdata.model.Asset;
@@ -65,13 +67,15 @@ public class MarketDataServiceImpl implements MarketDataService {
   private final TimeSource time;
   private final PointInTimeMarket sim;
   private final RecommendationService recommendations;
+  private final ScreenerService screener;
 
   public MarketDataServiceImpl(String profile, MarketFeed feed, AssetService assets, BarService bars, MarkService marks,
                                MoversService movers, NewsService news, FundamentalsService fundamentals,
                                SubscriptionBudgetManager budget, DailyMarkRepository dailyMarks,
                                SplitAdjustments splits, CorporateActionHolds holds,
                                QuoteSplitAdjuster splitAdjuster, MarketCalendar calendar,
-                               TimeSource time, PointInTimeMarket simOrNull, RecommendationService recommendations) {
+                               TimeSource time, PointInTimeMarket simOrNull, RecommendationService recommendations,
+                               ScreenerService screenerOrNull) {
     this.profile = profile;
     this.feed = feed;
     this.assets = assets;
@@ -89,6 +93,7 @@ public class MarketDataServiceImpl implements MarketDataService {
     this.time = time;
     this.sim = simOrNull;
     this.recommendations = recommendations;
+    this.screener = screenerOrNull;
   }
 
   /** Upper case, trimmed; null stays null. */
@@ -271,6 +276,15 @@ public class MarketDataServiceImpl implements MarketDataService {
   public Optional<Recommendations> recommendations(String symbol) {
     String s = normalize(symbol);
     return s == null || s.isEmpty() || recommendations == null ? Optional.empty() : recommendations.recommendations(s);
+  }
+
+  /** §15.10: the screener over the universe ({@code NOT_IMPLEMENTED} without one). */
+  @Override
+  public ScreenResult screen(ScreenQuery query) {
+    if (screener == null) {
+      return MarketDataService.super.screen(query);
+    }
+    return screener.screen(query);
   }
 
   private static <T> Optional<T> safe(java.util.function.Supplier<Optional<T>> s) {

@@ -34,6 +34,8 @@ public class RecordingMarketData extends ScriptedMarketData {
   private final Map<String, com.stocks.contract.marketdata.Tape> tapes = new ConcurrentHashMap<>();
   private final Map<String, com.stocks.contract.marketdata.Recommendations> recommendations =
       new ConcurrentHashMap<>();
+  private volatile com.stocks.contract.marketdata.ScreenResult screen;
+  private volatile com.stocks.contract.marketdata.ScreenQuery lastScreen;
 
   public RecordingMarketData(TimeSource time) {
     super(time);
@@ -88,6 +90,22 @@ public class RecordingMarketData extends ScriptedMarketData {
     }
     return new com.stocks.contract.marketdata.Tape(t.symbol(), t.source(), t.streaming(),
         t.prints().stream().limit(Math.max(0, limit)).toList());
+  }
+
+  /** §15.10: the answer every {@code screen} call gets (the query is recorded). */
+  public RecordingMarketData withScreen(com.stocks.contract.marketdata.ScreenResult r) {
+    screen = r;
+    return this;
+  }
+
+  public com.stocks.contract.marketdata.ScreenQuery lastScreen() {
+    return lastScreen;
+  }
+
+  @Override
+  public com.stocks.contract.marketdata.ScreenResult screen(com.stocks.contract.marketdata.ScreenQuery query) {
+    lastScreen = query;
+    return screen != null ? screen : super.screen(query);
   }
 
   public RecordingMarketData withRecommendations(com.stocks.contract.marketdata.Recommendations r) {

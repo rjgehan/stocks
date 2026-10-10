@@ -30,6 +30,9 @@ tools:
   /api/v1/players/{handle}/trades: get_player_trades
   /api/v1/feed: get_league_feed
   /api/v1/me/notifications: get_notifications
+  # Phase 2 (§15.10)
+  /api/v1/market/screener: screen_stocks
+  /api/v1/assets/{symbol}/recommendations: get_recommendations
 excluded:
   /api/v1/auth/csrf: browser CSRF bootstrap
   /api/v1/me: whoami returns the same Me
@@ -38,3 +41,4 @@ excluded:
   /api/v1/market/indices: get_quotes with SPY, QQQ, DIA, IWM
   /api/v1/account/positions/{symbol}: get_positions
   /api/v1/orders/by-client-id/{clientOrderId}: get_order with client_order_id
+  /api/v1/assets/{symbol}/trades: Time & Sales is a live UI tape that exists only while a viewer's stream covers the symbol (§15.10); bots use get_snapshot and get_bars

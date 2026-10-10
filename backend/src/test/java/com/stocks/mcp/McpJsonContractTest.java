@@ -126,8 +126,31 @@ class McpJsonContractTest {
         .thenReturn(List.of((PlayerSummaryDto) sample(PlayerSummaryDto.class, full)));
     when(h.watchlists.list(anyLong())).thenReturn(List.of((WatchlistDto) sample(WatchlistDto.class, full)));
     when(h.orderService.preview(any(), any())).thenReturn((PreviewDto) sample(PreviewDto.class, full));
+    h.marketData.withScreen(screen(full));
+    if (full) {
+      h.marketData.withRecommendations(new com.stocks.contract.marketdata.Recommendations("AAPL", "finnhub",
+          TestTimes.START, List.of(new com.stocks.contract.marketdata.model.RecommendationTrend("AAPL",
+              LocalDate.of(2026, 10, 1), 12, 20, 9, 1, 0))));
+    }
     h.notifications.notify(h.botPlayer.id(), com.stocks.common.domain.NotificationKind.FILL, "Bought 1 AAPL", "Filled.",
         full ? Map.of("orderId", "ord_1", "amount", new BigDecimal("1.00")) : null, "REF:" + full);
+  }
+
+  /** §15.10 screener answers: a full row plus an all-null-optional one, or an empty warming page. */
+  static com.stocks.contract.marketdata.ScreenResult screen(boolean full) {
+    com.stocks.contract.marketdata.ScreenResult.Row r1 = new com.stocks.contract.marketdata.ScreenResult.Row("AAPL",
+        "Apple Inc.", com.stocks.common.domain.AssetType.COMMON_STOCK, "NASDAQ",
+        com.stocks.contract.marketdata.Sector.INFORMATION_TECHNOLOGY, new BigDecimal("227.40"),
+        new BigDecimal("2.40"), new BigDecimal("0.0106666667"), 52_000_000L, true, 48_000_000L,
+        new BigDecimal("1.08"), new BigDecimal("3420000000000"), com.stocks.common.domain.DataQuality.SIMULATED,
+        TestTimes.START);
+    com.stocks.contract.marketdata.ScreenResult.Row r2 = new com.stocks.contract.marketdata.ScreenResult.Row("SPY",
+        null, com.stocks.common.domain.AssetType.ETF, null, null, new BigDecimal("668.21"), null, null, null, false,
+        null, null, null, com.stocks.common.domain.DataQuality.STALE, null);
+    return new com.stocks.contract.marketdata.ScreenResult(full ? com.stocks.contract.marketdata.ScreenPreset.TOP_GAINERS
+        : null, com.stocks.contract.marketdata.ScreenSort.CHANGE_PCT, com.stocks.contract.marketdata.SortOrder.DESC,
+        full ? 2 : 0, full ? List.of(r1, r2) : List.of(), full ? 2 : null, TestTimes.START, !full,
+        new com.stocks.contract.marketdata.ScreenResult.Coverage(690, full ? 680 : 0, full ? 590 : 0, full ? 600 : 0));
   }
 
   static Object sample(Class<?> type, boolean full) {
@@ -153,6 +176,9 @@ class McpJsonContractTest {
       case "preview_order" -> Map.of("symbol", "AAPL", "side", "BUY", "type", "MARKET", "notional", "125.00");
       case "get_player_profile", "get_player_trades" -> Map.of("handle", "alice");
       case "get_player_history" -> Map.of("handle", "alice", "range", "1W");
+      case "screen_stocks" -> Map.of("preset", "TOP_GAINERS", "min_price", "5", "sectors",
+          List.of("INFORMATION_TECHNOLOGY"), "limit", 10);
+      case "get_recommendations" -> Map.of("symbol", "AAPL");
       default -> Map.of();
     };
   }
@@ -162,12 +188,12 @@ class McpJsonContractTest {
       "get_fundamentals", "get_account", "get_positions", "get_orders", "get_order", "get_executions", "get_activity",
       "get_violations", "get_runs", "get_portfolio_history", "get_notifications", "preview_order", "get_leaderboard",
       "list_players", "get_player_profile", "get_player_history", "get_player_trades", "get_league_feed",
-      "get_watchlists");
+      "get_watchlists", "screen_stocks", "get_recommendations");
 
   @ParameterizedTest(name = "full={0}")
   @ValueSource(booleans = {true, false})
   void everyReadToolResultValidatesAgainstItsOutputSchema(boolean full) {
-    assertThat(READ_TOOLS).hasSize(30).doesNotHaveDuplicates();
+    assertThat(READ_TOOLS).hasSize(32).doesNotHaveDuplicates();
     stub(full);
     List<String> failures = new ArrayList<>();
     for (String tool : READ_TOOLS) {

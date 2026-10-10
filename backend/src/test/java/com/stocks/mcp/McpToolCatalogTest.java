@@ -80,7 +80,11 @@ class McpToolCatalogTest {
 
   @Test
   void theCatalogHasThe38ToolsOfSection20Point3AndNoAdminTool() {
-    assertThat(McpToolCatalog.ORDER).hasSize(38).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
-        .endsWith("mark_notifications_read").noneMatch(n -> n.contains("admin"));
+    assertThat(McpToolCatalog.ORDER).hasSize(40).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
+        .containsSubsequence("mark_notifications_read", "screen_stocks", "get_recommendations")
+        .endsWith("get_recommendations").noneMatch(n -> n.contains("admin"));
+    // Phase 2 (§20.3 #39–#40): market:read, after the Phase 1 tools
+    assertThat(McpToolCatalog.SCOPES).containsEntry("screen_stocks", Scopes.MARKET_READ)
+        .containsEntry("get_recommendations", Scopes.MARKET_READ);
   }
 }
