@@ -798,6 +798,8 @@ public record CorporateActionApplied(String actionId, String symbol, CorporateAc
 /** One action's effect on one account (§14); WS5 → CORPORATE_ACTION notification. effect: SPLIT|RENAME|DIV_ACC|DIV_PAID */
 public record CorporateActionEffect(long accountId, long playerId, String actionId, CorporateActionType type,
                                     String symbol, String effect, String title, String body, Instant at) {}
+/** Phase 2 (§20.7): WS5's JournalServiceImpl after the note's insert; WS4's FeedEventListener → JOURNAL feed row. */
+public record JournalNotePosted(long playerId, String noteId, Instant at, Instant visibleAt) {}
 /** Needs the admin (§14 NEEDS_ADMIN, …); WS5 pushes AdminAlertDto to every connected admin. level: INFO|WARN|ERROR */
 public record AdminAlertRaised(String level, String title, String body, Instant at) {}
 
@@ -3010,7 +3012,9 @@ type ApiCall = { id: string /* the bucket's row id */; hourStart: Ts; handle: st
   lastIp: string|null; client: string|null };
 ```
 
-**UI.** Settings → **Recent API calls** (`/settings/api-calls`, linked from the menu and the API keys page): one row per bucket, newest first (cards on phones): last call (ET) and the hour, the player when it is one of your bots, key name and id, a REST/MCP badge, endpoint, an outcome pill (green for 2xx/`OK`, red otherwise, never color alone), calls, average and maximum milliseconds, IP and client; a player filter when you own bots. The admin also gets **Mine · Everyone**, which switches to `GET /admin/api-calls`.
+**UI.** Settings → **Recent API calls** (`/settings/api-calls`, linked from the menu and the API keys page): one row per bucket, newest first: last call (ET) and the hour, the player when it is one of your bots, key name and id, a REST/MCP badge, endpoint, an outcome pill with a ✓/✕ and the outcome text (neutral for 2xx/`OK`, amber for 4xx and error codes, `down` for 5xx and `INTERNAL_ERROR`: the up/down colors follow the player's green-up/red-up preference, so success and failure never depend on them, and never on color alone), calls, average and maximum milliseconds, IP and client; a player filter. The admin also gets **Mine · Everyone**, which switches to `GET /admin/api-calls`.
+
+**Implementation** (WS5): `apilog.ApiAccessLog` implements the contract `contract.agents.ApiAccessRecorder` (one bean, in `ContractServices`), which `McpToolHandler` (through `McpToolCatalog.specifications(…, recorder)`) and `apilog.ApiAccessLogFilter` call; `SecurityConfig` adds the filter after `BearerTokenFilter` and passes the recorder (the filter takes no `security` types, so `apilog` never depends on `security`). The filter only looks at requests with a `Bearer` header. Views: `apilog.ApiCallService`, `apilog.web.ApiCallsController`.
 
 ---
 
@@ -3113,6 +3117,8 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `watchlist.dto` (WS4) | `WatchlistDto`; requests `CreateWatchlistRequest`, `UpdateWatchlistRequest`, `AddWatchlistSymbolRequest` |
 | `realtime.dto` (WS5) | `NotificationDto`, `MarkNotificationsReadRequest`; §19 `MarketSessionDto`, `LeaderboardUpdateDto`, `OrderUpdateDto`, `AdminAlertDto` |
 | `rules.dto` (WS5) | `RulesDto` |
+| `agents.dto` (WS5, Phase 2) | §20.6 `AgentRunDto`, `AgentRunSummaryDto`, `AdminBotDto`, `AgentRunReportRequest`, `AgentRunStatus`, `AgentRunTrigger`; §20.7 `JournalNoteDto`, `AddJournalNoteRequest`, `AddJournalNoteResultDto`; §17.10 `ApiCallDto`. Contracts `contract.agents.JournalService` and `contract.agents.ApiAccessRecorder` |
+| `realtime.dto` (WS5, Phase 2) | §19.1 `StreamTopic`, `StreamHelloDto`, `StreamResetDto`, `StreamByeDto` |
 
 - **Intersections** (`Asset = AssetSummary & …`, `Snapshot = Quote & …`, `AdminPlayer = PlayerSummary & …`) are flattened into one record; the base type's members come first, in order.
 - **Anonymous object types** are nested records with globally unique simple names ending in `Dto` (`AccountDto.AccountCashDto`, `ClockDto.ClockFeedDto`, `NewsItemDto.UntrustedNewsDto`, …), so OpenAPI schema names never collide.
@@ -3268,10 +3274,10 @@ type PlayerProfile = { player: PlayerSummary; ownerHandle: string|null; runNo: n
   holdingsAsOf: DateEt|null; holdings: { symbol: string; weight: Dec; qty: Dec|null }[];
   recentTrades: PublicTrade[] };
 type PublicHistory = { range: string; points: { t: Ts; unitValue: Dec; equity: Dec|null }[] };
-type FeedItem = { id: string; at: Ts; kind: "FILL"|"POSITION_CLOSED"|"NEW_LEADER"|"RESET"|"DEPOSIT"|"JOINED";
+type FeedItem = { id: string; at: Ts; kind: "FILL"|"POSITION_CLOSED"|"NEW_LEADER"|"RESET"|"DEPOSIT"|"JOINED"|"JOURNAL" /* Phase 2, §20.7 */;
   player: PlayerSummary; symbol: string|null;
   payload: { side?: Side; qty?: Dec; price?: Dec; realizedPnl?: Dec; amount?: Dec; period?: string;
-             untrusted?: { rationale?: string|null; memo?: string|null } } };
+             untrusted?: { rationale?: string|null; memo?: string|null; note?: string|null /* JOURNAL */ } } };
 
 // ---- rules (bots read this first)
 type Rules = { version: string; asOf: Ts;
@@ -3405,7 +3411,7 @@ A player's private events are recorded while the player has an open stream **or 
 
 **Behind Cloudflare and other proxies.** The response is `Content-Type: text/event-stream;charset=UTF-8` with `Cache-Control: no-store, no-transform` (no proxy may compress, cache or rewrite it) and `X-Accel-Buffering: no`; the server does not compress it and flushes `retry` and `hello` at once, then every event. Cloudflare streams `text/event-stream` unbuffered; the 15 s heartbeat stays well under its ~100 s idle timeout (§24.5). The servlet async timeout is the stream's max age plus one minute.
 
-**Sources** (all in `realtime`): `StreamHub` (connections, caps, the ring buffer, audience filtering), `StreamConnection` (queue, sender, quote coalescing), `StreamQuotes` (a `MarketUpdateListener` like `QuoteFanout`; each stream holds a LIST lease per symbol, owner `sse:<connectionId>`, released when it closes), `StreamTopicTap` (an interceptor on the STOMP broker channel that tees `/topic/market.session`, `/topic/leaderboard` and `/topic/feed`, whoever publishes them) and `UserPush` (tees `/queue/orders`, `/queue/account` and `/queue/notifications` for players with a stream, including the reconnect window above). Payloads are the STOMP payloads, written by Boot's `JsonMapper` (§6.3). Configuration: `stocks.stream.*` (`StreamProperties`, defaults above; `enabled=false` turns the endpoint off with 404 `NOT_FOUND`).
+**Sources** (all in `realtime`; the stream classes in `realtime.stream`, the endpoint `realtime.web.StreamController`): `StreamHub` (connections, caps, the ring buffer, audience filtering, revalidation on its own `sse-revalidate` thread; a `SmartLifecycle` at the default phase, so every stream gets `bye {reason: SHUTDOWN}` before the web server's graceful shutdown starts waiting for requests), `StreamConnection` (queue, sender, quote coalescing; writes through a `StreamSink`, a Spring MVC `ResponseBodyEmitter` with the async timeout above), `StreamQuotes` (a `MarketUpdateListener` like `QuoteFanout`; each stream holds a LIST lease per symbol, owner `sse:<connectionId>`, released when it closes), `StreamTopicTap` (an interceptor on the STOMP broker channel that tees `/topic/market.session`, `/topic/leaderboard` and `/topic/feed`, whoever publishes them) and `UserPush` (tees `/queue/orders`, `/queue/account` and `/queue/notifications` for players with a stream, including the reconnect window above; its `isConnected` also answers true for those players, so `UserEventPublisher` builds their payloads). When a player's reconnect window has lapsed, the next private event is not recorded and marks the player's older ids as expired (their reconnect starts with `reset {reason: EXPIRED}`). The ASYNC dispatch that completes a stream is permitted in chain 2 (it was authorized as a REQUEST). Payloads are the STOMP payloads, written by Boot's `JsonMapper` (§6.3). Configuration: `stocks.stream.*` (`StreamProperties`, defaults above; `enabled=false` turns the endpoint off with 404 `NOT_FOUND`).
 
 A minimal client:
 
@@ -3646,7 +3652,7 @@ CREATE TABLE agent_run_tool (
 );
 ```
 
-**Runner side** (`tools/agent-runner/src/report.ts`). After every run, skipped ones included (`skipped_daily_cap`, `skipped_non_trading_day`, `skipped_busy`), the runner posts the summary to `AGENT_REPORT_URL` (default: `STOCKS_MCP_URL` with the path replaced by `/api/v1/agent-runs`, i.e. `http://app:8080/api/v1/agent-runs` in compose, so production needs no new variable) with the bot's key, a 10 s timeout and two retries on network errors and 5xx (same `runRef` = `<UTC start>-<bot>-<6 random>`). The per-tool counts come from the run loop (`OK`, the result `code`, `ERROR` for an error result without a code, `RUN_TOOL_BUDGET_EXHAUSTED` for refused calls). A failed report is logged (`report failed: …`) and never changes the run's outcome or exit code. `AGENT_REPORT_RUNS=false` turns reporting off. A bot that is not configured has no key and is not reported.
+**Runner side** (`tools/agent-runner/src/report.ts`; the counts are of the model's proposed calls, like `toolCalls`, so the runner's own opening `get_market_clock` is not among them; a tool name the app would refuse becomes `unknown_tool` and a code it would refuse `ERROR`, so one odd call can never lose the whole report). After every run, skipped ones included (`skipped_daily_cap`, `skipped_non_trading_day`, `skipped_busy`), the runner posts the summary to `AGENT_REPORT_URL` (default: `STOCKS_MCP_URL` with the path replaced by `/api/v1/agent-runs`, i.e. `http://app:8080/api/v1/agent-runs` in compose, so production needs no new variable) with the bot's key, a 10 s timeout and two retries on network errors and 5xx (same `runRef` = `<UTC start>-<bot>-<6 random>`). The per-tool counts come from the run loop (`OK`, the result `code`, `ERROR` for an error result without a code, `RUN_TOOL_BUDGET_EXHAUSTED` for refused calls). A failed report is logged (`report failed: …`) and never changes the run's outcome or exit code. `AGENT_REPORT_RUNS=false` turns reporting off. A bot that is not configured has no key and is not reported.
 
 **Admin UI: Admin → Bots** (`/admin/bots`). One card per bot: handle, model, status; last run (time, status, duration, tool calls, orders, cost) with its message when it failed; the last problem run; **today's spend against the cap** (a meter: `spentUsd / capUsd`, amber from 80 %, red at the cap, with the numbers in text); a 14-day spend chart against the cap line; the 7-day tool breakdown (calls and errors per tool, error codes on expand). Below, the runs table (`GET /admin/agent-runs`, filter by bot and status, newest first, load more): start (ET), bot, trigger/slot, status pill, duration, tool calls/errors, orders, tokens, cost, message.
 
@@ -3690,6 +3696,8 @@ CREATE INDEX ix_journal_player ON journal_note(player_id, created_at);
 -- feed_event.event_kind gains 'JOURNAL': the V1 inline CHECK is replaced by ck_feed_event_kind in the vendor files
 -- (PostgreSQL drops whichever CHECK mentions event_kind; H2 drops its generated CONSTRAINT_21EB8C).
 ```
+
+**Implementation** (WS5): `agents.JournalServiceImpl` implements the contract `contract.agents.JournalService` (REST `agents.web.JournalController` and the MCP `mcp.tools.JournalTools` share it); one writer per bot at a time (a per-player lock) so two concurrent calls cannot both pass the count; `JournalNotePosted` (§5.3) is published after the insert. The SPA renders the note with React text escaping only (`features/agents/JournalSection`, the feed's quote block).
 
 **Prompt.** The shared system prompt (§20.5, `prompts/system.md`) tells bots that `add_journal_note` exists, that notes are public after the feed delay and limited (3 per 10 min, 12 a day), and to use them for reasoning worth sharing, not for secrets or instructions to others.
 
