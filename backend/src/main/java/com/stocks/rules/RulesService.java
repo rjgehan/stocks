@@ -130,20 +130,19 @@ public class RulesService {
   // ------------------------------------------------------------------------------------------- orders
 
   /**
-   * The order types this release accepts. M1 ships MARKET and LIMIT; WS3's {@code OrderValidator} rejects STOP,
-   * STOP_LIMIT and TRAILING_STOP with {@code VALIDATION_FAILED} on {@code type} until its trigger evaluator lands (M2),
-   * so the published matrix lists only these and a bot never plans around an order type it cannot place. Add the
-   * other types here in the PR that enables them (and update {@code docs/rules.md}).
+   * The order types this release accepts: all five Phase 1 types (§11.1) since M2, when WS3's trigger evaluator
+   * landed STOP, STOP_LIMIT and TRAILING_STOP. The published matrix lists only these, so a bot never plans around an
+   * order type it cannot place; a type removed here must be removed from {@code docs/rules.md} too.
    */
   public static final Set<OrderType> AVAILABLE_ORDER_TYPES = Collections.unmodifiableSet(
-      EnumSet.of(OrderType.MARKET, OrderType.LIMIT));
+      EnumSet.allOf(OrderType.class));
 
   /** The published matrix: the rows of {@link #matrix} whose type is {@linkplain #AVAILABLE_ORDER_TYPES available}. */
   static List<OrderMatrixRowDto> availableMatrix(RulesConfig.Rules r) {
     return matrix(r).stream().filter(row -> AVAILABLE_ORDER_TYPES.contains(row.type())).toList();
   }
 
-  /** Every Phase 1 order type (§11.1), whether or not this release accepts it yet. */
+  /** Every Phase 1 order type (§11.1). */
   static List<OrderMatrixRowDto> matrix(RulesConfig.Rules r) {
     List<String> wholeOnly = List.of("SHARES");
     return List.of(
@@ -157,13 +156,23 @@ public class RulesService {
             r.fractional().allowLimit() ? List.of("SHARES", "FRACTIONAL_SHARES") : wholeOnly,
             "Marketable on arrival: fills at the touch (price improvement). Resting: fills at the limit. GTC lasts "
                 + r.gtcDays() + " days."),
-        new OrderMatrixRowDto(OrderType.STOP, "REGULAR only", List.of(TimeInForce.DAY, TimeInForce.GTC), wholeOnly,
-            "Triggers on the last eligible consolidated trade, then becomes a market order with the collar."),
-        new OrderMatrixRowDto(OrderType.STOP_LIMIT, "REGULAR only", List.of(TimeInForce.DAY, TimeInForce.GTC),
-            wholeOnly, "Triggers like STOP, then becomes a limit order."),
+        new OrderMatrixRowDto(OrderType.STOP, "REGULAR only (entered outside it, queues for the next 09:30 ET open)",
+            List.of(TimeInForce.DAY, TimeInForce.GTC), wholeOnly,
+            "Triggers on the last eligible consolidated trade at or through stopPrice (sell: at or below; buy: at or "
+                + "above); with no consolidated trade in the last 15 s, the bid (sell) or ask (buy) decides. A gap "
+                + "through the stop at the open triggers at once. Then becomes a market order with the "
+                + plain(r.marketCollarPct()) + "% collar. Buy hold: qty × max(stop, reference) × "
+                + plain(r.holdPctRegular()) + "%."),
+        new OrderMatrixRowDto(OrderType.STOP_LIMIT,
+            "REGULAR only (entered outside it, queues for the next 09:30 ET open)",
+            List.of(TimeInForce.DAY, TimeInForce.GTC), wholeOnly,
+            "Triggers like STOP, then becomes a limit order at limitPrice (marketable on arrival, then resting); it "
+                + "may not fill if the price moves through the limit. Buy hold: qty × limit."),
         new OrderMatrixRowDto(OrderType.TRAILING_STOP, "REGULAR only, and can only be entered during REGULAR",
             List.of(TimeInForce.DAY), wholeOnly,
-            "Exactly one of trailAmount ($) or trailPercent (0 < p < 100)."));
+            "Exactly one of trailAmount ($) or trailPercent (0 < p < 100). The stop trails the highest (sell) or "
+                + "lowest (buy) consolidated trade since the order started working, then triggers like STOP into a "
+                + "market order. Buy hold: qty × (reference + trail) × " + plain(r.holdPctRegular()) + "%."));
   }
 
   static String latency(RulesConfig.Engine e) {

@@ -1942,7 +1942,7 @@ What a frozen or disabled bot sees is fixed by the authentication outcome order 
 | `STOP_LIMIT` | REGULAR only | DAY, GTC | whole shares | Triggers like `STOP`, then becomes a limit order. |
 | `TRAILING_STOP` | REGULAR only, and **can only be entered in REGULAR** (Webull accepts trailing stops during market hours only; otherwise `SESSION_NOT_ALLOWED`) | **DAY only** [V] | whole shares | Exactly one of `trailAmount` ($) or `trailPercent` (0 < p < 100). |
 
-**Delivery staging (M1+, WS3).** The engine and validator ship MARKET and LIMIT first. Until `TriggerEvaluator` lands (M2), a `STOP`, `STOP_LIMIT` or `TRAILING_STOP` request is rejected synchronously with `400 VALIDATION_FAILED` on `type` (not persisted, D15), so no stop order can be accepted and then never trigger.
+**Delivery staging (WS3).** M1+ shipped MARKET and LIMIT first and rejected the stop types with `400 VALIDATION_FAILED` on `type`. Since M2 (`TriggerEvaluator`, §12.7) all five types are accepted, and `GET /rules` publishes all five in `orders.matrix`.
 
 **Fractional and notional rules** (D7):
 - The symbol must be `fractionable`.

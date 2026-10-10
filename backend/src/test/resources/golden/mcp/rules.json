@@ -1,5 +1,5 @@
 {
-  "version" : "1.9e213cace8af",
+  "version" : "1.29583763aef8",
   "asOf" : "2026-10-09T14:00:00.000Z",
   "account" : {
     "type" : "CASH",
@@ -39,6 +39,24 @@
       "timeInForce" : [ "DAY", "GTC" ],
       "qtyForms" : [ "SHARES" ],
       "notes" : "Marketable on arrival: fills at the touch (price improvement). Resting: fills at the limit. GTC lasts 60 days."
+    }, {
+      "type" : "STOP",
+      "sessions" : "REGULAR only (entered outside it, queues for the next 09:30 ET open)",
+      "timeInForce" : [ "DAY", "GTC" ],
+      "qtyForms" : [ "SHARES" ],
+      "notes" : "Triggers on the last eligible consolidated trade at or through stopPrice (sell: at or below; buy: at or above); with no consolidated trade in the last 15 s, the bid (sell) or ask (buy) decides. A gap through the stop at the open triggers at once. Then becomes a market order with the 5% collar. Buy hold: qty × max(stop, reference) × 102%."
+    }, {
+      "type" : "STOP_LIMIT",
+      "sessions" : "REGULAR only (entered outside it, queues for the next 09:30 ET open)",
+      "timeInForce" : [ "DAY", "GTC" ],
+      "qtyForms" : [ "SHARES" ],
+      "notes" : "Triggers like STOP, then becomes a limit order at limitPrice (marketable on arrival, then resting); it may not fill if the price moves through the limit. Buy hold: qty × limit."
+    }, {
+      "type" : "TRAILING_STOP",
+      "sessions" : "REGULAR only, and can only be entered during REGULAR",
+      "timeInForce" : [ "DAY" ],
+      "qtyForms" : [ "SHARES" ],
+      "notes" : "Exactly one of trailAmount ($) or trailPercent (0 < p < 100). The stop trails the highest (sell) or lowest (buy) consolidated trade since the order started working, then triggers like STOP into a market order. Buy hold: qty × (reference + trail) × 102%."
     } ],
     "gtcDays" : 60,
     "maxOpenOrders" : 50,
