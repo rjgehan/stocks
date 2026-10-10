@@ -1,9 +1,12 @@
 package com.stocks.security;
 
+import com.stocks.apilog.ApiAccessLogFilter;
 import com.stocks.common.time.TimeSource;
 import com.stocks.config.StocksProperties;
+import com.stocks.contract.agents.ApiAccessRecorder;
 import com.stocks.contract.identity.PlayerQueries;
 import com.stocks.contract.security.Scopes;
+import jakarta.servlet.DispatcherType;
 import java.util.Locale;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
@@ -176,15 +179,20 @@ public class SecurityConfig {
   @Order(3)
   SecurityFilterChain apiChain(HttpSecurity http, ProblemWriter problems, CookieCsrfTokenRepository csrf,
                                SecurityContextRepository contexts, ApiKeyAuthenticationProvider apiKeys,
-                               RateLimitServiceImpl rateLimits, ActivityRecorder activity) throws Exception {
+                               RateLimitServiceImpl rateLimits, ActivityRecorder activity,
+                               ApiAccessRecorder apiAccessLog) throws Exception {
     SecurityErrors errors = new SecurityErrors(problems, true, PUBLIC_API);
     AuthFailureLimiter failures = new AuthFailureLimiter(rateLimits, problems);
     http.securityMatcher(API_PATHS)
         .addFilterBefore(new BearerTokenFilter(apiKeys, problems, rateLimits), CsrfFilter.class)
+        // Phase 2 §17.10: API-key calls, counted after the rest of the chain answered (403/429 included)
+        .addFilterAfter(new ApiAccessLogFilter(apiAccessLog), BearerTokenFilter.class)
         // §17.5: reads and per-IP limits, charged only for requests that passed authorization
         .addFilterAfter(new RateLimitFilter(rateLimits, activity, problems), AuthorizationFilter.class)
         .csrf(c -> c.spa().csrfTokenRepository(csrf).ignoringRequestMatchers(BearerTokenFilter.BEARER))
         .authorizeHttpRequests(a -> a
+            // the ASYNC dispatch that completes a stream (GET /api/v1/stream, §19.1) was authorized as a REQUEST
+            .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
             // public (§17.1 chain 2)
             .requestMatchers(HttpMethod.GET, "/api/v1/auth/csrf").permitAll()
             .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/signup").permitAll()
@@ -205,6 +213,9 @@ public class SecurityConfig {
                 .access(RouteAuthorization.scope(Scopes.ACCOUNT_READ))
             .requestMatchers(HttpMethod.POST, "/api/v1/orders", "/api/v1/account/positions/*/close",
                 "/api/v1/watchlists", "/api/v1/watchlists/**")
+                .access(RouteAuthorization.scope(Scopes.TRADE))
+            // Phase 2: run reports (§20.6) and journal notes (§20.7) need trade; the services allow AI players only
+            .requestMatchers(HttpMethod.POST, "/api/v1/agent-runs", "/api/v1/journal")
                 .access(RouteAuthorization.scope(Scopes.TRADE))
             .requestMatchers(HttpMethod.PATCH, "/api/v1/orders/*").access(RouteAuthorization.scope(Scopes.TRADE))
             .requestMatchers(HttpMethod.PUT, "/api/v1/watchlists/**").access(RouteAuthorization.scope(Scopes.TRADE))

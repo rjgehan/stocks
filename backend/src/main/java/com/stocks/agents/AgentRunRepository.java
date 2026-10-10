@@ -138,7 +138,7 @@ public class AgentRunRepository {
               FROM agent_run WHERE player_id = ? AND trade_date >= ? AND trade_date <= ?
              GROUP BY trade_date ORDER BY trade_date""")
         .params(playerId, from, to)
-        .query((rs, n) -> new DayRow(rs.getObject("trade_date", LocalDate.class), rs.getInt("runs"),
+        .query((rs, n) -> new DayRow(Jdbc.date(rs, "trade_date"), rs.getInt("runs"),
             rs.getBigDecimal("spent"), rs.getBigDecimal("cap")))
         .list();
   }
@@ -177,7 +177,7 @@ public class AgentRunRepository {
     return new RunRow(rs.getLong("id"), rs.getString("public_id"), rs.getLong("player_id"),
         Jdbc.longOrNull(rs, "api_key_id"), rs.getString("run_ref"), AgentRunTrigger.valueOf(rs.getString("run_trigger")),
         rs.getString("slot"), rs.getString("model"), AgentRunStatus.valueOf(rs.getString("status")),
-        Jdbc.instant(rs, "started_at"), Jdbc.instant(rs, "ended_at"), rs.getObject("trade_date", LocalDate.class),
+        Jdbc.instant(rs, "started_at"), Jdbc.instant(rs, "ended_at"), Jdbc.date(rs, "trade_date"),
         rs.getLong("duration_ms"), rs.getInt("turns"), rs.getInt("tool_calls"), rs.getInt("tool_errors"),
         rs.getInt("orders_placed"), rs.getLong("tokens_input"), rs.getLong("tokens_cache_read"),
         rs.getLong("tokens_cache_write"), rs.getLong("tokens_output"), rs.getBigDecimal("cost_usd"),

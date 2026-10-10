@@ -22,7 +22,8 @@ import org.springframework.stereotype.Component;
 /**
  * §25 housekeeping, 02:00 ET every day (trading day or not; {@code run_key} = the ET date, catch-up LATEST_ONLY):
  * expired {@code idempotency_record} rows (§17.6, 7 days), {@code intraday_equity} samples older than
- * {@code stocks.performance.intraday-retention-days} (14) and notifications read more than 90 days ago. Plain
+ * {@code stocks.performance.intraday-retention-days} (14), notifications read more than 90 days ago and (Phase 2,
+ * §17.10) API access log buckets older than {@code stocks.api-log.retention-days} (90). Plain
  * deletes outside the engine; each table's writer never revisits such rows.
  */
 @Component
@@ -37,12 +38,15 @@ public class HousekeepingJob implements ScheduledJob {
   private final JdbcClient jdbc;
   private final TimeSource time;
   private final int intradayRetentionDays;
+  private final int apiLogRetentionDays;
 
   public HousekeepingJob(JdbcClient jdbc, TimeSource time, Environment environment) {
     this.jdbc = jdbc;
     this.time = time;
     this.intradayRetentionDays = environment.getProperty("stocks.performance.intraday-retention-days",
         Integer.class, 14);
+    // Phase 2 §17.10 (WS5): hourly API access log buckets
+    this.apiLogRetentionDays = environment.getProperty("stocks.api-log.retention-days", Integer.class, 90);
   }
 
   @Override
@@ -70,8 +74,10 @@ public class HousekeepingJob implements ScheduledJob {
         .param(Jdbc.ts(now.minus(Duration.ofDays(intradayRetentionDays)))).update();
     int notes = jdbc.sql("DELETE FROM notification WHERE read_at IS NOT NULL AND read_at < ?")
         .param(Jdbc.ts(now.minus(READ_NOTIFICATION_RETENTION))).update();
-    log.info("Housekeeping {}: {} idempotency records, {} intraday samples, {} read notifications deleted", runKey,
-        idem, samples, notes);
+    int apiLog = jdbc.sql("DELETE FROM api_access_log WHERE bucket_start < ?")
+        .param(Jdbc.ts(now.minus(Duration.ofDays(apiLogRetentionDays)))).update();
+    log.info("Housekeeping {}: {} idempotency records, {} intraday samples, {} read notifications, {} API access log "
+        + "buckets deleted", runKey, idem, samples, notes, apiLog);
   }
 
   @Override
