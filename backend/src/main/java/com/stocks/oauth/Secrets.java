@@ -23,9 +23,14 @@ final class Secrets {
 
   private Secrets() {}
 
-  /** 32 random bytes as base64url without padding. */
+  /** 32 random bytes as base64url without padding (43 characters). */
   static String random() {
-    byte[] bytes = new byte[32];
+    return random(32);
+  }
+
+  /** {@code n} random bytes as base64url without padding. */
+  static String random(int n) {
+    byte[] bytes = new byte[n];
     RANDOM.nextBytes(bytes);
     return B64URL.encodeToString(bytes);
   }

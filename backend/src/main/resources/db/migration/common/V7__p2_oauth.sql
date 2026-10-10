@@ -32,7 +32,8 @@ CREATE TABLE oauth_authorization_request (
   client_host     VARCHAR(255)  NOT NULL,
   redirect_uri    VARCHAR(1000) NOT NULL,
   scopes          VARCHAR(128)  NOT NULL,                        -- requested, filtered to the four API scopes
-  offline_access  BOOLEAN       NOT NULL,
+  offline_access  BOOLEAN       NOT NULL,                        -- the client asked for offline_access (advisory)
+  refresh_allowed BOOLEAN       NOT NULL,                        -- the client's grant_types include refresh_token
   state           VARCHAR(2000),
   code_challenge  VARCHAR(128)  NOT NULL,                        -- S256 only
   resource        VARCHAR(500)  NOT NULL,
@@ -63,8 +64,8 @@ CREATE TABLE oauth_grant (
   created_at       TIMESTAMP WITH TIME ZONE NOT NULL,
   last_used_at     TIMESTAMP WITH TIME ZONE,
   revoked_at       TIMESTAMP WITH TIME ZONE,
-  revoke_reason    VARCHAR(16)   CHECK (revoke_reason IN ('USER','CLIENT','REUSE','CODE_REUSE','OWNER_CHANGED',
-                                                         'PLAYER_DISABLED')),
+  revoke_reason    VARCHAR(24)   CHECK (revoke_reason IN ('USER','CLIENT','REUSE','CODE_REUSE','OWNER_CHANGED',
+                                                         'PLAYER_DISABLED','CREDENTIALS_CHANGED')),
   CONSTRAINT ck_oauth_grant_revoked CHECK ((revoked_at IS NULL) = (revoke_reason IS NULL))
 );
 CREATE INDEX ix_oauth_grant_human ON oauth_grant(human_player_id);

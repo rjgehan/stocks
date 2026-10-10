@@ -26,6 +26,8 @@ public class OAuthException extends RuntimeException {
   public static final String INVALID_CLIENT_METADATA = "invalid_client_metadata";
   /** Not an RFC 6749 code: the caller exceeded an OAuth endpoint's per-IP limit (answered 429). */
   public static final String SLOW_DOWN = "slow_down";
+  /** Not an RFC 6749 code: {@code stocks.oauth.enabled=false} (answered 404). */
+  public static final String NOT_FOUND = "not_found";
 
   private final String error;
   private final int status;
@@ -48,6 +50,11 @@ public class OAuthException extends RuntimeException {
     return getMessage();
   }
 
+  /** The OAuth server is switched off ({@code stocks.oauth.enabled=false}). */
+  public static OAuthException disabled() {
+    return new OAuthException(NOT_FOUND, "OAuth is not enabled on this server.");
+  }
+
   public int status() {
     return status;
   }
@@ -58,6 +65,7 @@ public class OAuthException extends RuntimeException {
       case SERVER_ERROR -> 500;
       case TEMPORARILY_UNAVAILABLE -> 503;
       case SLOW_DOWN -> 429;
+      case NOT_FOUND -> 404;
       default -> 400;
     };
   }

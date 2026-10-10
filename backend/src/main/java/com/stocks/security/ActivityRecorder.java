@@ -53,6 +53,15 @@ public class ActivityRecorder implements DisposableBean {
     }
   }
 
+  /** Records that an OAuth grant's access token was used (§17.9.6 {@code oauth_grant.last_used_at}). */
+  public void oauthGrantUsed(long grantId) {
+    Instant now = time.now();
+    if (due("g:" + grantId, now)) {
+      submit(() -> jdbc.sql("UPDATE oauth_grant SET last_used_at = ? WHERE id = ?")
+          .params(Jdbc.ts(now), grantId).update());
+    }
+  }
+
   private boolean due(String key, Instant now) {
     boolean[] due = {false};
     lastWritten.asMap().compute(key, (k, last) -> {

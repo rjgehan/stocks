@@ -17,8 +17,8 @@ import org.springframework.util.StringUtils;
  * <ol>
  *   <li>the {@code X-Stocks-Client} request header (documented in {@code docs/agents.md});</li>
  *   <li>the {@code clientInfo.name/version} of the last {@code initialize} seen for the caller's {@code apiKeyId}
- *       (remembered {@link #REMEMBER}; captured by {@link McpInitializeCapture}, which also writes the
- *       {@code AUTH}/{@code MCP_INITIALIZE} audit row);</li>
+ *       (or, for an OAuth token, its player and OAuth client; §17.9.5) (remembered {@link #REMEMBER}; captured by
+ *       {@link McpInitializeCapture}, which also writes the {@code AUTH}/{@code MCP_INITIALIZE} audit row);</li>
  *   <li>the {@code User-Agent}.</li>
  * </ol>
  * {@code RequestMeta}'s constructor clips the result to 120 characters and strips control characters.
@@ -34,7 +34,7 @@ public class McpClientNames {
   static final int MAX_CHARS = 120;
   private static final int MAX_KEYS = 10_000;
 
-  private final Cache<Long, String> lastInitialize = Caffeine.newBuilder()
+  private final Cache<String, String> lastInitialize = Caffeine.newBuilder()
       .expireAfterWrite(REMEMBER)
       .maximumSize(MAX_KEYS)
       .build();
@@ -45,8 +45,9 @@ public class McpClientNames {
     if (StringUtils.hasText(header)) {
       return header.strip();
     }
-    if (principalOrNull != null && principalOrNull.apiKeyId() != null) {
-      String initialized = lastInitialize.getIfPresent(principalOrNull.apiKeyId());
+    String key = key(principalOrNull);
+    if (key != null) {
+      String initialized = lastInitialize.getIfPresent(key);
       if (initialized != null) {
         return initialized;
       }
@@ -55,16 +56,34 @@ public class McpClientNames {
     return StringUtils.hasText(userAgent) ? userAgent.strip() : null;
   }
 
-  /** Remembers the client name of an {@code initialize} made with an API key (browser sessions are not keyed). */
+  /**
+   * Remembers the client name of an {@code initialize} made with an API key or an OAuth token (browser sessions are
+   * not keyed).
+   */
   public void rememberInitialize(PlayerPrincipal principal, String clientName) {
-    if (principal != null && principal.apiKeyId() != null && StringUtils.hasText(clientName)) {
-      lastInitialize.put(principal.apiKeyId(), clientName);
+    String key = key(principal);
+    if (key != null && StringUtils.hasText(clientName)) {
+      lastInitialize.put(key, clientName);
     }
   }
 
   /** The remembered name for an API key, if any. */
   String remembered(long apiKeyId) {
-    return lastInitialize.getIfPresent(apiKeyId);
+    return lastInitialize.getIfPresent("k:" + apiKeyId);
+  }
+
+  /** The cache key: the API key, or the (player, OAuth client) pair; null for a browser session. */
+  private static String key(PlayerPrincipal p) {
+    if (p == null) {
+      return null;
+    }
+    if (p.apiKeyId() != null) {
+      return "k:" + p.apiKeyId();
+    }
+    if (p.oauthClientId() != null) {
+      return "o:" + p.playerId() + ":" + p.oauthClientId();
+    }
+    return null;
   }
 
   /**

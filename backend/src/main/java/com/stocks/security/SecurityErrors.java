@@ -1,5 +1,6 @@
 package com.stocks.security;
 
+import com.stocks.common.error.BearerChallenge;
 import com.stocks.common.error.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -18,7 +19,7 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  * The security entry point and access-denied handler of every chain: both answer with the §6.5 problem body.
  * <ul>
  *   <li>not authenticated → 401 {@code UNAUTHENTICATED} (chain 2 adds {@code WWW-Authenticate: Bearer realm="stocks"},
- *       §17.1);</li>
+ *       §17.1, with {@code resource_metadata} while OAuth is on, §17.9.5);</li>
  *   <li>CSRF missing or wrong → 403 {@code CSRF_INVALID}, except for an anonymous caller on a non-public route, who
  *       gets the 401 above (a bot that forgot its key should not be told about CSRF);</li>
  *   <li>a key without the route's scope → 403 {@code FORBIDDEN_SCOPE}; a key on a session-only route, or a non-admin
@@ -28,7 +29,7 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 public final class SecurityErrors implements AuthenticationEntryPoint, AccessDeniedHandler {
 
   private final ProblemWriter problems;
-  private final boolean bearerChallenge;
+  private final String bearerChallenge;
   private final RequestMatcher publicRoutes;
 
   /**
@@ -36,8 +37,16 @@ public final class SecurityErrors implements AuthenticationEntryPoint, AccessDen
    * @param publicRoutes    routes anonymous callers may use (their CSRF failures stay {@code CSRF_INVALID})
    */
   public SecurityErrors(ProblemWriter problems, boolean bearerChallenge, RequestMatcher publicRoutes) {
+    this(problems, bearerChallenge ? BearerChallenge.DEFAULT : null, publicRoutes);
+  }
+
+  /**
+   * @param challengeOrNull the {@code WWW-Authenticate} challenge of 401s (chain 2: with {@code resource_metadata}
+   *                        while OAuth is on, §17.9.5), or null for none
+   */
+  public SecurityErrors(ProblemWriter problems, BearerChallenge challengeOrNull, RequestMatcher publicRoutes) {
     this.problems = problems;
-    this.bearerChallenge = bearerChallenge;
+    this.bearerChallenge = challengeOrNull == null ? null : challengeOrNull.value();
     this.publicRoutes = publicRoutes;
   }
 
@@ -79,7 +88,6 @@ public final class SecurityErrors implements AuthenticationEntryPoint, AccessDen
 
   private void unauthenticated(HttpServletRequest request, HttpServletResponse response) throws IOException {
     problems.write(request, response, ErrorCode.UNAUTHENTICATED,
-        "Authentication required: log in, or send Authorization: Bearer stk_….",
-        bearerChallenge ? ProblemWriter.BEARER_CHALLENGE : null);
+        "Authentication required: log in, or send Authorization: Bearer stk_….", bearerChallenge);
   }
 }

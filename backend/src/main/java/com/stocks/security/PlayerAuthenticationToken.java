@@ -13,8 +13,8 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 /**
- * The authenticated {@code Authentication} for every player channel (§17): a human session or an API key (Phase 2
- * adds OAuth). Its principal is the {@link PlayerPrincipal} that {@code CurrentPlayer} reads.
+ * The authenticated {@code Authentication} for every player channel (§17): a human session, an API key or an OAuth
+ * access token (§17.9). Its principal is the {@link PlayerPrincipal} that {@code CurrentPlayer} reads.
  *
  * <p>Authorities:
  * <ul>
@@ -22,7 +22,8 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
  *       carries {@code ROLE_ADMIN}, even the admin's own key (§17.4 layer 3, on top of {@code AdminSessionOnlyFilter}).
  *       Authorize admin work with the chain, never with {@link PlayerPrincipal#isAdmin()}, which reports the
  *       player's role for display.</li>
- *   <li>{@code AUTH_SESSION} or {@code AUTH_API_KEY}: how the request authenticated.</li>
+ *   <li>{@code AUTH_SESSION}, {@code AUTH_API_KEY} or {@code AUTH_OAUTH} (§17.9.5): how the request
+ *       authenticated. An OAuth token never carries {@code ROLE_ADMIN} either.</li>
  *   <li>{@code SCOPE_<scope>} per §7.1 scope: all four for a session, the key's scopes for a key.</li>
  * </ul>
  * {@link #getName()} is the player's public id, so Spring Session JDBC's {@code PRINCIPAL_NAME} index can find (and
@@ -37,6 +38,7 @@ public final class PlayerAuthenticationToken extends AbstractAuthenticationToken
   public static final String ROLE_ADMIN = "ROLE_ADMIN";
   public static final String AUTH_SESSION = "AUTH_SESSION";
   public static final String AUTH_API_KEY = "AUTH_API_KEY";
+  public static final String AUTH_OAUTH = "AUTH_OAUTH";
   public static final String SCOPE_PREFIX = "SCOPE_";
 
   private final PlayerPrincipal principal;
@@ -57,7 +59,11 @@ public final class PlayerAuthenticationToken extends AbstractAuthenticationToken
     if (p.authMethod() == AuthMethod.SESSION && p.role() == PlayerRole.ADMIN && p.kind() == PlayerKind.HUMAN) {
       out.add(new SimpleGrantedAuthority(ROLE_ADMIN));
     }
-    out.add(new SimpleGrantedAuthority(p.authMethod() == AuthMethod.SESSION ? AUTH_SESSION : AUTH_API_KEY));
+    out.add(new SimpleGrantedAuthority(switch (p.authMethod()) {
+      case SESSION -> AUTH_SESSION;
+      case API_KEY -> AUTH_API_KEY;
+      case OAUTH -> AUTH_OAUTH;
+    }));
     p.scopes().stream().sorted().forEach(s -> out.add(new SimpleGrantedAuthority(scopeAuthority(s))));
     return out;
   }
