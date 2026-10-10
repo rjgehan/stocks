@@ -27,6 +27,7 @@ import { Route as AppAccountHistoryRouteImport } from './routes/_app/account/his
 import { Route as AppAccountPositionsRouteImport } from './routes/_app/account/positions'
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
 import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
+import { Route as AppAdminBotsRouteImport } from './routes/_app/admin/bots'
 import { Route as AppAdminCorporateActionsRouteImport } from './routes/_app/admin/corporate-actions'
 import { Route as AppAdminInvitesRouteImport } from './routes/_app/admin/invites'
 import { Route as AppAdminMoneyRouteImport } from './routes/_app/admin/money'
@@ -35,6 +36,7 @@ import { Route as AppAdminSystemRouteImport } from './routes/_app/admin/system'
 import { Route as AppPlayersHandleRouteImport } from './routes/_app/players.$handle'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppSettingsAccountRouteImport } from './routes/_app/settings/account'
+import { Route as AppSettingsApiCallsRouteImport } from './routes/_app/settings/api-calls'
 import { Route as AppSettingsApiKeysRouteImport } from './routes/_app/settings/api-keys'
 import { Route as AppSettingsAppearanceRouteImport } from './routes/_app/settings/appearance'
 import { Route as AppSettingsTradingRouteImport } from './routes/_app/settings/trading'
@@ -133,6 +135,11 @@ const AppAdminAuditRoute = AppAdminAuditRouteImport.update({
   path: '/audit',
   getParentRoute: () => AppAdminRouteRoute,
 } as any)
+const AppAdminBotsRoute = AppAdminBotsRouteImport.update({
+  id: '/bots',
+  path: '/bots',
+  getParentRoute: () => AppAdminRouteRoute,
+} as any)
 const AppAdminCorporateActionsRoute =
   AppAdminCorporateActionsRouteImport.update({
     id: '/corporate-actions',
@@ -172,6 +179,11 @@ const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
 const AppSettingsAccountRoute = AppSettingsAccountRouteImport.update({
   id: '/account',
   path: '/account',
+  getParentRoute: () => AppSettingsRouteRoute,
+} as any)
+const AppSettingsApiCallsRoute = AppSettingsApiCallsRouteImport.update({
+  id: '/api-calls',
+  path: '/api-calls',
   getParentRoute: () => AppSettingsRouteRoute,
 } as any)
 const AppSettingsApiKeysRoute = AppSettingsApiKeysRouteImport.update({
@@ -231,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/account/history': typeof AppAccountHistoryRoute
   '/account/positions': typeof AppAccountPositionsRoute
   '/admin/audit': typeof AppAdminAuditRoute
+  '/admin/bots': typeof AppAdminBotsRoute
   '/admin/corporate-actions': typeof AppAdminCorporateActionsRoute
   '/admin/invites': typeof AppAdminInvitesRoute
   '/admin/money': typeof AppAdminMoneyRoute
@@ -238,6 +251,7 @@ export interface FileRoutesByFullPath {
   '/admin/system': typeof AppAdminSystemRoute
   '/players/$handle': typeof AppPlayersHandleRoute
   '/settings/account': typeof AppSettingsAccountRoute
+  '/settings/api-calls': typeof AppSettingsApiCallsRoute
   '/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/settings/appearance': typeof AppSettingsAppearanceRoute
   '/settings/trading': typeof AppSettingsTradingRoute
@@ -263,6 +277,7 @@ export interface FileRoutesByTo {
   '/account/history': typeof AppAccountHistoryRoute
   '/account/positions': typeof AppAccountPositionsRoute
   '/admin/audit': typeof AppAdminAuditRoute
+  '/admin/bots': typeof AppAdminBotsRoute
   '/admin/corporate-actions': typeof AppAdminCorporateActionsRoute
   '/admin/invites': typeof AppAdminInvitesRoute
   '/admin/money': typeof AppAdminMoneyRoute
@@ -270,6 +285,7 @@ export interface FileRoutesByTo {
   '/admin/system': typeof AppAdminSystemRoute
   '/players/$handle': typeof AppPlayersHandleRoute
   '/settings/account': typeof AppSettingsAccountRoute
+  '/settings/api-calls': typeof AppSettingsApiCallsRoute
   '/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/settings/appearance': typeof AppSettingsAppearanceRoute
   '/settings/trading': typeof AppSettingsTradingRoute
@@ -300,6 +316,7 @@ export interface FileRoutesById {
   '/_app/account/history': typeof AppAccountHistoryRoute
   '/_app/account/positions': typeof AppAccountPositionsRoute
   '/_app/admin/audit': typeof AppAdminAuditRoute
+  '/_app/admin/bots': typeof AppAdminBotsRoute
   '/_app/admin/corporate-actions': typeof AppAdminCorporateActionsRoute
   '/_app/admin/invites': typeof AppAdminInvitesRoute
   '/_app/admin/money': typeof AppAdminMoneyRoute
@@ -307,6 +324,7 @@ export interface FileRoutesById {
   '/_app/admin/system': typeof AppAdminSystemRoute
   '/_app/players/$handle': typeof AppPlayersHandleRoute
   '/_app/settings/account': typeof AppSettingsAccountRoute
+  '/_app/settings/api-calls': typeof AppSettingsApiCallsRoute
   '/_app/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/_app/settings/appearance': typeof AppSettingsAppearanceRoute
   '/_app/settings/trading': typeof AppSettingsTradingRoute
@@ -337,6 +355,7 @@ export interface FileRouteTypes {
     | '/account/history'
     | '/account/positions'
     | '/admin/audit'
+    | '/admin/bots'
     | '/admin/corporate-actions'
     | '/admin/invites'
     | '/admin/money'
@@ -344,6 +363,7 @@ export interface FileRouteTypes {
     | '/admin/system'
     | '/players/$handle'
     | '/settings/account'
+    | '/settings/api-calls'
     | '/settings/api-keys'
     | '/settings/appearance'
     | '/settings/trading'
@@ -369,6 +389,7 @@ export interface FileRouteTypes {
     | '/account/history'
     | '/account/positions'
     | '/admin/audit'
+    | '/admin/bots'
     | '/admin/corporate-actions'
     | '/admin/invites'
     | '/admin/money'
@@ -376,6 +397,7 @@ export interface FileRouteTypes {
     | '/admin/system'
     | '/players/$handle'
     | '/settings/account'
+    | '/settings/api-calls'
     | '/settings/api-keys'
     | '/settings/appearance'
     | '/settings/trading'
@@ -405,6 +427,7 @@ export interface FileRouteTypes {
     | '/_app/account/history'
     | '/_app/account/positions'
     | '/_app/admin/audit'
+    | '/_app/admin/bots'
     | '/_app/admin/corporate-actions'
     | '/_app/admin/invites'
     | '/_app/admin/money'
@@ -412,6 +435,7 @@ export interface FileRouteTypes {
     | '/_app/admin/system'
     | '/_app/players/$handle'
     | '/_app/settings/account'
+    | '/_app/settings/api-calls'
     | '/_app/settings/api-keys'
     | '/_app/settings/appearance'
     | '/_app/settings/trading'
@@ -560,6 +584,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminAuditRouteImport
       parentRoute: typeof AppAdminRouteRoute
     }
+    '/_app/admin/bots': {
+      id: '/_app/admin/bots'
+      path: '/bots'
+      fullPath: '/admin/bots'
+      preLoaderRoute: typeof AppAdminBotsRouteImport
+      parentRoute: typeof AppAdminRouteRoute
+    }
     '/_app/admin/corporate-actions': {
       id: '/_app/admin/corporate-actions'
       path: '/corporate-actions'
@@ -614,6 +645,13 @@ declare module '@tanstack/react-router' {
       path: '/account'
       fullPath: '/settings/account'
       preLoaderRoute: typeof AppSettingsAccountRouteImport
+      parentRoute: typeof AppSettingsRouteRoute
+    }
+    '/_app/settings/api-calls': {
+      id: '/_app/settings/api-calls'
+      path: '/api-calls'
+      fullPath: '/settings/api-calls'
+      preLoaderRoute: typeof AppSettingsApiCallsRouteImport
       parentRoute: typeof AppSettingsRouteRoute
     }
     '/_app/settings/api-keys': {
@@ -699,6 +737,7 @@ const AppAccountRouteRouteWithChildren = AppAccountRouteRoute._addFileChildren(
 
 interface AppAdminRouteRouteChildren {
   AppAdminAuditRoute: typeof AppAdminAuditRoute
+  AppAdminBotsRoute: typeof AppAdminBotsRoute
   AppAdminCorporateActionsRoute: typeof AppAdminCorporateActionsRoute
   AppAdminInvitesRoute: typeof AppAdminInvitesRoute
   AppAdminMoneyRoute: typeof AppAdminMoneyRoute
@@ -711,6 +750,7 @@ interface AppAdminRouteRouteChildren {
 
 const AppAdminRouteRouteChildren: AppAdminRouteRouteChildren = {
   AppAdminAuditRoute: AppAdminAuditRoute,
+  AppAdminBotsRoute: AppAdminBotsRoute,
   AppAdminCorporateActionsRoute: AppAdminCorporateActionsRoute,
   AppAdminInvitesRoute: AppAdminInvitesRoute,
   AppAdminMoneyRoute: AppAdminMoneyRoute,
@@ -727,6 +767,7 @@ const AppAdminRouteRouteWithChildren = AppAdminRouteRoute._addFileChildren(
 
 interface AppSettingsRouteRouteChildren {
   AppSettingsAccountRoute: typeof AppSettingsAccountRoute
+  AppSettingsApiCallsRoute: typeof AppSettingsApiCallsRoute
   AppSettingsApiKeysRoute: typeof AppSettingsApiKeysRoute
   AppSettingsAppearanceRoute: typeof AppSettingsAppearanceRoute
   AppSettingsTradingRoute: typeof AppSettingsTradingRoute
@@ -735,6 +776,7 @@ interface AppSettingsRouteRouteChildren {
 
 const AppSettingsRouteRouteChildren: AppSettingsRouteRouteChildren = {
   AppSettingsAccountRoute: AppSettingsAccountRoute,
+  AppSettingsApiCallsRoute: AppSettingsApiCallsRoute,
   AppSettingsApiKeysRoute: AppSettingsApiKeysRoute,
   AppSettingsAppearanceRoute: AppSettingsAppearanceRoute,
   AppSettingsTradingRoute: AppSettingsTradingRoute,

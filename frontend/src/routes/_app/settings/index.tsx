@@ -10,6 +10,7 @@ const ITEMS = [
   { to: '/settings/appearance', label: 'Appearance', detail: 'Theme and up/down colors' },
   { to: '/settings/trading', label: 'Trading defaults', detail: 'Order confirmation, default type, TIF, quantity mode' },
   { to: '/settings/api-keys', label: 'API keys', detail: 'Personal read-only keys for your own scripts' },
+  { to: '/settings/api-calls', label: 'Recent API calls', detail: 'What your keys and your bots did, per hour' },
   { to: '/settings/account', label: 'Account', detail: 'Password and self-reset' },
 ] as const
 

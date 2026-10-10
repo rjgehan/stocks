@@ -9,18 +9,19 @@ import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Segmented } from '@/components/ui/Segmented'
 import { SkeletonRows } from '@/components/ui/Skeleton'
-import { IconBolt, IconCash, IconRotate, IconTrophy, IconUserPlus } from '@/components/ui/icons'
+import { IconBolt, IconBook, IconCash, IconRotate, IconTrophy, IconUserPlus } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { AiChip, Avatar } from './PlayerBadge'
 
 type Kind = NonNullable<FeedItem['kind']>
-export type FeedFilter = 'ALL' | 'TRADES' | 'LEADERS' | 'MONEY' | 'PLAYERS'
+export type FeedFilter = 'ALL' | 'TRADES' | 'JOURNAL' | 'LEADERS' | 'MONEY' | 'PLAYERS'
 
 /** Which kinds each filter chip shows. */
 export const FEED_FILTER_KINDS: Record<FeedFilter, readonly Kind[] | null> = {
   ALL: null,
   TRADES: ['FILL', 'POSITION_CLOSED'],
+  JOURNAL: ['JOURNAL'],
   LEADERS: ['NEW_LEADER'],
   MONEY: ['DEPOSIT'],
   PLAYERS: ['JOINED', 'RESET'],
@@ -33,6 +34,7 @@ const KIND_ICON: Record<Kind, { icon: (p: { size?: number }) => React.ReactNode;
   RESET: { icon: IconRotate, className: 'bg-bg-2 text-text-2', label: 'Reset' },
   DEPOSIT: { icon: IconCash, className: 'bg-up-bg text-up', label: 'Deposit' },
   JOINED: { icon: IconUserPlus, className: 'bg-human/15 text-human', label: 'Joined' },
+  JOURNAL: { icon: IconBook, className: 'bg-ai-bg text-ai', label: 'Journal note' },
 }
 
 const PERIOD_WORD: Record<string, string> = { TODAY: 'today', WEEK: 'the week', MONTH: 'the month', YTD: 'the year', SEASON: 'the season', ALL: 'all time' }
@@ -78,6 +80,12 @@ function describe(i: FeedItem): React.ReactNode {
       )
     case 'JOINED':
       return <>joined the league</>
+    case 'JOURNAL':
+      return (
+        <>
+          wrote in their journal{i.symbol ? <> about <SymbolLink symbol={i.symbol} /></> : null}
+        </>
+      )
     default:
       return null
   }
@@ -98,6 +106,7 @@ export function feedDayLabel(at: string | null | undefined, nowMs: number): stri
 function FeedRow({ i, fresh }: { i: FeedItem; fresh: boolean }) {
   const rationale = i.payload?.untrusted?.rationale
   const memo = i.payload?.untrusted?.memo
+  const note = i.payload?.untrusted?.note
   const k = i.kind ? KIND_ICON[i.kind] : null
   return (
     <li className={cx('flex gap-3 px-4 py-3', fresh && 'animate-feed-in')}>
@@ -122,6 +131,11 @@ function FeedRow({ i, fresh }: { i: FeedItem; fresh: boolean }) {
           </p>
         ) : null}
         {memo ? <p className="mt-1 text-caption text-text-2">“{memo}”</p> : null}
+        {note ? (
+          <blockquote className="mt-1 rounded-sm border-l-2 border-ai/50 bg-bg-2 px-2 py-1 text-caption break-words text-text-2" title="The bot's own note (shown as written)">
+            {note}
+          </blockquote>
+        ) : null}
         <p className="mt-0.5 text-micro text-text-3">
           {formatTimeEt(i.at)}
           {fresh ? <span className="ml-1.5 font-semibold text-accent">New</span> : null}
@@ -167,6 +181,7 @@ export function FeedList() {
           options={[
             { value: 'ALL', label: 'All' },
             { value: 'TRADES', label: 'Trades' },
+            { value: 'JOURNAL', label: 'Journal' },
             { value: 'LEADERS', label: 'Leaders' },
             { value: 'MONEY', label: 'Deposits' },
             { value: 'PLAYERS', label: 'Players' },

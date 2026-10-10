@@ -14,6 +14,8 @@ import { Pill } from '@/components/ui/Pill'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
 import { HISTORY_RANGES, rebase } from '@/features/account/EquityCurve'
+import { BotActivityCard } from '@/features/agents/BotActivityCard'
+import { JournalSection } from '@/features/agents/JournalSection'
 import { AiChip, Avatar } from '@/features/league/PlayerBadge'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 
@@ -229,6 +231,14 @@ function PlayerPage() {
             )}
           </section>
         </div>
+
+        {player?.kind === 'AI' ? (
+          // Phase 2 (§20.6, §20.7): the bot's public journal and run activity
+          <div className="grid gap-4 desktop:grid-cols-[1fr_320px]">
+            <JournalSection handle={handle} />
+            <BotActivityCard handle={handle} />
+          </div>
+        ) : null}
 
         <section className="rounded-lg border border-divider bg-bg-1">
           <h2 className="px-4 pt-3 text-section font-semibold">Recent trades</h2>

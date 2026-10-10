@@ -72,6 +72,12 @@ export type TransferBatchResult = S['TransferBatchResult']
 export type TransferRow = S['TransferRow']
 export type CorporateAction = S['CorporateAction']
 export type ResolveCorporateActionRequest = S['ResolveCorporateActionRequest']
+// Phase 2 agents (§17.10, §20.6, §20.7)
+export type AgentRun = S['AgentRun']
+export type AgentRunSummary = S['AgentRunSummary']
+export type AdminBot = S['AdminBot']
+export type ApiCall = S['ApiCall']
+export type JournalNote = S['JournalNote']
 // rules (bots and the ticket read the order matrix from here, §18.3 Rules)
 export type Rules = S['Rules']
 export type OrderMatrixRow = S['OrderMatrixRow']
@@ -99,6 +105,7 @@ export type KindFilter = NN<Leaderboard['kind']>
 export type MoverList = 'GAINERS' | 'LOSERS' | 'ACTIVES'
 export type CorporateActionType = NN<CorporateAction['type']>
 export type CorporateActionStatus = NN<CorporateAction['status']>
+export type AgentRunStatus = NN<AgentRun['status']>
 
 /** `/topic/tick.{SYM}` payload (§19, `TickDto`). */
 export interface Tick {
