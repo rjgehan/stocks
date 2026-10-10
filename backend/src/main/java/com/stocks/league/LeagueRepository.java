@@ -2,6 +2,7 @@ package com.stocks.league;
 
 import com.stocks.common.domain.LeaderboardPeriod;
 import com.stocks.common.jdbc.Jdbc;
+import com.stocks.common.money.Money;
 import com.stocks.portfolio.PortfolioRepository.TransferRow;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -22,10 +23,17 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class LeagueRepository {
 
-  /** Trading activity of one player in a window. */
-  public record Activity(int fills, int symbols, int closingSells, int wins, int apiFills) {
-    static final Activity NONE = new Activity(0, 0, 0, 0, 0);
+  /**
+   * Trading activity of one player in a window; {@code grossProfit} and {@code grossLoss} (both ≥ 0) sum the realized
+   * P&amp;L of the winning and losing closing sells (§16.8 profit factor).
+   */
+  public record Activity(int fills, int symbols, int closingSells, int wins, int apiFills, BigDecimal grossProfit,
+                         BigDecimal grossLoss) {
+    static final Activity NONE = new Activity(0, 0, 0, 0, 0, Money.ZERO, Money.ZERO);
   }
+
+  /** One player's rank in one {@code leaderboard_snapshot} (§16.8 rank history); {@code ranked} rows that day. */
+  public record RankRow(LocalDate date, Integer rank, int ranked) {}
 
   /** One unit-value point of a run's EOD series. */
   public record SeriesPoint(long accountId, LocalDate tradeDate, Instant asOf, BigDecimal unitValue, int unitSeries,
@@ -64,6 +72,7 @@ public class LeagueRepository {
   public Map<Long, Activity> activity(Instant fromExclusive, Instant toInclusive) {
     Instant from = fromExclusive == null ? Instant.EPOCH : fromExclusive;
     Map<Long, int[]> acc = new HashMap<>();
+    Map<Long, BigDecimal[]> gross = new HashMap<>();
     jdbc.sql("""
             SELECT a.player_id, COUNT(*) AS fills, COUNT(DISTINCT o.symbol) AS symbols
               FROM trade_order o
@@ -82,7 +91,9 @@ public class LeagueRepository {
             SELECT a.player_id,
                    SUM(CASE WHEN e.side = 'SELL' AND e.realized_pnl IS NOT NULL THEN 1 ELSE 0 END) AS sells,
                    SUM(CASE WHEN e.side = 'SELL' AND e.realized_pnl > 0 THEN 1 ELSE 0 END) AS wins,
-                   SUM(CASE WHEN o.channel IN ('REST_KEY', 'MCP_KEY', 'MCP_OAUTH') THEN 1 ELSE 0 END) AS api
+                   SUM(CASE WHEN o.channel IN ('REST_KEY', 'MCP_KEY', 'MCP_OAUTH') THEN 1 ELSE 0 END) AS api,
+                   SUM(CASE WHEN e.side = 'SELL' AND e.realized_pnl > 0 THEN e.realized_pnl ELSE 0 END) AS profit,
+                   SUM(CASE WHEN e.side = 'SELL' AND e.realized_pnl < 0 THEN -e.realized_pnl ELSE 0 END) AS loss
               FROM execution e
               JOIN account a ON a.id = e.account_id
               JOIN trade_order o ON o.id = e.order_id
@@ -94,9 +105,14 @@ public class LeagueRepository {
           v[2] = rs.getInt("sells");
           v[3] = rs.getInt("wins");
           v[4] = rs.getInt("api");
+          gross.put(rs.getLong("player_id"), new BigDecimal[] {money(rs.getBigDecimal("profit")),
+              money(rs.getBigDecimal("loss"))});
         });
     Map<Long, Activity> out = new HashMap<>();
-    acc.forEach((player, v) -> out.put(player, new Activity(v[0], v[1], v[2], v[3], v[4])));
+    acc.forEach((player, v) -> {
+      BigDecimal[] g = gross.getOrDefault(player, new BigDecimal[] {Money.ZERO, Money.ZERO});
+      out.put(player, new Activity(v[0], v[1], v[2], v[3], v[4], g[0], g[1]));
+    });
     return out;
   }
 
@@ -169,6 +185,44 @@ public class LeagueRepository {
   public Long previousLeader(LeaderboardPeriod period, LocalDate date) {
     return previousRanks(period, date).entrySet().stream().filter(e -> e.getValue() == 1)
         .map(Map.Entry::getKey).findFirst().orElse(null);
+  }
+
+  /**
+   * §16.8 rank history: the latest {@code limit} {@code leaderboard_snapshot} days of {@code period} up to
+   * {@code toInclusive}, per player id (oldest first; a day the player had no row is skipped).
+   */
+  public Map<Long, List<RankRow>> rankHistories(LeaderboardPeriod period, LocalDate toInclusive, int limit) {
+    List<LocalDate> dates = jdbc.sql("""
+            SELECT trade_date FROM leaderboard_snapshot WHERE period_kind = ? AND trade_date <= ?
+             GROUP BY trade_date ORDER BY trade_date DESC LIMIT ?""")
+        .params(period.name(), toInclusive, limit)
+        .query((rs, n) -> Jdbc.date(rs, 1)).list();
+    Map<Long, List<RankRow>> out = new HashMap<>();
+    if (dates.isEmpty()) {
+      return out;
+    }
+    LocalDate from = dates.get(dates.size() - 1);
+    record Row(LocalDate date, long player, Integer rank) {}
+    List<Row> rows = jdbc.sql("""
+            SELECT trade_date, player_id, rank_no FROM leaderboard_snapshot
+             WHERE period_kind = ? AND trade_date >= ? AND trade_date <= ?
+             ORDER BY trade_date, player_id""")
+        .params(period.name(), from, toInclusive)
+        .query((rs, n) -> new Row(Jdbc.date(rs, "trade_date"), rs.getLong("player_id"), Jdbc.intOrNull(rs, "rank_no")))
+        .list();
+    Map<LocalDate, Integer> ranked = new HashMap<>();
+    for (Row r : rows) {
+      ranked.merge(r.date(), r.rank() == null ? 0 : 1, Integer::sum);
+    }
+    for (Row r : rows) {
+      out.computeIfAbsent(r.player(), k -> new ArrayList<>()).add(new RankRow(r.date(), r.rank(),
+          ranked.getOrDefault(r.date(), 0)));
+    }
+    return out;
+  }
+
+  private static BigDecimal money(BigDecimal v) {
+    return v == null ? Money.ZERO : Money.cents(v);
   }
 
   public void upsertSnapshot(SnapshotRow r) {

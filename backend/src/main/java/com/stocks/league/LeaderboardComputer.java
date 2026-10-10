@@ -6,6 +6,8 @@ import com.stocks.common.money.Money;
 import com.stocks.common.time.TimeSource;
 import com.stocks.contract.portfolio.Valuation;
 import com.stocks.contract.portfolio.ValuationService;
+import com.stocks.league.LeagueEntry.CurvePoint;
+import com.stocks.league.LeagueEntry.Extras;
 import com.stocks.league.LeagueRepository.Activity;
 import com.stocks.league.LeagueRepository.SeriesPoint;
 import com.stocks.portfolio.BenchmarkService;
@@ -61,9 +63,18 @@ public class LeaderboardComputer {
   public record End(long accountId, Instant at, BigDecimal equity, BigDecimal netContributions, BigDecimal unitValue,
                     int unitSeries) {}
 
-  /** One period's entries (unsorted) and its common facts. */
+  /**
+   * One period's entries (unsorted) and its common facts; {@code benchmarkStart} and {@code benchmarkEnd} are B at the
+   * period start and at the end (null when unknown), {@code benchmarkReturn} their ratio minus one.
+   */
   public record PeriodBoard(LeaderboardPeriod period, Window window, Instant periodStart, BigDecimal benchmarkReturn,
-                            List<LeagueEntry> entries) {}
+                            List<LeagueEntry> entries, BigDecimal benchmarkStart, BigDecimal benchmarkEnd) {
+
+    public PeriodBoard(LeaderboardPeriod period, Window window, Instant periodStart, BigDecimal benchmarkReturn,
+                       List<LeagueEntry> entries) {
+      this(period, window, periodStart, benchmarkReturn, entries, null, null);
+    }
+  }
 
   /** Every period, computed for one end instant. */
   public record Board(Instant asOf, LocalDate pnlDay, Map<LeaderboardPeriod, PeriodBoard> periods) {}
@@ -173,7 +184,7 @@ public class LeaderboardComputer {
           : window.anchorAt();
       BigDecimal benchStart = window.sinceOpening() ? leagueOpeningBenchmark(states, transfers) : benchAnchor;
       out.put(period, new PeriodBoard(period, window, periodStart,
-          MetricsCalculator.ratioMinusOne(benchEnd, benchStart), List.copyOf(entries)));
+          MetricsCalculator.ratioMinusOne(benchEnd, benchStart), List.copyOf(entries), benchStart, benchEnd));
     }
     return new Board(b, pnlDay, out);
   }
@@ -284,10 +295,24 @@ public class LeaderboardComputer {
     boolean eligible = Eligibility.eligible(period, activity.fills(), activity.symbols(), minFills, minSymbols);
     String note = Eligibility.note(period, activity.fills(), activity.symbols(), minFills, minSymbols);
     boolean apiTrader = s.player.kind() == PlayerKind.HUMAN && activity.apiFills() > 0;
+
+    // ---- Phase 2 (§16.8, §16.9): the curve, Sharpe and volatility over the daily returns, the profit factor
+    List<CurvePoint> curve = new ArrayList<>();
+    curve.add(new CurvePoint(anchor.at(), anchor.date(), start.unitValue(), start.unitSeries()));
+    daily.values().forEach(p -> curve.add(new CurvePoint(p.asOf(), p.tradeDate(), p.unitValue(), p.unitSeries())));
+    if (curve.get(curve.size() - 1).t().isBefore(s.end.at())) {
+      curve.add(new CurvePoint(s.end.at(), null, end.unitValue(), end.unitSeries()));
+    }
+    List<UnitPoint> days = new ArrayList<>();
+    days.add(start);
+    daily.values().forEach(p -> days.add(new UnitPoint(p.unitValue(), p.unitSeries())));
+    Extras extras = new Extras(List.copyOf(curve), MetricsCalculator.riskOfPath(days), activity.closingSells(),
+        activity.wins(), activity.grossProfit(), activity.grossLoss(),
+        MetricsCalculator.profitFactor(activity.grossProfit(), activity.grossLoss()));
     return new LeagueEntry(s.player, s.endRun.id(), twr, pnl, excess, mdd, rebased, partial, s.end.equity(),
         s.end.netContributions(), flows, activity.fills(), activity.symbols(),
         MetricsCalculator.winRate(activity.wins(), activity.closingSells()), topHolding, apiTrader,
-        List.copyOf(spark), s.firstOpening.at(), eligible, note, prevRank);
+        List.copyOf(spark), s.firstOpening.at(), eligible, note, prevRank, extras);
   }
 
   /** The symbol with the largest previous-EOD market value of the end run. */

@@ -341,8 +341,11 @@ class ValuationAndSnapshotsTest {
     com.stocks.testkit.ScriptedMarketData bars = new com.stocks.testkit.ScriptedMarketData(kit.time) {
       @Override
       public com.stocks.contract.marketdata.BarSeries bars(com.stocks.contract.marketdata.BarRequest r) {
-        assertThat(r.symbol()).isEqualTo("SPY");
         assertThat(r.adjustment()).isEqualTo(com.stocks.contract.marketdata.model.AdjustmentMode.RAW);
+        if (!r.symbol().equals("SPY")) {                            // the extra benchmark (QQQ) has no bars here
+          return new com.stocks.contract.marketdata.BarSeries(r.symbol(), com.stocks.common.domain.Timeframe.DAY1,
+              r.adjustment(), List.of(), null, "test");
+        }
         return new com.stocks.contract.marketdata.BarSeries("SPY", com.stocks.common.domain.Timeframe.DAY1,
             r.adjustment(), List.of(bar("2025-12-31", "600"), bar("2026-01-02", "606"), bar("2026-10-08", "660")),
             null, "test");

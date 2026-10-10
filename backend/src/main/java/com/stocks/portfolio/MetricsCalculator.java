@@ -1,6 +1,7 @@
 package com.stocks.portfolio;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
@@ -26,6 +27,23 @@ public final class MetricsCalculator {
 
   /** An external flow at an instant (for the money-weighted return). */
   public record Flow(Instant at, BigDecimal amount) {}
+
+  /**
+   * §16.8 risk metrics over a window's daily returns: how many there were, and the annualized Sharpe ratio (scale 4)
+   * and volatility (scale 10), both null below {@link #SHARPE_MIN_DAYS} returns or with no dispersion.
+   */
+  public record RiskStats(int dailyReturns, BigDecimal sharpe, BigDecimal volatility) {
+    public static final RiskStats NONE = new RiskStats(0, null, null);
+  }
+
+  /** §16.8: Sharpe and volatility need at least this many daily returns. */
+  public static final int SHARPE_MIN_DAYS = 20;
+  /** Sharpe ratio and profit factor: scale 4. */
+  public static final int RATIO_SCALE = 4;
+  /** Trading days per year (annualization). */
+  public static final int TRADING_DAYS = 252;
+  private static final MathContext MC = MathContext.DECIMAL128;
+  private static final BigDecimal SQRT_TRADING_DAYS = BigDecimal.valueOf(TRADING_DAYS).sqrt(MC);
 
   private MetricsCalculator() {}
 
@@ -84,6 +102,74 @@ public final class MetricsCalculator {
       }
     }
     return worst;
+  }
+
+  /**
+   * §16.8 daily returns of a path (the window's anchor, then one EOD unit value per trading day, oldest first; never
+   * the live end): {@code r_i = U_i / U_{i−1} − 1} at {@link MathContext#DECIMAL128}; −1 when the unit series changes
+   * (a rebase, §16.2), 0 after a wiped-out day (U = 0 cannot move without a flow, and a flow rebases).
+   */
+  public static List<BigDecimal> dailyReturns(List<UnitPoint> path) {
+    List<BigDecimal> out = new ArrayList<>();
+    for (int i = 1; i < path.size(); i++) {
+      UnitPoint prev = path.get(i - 1);
+      UnitPoint cur = path.get(i);
+      if (prev.unitSeries() != cur.unitSeries()) {
+        out.add(BigDecimal.ONE.negate());
+      } else if (prev.unitValue().signum() <= 0) {
+        out.add(BigDecimal.ZERO);
+      } else {
+        out.add(cur.unitValue().divide(prev.unitValue(), MC).subtract(BigDecimal.ONE, MC));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * §16.8 Sharpe ratio (risk-free rate 0) and volatility from daily returns: {@code mean / sd × √252} and
+   * {@code sd × √252}, with the sample standard deviation ({@code n − 1}); null below {@link #SHARPE_MIN_DAYS} returns
+   * or when {@code sd = 0}.
+   */
+  public static RiskStats risk(List<BigDecimal> dailyReturns) {
+    int n = dailyReturns.size();
+    if (n < SHARPE_MIN_DAYS) {
+      return new RiskStats(n, null, null);
+    }
+    BigDecimal count = BigDecimal.valueOf(n);
+    BigDecimal sum = BigDecimal.ZERO;
+    for (BigDecimal r : dailyReturns) {
+      sum = sum.add(r, MC);
+    }
+    BigDecimal mean = sum.divide(count, MC);
+    BigDecimal squares = BigDecimal.ZERO;
+    for (BigDecimal r : dailyReturns) {
+      BigDecimal d = r.subtract(mean, MC);
+      squares = squares.add(d.multiply(d, MC), MC);
+    }
+    BigDecimal variance = squares.divide(BigDecimal.valueOf(n - 1L), MC);
+    if (variance.signum() <= 0) {
+      return new RiskStats(n, null, null);
+    }
+    BigDecimal sd = variance.sqrt(MC);
+    BigDecimal sharpe = mean.divide(sd, MC).multiply(SQRT_TRADING_DAYS, MC).setScale(RATIO_SCALE, MODE);
+    BigDecimal volatility = sd.multiply(SQRT_TRADING_DAYS, MC).setScale(RETURN_SCALE, MODE);
+    return new RiskStats(n, sharpe, volatility);
+  }
+
+  /** {@link #risk(List)} of {@link #dailyReturns(List)}. */
+  public static RiskStats riskOfPath(List<UnitPoint> path) {
+    return risk(dailyReturns(path));
+  }
+
+  /**
+   * §16.8 profit factor {@code grossProfit / grossLoss} at scale 4 (both positive sums of realized P&amp;L); null when
+   * there is no loss (the SPA shows ∞ when there is a profit).
+   */
+  public static BigDecimal profitFactor(BigDecimal grossProfit, BigDecimal grossLoss) {
+    if (grossProfit == null || grossLoss == null || grossLoss.signum() <= 0) {
+      return null;
+    }
+    return grossProfit.divide(grossLoss, RATIO_SCALE, MODE);
   }
 
   /** Wins ÷ closing sells at scale 10; null when there were no closing sells. */
