@@ -59,7 +59,7 @@ export function IntervalPicker({ range, value, onChange }: { range: ChartRange; 
           const tf = e.target.value as Timeframe
           onChange(tf === DEFAULT_TIMEFRAME[range] ? undefined : tf)
         }}
-        className="h-7 cursor-pointer appearance-none rounded-sm bg-bg-2 pr-2 pl-2 text-caption font-semibold text-text-2 outline-none hover:text-text-1 focus-visible:ring-2 focus-visible:ring-accent"
+        className="h-11 cursor-pointer tablet:h-7 appearance-none rounded-sm bg-bg-2 pr-2 pl-2 text-caption font-semibold text-text-2 outline-none hover:text-text-1 focus-visible:ring-2 focus-visible:ring-accent"
       >
         {INTERVALS[range].map((tf) => (
           <option key={tf} value={tf}>

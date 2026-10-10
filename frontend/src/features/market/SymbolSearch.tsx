@@ -98,7 +98,7 @@ export function SymbolSearch({
   const optionId = (i: number) => `${listId}-opt-${i}`
   return (
     <div className={cx('relative', variant === 'bar' ? 'w-full max-w-[380px]' : 'w-full')}>
-      <div className={cx('flex items-center gap-2 rounded-md border border-border bg-bg-2 px-3 focus-within:border-accent', variant === 'bar' ? 'h-9' : variant === 'inline' ? 'h-10' : 'h-11')}>
+      <div className={cx('flex items-center gap-2 rounded-md border border-border bg-bg-2 px-3 focus-within:border-accent', variant === 'bar' ? 'h-9' : variant === 'inline' ? 'h-11 tablet:h-10' : 'h-11')}>
         <IconSearch size={16} className="shrink-0 text-text-3" />
         <input
           ref={input}
@@ -140,7 +140,7 @@ export function SymbolSearch({
           autoCapitalize="characters"
           spellCheck={false}
           enterKeyHint="search"
-          className="min-w-0 flex-1 bg-transparent text-body text-text-1 outline-none placeholder:text-text-3"
+          className="h-full min-w-0 flex-1 self-stretch bg-transparent text-body text-text-1 outline-none placeholder:text-text-3"
         />
         {variant === 'bar' ? <Kbd>⌘K</Kbd> : null}
       </div>
@@ -187,7 +187,7 @@ export function SymbolSearch({
           <h2 className="mb-1 text-micro font-semibold tracking-wide text-text-3 uppercase">Recent</h2>
           <div className="flex flex-wrap gap-2">
             {recent.map((s) => (
-              <button key={s} type="button" onClick={() => go(s)} className="h-9 rounded-full border border-border bg-bg-1 px-3 text-caption font-semibold hover:border-accent">
+              <button key={s} type="button" onClick={() => go(s)} className="h-11 rounded-full border border-border bg-bg-1 px-3 text-caption font-semibold hover:border-accent tablet:h-9">
                 {s}
               </button>
             ))}

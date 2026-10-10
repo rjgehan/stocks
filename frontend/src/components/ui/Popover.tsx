@@ -69,7 +69,7 @@ export function MenuItem({ onClick, children, tone, disabled }: { onClick: () =>
       onClick={onClick}
       disabled={disabled}
       className={cx(
-        'flex min-h-10 w-full items-center gap-2 px-3 text-left text-body hover:bg-bg-2 disabled:opacity-40',
+        'flex min-h-11 w-full items-center tablet:min-h-10 gap-2 px-3 text-left text-body hover:bg-bg-2 disabled:opacity-40',
         tone === 'danger' ? 'text-down' : 'text-text-1',
       )}
     >

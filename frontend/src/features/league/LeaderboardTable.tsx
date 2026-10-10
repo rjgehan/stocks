@@ -58,7 +58,7 @@ function Metric({ row, metric }: { row: LeaderboardRow; metric: LeaderboardMetri
 function Name({ row, me }: { row: LeaderboardRow; me: boolean }) {
   const p = row.player
   return (
-    <Link to="/players/$handle" params={{ handle: p?.handle ?? '' }} className="flex min-w-0 items-center gap-2.5 hover:text-accent">
+    <Link to="/players/$handle" params={{ handle: p?.handle ?? '' }} className="flex min-h-11 min-w-0 items-center gap-2.5 hover:text-accent">
       <Avatar player={p} size={30} />
       <span className="min-w-0">
         <span className="flex flex-wrap items-center gap-1.5">

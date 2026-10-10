@@ -55,7 +55,7 @@ export function StarButton({ symbol, size = 'md' }: { symbol: string; size?: 'md
             role="menuitemcheckbox"
             aria-checked={has}
             onClick={() => toggle(w.id, w.name, has)}
-            className="flex min-h-10 w-full items-center justify-between gap-3 px-3 text-left text-body hover:bg-bg-2"
+            className="flex min-h-11 w-full tablet:min-h-10 items-center justify-between gap-3 px-3 text-left text-body hover:bg-bg-2"
           >
             <span className="truncate">{w.name}</span>
             <span className={cx('flex size-5 items-center justify-center rounded-sm border', has ? 'border-accent bg-accent text-white' : 'border-border')}>

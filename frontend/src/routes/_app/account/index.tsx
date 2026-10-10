@@ -49,7 +49,7 @@ function AccountOverview() {
       <section className="rounded-lg border border-divider bg-bg-1">
         <div className="flex items-center justify-between px-4 pt-3 pb-1">
           <h2 className="text-section font-semibold">Positions</h2>
-          <Link to="/account/positions" className="text-caption font-semibold text-accent hover:text-accent-hover">
+          <Link to="/account/positions" className="inline-flex min-h-11 items-center text-caption font-semibold text-accent hover:text-accent-hover tablet:min-h-0">
             All positions
           </Link>
         </div>
@@ -58,7 +58,7 @@ function AccountOverview() {
       <section className="rounded-lg border border-divider bg-bg-1">
         <div className="flex items-center justify-between px-4 pt-3 pb-1">
           <h2 className="text-section font-semibold">Open orders</h2>
-          <Link to="/account/orders" className="text-caption font-semibold text-accent hover:text-accent-hover">
+          <Link to="/account/orders" className="inline-flex min-h-11 items-center text-caption font-semibold text-accent hover:text-accent-hover tablet:min-h-0">
             All orders
           </Link>
         </div>
