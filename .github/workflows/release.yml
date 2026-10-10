@@ -1,6 +1,7 @@
 # Release and deploy (ARCHITECTURE §24.7, docs/deploy.md).
 #
 #   push to main       → CI (ci.yml) → multi-arch image to GHCR (latest + sha-<7>) → deploy to the CasaOS server
+#                        (the agent runner goes to the same package as agent-runner-latest + agent-runner-sha-<7>)
 #   push of a v* tag   → CI → image (X.Y.Z, X.Y, sha-<7>; never `latest`); no deploy (dispatch one if you want it)
 #   workflow_dispatch  → tag empty: CI → image (sha-<7>) → deploy; tag set: deploy/roll back to that existing tag
 #
@@ -135,27 +136,24 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=stocks
           cache-to: type=gha,scope=stocks,mode=max
-      - name: Agent runner present?
-        id: agent
-        run: |
-          if [ -f tools/agent-runner/Dockerfile ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      # The agent runner goes into the SAME package with the tag prefix agent-runner- (agent-runner-sha-<7>,
+      # agent-runner-latest, agent-runner-X.Y.Z), so a public `stocks` package needs no second package made public.
       - id: agent-meta
-        if: steps.agent.outputs.present == 'true'
         uses: docker/metadata-action@v6
         with:
-          images: ${{ needs.meta.outputs.image }}-agent-runner
+          images: ${{ needs.meta.outputs.image }}
           flavor: |
             latest=false
           tags: |
-            type=raw,value=sha-${{ needs.meta.outputs.short_sha }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=agent-runner-sha-${{ needs.meta.outputs.short_sha }}
+            type=semver,pattern={{version}},prefix=agent-runner-
+            type=semver,pattern={{major}}.{{minor}},prefix=agent-runner-
+            type=raw,value=agent-runner-latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=stocks-agent-runner
             org.opencontainers.image.description=stocks agent runner (Claude and ChatGPT league bots)
-      - name: Build and push agent-runner image
-        if: steps.agent.outputs.present == 'true'
+      - id: agent-build
+        name: Build and push agent-runner image
         uses: docker/build-push-action@v7
         with:
           context: tools/agent-runner
@@ -172,6 +170,8 @@ jobs:
         env:
           TAGS: ${{ steps.docker-meta.outputs.tags }}
           DIGEST: ${{ steps.build.outputs.digest }}
+          AGENT_TAGS: ${{ steps.agent-meta.outputs.tags }}
+          AGENT_DIGEST: ${{ steps.agent-build.outputs.digest }}
         run: |
           {
             echo "### Image pushed"
@@ -179,6 +179,12 @@ jobs:
             echo "Digest: \`${DIGEST}\`"
             echo ""
             while IFS= read -r t; do if [ -n "$t" ]; then echo "- \`$t\`"; fi; done <<< "$TAGS"
+            echo ""
+            echo "### Agent runner pushed"
+            echo ""
+            echo "Digest: \`${AGENT_DIGEST}\`"
+            echo ""
+            while IFS= read -r t; do if [ -n "$t" ]; then echo "- \`$t\`"; fi; done <<< "$AGENT_TAGS"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:

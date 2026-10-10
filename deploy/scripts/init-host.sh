@@ -12,8 +12,9 @@
 # project directory (os.RemoveAll) even when you keep the data; that now removes only compose/ and the link. (An
 # Uninstall that does not keep the data still deletes DIR: never uninstall this app in CasaOS.)
 # A host set up with the old layout (docker-compose.yml directly in DIR) is migrated: the compose file, its .bak and
-# .deploy-state move into compose/. The runner user (--owner) gets DIR itself, .env, compose/, scripts/ and
-# agent-data/ so the deploy job can update them; pgdata/ and backups/ stay with root and the postgres container.
+# .deploy-state move into compose/. The runner user (--owner) gets DIR itself, .env, compose/ and scripts/ so the
+# deploy job can update them; pgdata/ and backups/ stay with root and the postgres container; agent-data/ goes to
+# uid/gid 1000, the user the agent-runner image runs as.
 # --url also sets APP_PUBLIC_HOST (the CasaOS dashboard tile opens https://APP_PUBLIC_HOST). --casaos-link links
 # DIR/.env into /var/lib/casaos/apps/stocks/ for a CasaOS "Import" install.
 #
@@ -28,7 +29,7 @@ URL=""
 CASAOS_LINK=false
 FROM=""
 
-usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -139,10 +140,17 @@ else
 fi
 
 if [[ -n "$OWNER" ]]; then
-  chown "$OWNER": "$DIR" "$DIR/.env" "$DIR/agent-data"
+  chown "$OWNER": "$DIR" "$DIR/.env"
   chown -R "$OWNER": "$DIR/scripts" "$DIR/compose"
   chown -h "$OWNER": "$DIR/compose/.env"
-  echo "   $DIR, .env, compose/, scripts/ and agent-data/ now belong to $OWNER"
+  echo "   $DIR, .env, compose/ and scripts/ now belong to $OWNER"
+fi
+# The agent runner (compose profile "agents") runs as uid/gid 1000 and writes the bots' notes, spend and run logs.
+if [[ $EUID -eq 0 ]]; then
+  chown -R 1000:1000 "$DIR/agent-data"
+  echo "   agent-data/ belongs to uid 1000 (the agent-runner image's user)"
+else
+  echo "   WARNING: not root, so agent-data/ keeps its owner; run: sudo chown -R 1000:1000 $DIR/agent-data" >&2
 fi
 
 if [[ "$CASAOS_LINK" == "true" ]]; then
