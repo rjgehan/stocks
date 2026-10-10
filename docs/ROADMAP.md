@@ -65,7 +65,7 @@
 - [x] `SubscriptionBudgetManager` (leases, priorities, hysteresis, ≤ 30 Alpaca and about 50 Finnhub symbols), `SnapshotPoller`, `QuoteRefresher`, `ProviderRateLimiter` (180/min with priority classes)
 - [x] `BarService`: SIP history ≥ 16 minutes old + IEX tail + live aggregation; range defaults; caching
 - [x] `MarkService` (live marks, split-adjusted fallbacks) and `DailyMarkJob` (16:20 official close; 20:20 day-end marks; re-marking PROVISIONAL rows)
-- [x] `SplitAdjustments` (`price_adjustment`) and `SplitGuard` (04:01 and 09:20; corporate-action hold once WS3's `flagDetectedSplit`/`symbolsOnHold` land)
+- [x] `SplitAdjustments` (`price_adjustment`) and `SplitGuard` (04:01 and 09:20; corporate-action hold through WS3's `flagDetectedSplit`/`symbolsOnHold`); `CorporateActionSource` bean for WS3's sync
 - [x] `AssetSyncJob` (exchanges filter, ETF type, liquidity tiers, search index), `PrevCloseJob`, movers with a computed fallback, news, fundamentals
 - [x] `AlpacaCapabilityProbe`, with results on `/admin/system` (via `MarketDataService.status()`; the second-connection stream checks are skipped to avoid 406, §15.8); prod refuses SIM unless overridden
 - [x] Market REST: `/market/clock|calendar|indices|movers`, `/assets/search|{symbol}|logo`, `/quotes`, `/snapshots`, `/bars`, `/news`
@@ -85,9 +85,9 @@
 - [x] Idempotent `clientOrderId` (replay 200, 409 on conflict); synchronous rejects return 422, are not persisted, and are audited
 - [x] Cancel, cancel-all, replace (whole-share unfilled only), close position
 - [x] Accounts: open (INITIAL transfer, units), reset (run n+1 at the final U, in-engine idempotency), `restrict`/`liftAdminRestriction`, `recordAdminView`; `ApplyCashTransfersCmd` (in-engine idempotency, mark-quality gate, valuation at flow, units at scale 18, empty and rebase cases, all-or-nothing)
-- [ ] `account_event` and `position_adjustment` (append-only); activities merged from `cash_ledger` and `account_event`; `AdminOrderService`, `EngineControl`, `CorporateActionQueries`/`Service`
+- [x] `account_event` and `position_adjustment` (append-only); activities merged from `cash_ledger` and `account_event`; `AdminOrderService`, `EngineControl`, `CorporateActionQueries`/`Service`
 - [x] Session transitions (PRE_OPEN, RTH_OPEN, RTH_CLOSE, POST_CLOSE) with catch-up and no retroactive fills
-- [ ] Corporate actions: sync, forward and reverse splits (per-lot `SPLIT_QTY`, position = Σ lots, dust and cash in lieu, cancel orders; golden 2:1, 3:2, 1:3, 1:8), cash dividends (accrue on ex-date, pay on payable date, `voided_at`), name changes (incl. `WatchlistService.renameSymbol`); others go to NEEDS_ADMIN; admin resolve
+- [x] Corporate actions: sync, forward and reverse splits (per-lot `SPLIT_QTY`, position = Σ lots, dust and cash in lieu, cancel orders; golden 2:1, 3:2, 1:3, 1:8), cash dividends (accrue on ex-date, pay on payable date, `voided_at`), name changes (incl. `WatchlistService.renameSymbol`); others go to NEEDS_ADMIN; admin resolve (jobs `CORPORATE_ACTION_SYNC`, `CORPORATE_ACTION_APPLY`, `PAY_DIVIDENDS`; Alpaca `/v1/corporate-actions` with paging; `CORPORATE_ACTION` notifications and admin alerts; leaderboard continuity golden `split_continuity.json`)
 - [ ] `InvariantChecker` (I1–I9) with auto-halt; `DailyMaintenanceCmd`; `FillQualityAudit` (I10, warnings) — I1–I9, auto-halt and daily maintenance done; `FillQualityAudit` open
 - [x] REST: `/orders/**`, `/orders/preview`, `/account`, `/account/positions/**`, `/account/activities`, `/account/executions`, `/account/violations`, `/account/runs`, `/account/reset`
 

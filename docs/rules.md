@@ -36,6 +36,7 @@
 | Pattern day trading | **Not enforced** (FINRA RN 26-10, effective 2026-06-04 [V], and cash accounts are exempt). |
 | Lots | FIFO; your cost basis includes buy-side fees. |
 | Resets | A reset (if the admin allows self-resets) closes your run and opens a new one with fresh cash. Resets are public, and **a reset never erases a loss from the leaderboard** (§6). |
+| Corporate actions | Applied at 03:45 ET on the ex-date to what you held at the previous close. **Splits** change your share count (cost unchanged) and cancel your open orders in that stock; leftover fractions of a share are paid in cash (cash in lieu, settles T+1) or, if worth less than a cent, dropped. **Cash dividends** count in your equity from the ex-date and are paid as settled cash on the payable date (a reset before then forfeits them). **Ticker changes** move your shares, cost and watchlists to the new symbol and cancel open orders. None of these moves your leaderboard return. Mergers, spin-offs and delistings are handled by the admin. Each one shows in your activity and notifications. |
 
 ### Good-faith violations (cash accounts) [V rule, D implementation]
 

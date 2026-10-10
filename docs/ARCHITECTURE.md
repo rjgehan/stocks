@@ -325,7 +325,7 @@ com.stocks
 │   ├── jobs/        ScheduledJob, JobOccurrence, CatchUpPolicy, PeriodicTask                            [WS1]
 │   ├── calendar/    MarketCalendar, CalendarAdmin, TradingDay, SessionState, SessionTransition,
 │   │                CalendarOverride, SessionChanged (event)                                             [WS2]
-│   ├── marketdata/  MarketDataService, MarketUpdateListener, DailyMarkService, SplitAdjustments, QuoteView,
+│   ├── marketdata/  MarketDataService, MarketUpdateListener, DailyMarkService, SplitAdjustments, CorporateActionSource, QuoteView,
 │   │                ExecQuote, Print, Mark, MarketDataStatus, LeaseHandle, BarRequest, BarSeries …        [WS2]
 │   │   └── model/   Quote, Trade, Bar, Snapshot, Asset, Fundamentals, NewsItem, CorporateActionData, Movers,
 │   │                MarketEvent (sealed) … (§15.2; returned by MarketDataService, never on the wire)     [WS2]
@@ -393,11 +393,12 @@ com.stocks
 │   ├── engine/      TradingEngine, EngineControlImpl, EngineThread, EngineCommand (sealed), OpenOrderIndex, LatencyModel,
 │   │                Evaluator, FillModel, TriggerEvaluator, OpeningHandler, PostingService, InvariantChecker, EngineBootstrap
 │   │   └── write/   OrderWriter, LedgerWriter, PositionWriter, TransferWriter, ViolationWriter, AccountEventWriter,
-│   │                AdjustmentWriter   (called only on the engine thread)
+│   │                AdjustmentWriter, DividendWriter   (called only on the engine thread)
 │   ├── fees/        FeeSchedule, FeeCalculator
 │   ├── account/     AccountServiceImpl, AccountQueriesImpl, BalanceCalculator, BuyingPowerCalculator, GfvService,
 │   │                CashTransferServiceImpl, ActivityQueries
-│   ├── corpactions/ CorporateActionSyncJob, CorporateActionApplier, SplitMath, DividendService,
+│   ├── corpactions/ CorporateActionSyncJob, CorporateActionApplyJob, PayDividendsJob, CorporateActionApplier
+│   │                (splits, dividends, renames, resolve), SplitMath, ExDates, CorporateActionStore,
 │   │                CorporateActionQueriesImpl, CorporateActionServiceImpl
 │   ├── session/     SessionTransitionJob (a ScheduledJob that submits TransitionCmd), DailyMaintenanceJob
 │   └── web/         OrderController, AccountController
@@ -608,6 +609,10 @@ public interface DailyMarkService {                                    // WS2; c
   void ensureOfficialCloses(LocalDate tradeDate, Set<String> symbols);  // SIP 1Day closes → daily_mark.official_close
   void ensureDayEndMarks(LocalDate tradeDate, Set<String> symbols);     // §15.5 rules → daily_mark.day_end_mark (idempotent)
 }
+public interface CorporateActionSource {                               // §14; the profile's provider (Alpaca or SIM)
+  /** Network I/O: WS3's CorporateActionSyncJob only, never on the engine thread. Alpaca filters on process_date. */
+  List<CorporateActionData> corporateActions(Set<String> symbols, LocalDate from, LocalDate to);
+}
 public interface SplitAdjustments {                                    // §14; price_adjustment table
   /** Called by the engine inside ApplyCorporateActionCmd's transaction. */
   void record(String symbol, LocalDate exDate, BigDecimal oldRate, BigDecimal newRate, long corporateActionId);
@@ -788,6 +793,11 @@ public record PlayerStatusChanged(long playerId, PlayerStatus status, Instant at
 public record ViolationIssued(long accountId, long playerId, String violationId, ViolationType type,
                               AccountRestriction restrictionAfter, Instant at) {}
 public record CorporateActionApplied(String actionId, String symbol, CorporateActionType type, Instant at) {}
+/** One action's effect on one account (§14); WS5 → CORPORATE_ACTION notification. effect: SPLIT|RENAME|DIV_ACC|DIV_PAID */
+public record CorporateActionEffect(long accountId, long playerId, String actionId, CorporateActionType type,
+                                    String symbol, String effect, String title, String body, Instant at) {}
+/** Needs the admin (§14 NEEDS_ADMIN, …); WS5 pushes AdminAlertDto to every connected admin. level: INFO|WARN|ERROR */
+public record AdminAlertRaised(String level, String title, String body, Instant at) {}
 
 // com.stocks.contract.calendar [WS2]: it carries SessionState, and common may not depend on contract (§5.2 rule 8)
 public record SessionChanged(SessionState state) {}
@@ -1295,7 +1305,7 @@ CREATE TABLE trade_order (
   extended_hours        BOOLEAN       NOT NULL,
   status                VARCHAR(18)   NOT NULL CHECK (status IN ('PENDING','WORKING','PARTIALLY_FILLED','FILLED',
                                         'CANCELLED','EXPIRED','REPLACED','REJECTED')),
-  wait_reason           VARCHAR(20),
+  wait_reason           VARCHAR(20),                  -- VARCHAR(24) since V1_3_20 (CORPORATE_ACTION_HOLD is 21 chars)
   status_reason         VARCHAR(48),                  -- CancelReason or expiry note
   triggered             BOOLEAN       NOT NULL DEFAULT FALSE,
   has_rested            BOOLEAN       NOT NULL DEFAULT FALSE,
@@ -2319,21 +2329,24 @@ for each fee row r applicable to (side, trade_date of this execution):
 
 ## 14. Corporate actions (Phase 1: splits, reverse splits, cash dividends, name changes)
 
-**Sync** (`CorporateActionSyncJob`, 02:30 ET):
-- Calls `provider.corporateActions(symbols, today − 7d, today + 14d)`, where `symbols` = held ∪ open-order ∪ watch-listed ∪ {SPY}.
-- Upserts by `provider_ref` with `status=PENDING`.
+**Sync** (`CorporateActionSyncJob`, job `CORPORATE_ACTION_SYNC`, 02:30 ET daily):
+- Calls `CorporateActionSource.corporateActions(symbols, today − 7d, today + 90d)` (WS2's bean for the profile's provider, §5.3), where `symbols` = held (ACTIVE runs) ∪ open-order ∪ watch-listed ∪ {SPY}. The look-ahead is 90 days, not 14: Alpaca's `start`/`end` filter on `process_date` [V docs.alpaca.markets 2026-10-10], which for a cash dividend is the day Alpaca processes it, around the payable date [U], so a 14-day window could find a dividend only after its ex-date.
+- Alpaca (`GET /v1/corporate-actions?symbols&start&end&limit=1000&page_token`, `next_page_token` followed): `forward_splits`/`reverse_splits` → splits (`old_rate`, `new_rate`, `ex_date`); a reverse split that also changes the symbol (`new_symbol`) becomes a NAME_CHANGE plus the split on the new symbol; `stock_dividends` (`rate`) → FORWARD_SPLIT `1 → 1 + rate` (same pro-rata share increase, total cost unchanged) [U: rate convention]; `cash_dividends` → CASH_DIVIDEND (`rate`, `ex_date`, `payable_date`); `name_changes` → NAME_CHANGE on `process_date`; `cash_mergers` → CASH_MERGER, `stock_mergers` and `stock_and_cash_mergers` → STOCK_MERGER, `spin_offs`, `unit_splits` and `rights_distributions` → SPIN_OFF, `worthless_removals` and `redemptions` → DELISTING; other categories are ignored in Phase 1. `provider_ref` = `alpaca:<id>`.
+- Upserts by `provider_ref`. A new row is `PENDING`, except: a type Phase 1 does not apply (last table row) or a split without valid rates → `NEEDS_ADMIN`; a split reported only after its ex-date's pre-open (positions already traded unadjusted) → `NEEDS_ADMIN` (a corporate-action hold), or `SKIPPED` when the same split is already APPLIED. A row still PENDING takes the provider's latest data; other rows are left alone.
+- Then applies at once every PENDING action that is already overdue (its ex-date's pre-open has passed: found late, or an earlier application failed).
 - The SIM provider emits scenario actions.
 
-**Apply** (`ApplyCorporateActionCmd`, one per action, at **03:45 ET on `ex_date`**):
-- Order of application: NAME_CHANGE, then splits, then dividends.
-- Because there is no overnight session, positions at 03:45 on the ex-date are exactly the positions at the end of the prior trading day. Under T+1, the ex-date equals the record date [V], so these are the entitled positions.
-- Every per-account effect is recorded in the same transaction: one `position_adjustment` row per affected lot (exact before/after quantity, cost and symbol), any `CASH_IN_LIEU` ledger row, and one `account_event` (SPLIT or NAME_CHANGE) per account for the activity history (§18.2).
+**Apply** (`ApplyCorporateActionCmd`, one per action and transaction, job `CORPORATE_ACTION_APPLY` at **03:45 ET on trading days**, run key = the date, catch-up ALL_MISSED; it applies every PENDING action with `ex_date ≤ date`):
+- Order of application: NAME_CHANGE, then splits, then dividends, then the rest.
+- Because there is no overnight session, positions at 03:45 on the ex-date are exactly the positions at the end of the prior trading day. Under T+1, the ex-date equals the record date [V], so these are the entitled positions. A dividend applied after its ex-date's pre-open (found late) is accrued to the holders reconstructed at that pre-open (forward replay of executions and `position_adjustment`, as §16.4); a split applied after trades on the symbol since that pre-open goes to `NEEDS_ADMIN` instead.
+- Every per-account effect is recorded in the same transaction: one `position_adjustment` row per affected lot (exact before/after quantity, cost and symbol), any `CASH_IN_LIEU` ledger row, and one `account_event` (SPLIT or NAME_CHANGE) per account for the activity history (§18.2). After commit the engine publishes `AccountChanged(reason=CORPORATE_ACTION)` and a `CorporateActionEffect` per account (WS5 turns it into a `CORPORATE_ACTION` notification, `source_ref` `CA:<cac>:<acc>:<effect>`), and `CorporateActionApplied` once (audit, §17.7). There is no league-feed entry: `feed_event` has no corporate-action kind, and per-player entries would publish live holdings (§16.7 item 3).
+- `NEEDS_ADMIN` publishes `AdminAlertRaised`, which WS5 pushes to every connected admin on `/user/queue/admin` (§19); the count is on the System page.
 
 | Type | Effect |
 |---|---|
 | `FORWARD_SPLIT` / `REVERSE_SPLIT` | See **Split arithmetic** below. Cost is unchanged per lot except where quantity is removed. **All open orders on the symbol are cancelled** (`CORPORATE_ACTION`) [V]. `SplitAdjustments.record(symbol, ex_date, old_rate, new_rate)` writes `price_adjustment`. Charts use split-adjusted bars; equity stays continuous. |
-| `CASH_DIVIDEND` | On the ex-date: `dividend_entitlement(amount = DIVIDEND(qty × cash_rate), status=ACCRUED, accrued_at=now)` for each active account holding the symbol. **The receivable counts in equity** (point-in-time rule in §16.1), so the ex-date price drop is not a leaderboard loss. On the payable date at 06:00 ET, `PayDividendsCmd` posts `DIVIDEND` ledger rows (settled immediately) and sets PAID with `paid_at` = the ledger row's `posted_at`. A reset before the payable date sets VOID with `voided_at`. Open orders are not adjusted (FINRA 5330 is Phase 2). Also sets `daily_mark.dividend_ex` for the benchmark. |
-| `NAME_CHANGE` | Requires an `asset` row for `new_symbol`; if missing, it is created by copying the flags. Cancels open orders, then moves `position` and `position_lot` rows to the new symbol (one `position_adjustment` per lot with `symbol_before ≠ symbol_after`, quantities unchanged) and calls `WatchlistService.renameSymbol` (WS4, same transaction). History keeps the old symbol. Day P&L and snapshot lookups map `symbol_before → symbol_after` (§16.4). |
+| `CASH_DIVIDEND` | On the ex-date: `dividend_entitlement(amount = DIVIDEND(qty × cash_rate), status=ACCRUED, accrued_at=now)` for each active account holding the symbol (none when the amount floors to $0.00; a dividend without a positive rate or a payable date → NEEDS_ADMIN). **The receivable counts in equity** (point-in-time rule in §16.1), so the ex-date price drop is not a leaderboard loss. On the payable date at 06:00 ET (job `PAY_DIVIDENDS`, trading days, run key = date, ALL_MISSED; pays every ACCRUED row with `payable_date ≤ date`, so a weekend payable date is paid on the next trading day), `PayDividendsCmd` posts `DIVIDEND` ledger rows (`trade_date = settle_date` = the run's date, key `DIV:<entitlement>`, `dividend_id` and `corporate_action_id` set) and sets PAID with `paid_at` = the ledger row's `posted_at`. A reset before the payable date sets VOID with `voided_at`. Open orders are not adjusted (FINRA 5330 is Phase 2). Also adds the rate to `daily_mark.dividend_ex` (symbol, ex-date) for the benchmark (a MERGE that creates a PROVISIONAL row without marks when the day has none yet). |
+| `NAME_CHANGE` | Requires an `asset` row for `new_symbol`; if missing, it is created by copying the flags. Cancels open orders, then moves `position` and `position_lot` rows to the new symbol (one `position_adjustment` per lot with `symbol_before ≠ symbol_after`, quantities unchanged; an account that already holds the new symbol gets one merged position) and calls `WatchlistService.renameSymbol` (WS4, same transaction). History keeps the old symbol. Day P&L and snapshot lookups map `symbol_before → symbol_after` (§16.4). The market-data asset cache learns the new symbol at its next reload (the 03:00 asset sync usually has it already). |
 | `CASH_MERGER`, `STOCK_MERGER`, `SPIN_OFF`, `DELISTING` | `status=NEEDS_ADMIN`, plus an admin alert on `/user/queue/admin` and the System page. A manual application tool comes in Phase 2. |
 
 **Split arithmetic** (`SplitMath`, pure; `old_rate` → `new_rate` shares, e.g. 2:1 forward is old 1 / new 2, 1-for-8 reverse is old 8 / new 1):
@@ -2346,7 +2359,7 @@ for each fee row r applicable to (side, trade_date of this execution):
    - A lot whose `qty'` reaches 0 is closed (`closed_at = now`); its remaining cost is relieved as realized P&L.
 5. Write one `position_adjustment` per lot with the exact before and after quantity and cost, and `cil_ledger_id` on the lot that absorbed the cash in lieu. Then assert I5 for the symbol before commit.
 
-Golden tests (WS3, `golden/engine`): 2:1 mid-GTC (orders cancelled, quantity doubled, cost unchanged, equity continuous), and **3:2, 1:3 and 1:8 on multi-lot fractional positions** (for example two lots of 0.33333: under 3:2 each becomes 0.49999 and the entitlement is 0.99999; under 1:8 each becomes 0.04166 and the entitlement is 0.08333), each asserting I5, the dust amount and equity continuity.
+Golden tests (WS3, `golden/engine`): 2:1 mid-GTC (orders cancelled, quantity doubled, cost unchanged, equity continuous), and **3:2, 1:3 and 1:8 on multi-lot fractional positions** (for example two lots of 0.33333: under 3:2 each becomes 0.49999 and the entitlement is 0.99999; under 1:8 each becomes 0.04166 and the entitlement is 0.08333), each asserting I5, the dust amount and equity continuity (`split-math.json` for the pure arithmetic including the non-fractionable cases, `split-scenarios.json` through the engine).
 
 **Reference prices after a split** (`SplitAdjustments`, WS2). From 03:45 on the ex-date until the first post-split print, every reference price is still dated before the ex-date. Without adjustment, a 1-for-10 reverse split of a $30 ETF would show 0.04 shares × $30 (−90%) on the live TODAY board and in intraday samples, and an admin deposit in that window would mint units at a wrong U, permanently. Therefore:
 - Any price **dated before** an applied split's `ex_date` and used **on or after** it is adjusted by `SPLIT_ADJUST`: `(price × old_rate).divide(new_rate, 4, HALF_EVEN)`, chained over every applicable split. This covers `MarkService` fallbacks (`prevClose`, `day_end_mark`, last trade of a previous day), `MarketDataService.previousClose`, `QuoteView.prevClose` and `change`, the `HoldCalculator` `ref`, and the reference price for checks 19 and 20.
@@ -2355,7 +2368,9 @@ Golden tests (WS3, `golden/engine`): 2:1 mid-GTC (orders cancelled, quantity dou
 **Split guard** (`SplitGuard`, WS2; runs inside `PrevCloseJob` at 04:01 ET and again at 09:20 ET [U: when Alpaca rewrites adjusted bars]):
 - For each held, open-order or watched symbol, fetch the prior trading day's daily bar with `adjustment=raw` and `adjustment=split`. If they differ and there is no APPLIED split for that symbol with `ex_date` = today, call `CorporateActionService.flagDetectedSplit(symbol, today, inferredOld, inferredNew)`. This creates a `corporate_action` with `origin=DETECTED`, `status=NEEDS_ADMIN` and the rates inferred from the close ratio, and raises an admin alert.
 - While a split for a symbol is NEEDS_ADMIN with `ex_date ≤ today` (a **corporate-action hold**): `isHalted(symbol)` is true and the engine does not evaluate its orders (`CORPORATE_ACTION_HOLD`); new orders are rejected with `SYMBOL_NOT_TRADABLE` (hint: "pending corporate-action review"); `MarkService` returns the last pre-ex-date `day_end_mark`, unadjusted (consistent with the unadjusted quantities), with quality `STALE` and basis `DAY_END`. The leaderboard therefore holds the position at its pre-split value instead of showing a fake −90% or +100%.
-- The admin resolves it with `POST /admin/corporate-actions/{id}/resolve` (§21.1): `APPLY` with confirmed rates runs `ResolveCorporateActionCmd`, which applies the split as of now with the same arithmetic; `SKIP` releases the hold. The same endpoint resolves a provider-reported split that is NEEDS_ADMIN for any other reason.
+- `flagDetectedSplit` is idempotent per (symbol, ex-date): an APPLIED split or an earlier DETECTED row (whatever its status, so an admin SKIP sticks) is returned unchanged; a provider split still PENDING for that day (its 03:45 application failed) becomes NEEDS_ADMIN instead of a second row.
+- The admin resolves it with `POST /admin/corporate-actions/{id}/resolve` (§21.1): `APPLY` with confirmed rates runs `ResolveCorporateActionCmd`, which applies the split as of now with the same arithmetic (the type follows from the rates; `account_event.actor_kind = ADMIN`; `resolved_by` and the note are recorded in `detail`); `SKIP` releases the hold. The same endpoint resolves a provider-reported split that is NEEDS_ADMIN for any other reason, and SKIPs any other NEEDS_ADMIN type. Once a split is APPLIED, every other PENDING or NEEDS_ADMIN split of the same symbol and ex-date is SKIPPED (superseded), so a split is never applied twice.
+- An order evaluated while its symbol is on hold waits with `wait_reason = CORPORATE_ACTION_HOLD` (`trade_order.wait_reason` is `VARCHAR(24)` since `V1_3_20`; it was one character short).
 
 ## 15. Market data
 
@@ -2719,7 +2734,9 @@ Result: **TWR = +16.23%** and **P&L = 1,100 − 1,000 = +$100**. The naive `(E �
 
 `twr_reset.json` (§16.3): WEEK anchor (Fri EOD) E = 500, NC = 500, U = 1.00. Thu 11:00 the admin resets: run 1 closes at E = 300 (U = 0.60); run 2 opens with $500 at U = 0.60 (units 833.3333333333). Fri EOD run 2 has E = 510, so U = 0.612. **WEEK TWR = −38.8%** and **WEEK P&L = (300 − 500) + (510 − 500) = −$190**. A per-run anchor would have shown +2.0%.
 
-`dividend_continuity.json` (§16.1): hold 10 shares, $0.50 dividend; equity is continuous from the ex-date through the payable date and the $5.00 counts once.
+`dividend_continuity.json` (§16.1): hold 10 shares, $0.50 dividend; equity is continuous from the ex-date through the payable date and the $5.00 counts once. WS3 runs the same vector through the real engine commands (`dividend_continuity_engine.json`).
+
+`split_continuity.json` (§14, WS3): a 4-for-1 split, a name change and a $0.40 dividend all on Monday's ex-date; Friday's EOD snapshot runs after the 03:45 actions (catch-up) and still values the pre-split holdings; Monday's TODAY P&L is exactly $0.00 and the unit value is unchanged.
 
 ### 16.3 P&L day, period anchors and resets (ET)
 
@@ -4252,16 +4269,16 @@ Actions are pinned to their current major versions: `actions/checkout@v7`, `acti
 | ET time | Job | Kind | Owner | Through engine? | `run_key` | Catch-up |
 |---|---|---|---|---|---|---|
 | 02:00 daily | Housekeeping (`jobs.HousekeepingJob`, `HOUSEKEEPING`): expired `idempotency_record`, `intraday_equity` older than 14 days, read notifications older than 90 days | Scheduled | WS1 | no | date | LATEST_ONLY |
-| 02:30 daily | `CorporateActionSyncJob` | Scheduled | WS3 | no | date | LATEST_ONLY |
+| 02:30 daily | `CorporateActionSyncJob` (`CORPORATE_ACTION_SYNC`; then applies overdue PENDING actions through the engine) | Scheduled | WS3 | no | date | LATEST_ONLY |
 | 03:00 daily | `AssetSyncJob` (+ liquidity tiers) | Scheduled | WS2 | no | date | LATEST_ONLY |
 | 03:05 Sun and at boot | `CalendarSyncJob` | Scheduled | WS2 | no | date | LATEST_ONLY |
 | 03:10 daily | `AlpacaCapabilityProbe` (and at boot) | Scheduled | WS2 | no | date | LATEST_ONLY |
 | 03:30 daily | `DailyMaintenanceCmd`: GFV expiry, restriction lifting | Scheduled | WS3 | **yes** | date | LATEST_ONLY |
-| 03:45 trading days | `ApplyCorporateActionCmd` for `ex_date = today` | Scheduled | WS3 | **yes** | action id | ALL_MISSED |
+| 03:45 trading days | `CORPORATE_ACTION_APPLY`: one `ApplyCorporateActionCmd` per PENDING action with `ex_date ≤ date` (§14 order) | Scheduled | WS3 | **yes** | date | ALL_MISSED |
 | 04:00 | `PRE_OPEN` transition | Scheduled (`SESSION_TRANSITION`) | WS3 | **yes** | `date:PRE_OPEN` | ALL_MISSED |
 | 04:01 trading days | `PrevCloseJob`, then `SplitGuard` (§14) | Scheduled | WS2 | no | date | LATEST_ONLY |
 | 04:05, then hourly | `CheckInvariantsCmd` | Scheduled | WS3 | **yes** | `date:HH` | LATEST_ONLY |
-| 06:00 trading days | `PayDividendsCmd` | Scheduled | WS3 | **yes** | date | ALL_MISSED |
+| 06:00 trading days | `PAY_DIVIDENDS`: `PayDividendsCmd` (ACCRUED with `payable_date ≤ date`) | Scheduled | WS3 | **yes** | date | ALL_MISSED |
 | 09:20 trading days | `SplitGuard` re-check | Scheduled | WS2 | no | `date:SPLITGUARD2` | LATEST_ONLY |
 | 09:30 | `RTH_OPEN` transition | Scheduled (`SESSION_TRANSITION`) | WS3 | **yes** | `date:RTH_OPEN` | ALL_MISSED |
 | every 5 min, 04:00–20:00 trading days | `IntradaySampler` | Scheduled | WS4 | no | timestamp | NONE |
