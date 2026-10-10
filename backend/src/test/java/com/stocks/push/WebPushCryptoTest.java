@@ -53,7 +53,9 @@ class WebPushCryptoTest {
     byte[] body = WebPushCrypto.encrypt(PLAINTEXT.getBytes(StandardCharsets.US_ASCII),
         WebPushCrypto.decodePoint(u(UA_PUBLIC)), u(AUTH), senderKeys(), u(SALT));
     assertThat(WebPushCrypto.b64(body)).isEqualTo(BODY);
-    assertThat(body).hasSize(145);                                   // the example's Content-Length
+    // 86-byte header + 41-byte plaintext + 1 delimiter + 16-byte tag. The RFC's example request says
+    // "Content-Length: 145", but its own base64url body decodes to 144 bytes (the header line is off by one).
+    assertThat(body).hasSize(144).hasSize(u(BODY).length);
     assertThat(WebPushCrypto.b64(Arrays.copyOf(body, 86))).isEqualTo(HEADER);
     assertThat(WebPushCrypto.b64(Arrays.copyOfRange(body, 86, body.length))).isEqualTo(CIPHERTEXT);
   }
