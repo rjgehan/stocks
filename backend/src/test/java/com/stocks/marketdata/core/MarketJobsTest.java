@@ -95,8 +95,43 @@ class MarketJobsTest {
     LogoService upstreamFails = new LogoService(s -> {
       throw new IllegalStateException("down");
     });
-    assertThat(LogoService.isImage(upstreamFails.logo("MSFT"))).isTrue();
+    LogoService.Logo fallback = upstreamFails.logo("MSFT");
+    assertThat(LogoService.isImage(fallback.bytes())).isTrue();
+    assertThat(fallback.stable()).as("a placeholder standing in for a failure is not pinned").isFalse();
     LogoService upstream = new LogoService(s -> png);
-    assertThat(upstream.logo("X")).isEqualTo(png);
+    assertThat(upstream.logo("X").bytes()).isEqualTo(png);
+    assertThat(upstream.logo("X").stable()).isTrue();
+    assertThat(new LogoService(null).logo("SIM").stable()).as("no logo source: placeholders are final").isTrue();
+  }
+
+  /** Review regression (§15.5): a symbol without a logo used to cost one Alpaca call per request. */
+  @Test
+  void logoFailuresAreRememberedAndA403TurnsTheUpstreamOff() {
+    java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
+    java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+    LogoService missing = new LogoService(s -> {
+      calls.incrementAndGet();
+      throw new com.stocks.marketdata.spi.ProviderException("alpaca", 404, "no logo", null, null);
+    }, clock::get);
+    for (int i = 0; i < 100; i++) {
+      missing.logo("NOLOGO");
+    }
+    assertThat(calls.get()).isEqualTo(1);
+    clock.addAndGet(LogoService.FAILURE_TTL.toNanos() + 1);
+    missing.logo("NOLOGO");
+    assertThat(calls.get()).as("retried after the negative TTL").isEqualTo(2);
+
+    java.util.concurrent.atomic.AtomicInteger forbidden = new java.util.concurrent.atomic.AtomicInteger();
+    LogoService noPlan = new LogoService(s -> {
+      forbidden.incrementAndGet();
+      throw new com.stocks.marketdata.spi.ProviderException("alpaca", 403, "forbidden", null, null);
+    }, clock::get);
+    for (int i = 0; i < 50; i++) {
+      noPlan.logo("SYM" + i);
+    }
+    assertThat(forbidden.get()).as("one 403 turns logos off for every symbol").isEqualTo(1);
+    clock.addAndGet(LogoService.FORBIDDEN_TTL.toNanos() + 1);
+    noPlan.logo("LATER");
+    assertThat(forbidden.get()).isEqualTo(2);
   }
 }

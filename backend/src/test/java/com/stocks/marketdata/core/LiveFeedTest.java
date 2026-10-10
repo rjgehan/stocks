@@ -62,6 +62,33 @@ class LiveFeedTest {
     }
   }
 
+  /**
+   * Review regression (§12.5): every snapshot poll re-applied the same latestTrade and buffered it as a new print, so
+   * one upstream IEX print could fill a resting limit several times over. A trade is one print however often it is
+   * seen; a new trade is still buffered.
+   */
+  @Test
+  void aTradeSeenAgainOnEverySnapshotPollIsOnePrint() {
+    QuoteBook book = new QuoteBook(time, List::of);
+    com.stocks.contract.marketdata.model.Trade trade = new com.stocks.contract.marketdata.model.Trade("AAPL",
+        new BigDecimal("227.41"), 100, NOW, NOW, "V", List.of(), false, true, "52983525029461", "alpaca");
+    com.stocks.contract.marketdata.model.Snapshot snap = new com.stocks.contract.marketdata.model.Snapshot("AAPL",
+        trade, null, null, null, null, NOW);
+    int prints = 0;
+    for (int i = 0; i < 5; i++) {
+      time.advance(Duration.ofSeconds(2));
+      book.applySnapshot(snap, time.now(), null, null);
+      prints += book.drainPrints("AAPL").size();
+    }
+    assertThat(prints).isEqualTo(1);
+    com.stocks.contract.marketdata.model.Trade next = new com.stocks.contract.marketdata.model.Trade("AAPL",
+        new BigDecimal("227.42"), 50, NOW.plusSeconds(11), NOW.plusSeconds(11), "V", List.of(), false, true,
+        "52983525029462", "alpaca");
+    book.applySnapshot(new com.stocks.contract.marketdata.model.Snapshot("AAPL", next, null, null, null, null,
+        time.now()), time.now(), null, null);
+    assertThat(book.drainPrints("AAPL")).hasSize(1);
+  }
+
   @Test
   void snapshotsBecomeQuotesLabelledByConfirmationAge() {
     http = new FakeHttpServer().fixture("/v2/stocks/snapshots", "alpaca/snapshots.json");

@@ -66,7 +66,9 @@ class SpaAndStaticFilesIT {
   void clientSideRoutesFallBackToIndexHtml() throws Exception {
     // "/" is Boot's welcome page: a forward to index.html (MockMvc records forwards instead of following them)
     assertThat(fetch("/").getForwardedUrl()).isEqualTo("index.html");
-    for (String path : new String[] {"/index.html", "/portfolio", "/quote/AAPL", "/admin/players/alice"}) {
+    // review regression: symbols with a dot (BRK.B, BF.B) are routes; a reload of /stock/BRK.B used to be a JSON 404
+    for (String path : new String[] {"/index.html", "/portfolio", "/quote/AAPL", "/admin/players/alice",
+        "/stock/BRK.B", "/stock/BF.B"}) {
       MockHttpServletResponse r = fetch(path);
       assertThat(r.getStatus()).as(path).isEqualTo(200);
       assertThat(r.getContentAsString()).as(path).contains("<div id=root>");
@@ -118,5 +120,9 @@ class SpaAndStaticFilesIT {
     assertThat(WebConfig.isSpaRoute("mcp")).isFalse();
     assertThat(WebConfig.isSpaRoute("swagger-ui/index.html")).isFalse();
     assertThat(WebConfig.isSpaRoute("logo.png")).isFalse();
+    assertThat(WebConfig.isSpaRoute("stock/BRK.B")).isTrue();
+    assertThat(WebConfig.isSpaRoute("/stock/BF.B")).isTrue();
+    assertThat(WebConfig.isSpaRoute("sw.js")).isFalse();
+    assertThat(WebConfig.isSpaRoute("assets/font.WOFF2")).isFalse();
   }
 }

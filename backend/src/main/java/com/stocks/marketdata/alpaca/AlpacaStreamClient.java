@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -96,6 +97,7 @@ public class AlpacaStreamClient extends WebSocketStream {
   }
 
   /** The symbol limit learned from a 405, if any. */
+  @Override
   public int symbolLimit() {
     return symbolLimit;
   }
@@ -185,9 +187,12 @@ public class AlpacaStreamClient extends WebSocketStream {
       case 405 -> {
         symbolLimit = Math.max(1, reqQuotes.size() - 1);
         markLimited("405 symbol limit exceeded at " + reqQuotes.size() + " symbols");
+        // a refused subscribe leaves the subscriptions as they were; ask again at once for the capped set (the first
+        // symbols in priority order) instead of waiting for the desired set to change, which can take hours
         reqTrades = new HashSet<>(confirmed.keySet());
         reqQuotes = new HashSet<>(confirmed.keySet());
         reqBars = new HashSet<>(confirmed.keySet());
+        resendSubscriptions();
       }
       case 409, 410 -> {
         if (reqStatuses) {
@@ -254,11 +259,12 @@ public class AlpacaStreamClient extends WebSocketStream {
     reqStatuses = wantStatuses;
   }
 
+  /** The first {@code symbolLimit} symbols of {@code want}, which is in priority order ({@link #setDesired}). */
   private Set<String> cap(Set<String> want) {
     if (want.size() <= symbolLimit) {
       return want;
     }
-    return new TreeSet<>(want).stream().limit(symbolLimit).collect(java.util.stream.Collectors.toSet());
+    return want.stream().limit(symbolLimit).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
   }
 
   /** {@code a − b} under {@code key} when non-empty. */

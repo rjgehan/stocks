@@ -41,6 +41,9 @@ import java.util.function.Consumer;
  */
 public class AlpacaMarketDataProvider implements MarketDataProvider {
 
+  /** The Basic plan's 15-minute SIP embargo plus a minute of clock skew. */
+  static final Duration SIP_EMBARGO_CLAMP = Duration.ofMinutes(16);
+
   private final MarketDataProperties props;
   private final AlpacaRestClient rest;
   private final TimeSource time;
@@ -134,16 +137,31 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
     return bars(q, RefreshPriority.UI);
   }
 
+  /**
+   * The Basic plan refuses SIP bars newer than 15 minutes (HTTP 403 "subscription does not permit querying recent SIP
+   * data", even for an {@code end} in the future), so every {@code feed=sip} query is clamped here to
+   * {@code end ≤ now − }{@link #SIP_EMBARGO_CLAMP}: daily marks, the split guard, asset sync and any future caller. A
+   * daily bar whose start (00:00 ET) is at or before the clamped end is still returned. Empty when nothing is left.
+   */
   @Override
   public Map<String, List<Bar>> bars(BarQuery q, RefreshPriority priority) {
     String feed = q.feed() != null ? q.feed() : "sip";
-    return rest.bars(new BarQuery(q.symbols(), q.tf(), q.from(), q.to(), q.adj(), q.extendedHours(), q.limit(), feed),
+    Instant to = q.to();
+    if ("sip".equalsIgnoreCase(feed) && !"sip".equals(feed())) {
+      Instant latest = time.now().minus(SIP_EMBARGO_CLAMP);
+      to = to == null || to.isAfter(latest) ? latest : to;
+      if (q.from() != null && !q.from().isBefore(to)) {
+        return Map.of();
+      }
+    }
+    return rest.bars(new BarQuery(q.symbols(), q.tf(), q.from(), to, q.adj(), q.extendedHours(), q.limit(), feed),
         priority);
   }
 
   @Override
   public List<NewsItem> news(Set<String> symbols, int limit, Instant before) {
-    return rest.news(symbols, limit, before, RefreshPriority.UI);
+    // user-triggered extras ask below the quote poll, which keeps the last 20% of the shared budget (§15.5)
+    return rest.news(symbols, limit, before, RefreshPriority.BACKGROUND);
   }
 
   @Override

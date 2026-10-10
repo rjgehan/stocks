@@ -109,6 +109,7 @@ class AlpacaRestClientTest {
 
   @Test
   void barsFollowPageTokens() {
+    time.set(Instant.parse("2026-10-12T14:00:00Z"));   // past the window's end: no SIP-embargo clamp
     http.route("/v2/stocks/bars", r -> FakeHttpServer.Response.json(FakeHttpServer.fixture(
         r.query().containsKey("page_token") ? "alpaca/bars-page2.json" : "alpaca/bars-page1.json")));
     Map<String, List<Bar>> bars = alpaca.bars(new BarQuery(Set.of("AAPL", "MSFT"), Timeframe.DAY1,
@@ -123,6 +124,68 @@ class AlpacaRestClientTest {
         .containsEntry("feed", "sip").containsEntry("sort", "asc").containsEntry("start", "2026-10-01T04:00:00Z")
         .containsEntry("end", "2026-10-10T04:00:00Z");
     assertThat(reqs.get(1).query()).containsEntry("page_token", "QUFQTHxEfDIwMjYtMTAtMDk=");
+  }
+
+  /**
+   * A fake {@code /v2/stocks/bars} that behaves as Alpaca documents it: 30 daily bars (Sep 10 to Oct 9), sorted by the
+   * {@code sort} parameter (asc by default) and truncated to {@code limit} on the server.
+   */
+  private void thirtyDailyBars() {
+    http.route("/v2/stocks/bars", r -> {
+      List<String> days = new java.util.ArrayList<>();
+      for (int i = 0; i < 30; i++) {
+        days.add(LocalDate.parse("2026-09-10").plusDays(i) + "T04:00:00Z");
+      }
+      if ("desc".equals(r.query().get("sort"))) {
+        java.util.Collections.reverse(days);
+      }
+      int limit = Integer.parseInt(r.query().getOrDefault("limit", "1000"));
+      StringBuilder json = new StringBuilder("{\"bars\":{\"AAPL\":[");
+      for (int i = 0; i < Math.min(limit, days.size()); i++) {
+        json.append(i == 0 ? "" : ",").append("{\"c\":100.0,\"h\":100.0,\"l\":100.0,\"n\":1,\"o\":100.0,\"t\":\"")
+            .append(days.get(i)).append("\",\"v\":1,\"vw\":100.0}");
+      }
+      return FakeHttpServer.Response.json(json.append("]},\"next_page_token\":null}").toString());
+    });
+  }
+
+  /**
+   * Review regression (§15.5, MCP get_bars, /bars, /snapshots): Alpaca applies {@code limit} in the sort order, so an
+   * ascending query returned the oldest bars of the window; SIM returned the newest. One symbol now asks newest first.
+   */
+  @Test
+  void aSingleSymbolQueryGetsTheNewestBarsInAscendingOrder() {
+    time.set(Instant.parse("2026-10-12T14:00:00Z"));
+    thirtyDailyBars();
+    List<Bar> bars = alpaca.bars(new BarQuery(Set.of("AAPL"), Timeframe.DAY1, Instant.parse("2026-09-10T04:00:00Z"),
+        Instant.parse("2026-10-10T04:00:00Z"), AdjustmentMode.SPLIT, false, 5, "sip"), RefreshPriority.UI).get("AAPL");
+    assertThat(http.requests("/v2/stocks/bars").getFirst().query()).containsEntry("sort", "desc")
+        .containsEntry("limit", "5");
+    assertThat(bars).extracting(Bar::start).containsExactly(Instant.parse("2026-10-05T04:00:00Z"),
+        Instant.parse("2026-10-06T04:00:00Z"), Instant.parse("2026-10-07T04:00:00Z"),
+        Instant.parse("2026-10-08T04:00:00Z"), Instant.parse("2026-10-09T04:00:00Z"));
+  }
+
+  /**
+   * Review regression (§15.5, DAILY_MARK, split guard): the Basic plan answers 403 to a {@code feed=sip} query whose
+   * end is within 15 minutes of now (even in the future), so every SIP query is clamped to now − 16 min.
+   */
+  @Test
+  void sipQueriesAreClampedToTheEmbargo() {
+    thirtyDailyBars();
+    Instant now = time.now();                              // Fri 2026-10-09 10:00 ET
+    alpaca.bars(new BarQuery(Set.of("AAPL", "MSFT"), Timeframe.DAY1, Instant.parse("2026-10-09T04:00:00Z"),
+        Instant.parse("2026-10-10T03:59:59Z"), AdjustmentMode.RAW, false, 10_000, "sip"), RefreshPriority.BACKGROUND);
+    assertThat(http.requests("/v2/stocks/bars").getFirst().query())
+        .containsEntry("end", now.minus(java.time.Duration.ofMinutes(16)).toString());
+    // nothing left before the embargo: no call at all
+    assertThat(alpaca.bars(new BarQuery(Set.of("AAPL"), Timeframe.MIN1, now.minusSeconds(300), now,
+        AdjustmentMode.RAW, false, 10, "sip"), RefreshPriority.UI)).isEmpty();
+    assertThat(http.requests("/v2/stocks/bars")).hasSize(1);
+    // IEX is never embargoed
+    alpaca.bars(new BarQuery(Set.of("AAPL"), Timeframe.MIN1, now.minusSeconds(300), now, AdjustmentMode.RAW, false, 10,
+        "iex"), RefreshPriority.UI);
+    assertThat(http.requests("/v2/stocks/bars").get(1).query()).containsEntry("end", now.toString());
   }
 
   @Test

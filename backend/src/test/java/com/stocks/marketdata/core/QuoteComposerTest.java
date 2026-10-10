@@ -51,6 +51,32 @@ class QuoteComposerTest {
     assertThat(v.quality()).isEqualTo(DataQuality.REALTIME_SINGLE_VENUE);
   }
 
+  /**
+   * Review regression: Alpaca sends bp/ap = 0 when IEX has no quote today (weekends, before 08:00 ET); the UI showed
+   * "Bid 0.00 × 0" and the ticket pre-filled a 0.00 limit. A non-positive side is now "no price".
+   */
+  @Test
+  void aZeroBidOrAskIsNoPrice() {
+    Instant now = Instant.parse("2026-10-10T15:00:00Z");                         // Saturday
+    Quote zero = new Quote("AAPL", BigDecimal.ZERO, 0, BigDecimal.ZERO, 0, null, null, now, now,
+        DataQuality.REALTIME_SINGLE_VENUE, "alpaca");
+    QuoteView v = composer.compose(new QuoteComposer.Inputs("AAPL", zero, now, trade("255.01", now, false),
+        d -> Optional.ofNullable(CLOSES.get(d)), d -> Optional.empty(), true, false, false, false, "alpaca"), now, CAL,
+        IEX);
+    assertThat(v.bid()).isNull();
+    assertThat(v.bidSize()).isNull();
+    assertThat(v.ask()).isNull();
+    assertThat(v.askSize()).isNull();
+    Quote oneSided = new Quote("AAPL", BigDecimal.ZERO, 0, new BigDecimal("230.10"), 100, null, "V", now, now,
+        DataQuality.REALTIME_SINGLE_VENUE, "alpaca");
+    QuoteView w = composer.compose(new QuoteComposer.Inputs("AAPL", oneSided, now, null,
+        d -> Optional.ofNullable(CLOSES.get(d)), d -> Optional.empty(), true, false, false, false, "alpaca"), now, CAL,
+        IEX);
+    assertThat(w.bid()).isNull();
+    assertThat(w.ask()).isEqualByComparingTo("230.10");
+    assertThat(w.askSize()).isEqualTo(100L);
+  }
+
   @Test
   void afterHoursShowsTheCloseAndAnExtendedLine() {
     Instant now = Instant.parse("2026-10-09T21:00:00Z");                         // 17:00 ET, POST

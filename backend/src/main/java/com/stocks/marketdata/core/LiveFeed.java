@@ -211,7 +211,9 @@ public class LiveFeed implements MarketFeed {
     detectQuoteSizeUnit();
     WebSocketStream a = alpacaStream;
     if (a != null) {
-      List<String> want = budget.select(alpaca.capabilities().maxStreamSymbols(), null, a.subscriptionTimes());
+      // a 405 taught the stream a smaller limit: let the budget choose which symbols fit, by priority
+      int max = Math.min(alpaca.capabilities().maxStreamSymbols(), a.symbolLimit());
+      List<String> want = budget.select(max, null, a.subscriptionTimes());
       Set<String> set = new LinkedHashSet<>(want);
       a.setDesired(set, set, set);
     }

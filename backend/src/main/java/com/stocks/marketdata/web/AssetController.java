@@ -7,6 +7,7 @@ import com.stocks.contract.marketdata.dto.AssetSummaryDto;
 import com.stocks.contract.marketdata.model.Asset;
 import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.marketdata.config.MarketDataRuntime;
+import com.stocks.marketdata.core.LogoService;
 import com.stocks.marketdata.mapper.AssetDtoMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -69,15 +70,21 @@ public class AssetController {
 
   @GetMapping(value = "/{symbol}/logo", produces = MediaType.IMAGE_PNG_VALUE)
   @Operation(summary = "Company logo",
-      description = "A PNG (a generated placeholder when no logo is available). Cached for a year by the browser.")
+      description = "A PNG (a generated placeholder for an unknown symbol or when no logo is available). A real "
+          + "logo is cached for a year by the browser, a placeholder for an hour.")
   @ApiResponse(responseCode = "200", description = "PNG image",
       content = @Content(mediaType = MediaType.IMAGE_PNG_VALUE, schema = @Schema(type = "string", format = "binary")))
   public ResponseEntity<byte[]> logo(@PathVariable String symbol) {
     String s = Symbols.normalize(symbol, "symbol");
-    byte[] png = runtime.logos().logo(s);
+    // only symbols in the universe reach the provider: made-up symbols must not spend the shared Alpaca budget
+    LogoService.Logo logo = marketData.asset(s).isPresent() ? runtime.logos().logo(s)
+        : new LogoService.Logo(LogoService.placeholder(s), false);
+    byte[] png = logo.bytes();
     MediaType type = png.length > 1 && (png[0] & 0xff) == 0xff ? MediaType.IMAGE_JPEG : MediaType.IMAGE_PNG;
+    // a placeholder may stand in for a short upstream failure: never pin it in the browser for a year
+    Duration maxAge = logo.stable() ? Duration.ofDays(365) : Duration.ofHours(1);
     return ResponseEntity.ok().contentType(type)
-        .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePrivate())
+        .cacheControl(CacheControl.maxAge(maxAge).cachePrivate())
         .body(png);
   }
 }

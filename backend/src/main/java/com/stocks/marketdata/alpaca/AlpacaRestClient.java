@@ -128,13 +128,17 @@ public class AlpacaRestClient {
     int total = 0;
     int limit = q.limit() <= 0 ? MAX_BAR_PAGE : q.limit();
     boolean partial = !"sip".equalsIgnoreCase(q.feed());
+    // Alpaca applies `limit` on the server in the requested sort order. A single-symbol query (every BarService call)
+    // wants the newest `limit` bars that end at `end`, as the SPI and SIM promise, so it asks newest first and
+    // reverses; multi-symbol batch jobs fetch whole windows and keep ascending order.
+    boolean newestFirst = q.symbols().size() == 1;
     for (int page = 0; page < 50; page++) {
       JsonNode root = http.getJson(priority, props.dataUrl(), "/v2/stocks/bars", ProviderHttp.query(
           "symbols", String.join(",", new TreeSet<>(q.symbols())), "timeframe", q.tf().wireValue(),
           "start", q.from() == null ? null : DateTimeFormatter.ISO_INSTANT.format(q.from()),
           "end", q.to() == null ? null : DateTimeFormatter.ISO_INSTANT.format(q.to()),
           "limit", Math.min(MAX_BAR_PAGE, limit - total), "adjustment", adjustment(q),
-          "feed", q.feed(), "sort", "asc", "page_token", token));
+          "feed", q.feed(), "sort", newestFirst ? "desc" : "asc", "page_token", token));
       JsonNode bars = root.get("bars");
       if (bars != null && bars.isObject()) {
         for (Map.Entry<String, JsonNode> e : bars.properties()) {
@@ -152,6 +156,9 @@ public class AlpacaRestClient {
       if (token == null || token.isBlank() || total >= limit) {
         break;
       }
+    }
+    if (newestFirst) {
+      out.values().forEach(java.util.Collections::reverse);   // callers always get ascending bars
     }
     return out;
   }

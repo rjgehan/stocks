@@ -9,6 +9,7 @@ import java.net.http.WebSocket;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -106,22 +107,41 @@ public abstract class WebSocketStream implements MarketStream {
 
   // ------------------------------------------------------------------------------------------- MarketStream
 
+  /**
+   * The symbols wanted, <b>in priority order</b> (the budget's order: pinned benchmark, order triggers, resting
+   * orders, viewers): a provider that must drop symbols ({@code AlpacaStreamClient} after a 405) keeps the first ones.
+   */
   @Override
   public void setDesired(Set<String> trades, Set<String> quotes, Set<String> bars) {
-    Set<String> t = Set.copyOf(trades);
-    Set<String> q = Set.copyOf(quotes);
-    Set<String> b = Set.copyOf(bars);
-    if (t.equals(desiredTrades) && q.equals(desiredQuotes) && b.equals(desiredBars)) {
+    Set<String> t = ordered(trades);
+    Set<String> q = ordered(quotes);
+    Set<String> b = ordered(bars);
+    if (t.equals(desiredTrades) && q.equals(desiredQuotes) && b.equals(desiredBars)
+        && List.copyOf(q).equals(List.copyOf(desiredQuotes))) {
       return;
     }
     desiredTrades = t;
     desiredQuotes = q;
     desiredBars = b;
+    resendSubscriptions();
+  }
+
+  private static Set<String> ordered(Set<String> s) {
+    return java.util.Collections.unmodifiableSet(new LinkedHashSet<>(s));
+  }
+
+  /** Sends the current desired set again on the stream thread (after a provider refused part of it). */
+  protected void resendSubscriptions() {
     exec.execute(() -> {
       if (state == ConnectionState.LIVE || state == ConnectionState.LIMITED) {
         sendSubscriptionDiff();
       }
     });
+  }
+
+  /** The most symbols the provider accepted so far ({@code Integer.MAX_VALUE} until it refuses some). */
+  public int symbolLimit() {
+    return Integer.MAX_VALUE;
   }
 
   @Override

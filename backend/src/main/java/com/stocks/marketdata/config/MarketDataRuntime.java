@@ -180,7 +180,8 @@ public final class MarketDataRuntime implements AutoCloseable {
         newsSources.add(finnhub);
       }
       news = new NewsService(newsSources, () -> true);
-      logos = new LogoService(symbol -> rest.logo(symbol, RefreshPriority.UI));
+      // BACKGROUND: a logo never takes the last 20% of the Alpaca budget from the quote poll (§15.5)
+      logos = new LogoService(symbol -> rest.logo(symbol, RefreshPriority.BACKGROUND));
       probe = new AlpacaCapabilityProbe(alpaca, alpacaHttp, a.dataUrl(), a.tradingUrl(),
           () -> live.alpacaStream() instanceof AlpacaStreamClient c ? c : null, live::putProbe, time);
       if (!a.hasKeys()) {

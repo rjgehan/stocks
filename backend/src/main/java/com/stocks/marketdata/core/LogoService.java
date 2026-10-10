@@ -8,8 +8,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
+import com.stocks.marketdata.spi.ProviderException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,41 +19,82 @@ import org.slf4j.LoggerFactory;
  * The logo proxy (§15.5): Alpaca {@code /v1beta1/logos/{symbol}?placeholder=true}, cached 7 days in memory. Without a
  * logo source (SIM) or when the provider fails, a deterministic placeholder PNG (a colored disc derived from the
  * symbol) is served, so the UI never shows a broken image. Provider bytes never leave the backend unproxied (§15.1).
+ *
+ * <p>The upstream is the shared Alpaca REST budget, so a miss must stay rare and cheap: a failure is remembered for
+ * {@link #FAILURE_TTL} (no call per request for a symbol without a logo), a 401/403 (logos not in the plan) turns
+ * the upstream off for {@link #FORBIDDEN_TTL}, and callers ask at {@code BACKGROUND} priority, below the quote poll.
+ * {@link Logo#stable()} tells the controller whether the bytes may be cached for a year by the browser.
  */
 public class LogoService {
 
   private static final Logger log = LoggerFactory.getLogger(LogoService.class);
   static final int SIZE = 64;
+  static final Duration FAILURE_TTL = Duration.ofMinutes(10);
+  static final Duration FORBIDDEN_TTL = Duration.ofHours(24);
+
+  /**
+   * A logo. {@code stable}: these bytes will not change for the symbol (the provider's logo, or the placeholder when
+   * there is no logo source at all, as in SIM); false for a placeholder standing in for a missing or failed fetch.
+   */
+  public record Logo(byte[] bytes, boolean stable) {}
 
   private final Function<String, byte[]> upstream;
+  private final LongSupplier nanos;
   private final Cache<String, byte[]> cache = Caffeine.newBuilder().expireAfterWrite(Duration.ofDays(7))
       .maximumSize(3_000).build();
+  private final Cache<String, Boolean> failures;
   private final Cache<String, byte[]> placeholders = Caffeine.newBuilder().maximumSize(3_000).build();
+  private volatile long upstreamOffUntil;
+  private volatile boolean upstreamOff;
 
   /** {@code upstreamOrNull}: fetches PNG bytes for a symbol (may throw); null = placeholders only. */
   public LogoService(Function<String, byte[]> upstreamOrNull) {
-    this.upstream = upstreamOrNull;
+    this(upstreamOrNull, System::nanoTime);
   }
 
-  public byte[] logo(String symbol) {
+  LogoService(Function<String, byte[]> upstreamOrNull, LongSupplier nanos) {
+    this.upstream = upstreamOrNull;
+    this.nanos = nanos;
+    this.failures = Caffeine.newBuilder().expireAfterWrite(FAILURE_TTL).maximumSize(10_000)
+        .ticker(nanos::getAsLong).build();
+  }
+
+  public Logo logo(String symbol) {
     if (upstream != null) {
       byte[] cached = cache.getIfPresent(symbol);
       if (cached != null) {
-        return cached;
+        return new Logo(cached, true);
       }
-      Optional<byte[]> fetched = fetch(symbol);
-      if (fetched.isPresent()) {
-        cache.put(symbol, fetched.get());
-        return fetched.get();
+      if (upstreamAvailable() && failures.getIfPresent(symbol) == null) {
+        Optional<byte[]> fetched = fetch(symbol);
+        if (fetched.isPresent()) {
+          cache.put(symbol, fetched.get());
+          return new Logo(fetched.get(), true);
+        }
+        failures.put(symbol, Boolean.TRUE);
       }
     }
-    return placeholders.get(symbol, LogoService::placeholder);
+    return new Logo(placeholders.get(symbol, LogoService::placeholder), upstream == null);
+  }
+
+  private boolean upstreamAvailable() {
+    return !upstreamOff || nanos.getAsLong() - upstreamOffUntil >= 0;
   }
 
   private Optional<byte[]> fetch(String symbol) {
     try {
       byte[] b = upstream.apply(symbol);
       return b != null && b.length > 8 && isImage(b) ? Optional.of(b) : Optional.empty();
+    } catch (ProviderException e) {
+      if (e.status() == 401 || e.status() == 403) {
+        upstreamOffUntil = nanos.getAsLong() + FORBIDDEN_TTL.toNanos();
+        upstreamOff = true;
+        log.warn("Logos are not available on this data plan ({}); serving placeholders for {} h", e.status(),
+            FORBIDDEN_TTL.toHours());
+      } else {
+        log.debug("logo {} failed: {}", symbol, e.getMessage());
+      }
+      return Optional.empty();
     } catch (RuntimeException e) {
       log.debug("logo {} failed: {}", symbol, e.getMessage());
       return Optional.empty();
@@ -66,7 +109,7 @@ public class LogoService {
   }
 
   /** A 64×64 RGBA PNG: a disc in a color derived from the symbol on a transparent background. */
-  static byte[] placeholder(String symbol) {
+  public static byte[] placeholder(String symbol) {
     int h = symbol == null ? 0 : symbol.hashCode();
     float hue = ((h >>> 8) & 0xffff) / 65536f;
     int rgb = hsbToRgb(hue, 0.55f, 0.80f);

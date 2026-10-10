@@ -190,6 +190,10 @@ class MarketControllersIT {
     assertThat(logo.getResponse().getContentType()).isEqualTo("image/png");
     assertThat(logo.getResponse().getHeader("Cache-Control")).contains("max-age=31536000");
     assertThat(logo.getResponse().getContentAsByteArray()).startsWith((byte) 0x89, (byte) 'P');
+    // review regression: an unknown symbol never reaches the provider and its placeholder is not pinned for a year
+    MvcResult unknown = call(get("/api/v1/assets/ZZZZQ/logo"));
+    assertThat(unknown.getResponse().getStatus()).isEqualTo(200);
+    assertThat(unknown.getResponse().getHeader("Cache-Control")).contains("max-age=3600");
   }
 
   @Test

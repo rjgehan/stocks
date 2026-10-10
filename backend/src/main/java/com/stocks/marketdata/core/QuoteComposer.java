@@ -107,8 +107,12 @@ public final class QuoteComposer {
     if (quality == DataQuality.NONE && last == null && prevClose == null && q == null) {
       return QuoteView.none(in.symbol(), in.source());
     }
-    return new QuoteView(in.symbol(), q == null ? null : q.bid(), q == null ? null : q.bidSize(),
-        q == null ? null : q.ask(), q == null ? null : q.askSize(), last, lastSize, lastAt, prevClose, change,
+    // A non-positive side means "no price": Alpaca sends bp/ap = 0 when IEX has no quote today (weekends, before
+    // 08:00 ET, empty books) and SIM's one-sided scenario sends bid 0. Never show "0.00 × 0" as a price.
+    boolean hasBid = q != null && q.bid() != null && q.bid().signum() > 0;
+    boolean hasAsk = q != null && q.ask() != null && q.ask().signum() > 0;
+    return new QuoteView(in.symbol(), hasBid ? q.bid() : null, hasBid ? q.bidSize() : null,
+        hasAsk ? q.ask() : null, hasAsk ? q.askSize() : null, last, lastSize, lastAt, prevClose, change,
         changePct, stats.map(DayStats::open).orElse(null), stats.map(DayStats::high).orElse(null),
         stats.map(DayStats::low).orElse(null), stats.map(DayStats::volume).orElse(null), in.volumePartial(), extended,
         asOf, in.confirmedAt(), quality, in.source(), in.halted());

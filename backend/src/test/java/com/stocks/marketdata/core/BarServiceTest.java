@@ -37,7 +37,10 @@ class BarServiceTest {
   final MarketCalendar calendar = InMemoryCalendars.bundled();
   final List<BarQuery> queries = new CopyOnWriteArrayList<>();
 
-  /** One 1Min bar per minute in [from, to]; SIP closes 100.xx, IEX closes 200.xx (partial volume). */
+  /**
+   * One bar per step in [from, to], the newest {@code limit} of them; SIP closes 100.xx, IEX closes 200.xx (partial
+   * volume).
+   */
   final MarketDataProvider provider = new MarketDataProvider() {
     @Override
     public String id() {
@@ -59,6 +62,10 @@ class BarServiceTest {
       for (Instant t = q.from(); !t.isAfter(q.to()); t = t.plus(step), i++) {
         BigDecimal c = new BigDecimal(sip ? "100" : "200").add(BigDecimal.valueOf(i, 2));
         out.add(new Bar("AAPL", q.tf(), t, c, c, c, c, 100, c, 1, !sip));
+      }
+      // the SPI contract (SIM, and AlpacaRestClient for one symbol): the newest `limit` bars of the window
+      if (q.limit() > 0 && out.size() > q.limit()) {
+        out = new ArrayList<>(out.subList(out.size() - q.limit(), out.size()));
       }
       return Map.of("AAPL", out);
     }
@@ -90,6 +97,32 @@ class BarServiceTest {
     assertThat(s.tailFrom()).isEqualTo(Instant.parse("2026-10-09T14:45:00Z"));
     assertThat(s.bars().getLast()).isEqualTo(forming);
     assertThat(s.source()).isEqualTo("alpaca");
+  }
+
+  /**
+   * Review regression: QuoteFanout reads the forming bar through bars(), which cached 1Min series for 30 s, so the live
+   * chart's last candle froze while the header price moved. The forming minute now always comes from the feed.
+   */
+  @Test
+  void theFormingMinuteIsNeverServedFromTheCache() {
+    MarketFeed feed = mock(MarketFeed.class);
+    Bar first = new Bar("AAPL", Timeframe.MIN1, NOW, new BigDecimal("300"), new BigDecimal("300"),
+        new BigDecimal("300"), new BigDecimal("300"), 5, null, 1, true);
+    Bar later = new Bar("AAPL", Timeframe.MIN1, NOW, new BigDecimal("300"), new BigDecimal("301.25"),
+        new BigDecimal("300"), new BigDecimal("301.25"), 9, null, 3, true);
+    java.util.concurrent.atomic.AtomicReference<Bar> current = new java.util.concurrent.atomic.AtomicReference<>(first);
+    when(feed.currentMinuteBar("AAPL")).thenAnswer(inv -> Optional.of(current.get()));
+    BarService service = service(feed);
+    BarRequest req = new BarRequest("AAPL", null, Timeframe.MIN1, NOW.minus(Duration.ofMinutes(2)), NOW, 2,
+        AdjustmentMode.SPLIT, true);
+    assertThat(service.bars(req).bars().getLast()).isEqualTo(first);
+    int calls = queries.size();
+    time.advance(Duration.ofSeconds(5));
+    current.set(later);
+    BarSeries again = service.bars(req);
+    assertThat(queries).as("history still cached").hasSize(calls);
+    assertThat(again.bars().getLast()).isEqualTo(later);
+    assertThat(again.bars().getLast().close()).isEqualByComparingTo("301.25");
   }
 
   @Test

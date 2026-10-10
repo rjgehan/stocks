@@ -35,7 +35,8 @@ import org.slf4j.LoggerFactory;
  * the current or latest trading day; 5D → 5Min over 5 trading days; 1M → 30Min; 3M/6M/YTD/1Y → 1Day; 5Y → 1Week;
  * ALL → 1Month from 2016-01-01). Live data stitches SIP history older than 16 minutes ({@code feed=sip}) with an IEX
  * tail ({@code feed=iex}, {@code partialVolume=true}) and the forming minute bar from the stream; SIP wins on equal
- * starts. Charts default to split-adjusted bars. Results are cached (1Min 30 s, intraday 5 min, daily+ 1 h, fully past
+ * starts. Charts default to split-adjusted bars. The forming minute of a live 1Min request is always read from the feed,
+ * never from the cache. Results are cached (1Min 30 s, intraday 5 min, daily+ 1 h, fully past
  * windows 24 h).
  */
 public class BarService {
@@ -149,13 +150,36 @@ public class BarService {
         end.truncatedTo(BarMath.intraday(tf) ? ChronoUnit.MINUTES : ChronoUnit.HOURS), adj, r.extendedHours(), limit);
     boolean past = end.isBefore(now.minus(Duration.ofDays(1)));
     Cached c = cache.getIfPresent(key);
+    BarSeries series;
     if (c != null) {
-      return c.series();
+      series = c.series();
+    } else {
+      series = live ? liveBars(r.symbol(), tf, start, end, adj, r.extendedHours(), limit, now)
+          : simBars(r.symbol(), tf, start, end, adj, r.extendedHours(), limit);
+      cache.put(key, new Cached(series, past ? Duration.ofHours(24) : ttl(tf)));
     }
-    BarSeries series = live ? liveBars(r.symbol(), tf, start, end, adj, r.extendedHours(), limit, now)
-        : simBars(r.symbol(), tf, start, end, adj, r.extendedHours(), limit);
-    cache.put(key, new Cached(series, past ? Duration.ofHours(24) : ttl(tf)));
+    // The cache keeps history for 30 s, but the minute that is forming right now always comes from the feed, so the
+    // live 1D chart (and /topic/bars, which reads it every second) never lags the last trade.
+    if (tf == Timeframe.MIN1 && !end.isBefore(now.minus(Duration.ofMinutes(1)))) {
+      series = withFormingBar(series, start, end, r.extendedHours(), limit);
+    }
     return series;
+  }
+
+  /** {@code series} with the feed's forming minute bar merged over its last minute (uncached). */
+  private BarSeries withFormingBar(BarSeries series, Instant start, Instant end, boolean ext, int limit) {
+    Optional<Bar> forming = feed == null ? Optional.empty() : feed.currentMinuteBar(series.symbol());
+    if (forming.isEmpty()) {
+      return series;
+    }
+    Bar f = forming.get();
+    if (f.start().isBefore(start) || f.start().isAfter(end) || (!ext && !inRegularSession(f))) {
+      return series;
+    }
+    List<Bar> merged = BarMath.mergeByStart(List.of(f), series.bars());
+    Instant tailFrom = series.tailFrom() == null && f.partialVolume() ? f.start() : series.tailFrom();
+    return new BarSeries(series.symbol(), series.timeframe(), series.adjustment(), tail(merged, limit), tailFrom,
+        series.source());
   }
 
   static Duration ttl(Timeframe tf) {

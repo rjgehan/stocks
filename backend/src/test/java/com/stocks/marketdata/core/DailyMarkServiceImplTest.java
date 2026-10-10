@@ -117,6 +117,45 @@ class DailyMarkServiceImplTest {
     assertThat(repo.dayEndMark("NONE", D)).isEmpty();
   }
 
+  /**
+   * Review regression (§15.5): on the Basic plan Alpaca answers 403 "subscription does not permit querying recent SIP
+   * data" to a feed=sip query whose end is within 15 minutes of now, and the 16:20 ET official-close run asked for
+   * end = 23:59:59 ET. The provider now clamps SIP queries, so the close is written the same evening.
+   */
+  @Test
+  void theOfficialCloseRunSurvivesTheBasicPlanSipEmbargo() {
+    db = TestDb.fresh();
+    MutableTimeSource time = new MutableTimeSource(Instant.parse("2026-10-09T20:20:00Z"));   // 16:20 ET
+    try (com.stocks.marketdata.testing.FakeHttpServer http = new com.stocks.marketdata.testing.FakeHttpServer()) {
+      http.route("/v2/stocks/bars", r -> {
+        Instant end = Instant.parse(r.query().get("end"));
+        if ("sip".equals(r.query().get("feed")) && end.isAfter(time.now().minus(java.time.Duration.ofMinutes(15)))) {
+          return new com.stocks.marketdata.testing.FakeHttpServer.Response(403,
+              "{\"message\":\"subscription does not permit querying recent SIP data\"}", Map.of());
+        }
+        return com.stocks.marketdata.testing.FakeHttpServer.Response.json("{\"bars\":{\"AAPL\":[{\"c\":227.41,"
+            + "\"h\":228.1,\"l\":225.02,\"n\":1,\"o\":225.5,\"t\":\"2026-10-09T04:00:00Z\",\"v\":1,\"vw\":226.7}]},"
+            + "\"next_page_token\":null}");
+      });
+      com.stocks.marketdata.config.MarketDataProperties.Alpaca a = com.stocks.marketdata.testing.Providers.alpaca(
+          http.url(), "ws://127.0.0.1:1/v2/iex");
+      ProviderHttp ph = new ProviderHttp("alpaca", a.connectTimeout(), a.readTimeout(),
+          new ProviderRateLimiter("alpaca", 180, 0), time::now, Map.of());
+      com.stocks.marketdata.alpaca.AlpacaMarketDataProvider alpaca =
+          new com.stocks.marketdata.alpaca.AlpacaMarketDataProvider(
+              com.stocks.marketdata.testing.Providers.hybrid(a, null),
+              new com.stocks.marketdata.alpaca.AlpacaRestClient(a, ph, time::now), time,
+              WebSocketStream.Timings.defaults());
+      DailyMarkRepository repo = new DailyMarkRepository(db.dataSource());
+      DailyMarkServiceImpl marks = new DailyMarkServiceImpl(alpaca, null, mock(MarketFeed.class), repo, calendar,
+          time);
+      marks.ensureOfficialCloses(D, Set.of("AAPL"));
+      assertThat(repo.officialClose("AAPL", D)).contains(new BigDecimal("227.4100"));
+      assertThat(http.requests("/v2/stocks/bars")).allSatisfy(r -> assertThat(Instant.parse(r.query().get("end")))
+          .isBeforeOrEqualTo(time.now().minus(java.time.Duration.ofMinutes(16))));
+    }
+  }
+
   static Bar bar(String symbol, Timeframe tf, String start, String close) {
     BigDecimal c = new BigDecimal(close);
     return new Bar(symbol, tf, Instant.parse(start), c, c, c, c, 100, c, 1, false);

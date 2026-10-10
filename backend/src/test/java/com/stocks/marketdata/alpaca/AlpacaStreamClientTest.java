@@ -44,6 +44,8 @@ class AlpacaStreamClientTest {
   final Set<String> bars = new TreeSet<>();
   final List<MarketEvent> events = new CopyOnWriteArrayList<>();
   volatile String authReply = "[{\"T\":\"success\",\"msg\":\"authenticated\"}]";
+  /** The fake's symbol limit: a subscribe that would exceed it is refused with 405 and changes nothing (docs). */
+  volatile int symbolLimit = Integer.MAX_VALUE;
   AlpacaStreamClient client;
 
   @BeforeEach
@@ -55,6 +57,12 @@ class AlpacaStreamClientTest {
           switch (Json.str(m, "action")) {
             case "auth" -> c.send(authReply);
             case "subscribe" -> {
+              Set<String> after = new TreeSet<>(quotes);
+              after.addAll(Json.strings(m, "quotes"));
+              if (after.size() > symbolLimit) {
+                c.send("[{\"T\":\"error\",\"code\":405,\"msg\":\"symbol limit exceeded\"}]");
+                return;
+              }
               trades.addAll(Json.strings(m, "trades"));
               quotes.addAll(Json.strings(m, "quotes"));
               bars.addAll(Json.strings(m, "bars"));
@@ -166,6 +174,25 @@ class AlpacaStreamClientTest {
     Await.until(Duration.ofSeconds(5), () -> client.state() == ConnectionState.LIVE, "LIVE again");
     assertThat(Duration.ofNanos(System.nanoTime() - t0)).isGreaterThan(Duration.ofMillis(1000));
     assertThat(server.connections()).hasSize(2);
+  }
+
+  /**
+   * Review regression: after a 405 the client marked itself LIMITED but never re-sent, so nothing streamed until the
+   * desired set changed (hours on a quiet evening), and the cap kept the alphabetically first symbols, dropping the
+   * PINNED SPY benchmark. It now re-sends at once and keeps the first symbols in priority order.
+   */
+  @Test
+  void after405TheCappedSetIsResentInPriorityOrder() {
+    symbolLimit = 3;
+    start();
+    Await.until(() -> client.state() == ConnectionState.LIVE, "LIVE");
+    Set<String> byPriority = new java.util.LinkedHashSet<>(List.of("SPY", "AAPL", "MSFT", "NVDA"));
+    client.setDesired(byPriority, byPriority, byPriority);
+    Await.until(Duration.ofSeconds(5), () -> client.subscribed().equals(Set.of("SPY", "AAPL", "MSFT")),
+        "the capped set, re-sent without a change of the desired set");
+    assertThat(client.state()).isEqualTo(ConnectionState.LIMITED);
+    assertThat(client.symbolLimit()).isEqualTo(3);
+    assertThat(quotes).containsExactlyInAnyOrder("SPY", "AAPL", "MSFT");
   }
 
   @Test

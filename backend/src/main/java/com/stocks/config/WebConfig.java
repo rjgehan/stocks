@@ -35,7 +35,8 @@ import org.springframework.web.servlet.resource.ResourceResolverChain;
  *       ({@code spring.web.resources.add-mappings=false}) and replaced by:
  *       <ul>
  *         <li>{@code /assets/**} (Vite-hashed): {@code Cache-Control: public, max-age=31536000, immutable};</li>
- *         <li>{@code /**}: {@code Cache-Control: no-cache}; a GET for a path with no file extension that is not
+ *         <li>{@code /**}: {@code Cache-Control: no-cache}; a GET for a path without a static-file extension
+ *             ({@link #STATIC_EXTENSIONS}; {@code /stock/BRK.B} is a route, not a file) that is not
  *             under {@code /api}, {@code /ws}, {@code /mcp}, {@code /v3}, {@code /swagger-ui}, {@code /oauth2},
  *             {@code /.well-known} or {@code /h2-console} falls back to {@code index.html} (client-side routes).
  *             Anything else that does not exist is a 404 problem.</li>
@@ -98,7 +99,16 @@ public class WebConfig implements WebMvcConfigurer {
         .addResolver(new SpaFallbackResolver());
   }
 
-  /** True for a client-side route: no file extension, and not under a server-owned prefix. */
+  /**
+   * Extensions of real static files. Only these make a missing path a 404: a dot alone does not, because client
+   * routes carry symbols such as {@code /stock/BRK.B} and {@code /stock/BF.B} (a reload or shared link must open the
+   * app, not a JSON 404).
+   */
+  static final Set<String> STATIC_EXTENSIONS = Set.of("js", "mjs", "cjs", "css", "map", "html", "htm", "json", "txt",
+      "xml", "webmanifest", "png", "jpg", "jpeg", "gif", "svg", "ico", "webp", "avif", "bmp", "woff", "woff2", "ttf",
+      "otf", "eot", "wasm", "pdf", "mp3", "mp4", "webm", "ogg", "zip", "gz", "br", "csv", "yml", "yaml", "md");
+
+  /** True for a client-side route: not a static file type, and not under a server-owned prefix. */
   static boolean isSpaRoute(String path) {
     String p = path.startsWith("/") ? path.substring(1) : path;
     int slash = p.indexOf('/');
@@ -107,7 +117,8 @@ public class WebConfig implements WebMvcConfigurer {
       return false;
     }
     String last = p.substring(p.lastIndexOf('/') + 1);
-    return !last.contains(".");
+    int dot = last.lastIndexOf('.');
+    return dot < 0 || !STATIC_EXTENSIONS.contains(last.substring(dot + 1).toLowerCase(java.util.Locale.ROOT));
   }
 
   /** Normal static resolution first; then {@code index.html} for client-side routes. */

@@ -64,6 +64,8 @@ public class QuoteBook {
     Instant updatedAt;
     final Deque<Trade> recentConsolidated = new ArrayDeque<>();
     final Deque<Print> prints = new ArrayDeque<>();
+    /** Keys of the trades buffered recently, so a trade seen again (stream, then every snapshot poll) is one print. */
+    final java.util.LinkedHashSet<String> bufferedKeys = new java.util.LinkedHashSet<>();
     Instant drainedUpTo;
 
     SymbolState(String symbol) {
@@ -196,16 +198,30 @@ public class QuoteBook {
       if (t.eligible()) {
         boolean consolidatedFlowing = s.lastConsolidated != null && s.lastConsolidated.observedAt() != null
             && Duration.between(s.lastConsolidated.observedAt(), observedAt).compareTo(CONSOLIDATED_DEDUP) <= 0;
-        if (t.consolidated() || !consolidatedFlowing) {
+        if ((t.consolidated() || !consolidatedFlowing) && s.bufferedKeys.add(printKey(t))) {
           s.prints.addLast(new Print(t.price(), t.size(), t.ts(), t.observedAt() != null ? t.observedAt()
               : observedAt, t.consolidated()));
           while (s.prints.size() > PRINT_BUFFER) {
             s.prints.removeFirst();
           }
+          while (s.bufferedKeys.size() > PRINT_BUFFER) {
+            s.bufferedKeys.removeFirst();
+          }
         }
       }
       s.updatedAt = observedAt;
     }
+  }
+
+  /**
+   * The identity of a print: the trade id where the provider sends one, else time, price and size. Every snapshot poll
+   * (2 s for ORDER/VIEWING symbols) repeats the same {@code latestTrade}, which the stream may also have delivered;
+   * buffering it again would let one upstream print fill a resting limit several times over (§12.5).
+   */
+  static String printKey(Trade t) {
+    String kind = t.consolidated() ? "C" : "I";
+    return t.id() != null && !t.id().isBlank() ? kind + "|" + t.id() + "|" + t.ts()
+        : kind + "|" + t.ts() + "|" + t.price().stripTrailingZeros().toPlainString() + "|" + t.size();
   }
 
   /**
