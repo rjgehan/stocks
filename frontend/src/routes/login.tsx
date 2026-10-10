@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Link, createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
 import { useLogin } from '@/lib/api/hooks/identity'
 import { API_MOCK } from '@/lib/api/client'
 import { describeError } from '@/lib/api/errors'
@@ -18,6 +18,7 @@ export const Route = createFileRoute('/login')({
 function LoginPage() {
   const { redirect } = Route.useSearch()
   const navigate = useNavigate()
+  const router = useRouter()
   const login = useLogin()
   const [handle, setHandle] = useState('')
   const [password, setPassword] = useState('')
@@ -25,7 +26,12 @@ function LoginPage() {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    login.mutate({ handle: handle.trim(), password }, { onSuccess: () => void navigate({ to: redirect ?? '/', replace: true }) })
+    // The redirect may carry a query (e.g. /oauth/consent?request=…), which `navigate({ to })` would not parse, so a
+    // redirect goes through the history as a full href.
+    login.mutate(
+      { handle: handle.trim(), password },
+      { onSuccess: () => (redirect ? router.history.replace(redirect) : void navigate({ to: '/', replace: true })) },
+    )
   }
 
   return (

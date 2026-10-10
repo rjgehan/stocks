@@ -10,6 +10,7 @@ const ITEMS = [
   { to: '/settings/appearance', label: 'Appearance', detail: 'Theme and up/down colors' },
   { to: '/settings/trading', label: 'Trading defaults', detail: 'Order confirmation, default type, TIF, quantity mode' },
   { to: '/settings/api-keys', label: 'API keys', detail: 'Personal read-only keys for your own scripts' },
+  { to: '/settings/connected-apps', label: 'Connected apps', detail: 'claude.ai and ChatGPT connectors you approved' },
   { to: '/settings/account', label: 'Account', detail: 'Password and self-reset' },
 ] as const
 
