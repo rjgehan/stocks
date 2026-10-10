@@ -45,6 +45,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -170,6 +171,7 @@ public class CorporateActionApplier {
           return needsAdmin(ca, "cash dividend without a positive rate and a payable date", now, tx);
         }
         accrue(ca, now, tx);
+        adjustOrders(ca, now, tx);
       }
       default -> {
         return needsAdmin(ca, ca.type() + " is not applied automatically in Phase 1 (apply it by hand, then SKIP)",
@@ -549,6 +551,34 @@ public class CorporateActionApplier {
     dividends.addDividendEx(ca.symbol(), ca.exDate(), ca.cashRate(), now);
     log.info("Dividend {} {} ${}/share accrued for {} account(s), payable {}", ca.publicId(), ca.symbol(),
         plain(ca.cashRate()), n, ca.payableDate());
+  }
+
+  /**
+   * FINRA Rule 5330 (§14, Phase 2): the open orders entered before the ex cut-off are reduced by the dividend in the
+   * same transaction; each affected account gets one {@code ORDER_ADJ} effect (a {@code CORPORATE_ACTION}
+   * notification).
+   */
+  private void adjustOrders(CorporateActionRow ca, Instant now, EngineTx tx) {
+    List<EngineOrderOps.DividendAdjustment> adjusted = orders.adjustForCashDividend(ca.symbol(), ca.cashRate(),
+        exCutoff(ca.exDate()), ca.publicId(), now, tx);
+    Map<Long, List<EngineOrderOps.DividendAdjustment>> byAccount = new java.util.LinkedHashMap<>();
+    for (EngineOrderOps.DividendAdjustment a : adjusted) {
+      byAccount.computeIfAbsent(a.accountId(), k -> new java.util.ArrayList<>()).add(a);
+    }
+    for (List<EngineOrderOps.DividendAdjustment> list : byAccount.values()) {
+      EngineOrderOps.DividendAdjustment first = list.get(0);
+      long cancelled = list.stream().filter(EngineOrderOps.DividendAdjustment::cancelled).count();
+      String body = (list.size() - cancelled) + " open " + ca.symbol() + " order(s) had their prices reduced by the $"
+          + plain(ca.cashRate()) + " dividend (FINRA Rule 5330)"
+          + (cancelled > 0 ? "; " + cancelled + " order(s) whose price would reach $0 were cancelled" : "")
+          + ". Mark an order \"Don't reduce\" to keep its prices.";
+      tx.publish(new AccountChanged(first.accountId(), first.playerId(), "CORPORATE_ACTION", now));
+      tx.publish(new CorporateActionEffect(first.accountId(), first.playerId(), ca.publicId(), ca.type(), ca.symbol(),
+          "ORDER_ADJ", "Orders adjusted for the " + ca.symbol() + " dividend", body, now));
+    }
+    if (!adjusted.isEmpty()) {
+      log.info("Dividend {} {} adjusted {} open order(s) (FINRA 5330)", ca.publicId(), ca.symbol(), adjusted.size());
+    }
   }
 
   // ------------------------------------------------------------------------------------------- helpers
