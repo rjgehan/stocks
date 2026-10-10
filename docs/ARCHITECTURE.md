@@ -1740,7 +1740,7 @@ CREATE TABLE SPRING_SESSION_ATTRIBUTES (
 | I7 | Per account: Σ `reserved_cash` of open BUY orders ≤ `cash_balance`, so buying power is ≥ 0. |
 | I8 | `trade_order.filled_qty` = Σ `execution.qty`, and `fees_total` = Σ execution fees. A terminal order has no reservations. |
 | I9 | Every `execution` has exactly one `cash_ledger` row with `amount = net_amount`. Every APPLIED `cash_transfer` has exactly one ledger row. |
-| I10 | (Warning only.) Every execution price lies within the SIP 1-minute [low − spread, high + spread] of its minute. Checked by `FillQualityAudit` after the 15-minute embargo; never halts the engine. |
+| I10 | (Warning only.) Every execution price lies within the SIP 1-minute [low − spread, high + spread] of its minute (spread = the execution's reference-quote spread, at least one tick; RAW bars; a minute with only the IEX tail is retried until the execution is 30 minutes old). Checked by `FillQualityAudit` after the 15-minute embargo; a finding is logged at WARN and written once to `audit_log` as `SYSTEM/FILL_QUALITY_WARNING` (target the execution); it never halts the engine. |
 
 ---
 
@@ -2900,7 +2900,7 @@ Every row records actor, kind, channel, API key id, MCP client and tool, IP, use
 | KEY | Issue, revoke |
 | ADMIN | Player create, update, freeze, disable; settings; invites; calendar overrides; engine halt and resume; corporate-action resolve; admin order cancel; **break-glass live view** (`PLAYER_LIVE_VIEW`, with the reason) |
 | ACCOUNT | Reset, GFV issued, restriction change, split and name-change effects. Audit is the security record only; the player-facing activity history comes from `cash_ledger` and `account_event` (§18.2), never from `audit_log`. |
-| SYSTEM | Job failures, invariant failures, provider 406 |
+| SYSTEM | Job failures, invariant failures, provider 406, fill-quality warnings (I10, `FILL_QUALITY_WARNING`) |
 
 Secrets are never logged. Reads are not audited in Phase 1 (structured logs instead), with one exception: the admin's break-glass live view of another player (§21.3). Client-controlled fields are already bounded by `RequestMeta` (§6.6), so an audit insert never fails on length.
 
@@ -4273,7 +4273,7 @@ Actions are pinned to their current major versions: `actions/checkout@v7`, `acti
 | 09:00 next trading day | Re-mark PROVISIONAL marks; re-run the EOD snapshot for that date if any mark changed | Scheduled | WS2 → WS4 | no | `date:REMARK` | LATEST_ONLY |
 | at boot, once | `BenchmarkBackfillJob` (§16.6) | Scheduled (single occurrence) | WS4 | no | `2025-12-31` | ALL_MISSED |
 | every 5 s | Leaderboard recompute; feed visibility publisher | Periodic | WS4 | no | — | — |
-| rolling, 16 min after each execution | `FillQualityAudit` (I10, warnings only) | Periodic (scans executions 16–30 min old) | WS3 | no | — | — |
+| rolling, 16 min after each execution | `FillQualityAudit` (I10, warnings only; `FILL_QUALITY_AUDIT`, every 60 s) | Periodic (scans executions 16–30 min old) | WS3 | no | — | — |
 
 ## 26. Testing strategy
 
