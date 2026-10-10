@@ -7,6 +7,7 @@ import { Pill } from '@/components/ui/Pill'
 import { Sparkline } from '@/components/ui/Sparkline'
 import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
+import { FormulaPopover } from './MetricInfoPopover'
 import { AiChip, Avatar } from './PlayerBadge'
 
 const MEDAL = ['bg-gold', 'bg-silver', 'bg-bronze'] as const
@@ -26,7 +27,7 @@ function RankCell({ row }: { row: LeaderboardRow }) {
         </span>
       )}
       {row.rankChange ? (
-        <span className={cx('text-micro', row.rankChange > 0 ? 'text-up' : 'text-down')} aria-label={`${row.rankChange > 0 ? 'up' : 'down'} ${Math.abs(row.rankChange)} since yesterday`}>
+        <span className={cx('text-micro', row.rankChange > 0 ? 'text-up' : 'text-down')} aria-label={`${row.rankChange > 0 ? 'up' : 'down'} ${Math.abs(row.rankChange)} since the last snapshot`}>
           {row.rankChange > 0 ? '▲' : '▼'}
           {Math.abs(row.rankChange)}
         </span>
@@ -145,12 +146,36 @@ export function LeaderboardTable({ rows, me, metric, myHandle }: { rows: Leaderb
         <table className="w-full text-table" aria-label="Leaderboard">
           <thead className="text-left text-micro tracking-wide text-text-3 uppercase">
             <tr className="h-9 border-b border-divider">
-              <th className="pl-4 font-medium">Rank</th>
-              <th className="w-[30%] min-w-52 font-medium">Player</th>
-              <th className={cx('px-2 text-right font-medium', metric === 'RETURN' && 'text-text-1')}>Return</th>
-              <th className={cx('px-2 text-right font-medium', metric === 'PNL' && 'text-text-1')}>P&amp;L</th>
-              <th className="hidden px-2 text-right font-medium desktop:table-cell">vs SPY</th>
-              <th className="px-2 text-right font-medium">Net contrib.</th>
+              <th className="pl-4 font-medium">
+                <span className="inline-flex items-center gap-0.5">
+                  Rank <FormulaPopover topic="RANK_CHANGE" align="start" />
+                </span>
+              </th>
+              <th className="w-[30%] min-w-52 font-medium">
+                <span className="inline-flex items-center gap-0.5">
+                  Player <FormulaPopover topic="RANKED" align="start" />
+                </span>
+              </th>
+              <th className={cx('px-2 text-right font-medium', metric === 'RETURN' && 'text-text-1')}>
+                <span className="inline-flex items-center gap-0.5">
+                  Return <FormulaPopover topic="RETURN" />
+                </span>
+              </th>
+              <th className={cx('px-2 text-right font-medium', metric === 'PNL' && 'text-text-1')}>
+                <span className="inline-flex items-center gap-0.5">
+                  P&amp;L <FormulaPopover topic="PNL" />
+                </span>
+              </th>
+              <th className="hidden px-2 text-right font-medium desktop:table-cell">
+                <span className="inline-flex items-center gap-0.5">
+                  vs SPY <FormulaPopover topic="VS_SPY" />
+                </span>
+              </th>
+              <th className="px-2 text-right font-medium">
+                <span className="inline-flex items-center gap-0.5">
+                  Net contrib. <FormulaPopover topic="NET_CONTRIB" />
+                </span>
+              </th>
               <th className="hidden px-2 text-right font-medium wide:table-cell">Equity</th>
               <th className="hidden px-2 text-right font-medium tablet:table-cell">Fills</th>
               <th className="hidden pr-4 pl-2 font-medium desktop:table-cell">Trend</th>
