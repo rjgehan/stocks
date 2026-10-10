@@ -1,0 +1,12 @@
+# Build context of the agent-runner image (tools/agent-runner/Dockerfile). Host node_modules would carry
+# darwin-arm64 binaries; secrets and local run data never belong in an image.
+node_modules
+dist
+coverage
+test
+.data
+*.log
+.env
+.env.*
+.oxlintrc.json
+vitest*.config.ts
