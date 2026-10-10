@@ -56,6 +56,14 @@ public final class DirectEngineExecutor {
     step();
   }
 
+  /** A simulated process restart: the engine forgets everything in memory and reloads from the database (§26). */
+  public synchronized void restart() {
+    EngineThread.runAsEngine(() -> {
+      core.restart();
+      return null;
+    });
+  }
+
   public EngineStatus status() {
     return core.status(0);
   }

@@ -306,6 +306,12 @@ class Evaluator {
     }
   }
 
+  /** Forgets the in-memory market observations (refresh throttle, last consolidated prints): a restart (§12.9). */
+  void forget() {
+    lastRefresh.clear();
+    triggers.clear();
+  }
+
   /** {@code ORDER_CRITICAL} refresh for a symbol awaiting a quote, at most once per 2 s (§12.2). */
   void requestRefresh(String symbol, Instant now) {
     Instant last = lastRefresh.get(symbol);

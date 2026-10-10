@@ -258,7 +258,7 @@ class TriggerEvaluator {
       }
       noteConsolidated(r.symbol(), p.observedAt());
       if (!p.observedAt().isBefore(notBefore) && p.price() != null && p.price().signum() > 0) {
-        eligible.add(p.price());
+        eligible.add(scale4(p.price()));     // sub-penny prints happen; prices are stored at scale 4 (§6.2)
       }
     }
     Instant last = lastConsolidated.get(r.symbol());
@@ -298,11 +298,11 @@ class TriggerEvaluator {
       writer.setTrailing(r.id(), out.watermark(), out.stop());
     }
     Map<String, Object> detail = new LinkedHashMap<>();
-    detail.put("price", Prices.normalize(out.price()));
+    detail.put("price", scale4(out.price()));
     detail.put("basis", out.basis().name());
-    detail.put("stopPrice", out.stop() == null ? null : Prices.normalize(out.stop()));
+    detail.put("stopPrice", scale4(out.stop()));
     if (trailing) {
-      detail.put("watermark", Prices.normalize(out.watermark()));
+      detail.put("watermark", scale4(out.watermark()));
     }
     detail.put("eligibleAt", eligibleAt.toString());
     writer.event(r.id(), OrderEventType.TRIGGERED, r.status(), now, json.writeValueAsString(detail));
@@ -343,8 +343,8 @@ class TriggerEvaluator {
     }
     if (emit) {
       Map<String, Object> detail = new LinkedHashMap<>();
-      detail.put("watermark", Prices.normalize(out.watermark()));
-      detail.put("stopPrice", out.stop() == null ? null : Prices.normalize(out.stop()));
+      detail.put("watermark", scale4(out.watermark()));
+      detail.put("stopPrice", scale4(out.stop()));
       writer.event(r.id(), OrderEventType.TRAIL_UPDATED, r.status(), now, json.writeValueAsString(detail));
       tx.publish(new OrderChanged(r.accountId(), r.playerId(), r.publicId(), OrderEventType.TRAIL_UPDATED,
           r.status(), now));
@@ -372,6 +372,10 @@ class TriggerEvaluator {
   /** Forgets what was seen (a simulated restart, §26 Recovery). */
   void clear() {
     lastConsolidated.clear();
+  }
+
+  private static BigDecimal scale4(BigDecimal price) {
+    return price == null ? null : price.setScale(Prices.SCALE, RoundingMode.HALF_EVEN);
   }
 
   private static boolean same(BigDecimal a, BigDecimal b) {

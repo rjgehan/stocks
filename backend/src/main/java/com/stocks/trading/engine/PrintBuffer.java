@@ -55,4 +55,9 @@ final class PrintBuffer {
   void forget(String symbol) {
     bySymbol.remove(symbol);
   }
+
+  /** Forgets every print (a restart, §12.9). Sequence numbers keep increasing. */
+  void clear() {
+    bySymbol.clear();
+  }
 }
