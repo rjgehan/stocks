@@ -1,12 +1,13 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import type { ChartRange, Side } from '@/lib/api/types'
+import type { ChartRange, Side, Timeframe } from '@/lib/api/types'
 import { useBreakpoint } from '@/app/useBreakpoint'
+import { parseTimeframe } from '@/features/market/IntervalPicker'
 import { CHART_RANGES } from '@/features/market/RangeChips'
 import { StockScreen, type QuoteTab } from '@/features/market/StockScreen'
 
 interface StockSearch {
   range?: ChartRange
-  tf?: string
+  tf?: Timeframe
   tab?: QuoteTab
   ticket?: Side
 }
@@ -17,7 +18,7 @@ export const Route = createFileRoute('/_app/stock/$symbol')({
   // §22.2: range=1D, tf?, tab=OVERVIEW|NEWS|POSITION, ticket=BUY|SELL?
   validateSearch: (search: Record<string, unknown>): StockSearch => ({
     range: CHART_RANGES.find((r) => r === String(search.range ?? '').toUpperCase()),
-    tf: typeof search.tf === 'string' ? search.tf : undefined,
+    tf: parseTimeframe(search.tf),
     tab: TABS.find((t) => t === String(search.tab ?? '').toUpperCase()),
     ticket: search.ticket === 'BUY' || search.ticket === 'SELL' ? search.ticket : undefined,
   }),
@@ -41,9 +42,12 @@ function StockRoute() {
       symbol={symbol}
       breakpoint={bp}
       range={search.range ?? '1D'}
+      tf={search.tf}
       tab={search.tab ?? 'OVERVIEW'}
       ticket={search.ticket}
-      onRange={(range) => set({ range: range === '1D' ? undefined : range })}
+      // A new range starts from its default interval.
+      onRange={(range) => set({ range: range === '1D' ? undefined : range, tf: undefined })}
+      onTf={(tf) => set({ tf })}
       onTab={(tab) => set({ tab: tab === 'OVERVIEW' ? undefined : tab })}
       onTicket={(ticket) => set({ ticket })}
     />

@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useAsset, useBars } from '@/lib/api/hooks/market'
 import { isApiError } from '@/lib/api/problem'
-import type { ChartRange, Side } from '@/lib/api/types'
+import type { ChartRange, Side, Timeframe } from '@/lib/api/types'
 import { useLiveBar } from '@/lib/realtime/useLiveBar'
 import { useQuote } from '@/lib/realtime/useQuote'
 import { readLocal, setLastSymbol, writeLocal } from '@/lib/prefs/local'
@@ -22,6 +22,7 @@ import { TradeSheet } from '@/features/trade/TradeSheet'
 import { TradeTicket } from '@/features/trade/TradeTicket'
 import { StarButton } from '@/features/watchlist/StarButton'
 import { BidAskBar } from './BidAskBar'
+import { IntervalPicker, effectiveTimeframe } from './IntervalPicker'
 import { KeyStatsGrid } from './KeyStatsGrid'
 import { NewsList } from './NewsList'
 import type { ChartStyle } from './PriceChart'
@@ -36,9 +37,12 @@ export interface StockScreenProps {
   symbol: string
   breakpoint: Breakpoint
   range: ChartRange
+  /** Bar interval (§22.2 `tf`); undefined = the range's default. */
+  tf?: Timeframe
   tab: QuoteTab
   ticket: Side | undefined
   onRange: (r: ChartRange) => void
+  onTf?: (tf: Timeframe | undefined) => void
   onTab: (t: QuoteTab) => void
   onTicket: (side: Side | undefined) => void
 }
@@ -66,10 +70,10 @@ function useChartStyle(phone: boolean, range: ChartRange): [ChartStyle, (s: Char
  * dock. Tablet: ticket in a right side sheet, dock as tabs under the chart. Phone: pushed screen with a
  * sticky header and a Trade bar that opens a bottom sheet.
  */
-export function StockScreen({ symbol, breakpoint, range, tab, ticket, onRange, onTab, onTicket }: StockScreenProps) {
+export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRange, onTf, onTab, onTicket }: StockScreenProps) {
   const asset = useAsset(symbol)
   const quote = useQuote(symbol, 'quote')
-  const bars = useBars(symbol, range)
+  const bars = useBars(symbol, range, effectiveTimeframe(range, tf))
   const scroller = useRef<HTMLDivElement>(null)
   const desktop = breakpoint === 'desktop' || breakpoint === 'wide'
   const phone = breakpoint === 'phone'
@@ -102,8 +106,11 @@ export function StockScreen({ symbol, breakpoint, range, tab, ticket, onRange, o
           )}
         </Suspense>
       </div>
-      <div className="flex items-center justify-between gap-2 px-2 py-2">
-        <RangeChips value={range} onChange={onRange} />
+      <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-2">
+        <div className="min-w-0 basis-full tablet:flex-1 tablet:basis-auto">
+          <RangeChips value={range} onChange={onRange} />
+        </div>
+        {onTf ? <IntervalPicker range={range} value={tf} onChange={onTf} /> : null}
         <Segmented
           label="Chart style"
           size="sm"

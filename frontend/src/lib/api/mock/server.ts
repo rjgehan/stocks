@@ -420,7 +420,9 @@ export class MockServer {
       const symbol = params[0]!.toUpperCase()
       if (!this.market.has(symbol)) return problem(404, 'SYMBOL_NOT_FOUND', 'Symbol not found', `Unknown symbol ${symbol}.`)
       const range = (url.searchParams.get('range') ?? '1D').toUpperCase() as ChartRange
-      return json(this.market.bars(symbol, range))
+      const tf = url.searchParams.get('timeframe')
+      const timeframe = (['1Min', '5Min', '15Min', '30Min', '1Hour', '1Day', '1Week', '1Month'] as const).find((t) => t.toLowerCase() === tf?.toLowerCase())
+      return json(this.market.bars(symbol, range, timeframe))
     })
     r('GET', '/news', ({ url }) => json({ items: this.news(url.searchParams.get('symbols') ?? '') }))
 

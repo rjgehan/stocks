@@ -218,7 +218,7 @@ export default function PriceChart({
   return (
     <div className="relative h-full w-full">
       {shown ? (
-        <div className="pointer-events-none absolute top-1 left-1 z-10 flex flex-wrap gap-x-2.5 text-micro text-text-3" aria-hidden="true">
+        <div className="pointer-events-none absolute top-1 right-16 left-1 z-10 flex flex-wrap gap-x-2.5 text-micro text-text-3" aria-hidden="true">
           <span className="text-text-2">{shown.t ? (intraday ? `${etFull.format(new Date(shown.t))} ET` : etDate.format(new Date(shown.t))) : ''}</span>
           {style === 'candles' ? (
             <>
