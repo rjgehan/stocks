@@ -415,7 +415,7 @@ class McpToolsTest {
 
     FeedItemDto item = new FeedItemDto("fde_1", TestTimes.START, FeedItemDto.FeedItemKind.DEPOSIT, null, null,
         new FeedItemDto.FeedPayloadDto(null, null, null, null, new BigDecimal("100.00"), null,
-            new FeedItemDto.UntrustedFeedTextDto(null, essay)));
+            new FeedItemDto.UntrustedFeedTextDto(null, essay)), List.of());
     when(h.performance.feed(any(), anyInt())).thenReturn(new Page<>(List.of(item), null));
     JsonNode feed = McpToolHarness.ok(h.call("get_league_feed", Map.of()));
     assertThat(feed.get("items").get(0).get("payload").get("untrusted").get("memo").asString())

@@ -210,12 +210,17 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.PUT, "/api/v1/watchlists/**").access(RouteAuthorization.scope(Scopes.TRADE))
             .requestMatchers(HttpMethod.DELETE, "/api/v1/orders", "/api/v1/orders/*", "/api/v1/watchlists/**")
                 .access(RouteAuthorization.scope(Scopes.TRADE))
+            // §16.11 (Phase 2) feed reactions are writes: trade
+            .requestMatchers(HttpMethod.PUT, "/api/v1/feed/*/reaction").access(RouteAuthorization.scope(Scopes.TRADE))
+            .requestMatchers(HttpMethod.DELETE, "/api/v1/feed/*/reaction")
+                .access(RouteAuthorization.scope(Scopes.TRADE))
             // §18.2 account:read
             .requestMatchers(HttpMethod.GET, "/api/v1/account/**", "/api/v1/orders", "/api/v1/orders/**",
                 "/api/v1/watchlists", "/api/v1/watchlists/**")
                 .access(RouteAuthorization.scope(Scopes.ACCOUNT_READ))
             // §18.2 league:read
-            .requestMatchers("/api/v1/leaderboard", "/api/v1/players", "/api/v1/players/**", "/api/v1/feed")
+            .requestMatchers("/api/v1/leaderboard", "/api/v1/players", "/api/v1/players/**", "/api/v1/feed",
+                "/api/v1/league/**")
                 .access(RouteAuthorization.scope(Scopes.LEAGUE_READ))
             // everything else on this chain (incl. /mcp, /v3/**, Swagger UI, /api/v1/test/**): any player.
             // Each MCP tool's scope is checked per call by McpToolHandler (McpToolCatalog.SCOPES, §20.3).

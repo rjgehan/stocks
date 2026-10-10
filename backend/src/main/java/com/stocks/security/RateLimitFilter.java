@@ -19,7 +19,8 @@ import org.springframework.web.util.UrlPathHelper;
  * Chain 2's read limiter (§17.5), placed after authorization so only requests that would be served are charged:
  * <ul>
  *   <li>an authenticated player: one token of the player's read bucket, or of the heavy-read bucket for bars,
- *       portfolio and player history, the leaderboard and player profiles; web sessions and API keys/MCP have separate
+ *       portfolio and player history, the leaderboard and player profiles (Phase 2: the race chart, player stats and
+ *       P&amp;L analysis too); web sessions and API keys/MCP have separate
  *       limits, each shared by all of the player's sessions or keys. Order writes ({@code POST /orders},
  *       {@code PATCH}/{@code DELETE /orders…}, position close) are <b>not</b> charged here: {@code OrderGate} charges
  *       the write bucket once per write, after its idempotency fast path, so replays stay free. Every {@code /mcp}
@@ -41,7 +42,8 @@ public final class RateLimitFilter extends OncePerRequestFilter {
   public static final String RESET = "X-RateLimit-Reset";
 
   private static final Pattern HEAVY = Pattern.compile(
-      "^/api/v1/(bars/.*|account/history|leaderboard|players/[^/]+(/history|/trades)?)$");
+      "^/api/v1/(bars/.*|account/history|leaderboard|players/[^/]+(/history|/trades|/stats)?|league/race"
+          + "|account/(stats|pnl-analysis|pnl-calendar))$");
   private static final Pattern ORDER_WRITE_PATH = Pattern.compile(
       "^/api/v1/(orders|orders/[^/]+|account/positions/[^/]+/close)$");
 

@@ -26,6 +26,7 @@ public final class LeagueKit {
   public final LeaderboardComputer computer;
   public final LeaderboardServiceImpl leaderboard;
   public final FeedRepository feedRepository;
+  public final FeedReactionRepository reactionRepository;
   public final FeedEventListener feed;
   public final FeedService feedService;
   public final LeaderboardSnapshotWriter snapshotWriter;
@@ -41,9 +42,10 @@ public final class LeagueKit {
         kit.periods, kit.pnlCalendar, kit.benchmark, kit.settings, kit.valuation, kit.time);
     this.leaderboard = new LeaderboardServiceImpl(computer, kit.settings, kit.benchmark, messaging, kit.properties);
     this.feedRepository = new FeedRepository(kit.db.jdbc());
+    this.reactionRepository = new FeedReactionRepository(kit.db.jdbc());
     this.feed = new FeedEventListener(feedRepository, kit.db.jdbc(), new PublicId(kit.time), json, kit.settings,
         new DirectExecutor());
-    this.feedService = new FeedService(feedRepository, kit.players, json, kit.time, messaging);
+    this.feedService = new FeedService(feedRepository, reactionRepository, kit.players, json, kit.time, messaging);
     this.snapshotWriter = new LeaderboardSnapshotWriter(computer, league, feed, kit.pnlCalendar, kit.time);
   }
 

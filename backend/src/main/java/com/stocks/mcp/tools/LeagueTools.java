@@ -144,6 +144,6 @@ public class LeagueTools implements McpToolSet {
     return new LeaderboardRowDto(r.rank(), r.rankChange(), r.eligible(), r.eligibilityNote(), r.partialPeriod(),
         r.rebased(), Untrusted.player(r.player()), r.apiTrader(), r.ret(), r.pnl(), r.excessVsBenchmark(),
         r.maxDrawdown(), r.equity(), r.netContributions(), r.flowsInPeriod(), r.fills(), r.symbolsTraded(),
-        r.winRate(), r.topHolding(), r.spark());
+        r.winRate(), r.topHolding(), r.spark(), r.sharpe(), r.profitFactor());
   }
 }

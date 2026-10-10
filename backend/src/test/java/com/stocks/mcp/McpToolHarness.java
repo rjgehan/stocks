@@ -15,8 +15,11 @@ import com.stocks.contract.calendar.TradingDay;
 import com.stocks.contract.identity.MeQueries;
 import com.stocks.contract.identity.PlayerQueries;
 import com.stocks.contract.identity.SettingsService;
+import com.stocks.contract.portfolio.FeedReactionService;
 import com.stocks.contract.portfolio.LeaderboardService;
+import com.stocks.contract.portfolio.LeagueStatsQueries;
 import com.stocks.contract.portfolio.PerformanceQueries;
+import com.stocks.contract.portfolio.PnlAnalysisQueries;
 import com.stocks.contract.security.CurrentPlayer;
 import com.stocks.contract.security.PlayerPrincipal;
 import com.stocks.contract.security.RateLimitService;
@@ -28,6 +31,7 @@ import com.stocks.contract.trading.OrderService;
 import com.stocks.contract.watchlist.WatchlistService;
 import com.stocks.mcp.tools.AccountIdentityTools;
 import com.stocks.mcp.tools.AccountTools;
+import com.stocks.mcp.tools.LeagueStatsTools;
 import com.stocks.mcp.tools.LeagueTools;
 import com.stocks.mcp.tools.MarketTools;
 import com.stocks.mcp.tools.McpToolSet;
@@ -85,6 +89,9 @@ final class McpToolHarness implements AutoCloseable {
   final OrderService orderService = mock(OrderService.class);
   final PerformanceQueries performance = mock(PerformanceQueries.class);
   final LeaderboardService leaderboard = mock(LeaderboardService.class);
+  final LeagueStatsQueries leagueStats = mock(LeagueStatsQueries.class);
+  final PnlAnalysisQueries pnlAnalysis = mock(PnlAnalysisQueries.class);
+  final FeedReactionService reactions = mock(FeedReactionService.class);
   final PlayerQueries players = mock(PlayerQueries.class);
   final WatchlistService watchlists = mock(WatchlistService.class);
   final RateLimitService rateLimits = mock(RateLimitService.class);
@@ -132,7 +139,8 @@ final class McpToolHarness implements AutoCloseable {
         new OrderTools(orderService, orders, accounts),
         new LeagueTools(leaderboard, players, performance),
         new WatchlistTools(watchlists),
-        new NotificationTools(notifications));
+        new NotificationTools(notifications),
+        new LeagueStatsTools(leagueStats, pnlAnalysis, reactions, accounts));
     for (SyncToolSpecification s : McpToolCatalog.specifications(toolSets, MAPPER)) {
       specs.put(s.tool().name(), s);
     }

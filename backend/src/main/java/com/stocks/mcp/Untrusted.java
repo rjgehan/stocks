@@ -4,6 +4,9 @@ import com.stocks.common.web.Text;
 import com.stocks.contract.identity.dto.PlayerSummaryDto;
 import com.stocks.contract.marketdata.dto.NewsItemDto;
 import com.stocks.contract.portfolio.dto.FeedItemDto;
+import com.stocks.contract.portfolio.dto.FeedReactionsDto;
+import com.stocks.contract.portfolio.dto.FeedReactionsDto.FeedReactionDto;
+import com.stocks.contract.portfolio.dto.FeedReactionsDto.ReactorDto;
 import com.stocks.contract.portfolio.dto.PlayerProfileDto;
 import com.stocks.contract.portfolio.dto.PublicTradeDto;
 import java.util.List;
@@ -72,7 +75,22 @@ public final class Untrusted {
         p.price(), p.realizedPnl(), p.amount(), p.period(), p.untrusted() == null ? null
             : new FeedItemDto.UntrustedFeedTextDto(rationale(p.untrusted().rationale()),
                 rationale(p.untrusted().memo())));
-    return new FeedItemDto(f.id(), f.at(), f.kind(), player(f.player()), f.symbol(), payload);
+    return new FeedItemDto(f.id(), f.at(), f.kind(), player(f.player()), f.symbol(), payload,
+        reactions(f.reactions()));
+  }
+
+  /** §16.11 reactions: the reactors' display names clipped like every other player name. */
+  public static FeedReactionsDto reactions(FeedReactionsDto r) {
+    return r == null ? null : new FeedReactionsDto(r.itemId(), reactions(r.reactions()));
+  }
+
+  static List<FeedReactionDto> reactions(List<FeedReactionDto> list) {
+    if (list == null) {
+      return null;
+    }
+    return list.stream().map(r -> new FeedReactionDto(r.reaction(), r.count(), r.players() == null ? null
+        : r.players().stream().map(p -> p == null ? null : new ReactorDto(p.handle(), name(p.displayName()),
+            p.kind())).toList())).toList();
   }
 
   public static PlayerProfileDto profile(PlayerProfileDto p) {

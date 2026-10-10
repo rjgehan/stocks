@@ -80,7 +80,18 @@ class McpToolCatalogTest {
 
   @Test
   void theCatalogHasThe38ToolsOfSection20Point3AndNoAdminTool() {
-    assertThat(McpToolCatalog.ORDER).hasSize(38).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
-        .endsWith("mark_notifications_read").noneMatch(n -> n.contains("admin"));
+    assertThat(McpToolCatalog.ORDER).hasSizeGreaterThanOrEqualTo(38).doesNotHaveDuplicates()
+        .startsWith("whoami", "get_rules").noneMatch(n -> n.contains("admin"));
+    assertThat(McpToolCatalog.ORDER.get(37)).as("Phase 1 ends at #38").isEqualTo("mark_notifications_read");
+  }
+
+  @Test
+  void phase2LeagueToolsFollowThePhase1Catalog() {         // §20.3 #39–#44
+    assertThat(McpToolCatalog.ORDER.subList(38, McpToolCatalog.ORDER.size())).containsSubsequence("get_my_stats",
+        "get_player_stats", "get_race_chart", "get_pnl_calendar", "get_pnl_analysis", "react_to_feed_item");
+    assertThat(McpToolCatalog.SCOPES).containsEntry("get_my_stats", Scopes.ACCOUNT_READ)
+        .containsEntry("get_player_stats", Scopes.LEAGUE_READ).containsEntry("get_race_chart", Scopes.LEAGUE_READ)
+        .containsEntry("get_pnl_calendar", Scopes.ACCOUNT_READ).containsEntry("get_pnl_analysis", Scopes.ACCOUNT_READ)
+        .containsEntry("react_to_feed_item", Scopes.TRADE);
   }
 }
