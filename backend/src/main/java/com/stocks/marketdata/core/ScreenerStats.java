@@ -53,7 +53,7 @@ public class ScreenerStats implements PeriodicTask {
 
   private static final Logger log = LoggerFactory.getLogger(ScreenerStats.class);
   static final int AVG_DAYS = 20;
-  static final int WINDOW_TRADING_DAYS = AVG_DAYS + 2;
+  static final int WINDOW_SESSIONS = AVG_DAYS + 2;
   static final int BATCH = 100;
   static final Duration PROFILE_TTL = Duration.ofDays(30);
   static final Duration RETRY_AFTER = Duration.ofHours(1);
@@ -76,8 +76,9 @@ public class ScreenerStats implements PeriodicTask {
   private final int profilesPerTick;
   private final LongSupplier nanos;
   private volatile Map<String, Stat> snapshot;
-  private volatile long volumesRetryAtNanos = Long.MIN_VALUE;
-  private volatile long profilesOffUntilNanos = Long.MIN_VALUE;
+  /** {@code nanos} values before which a failed volume pass, or profiles, wait; null when nothing waits. */
+  private volatile Long volumesRetryAtNanos;
+  private volatile Long profilesOffUntilNanos;
   private final Map<String, Long> profileRetryAtNanos = new ConcurrentHashMap<>();
   private final AtomicBoolean running = new AtomicBoolean();
   private final AtomicBoolean localStarted = new AtomicBoolean();
@@ -155,7 +156,7 @@ public class ScreenerStats implements PeriodicTask {
       return;
     }
     try {
-      if (volumesDue() && nanos.getAsLong() - volumesRetryAtNanos >= 0) {
+      if (volumesDue() && passed(volumesRetryAtNanos)) {
         refreshVolumes();
       }
       refreshProfiles(maxProfiles);
@@ -186,7 +187,7 @@ public class ScreenerStats implements PeriodicTask {
   void refreshVolumes() {
     LocalDate end = targetDay();
     LocalDate start = end;
-    for (int i = 1; i < WINDOW_TRADING_DAYS; i++) {
+    for (int i = 1; i < WINDOW_SESSIONS; i++) {
       start = calendar.previousTradingDay(start);
     }
     List<String> symbols = new ArrayList<>(new TreeSet<>(universe.get()));
@@ -255,7 +256,7 @@ public class ScreenerStats implements PeriodicTask {
 
   void refreshProfiles(int max) {
     MarketDataProvider p = sources.profilesOrNull();
-    if (p == null || max <= 0 || nanos.getAsLong() - profilesOffUntilNanos < 0) {
+    if (p == null || max <= 0 || !passed(profilesOffUntilNanos)) {
       return;
     }
     Instant now = time.now();
@@ -267,8 +268,7 @@ public class ScreenerStats implements PeriodicTask {
         continue;
       }
       Stat st = current.get(s);
-      Long retry = profileRetryAtNanos.get(s);
-      if (retry != null && nanos.getAsLong() - retry < 0) {
+      if (!passed(profileRetryAtNanos.get(s))) {
         continue;
       }
       if (st == null || st.profileAt() == null || Duration.between(st.profileAt(), now).compareTo(PROFILE_TTL) >= 0) {
@@ -316,6 +316,11 @@ public class ScreenerStats implements PeriodicTask {
     if (done > 0) {
       reload();
     }
+  }
+
+  /** True when nothing waits ({@code null}) or the wait is over (overflow-safe nanos comparison). */
+  private boolean passed(Long atNanos) {
+    return atNanos == null || nanos.getAsLong() - atNanos >= 0;
   }
 
   private Map<String, Stat> reload() {

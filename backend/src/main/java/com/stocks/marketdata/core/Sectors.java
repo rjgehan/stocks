@@ -25,14 +25,14 @@ public final class Sectors {
   /** Finnhub industry keywords → sector, checked in order (first match wins); lower-case substrings. */
   private static final List<Map.Entry<String, Sector>> INDUSTRY_KEYWORDS = List.of(
       Map.entry("real estate", Sector.REAL_ESTATE), Map.entry("reit", Sector.REAL_ESTATE),
+      Map.entry("pharmaceutical", Sector.HEALTH_CARE), Map.entry("biotech", Sector.HEALTH_CARE),
+      Map.entry("health", Sector.HEALTH_CARE), Map.entry("life sciences", Sector.HEALTH_CARE),
+      Map.entry("medical", Sector.HEALTH_CARE),
       Map.entry("semiconductor", Sector.INFORMATION_TECHNOLOGY), Map.entry("software", Sector.INFORMATION_TECHNOLOGY),
       Map.entry("technology", Sector.INFORMATION_TECHNOLOGY), Map.entry("electronic", Sector.INFORMATION_TECHNOLOGY),
       Map.entry("communications equipment", Sector.INFORMATION_TECHNOLOGY),
       Map.entry("telecommunication", Sector.COMMUNICATION_SERVICES), Map.entry("media", Sector.COMMUNICATION_SERVICES),
       Map.entry("entertainment", Sector.COMMUNICATION_SERVICES),
-      Map.entry("pharmaceutical", Sector.HEALTH_CARE), Map.entry("biotech", Sector.HEALTH_CARE),
-      Map.entry("health", Sector.HEALTH_CARE), Map.entry("life sciences", Sector.HEALTH_CARE),
-      Map.entry("medical", Sector.HEALTH_CARE),
       Map.entry("bank", Sector.FINANCIALS), Map.entry("insurance", Sector.FINANCIALS),
       Map.entry("financial", Sector.FINANCIALS), Map.entry("capital markets", Sector.FINANCIALS),
       Map.entry("utilit", Sector.UTILITIES),

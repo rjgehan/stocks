@@ -261,6 +261,69 @@ class MarketControllersIT {
     assertThat(code("/api/v1/assets/NOPE/recommendations")).isEqualTo("SYMBOL_NOT_FOUND");
   }
 
+  /**
+   * §15.10 screener on the SIM: presets, the statistics the first screen computes in the background (market caps,
+   * relative volume), cursor paging, filters and validation.
+   */
+  @Test
+  void screener() throws Exception {
+    String g = json("/api/v1/market/screener?preset=top_gainers&limit=5");
+    assertThat((String) read(g, "$.preset")).isEqualTo("TOP_GAINERS");
+    assertThat((String) read(g, "$.sort")).isEqualTo("CHANGE_PCT");
+    assertThat((String) read(g, "$.order")).isEqualTo("DESC");
+    assertThat((Integer) read(g, "$.coverage.universe")).isGreaterThan(600);
+    assertThat((Integer) read(g, "$.coverage.priced")).isGreaterThan(600);
+    List<Map<String, Object>> gainers = read(g, "$.items");
+    assertThat(gainers).hasSize(5).allSatisfy(i -> {
+      assertThat(new java.math.BigDecimal((String) i.get("changePct"))).isPositive();
+      assertThat((String) i.get("type")).isIn("COMMON_STOCK", "ADR");
+      assertThat((String) i.get("quality")).isEqualTo("SIMULATED");
+      assertThat((String) i.get("price")).matches("\\d+\\.\\d+");
+    });
+    // the SIM computes the statistics on the first screen, in the background
+    Await.until(java.time.Duration.ofSeconds(60),
+        () -> (Integer) read(jsonQuietly("/api/v1/market/screener?limit=1"), "$.coverage.withMarketCap") > 500,
+        "the SIM's screener statistics");
+    String large = json("/api/v1/market/screener?preset=LARGE_CAPS_UNDER_50&limit=100");
+    List<Map<String, Object>> caps = read(large, "$.items");
+    assertThat(caps).isNotEmpty().allSatisfy(i -> {
+      assertThat(new java.math.BigDecimal((String) i.get("marketCap"))).isGreaterThanOrEqualTo(
+          new java.math.BigDecimal("10000000000"));
+      assertThat(new java.math.BigDecimal((String) i.get("price"))).isLessThanOrEqualTo(java.math.BigDecimal.valueOf(50));
+      assertThat(i.get("sector")).isNotNull();
+      assertThat(i.get("avgVolume")).isNotNull();
+      assertThat((String) i.get("relVolume")).matches("\\d+\\.\\d{2}");
+    });
+    // cursor paging by symbol
+    String p1 = json("/api/v1/market/screener?sort=symbol&limit=10");
+    String cursor = read(p1, "$.nextCursor");
+    assertThat(cursor).isNotBlank();
+    List<String> first = read(p1, "$.items[*].symbol");
+    List<String> second = read(json("/api/v1/market/screener?sort=SYMBOL&limit=10&cursor=" + cursor), "$.items[*].symbol");
+    assertThat(second).hasSize(10);
+    assertThat(second.get(0)).isGreaterThan(first.get(9));
+    // filters
+    List<String> sectors = read(json("/api/v1/market/screener?sectors=information_technology,FINANCIALS&limit=100"),
+        "$.items[*].sector");
+    assertThat(sectors).isNotEmpty().allSatisfy(x -> assertThat(x).isIn("INFORMATION_TECHNOLOGY", "FINANCIALS"));
+    List<String> etfs = read(json("/api/v1/market/screener?types=ETF&limit=100"), "$.items[*].type");
+    assertThat(etfs).isNotEmpty().containsOnly("ETF");
+    assertThat(code("/api/v1/market/screener?minPrice=10&maxPrice=5")).isEqualTo("VALIDATION_FAILED");
+    assertThat(code("/api/v1/market/screener?limit=101")).isEqualTo("VALIDATION_FAILED");
+    assertThat(code("/api/v1/market/screener?cursor=bogus")).isEqualTo("VALIDATION_FAILED");
+    assertThat(code("/api/v1/market/screener?types=OTHER")).isEqualTo("VALIDATION_FAILED");
+    assertThat(code("/api/v1/market/screener?sort=BOGUS")).isEqualTo("VALIDATION_FAILED");
+    assertThat(code("/api/v1/market/screener?minPrice=abc")).isEqualTo("VALIDATION_FAILED");
+  }
+
+  String jsonQuietly(String url) {
+    try {
+      return json(url);
+    } catch (Exception e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
   @Test
   void marketReadScopeIsRequired() throws Exception {
     Fixtures fx = new Fixtures(jdbc, time);
