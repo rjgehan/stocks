@@ -2,6 +2,7 @@ package com.stocks.security;
 
 import com.stocks.common.time.TimeSource;
 import com.stocks.config.StocksProperties;
+import com.stocks.contract.identity.PlayerQueries;
 import com.stocks.contract.security.Scopes;
 import java.util.Locale;
 import java.util.Map;
@@ -19,6 +20,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
@@ -121,8 +123,8 @@ public class SecurityConfig {
 
   @Bean
   ApiKeyAuthenticationProvider apiKeyAuthenticationProvider(JdbcClient jdbc, TimeSource time,
-                                                            StocksProperties properties) {
-    return new ApiKeyAuthenticationProvider(jdbc, time, properties);
+                                                            StocksProperties properties, PlayerQueries players) {
+    return new ApiKeyAuthenticationProvider(jdbc, time, properties, players);
   }
 
   // ----------------------------------------------------------------------------------------------- chains
@@ -173,11 +175,13 @@ public class SecurityConfig {
   @Bean
   @Order(3)
   SecurityFilterChain apiChain(HttpSecurity http, ProblemWriter problems, CookieCsrfTokenRepository csrf,
-                               SecurityContextRepository contexts, ApiKeyAuthenticationProvider apiKeys)
-      throws Exception {
+                               SecurityContextRepository contexts, ApiKeyAuthenticationProvider apiKeys,
+                               RateLimitServiceImpl rateLimits, ActivityRecorder activity) throws Exception {
     SecurityErrors errors = new SecurityErrors(problems, true, PUBLIC_API);
     http.securityMatcher(API_PATHS)
         .addFilterBefore(new BearerTokenFilter(apiKeys, problems), CsrfFilter.class)
+        // §17.5: reads and per-IP limits, charged only for requests that passed authorization
+        .addFilterAfter(new RateLimitFilter(rateLimits, activity, problems), AuthorizationFilter.class)
         .csrf(c -> c.spa().csrfTokenRepository(csrf).ignoringRequestMatchers(BearerTokenFilter.BEARER))
         .authorizeHttpRequests(a -> a
             // public (§17.1 chain 2)

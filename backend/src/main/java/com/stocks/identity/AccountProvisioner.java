@@ -14,10 +14,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * Gives a player their first funded account (run 1) and the default "My List" watchlist, through the WS3/WS4
- * contracts (§17.3 signup, §21.1 admin create, bootstrap admin, dev seed). Idempotent: a player who already has an
- * ACTIVE account is left alone. While those contracts are still Day-0 stubs (501 {@code NOT_IMPLEMENTED}) it does
- * nothing and reports {@link Outcome#PENDING}, so the bootstrap admin and the demo players get their accounts on the
- * first boot after WS3 lands, with no WS1 change.
+ * contracts (§17.3 signup, §21.1 admin create, bootstrap admin, dev seed, and the boot-time backfill of
+ * {@link AccountBackfillRunner}). Idempotent: a player who already has an ACTIVE account is left alone. While those
+ * contracts are still Day-0 stubs (501 {@code NOT_IMPLEMENTED}) it does nothing and reports {@link Outcome#PENDING},
+ * so every player gets their account on the first boot after WS3 lands, with no WS1 change.
  */
 @Component
 public class AccountProvisioner {
@@ -41,7 +41,16 @@ public class AccountProvisioner {
     this.properties = properties;
   }
 
+  /** With the league's default starting cash. */
   public Outcome ensureAccount(long playerId, long actorPlayerId) {
+    return ensureAccount(playerId, actorPlayerId, null);
+  }
+
+  /**
+   * Opens run 1 with {@code startingCashOrNull} (null = {@code league.defaultStartingCash}) unless the player already
+   * has an ACTIVE account, then seeds the default watchlist.
+   */
+  public Outcome ensureAccount(long playerId, long actorPlayerId, BigDecimal startingCashOrNull) {
     try {
       accountQueries.activeAccountId(playerId);
       return Outcome.EXISTS;
@@ -55,7 +64,8 @@ public class AccountProvisioner {
       }
     }
     try {
-      accountService.openInitialAccount(playerId, startingCash(), actorPlayerId);
+      accountService.openInitialAccount(playerId,
+          startingCashOrNull == null ? startingCash() : startingCashOrNull, actorPlayerId);
     } catch (ApiException e) {
       if (e.code() == ErrorCode.NOT_IMPLEMENTED) {
         return Outcome.PENDING;
@@ -74,7 +84,7 @@ public class AccountProvisioner {
   }
 
   /** {@code league.defaultStartingCash}, or {@code stocks.bootstrap.default-starting-cash} until settings exist. */
-  private BigDecimal startingCash() {
+  public BigDecimal startingCash() {
     try {
       return settings.defaultStartingCash();
     } catch (ApiException e) {

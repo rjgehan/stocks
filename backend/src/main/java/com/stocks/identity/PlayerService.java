@@ -9,11 +9,14 @@ import com.stocks.common.id.Prefix;
 import com.stocks.common.id.PublicId;
 import com.stocks.common.jdbc.Jdbc;
 import com.stocks.common.time.TimeSource;
+import com.stocks.common.web.Text;
 import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -33,8 +36,9 @@ import org.springframework.stereotype.Service;
  *       {@code WEAK_PASSWORD}. Hashed with the {@code DelegatingPasswordEncoder} (bcrypt cost 12).</li>
  *   <li>Only a HUMAN can be ADMIN and only humans have a password (DB CHECKs, §17.4); AI players need a human owner.</li>
  * </ul>
- * Phase 0 covers what login, the bootstrap admin and the dev seed need. TODO(WS1, Phase 1): signup, PATCH /me,
- * password change (revokes personal keys, deletes other sessions), admin create/update/freeze, PlayerQueries.
+ * Row-level writes only: the workflows (signup, {@code PATCH /me}, password change, admin create/update/freeze) live
+ * in {@code SignupService}, {@code ProfileService} and {@code admin.AdminPlayerService}, which also handle sessions,
+ * keys, caches and audit.
  */
 @Service
 public class PlayerService {
@@ -107,10 +111,7 @@ public class PlayerService {
     String h = normalizeHandle(handle);
     validateHandle(h);
     validateDisplayName(displayName);
-    if (aiModel == null || aiModel.isBlank() || aiModel.length() > 24) {
-      throw ApiException.validation("aiModel", "1-24 characters, e.g. Claude or ChatGPT");
-    }
-    return insert(h, displayName, PlayerKind.AI, PlayerRole.PLAYER, aiModel.trim(), ownerPlayerId, null);
+    return insert(h, displayName, PlayerKind.AI, PlayerRole.PLAYER, validateAiModel(aiModel), ownerPlayerId, null);
   }
 
   private PlayerRecord insert(String handle, String displayName, PlayerKind kind, PlayerRole role, String aiModel,
@@ -131,7 +132,95 @@ public class PlayerService {
     return byPublicId(id).orElseThrow();
   }
 
+  /** {@code ai_model}: 1–24 characters, control characters stripped (§8.1). */
+  public static String validateAiModel(String aiModel) {
+    String m = aiModel == null ? null : Text.stripControl(aiModel).trim();
+    if (m == null || m.isEmpty() || m.length() > 24) {
+      throw ApiException.validation("aiModel", "1-24 characters, e.g. Claude or ChatGPT");
+    }
+    return m;
+  }
+
+  // ------------------------------------------------------------------------------------------- updates
+
+  public void updateDisplayName(long playerId, String displayName) {
+    validateDisplayName(displayName);
+    jdbc.sql("UPDATE player SET display_name = ?, version = version + 1 WHERE id = ?")
+        .params(displayName, playerId).update();
+  }
+
+  /** Stores the {@code Preferences} JSON (§18.3) as given; the caller builds it. */
+  public void updatePreferences(long playerId, String preferencesJson) {
+    if (preferencesJson == null || preferencesJson.length() > 4000) {
+      throw ApiException.validation("preferences", "Too large");
+    }
+    jdbc.sql("UPDATE player SET preferences = ?, version = version + 1 WHERE id = ?")
+        .params(preferencesJson, playerId).update();
+  }
+
+  /**
+   * Sets a human's password (validated per §17.3) and clears the lockout counters.
+   *
+   * @throws ApiException 422 {@code WEAK_PASSWORD}; 400 {@code VALIDATION_FAILED} for an AI player
+   */
+  public void setPassword(PlayerRecord player, String rawPassword) {
+    if (player.kind() != PlayerKind.HUMAN) {
+      throw ApiException.validation("newPassword", "AI players have no password");
+    }
+    validatePassword(rawPassword);
+    jdbc.sql("""
+            UPDATE player SET password_hash = ?, failed_logins = 0, locked_until = NULL, version = version + 1
+             WHERE id = ?""")
+        .params(passwordEncoder.encode(rawPassword), player.id()).update();
+  }
+
+  public void setStatus(long playerId, PlayerStatus status) {
+    jdbc.sql("UPDATE player SET status = ?, version = version + 1 WHERE id = ?")
+        .params(status.name(), playerId).update();
+  }
+
+  /** Changes the role (the DB CHECK refuses an AI admin; callers check first for a clean error). */
+  public void setRole(long playerId, PlayerRole role) {
+    jdbc.sql("UPDATE player SET role = ?, version = version + 1 WHERE id = ?").params(role.name(), playerId).update();
+  }
+
+  public void setApiTradingAllowed(long playerId, boolean allowed) {
+    jdbc.sql("UPDATE player SET api_trading_allowed = ?, version = version + 1 WHERE id = ?")
+        .params(allowed, playerId).update();
+  }
+
+  public void setAiModel(long playerId, String aiModel) {
+    jdbc.sql("UPDATE player SET ai_model = ?, version = version + 1 WHERE id = ?")
+        .params(validateAiModel(aiModel), playerId).update();
+  }
+
   // ------------------------------------------------------------------------------------------- lookups
+
+  /** Every player, optionally filtered, sorted by handle. */
+  public List<PlayerRecord> list(PlayerKind kindOrNull, PlayerStatus statusOrNull) {
+    StringBuilder sql = new StringBuilder("SELECT " + COLUMNS + " FROM player WHERE 1 = 1");
+    List<Object> params = new ArrayList<>();
+    if (kindOrNull != null) {
+      sql.append(" AND kind = ?");
+      params.add(kindOrNull.name());
+    }
+    if (statusOrNull != null) {
+      sql.append(" AND status = ?");
+      params.add(statusOrNull.name());
+    }
+    sql.append(" ORDER BY handle");
+    return jdbc.sql(sql.toString()).params(params).query(PlayerService::map).list();
+  }
+
+  /**
+   * The player with this handle.
+   *
+   * @throws ApiException 404 {@code PLAYER_NOT_FOUND}
+   */
+  public PlayerRecord requireByHandle(String handle) {
+    return byHandle(handle).orElseThrow(() -> ApiException.of(ErrorCode.PLAYER_NOT_FOUND,
+        "No player with handle '" + Text.clip(String.valueOf(handle), 40) + "'."));
+  }
 
   public Optional<PlayerRecord> byHandle(String handle) {
     return jdbc.sql("SELECT " + COLUMNS + " FROM player WHERE handle = ?").param(normalizeHandle(handle))

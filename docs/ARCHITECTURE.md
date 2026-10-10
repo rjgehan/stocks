@@ -345,17 +345,21 @@ com.stocks
 │   └── stubs/       StubsAutoConfiguration, NoopMarketDataService, NotImplementedStub (JDK-proxy factory),
 │                    ContractStub (marker every Day-0 stub implements) (§27.1)
 ├── jobs/                                               [WS1]  JobScheduler (discovers ScheduledJob/PeriodicTask beans),
-│                                                              JobRunGuard (job_run idempotency), CatchUpRunner, StartupGate
-├── security/                                           [WS1]  SecurityConfig, ApiKeyAuthenticationProvider, BearerTokenFilter,
-│                                                              AdminSessionOnlyFilter, RecentAuthInterceptor, ClientIp,
-│                                                              RateLimitServiceImpl, RateLimitFilter (read buckets only, §17.5),
-│                                                              ApiKeys (format, HMAC), PlayerAuthenticationToken, RouteAuthorization,
-│                                                              SecurityErrors, ProblemWriter, SessionLogin, RequestMetas
-├── identity/                                           [WS1]  PlayerService, PlayerQueriesImpl, ApiKeyService, InviteService,
-│                                                              SettingsServiceImpl (app_setting), BootstrapAdminRunner, DemoSeeder,
-│                                                              LoginService, MeService (MeQueries), AccountProvisioner (first account via WS3/WS4),
+│                                                              JobRunGuard (job_run idempotency), CatchUpRunner, StartupGate,
+│                                                              HousekeepingJob (§25 02:00 ET)
+├── security/                                           [WS1]  SecurityConfig, ApiKeyAuthenticationProvider (key cache), BearerTokenFilter,
+│                                                              AdminSessionOnlyFilter, RecentAuth + RecentAuthInterceptor (SecurityWebConfig),
+│                                                              ClientIp, RateLimitServiceImpl, RateLimitFilter (read and per-IP buckets, §17.5),
+│                                                              ActivityRecorder (last_used_*, last_seen_at), PlayerSessions (delete a
+│                                                              player's Spring Session rows), ApiKeys (format, HMAC), PlayerAuthenticationToken,
+│                                                              RouteAuthorization, SecurityErrors, ProblemWriter, SessionLogin, RequestMetas
+├── identity/                                           [WS1]  PlayerService, PlayerQueriesImpl, ApiKeyService, InviteService, SignupService,
+│                                                              ProfileService (PATCH /me, password), SettingsServiceImpl + SettingKey (app_setting),
+│                                                              BootstrapAdminRunner, DemoSeeder, AccountBackfillRunner, LoginService (+ reauth),
+│                                                              MeService (MeQueries), AccountProvisioner (first account via WS3/WS4),
 │                                                              web/{AuthController, MeController, MyApiKeyController}
-├── admin/                                              [WS1]  AdminPlayerService, web/{AdminPlayerController,
+├── admin/                                              [WS1]  AdminPlayerService, AdminPlayerViews, AdminMoneyService, SystemStatusService,
+│                                                              IdempotencyFastPath (§17.6 step 1), AdminText, web/{AdminPlayerController,
 │                                                              AdminMoneyController, AdminKeyController, AdminSettingsController,
 │                                                              AdminInviteController, AdminAuditController, AdminSystemController,
 │                                                              AdminCalendarController, AdminCorporateActionController,
@@ -1881,6 +1885,11 @@ Player status (`player.status`, API keys, sessions) belongs to WS1. Account stat
 
 What a frozen or disabled bot sees is fixed by the authentication outcome order in §7.2: `403 PLAYER_FROZEN` / `PLAYER_DISABLED`, or `401 API_KEY_REVOKED` if its keys were revoked.
 
+**Implementation notes** (`admin.AdminPlayerService`, WS1):
+- Step 1 commits (status, sessions, optional key revocation), then the status and key caches are evicted, then `PlayerStatusChanged` is published, then step 2 runs. If step 2 fails (for example `ENGINE_BUSY`) the error goes back to the admin with step 1 already in force; every action is idempotent, so the admin simply retries. Step 2 is skipped (logged) while WS3 is a Day-0 stub or when the player has no account yet.
+- An admin cannot freeze, disable, re-enable or change the role of themselves (`FORBIDDEN`), so the last admin can never lock themselves out. A DISABLED player must be re-enabled before being frozen (`VALIDATION_FAILED`). `PATCH status` accepts ACTIVE and DISABLED only; `apiTradingAllowed` applies to humans only (`VALIDATION_FAILED` for an AI player). The freeze reason is 1–80 characters (it lands in `account.restriction_reason VARCHAR(80)`).
+- Dropping `trade` (`apiTradingAllowed: false`) rewrites the scopes of the player's live keys; a key left with no scope is revoked.
+
 ## 11. Orders
 
 ### 11.1 Phase 1 order matrix (CONTRACT)
@@ -2766,7 +2775,8 @@ Phase 2 adds a chain before chain 1 (`/oauth2/**`, `/.well-known/**`, the Author
 
 - **Format.** `stk_<keyId>_<secret>`. `keyId` is 12 characters of lowercase base32 (`[a-z2-7]`). `secret` is 43 characters of base64url (32 random bytes from `SecureRandom`). Parsing is by fixed position: the 4-character prefix `stk_`, then 12 characters, then `_`, then the rest. Do not split on `_`.
 - **Storage.** `secret_hmac` = hex HMAC-SHA256(`API_KEY_PEPPER`, secret), compared in constant time; the HMAC key is the UTF-8 bytes of the `API_KEY_PEPPER` string (`security.ApiKeys`). The plaintext is shown **once** at creation. With no pepper configured, no key can be issued or verified (the dev profile has a non-secret default; prod fails fast, §23.2).
-- **Cache.** Caffeine `keyId → (secret_hmac, playerId, scopes, expiresAt, revokedAt)` for 60 s. Revoking evicts the entry immediately. `last_used_at` and `last_used_ip` are written asynchronously at most once per minute. (Phase 0 skeleton: one indexed `api_key ⨝ player` lookup per request, no cache and no `last_used_*` writer yet.)
+- **Cache.** Caffeine `keyId → (secret_hmac, playerId, scopes, expiresAt, revokedAt)` for 60 s (`stocks.security.api-key-cache-ttl`). Revoking, a scope change and a role change evict the entry immediately (`identity.ApiKeyService`, `admin.AdminPlayerService`); the owner's status comes from `PlayerQueries.status`, whose own 60 s cache (`stocks.security.player-status-cache-ttl`) is evicted synchronously by every status change. `last_used_at` and `last_used_ip` (and `player.last_seen_at`, for every authenticated request) are written asynchronously at most once per minute (`security.ActivityRecorder`). The `test` profile sets both TTLs to 0, because its fixtures change rows behind the services' back.
+- **Personal-key limits** [D]: a name of 1–64 letters, digits, space and `_ . : ( ) -`; at most 20 live keys per player.
 - **Scopes.** Any subset of `market:read account:read trade league:read`. A bot key issued by the admin gets all four. **There is no admin scope.**
 - **Personal keys (humans).** Created from `/settings/api-keys` with a session and **`@RecentAuth`**. They are **read-only by default** (`market:read account:read league:read`); the `trade` scope is allowed only when the admin has set `player.api_trading_allowed` (`PATCH /admin/players/{handle}`), otherwise `FORBIDDEN_SCOPE`. All of a human's personal keys are **revoked on a password change** and on an admin password reset. Public trades placed through any key are labeled "via API", and leaderboard rows flag `apiTrader` (§16.5).
 - **Player status.** Checked on every request after the key itself (outcome order in §7.2): a valid key belonging to a FROZEN or DISABLED player gets 403 `PLAYER_FROZEN` or `PLAYER_DISABLED`. The status comes from a cache that `AdminPlayerService` evicts synchronously (before it publishes `PlayerStatusChanged`), so a freeze takes effect on the very next request.
@@ -2778,8 +2788,10 @@ Phase 2 adds a chain before chain 1 (`/oauth2/**`, `/.well-known/**`, the Author
 - **Sessions.** Spring Session JDBC, so sessions survive restarts. Timeout 14 days.
 - **Cookie.** `__Host-stocks_sid`: Secure, HttpOnly, SameSite=Lax, Path=/. In dev it is `stocks_sid` without Secure. Spring Session's `CookieSerializer` is built explicitly from `server.servlet.session.cookie.*` (`SecurityConfig`), so MockMvc tests see the same cookie as the real server.
 - **CSRF.** `CookieCsrfTokenRepository.withHttpOnlyFalse()` (cookie `XSRF-TOKEN`) with header `X-XSRF-TOKEN` on unsafe methods, using `csrf.spa()`.
-- **Signup.** Invite-only: `POST /auth/signup {inviteCode, handle, displayName, password}` creates the HUMAN player, calls `AccountService.openInitialAccount` with the default starting cash, and calls `WatchlistService.seedDefault` ("My List" with 5 popular tickers).
-- **Password change.** `POST /me/password` and the admin's `POST /admin/players/{handle}/password` rotate the session id, delete the player's other sessions and revoke the player's personal API keys.
+- **Signup.** Invite-only: `POST /auth/signup {inviteCode, handle, displayName, password}` creates the HUMAN player, calls `AccountService.openInitialAccount` with the default starting cash, and calls `WatchlistService.seedDefault` ("My List" with 5 popular tickers). Implementation (`identity.SignupService`): the invite is checked first (`INVITE_INVALID` before any handle check, so nobody without an invite can probe handles); then handle, display name and password; then **one transaction** redeems one invite slot with a conditional `UPDATE` and inserts the player (a taken handle rolls the slot back); after commit the account and watchlist are opened through `AccountProvisioner`, the new player is logged in (session id, fresh `XSRF-TOKEN`) and the answer is 201 `Me`. If the engine refuses at that moment the player still exists: `AccountBackfillRunner` opens the first account of every non-disabled player without one at the next boot, and a human's next login retries it too.
+- **Invites** [D]. A random 20-character code of lowercase base32 (`[a-z2-7]`, 100 bits); only its SHA-256 is stored (`invite.code_hash`). The link is `<APP_PUBLIC_URL>/join/<code>` (the SPA route of §22.2); codes are matched case-insensitively.
+- **Password change.** `POST /me/password` and the admin's `POST /admin/players/{handle}/password` rotate the session id, delete the player's other sessions and revoke the player's personal API keys. The current password is checked with the login lockout bookkeeping (`BAD_CREDENTIALS`, `LOGIN_LOCKED`); the new one must differ (`WEAK_PASSWORD`). Sessions are deleted by `PRINCIPAL_NAME` (`security.PlayerSessions`), keeping the caller's own session row (matched by its id before rotation).
+- **Re-authentication.** `POST /auth/reauth {password}` (session only) re-checks the password (same lockout bookkeeping) and stores the principal again with a fresh `authenticatedAt` and the current role, without rotating the session id or the CSRF token. `@RecentAuth` (`security.RecentAuthInterceptor`, before the body is read) then accepts the session for `stocks.security.recent-auth` (15 min).
 
 ### 17.4 Bots can never act as admin (five layers)
 
@@ -2800,10 +2812,11 @@ Phase 2 adds a chain before chain 1 (`/oauth2/**`, `/.well-known/**`, the Author
 | STOMP | 5 sessions per player, 60 quote/tick subscriptions per session | n/a |
 
 - **Who charges which bucket.** `RateLimitFilter` charges the read and heavy-read buckets. The order-write bucket is charged **only** by `OrderGate` (§11.2), once per write and after the idempotency fast path, so an idempotent replay is free and a preview never costs a write token.
+- **Implementation (WS1, Phase 1).** `RateLimitFilter` sits in chain 2 after authorization, so only requests that would be served are charged. Heavy reads are `GET /bars/**`, `/account/history`, `/leaderboard`, `/players/{handle}` and `/players/{handle}/history|trades`; every other request of an authenticated player is one read, except the order writes (`POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close`), which only `OrderGate` charges. Every `/mcp` call counts as one read (order tools additionally go through `OrderGate`). Web sessions and API keys/MCP have separate read buckets, each shared by all of a player's sessions or keys. The write buckets (20/min, 300/day) are one pair per player for every channel; `consumeWrite` takes a token from both and gives the minute token back when the day bucket refuses. Buckets refill greedily on `TimeSource` time, so the fixed test clock never refills one. `whoami.rateLimits` reports the API-key read bucket and the write buckets.
 - Before authentication, limits are per IP: login 10/min, signup 5/hour, everything else 300/min.
-- Responses carry `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`. Exceeding a limit returns **429 `RATE_LIMITED`** with `Retry-After`; MCP tools return `retry_after_s`.
+- Responses carry `X-RateLimit-Limit` (the bucket's rate per period), `X-RateLimit-Remaining` and `X-RateLimit-Reset` (seconds until the bucket is full again). Exceeding a limit returns **429 `RATE_LIMITED`** with `Retry-After` (seconds until one token is back) and the same value in `retryAfterS`; MCP tools return `retry_after_s`.
 - Admin endpoints are not rate limited beyond the session requirement.
-- Values come from `stocks.ratelimit.*` (§23.1).
+- Values come from `stocks.ratelimit.*` (§23.1). `stocks.ratelimit.enabled=false` switches the read and per-IP buckets off (an operations kill switch; the write buckets stay). The `test` profile lifts every limit to 100,000 (the fixed clock never refills and every MockMvc request comes from 127.0.0.1); `RateLimitIT` tightens them again to test the limiter.
 
 ### 17.6 Idempotency for non-order writes
 
@@ -2821,6 +2834,8 @@ The key travels **into the engine command** (`IdempotencyRef(scope, key, request
 | Same key, different body | 409 `IDEMPOTENCY_KEY_CONFLICT` |
 
 The §26 concurrency test (50 threads with one `Idempotency-Key` give exactly one batch; the same for resets) exercises step 2.
+
+**Who computes what** (WS1 ↔ WS3). The caller (WS1's `admin.AdminMoneyService`, `admin.AdminPlayerService`; WS3's self-reset) builds `IdempotencyRef.requestHash` as lowercase hex SHA-256 over the request's canonical parts joined by `\n` (`common.web.IdempotencyKeys.requestHash`): for a cash transfer the scope, target scope, handle, sorted kinds, type, amount without trailing zeros (`"100"` and `"100.00"` hash alike), `treatAs`, memo and both booleans; for an admin reset the scope, the player's public id, the starting cash and the memo. Step 1 (the request-thread fast path) is WS1's `admin.IdempotencyFastPath`: a live `idempotency_record` with the same hash is answered with its stored status and body plus `Idempotent-Replay: true`; another hash is 409. The engine command (WS3) does steps 2–4 and stores the response it returns, as JSON of the method's return type (`TransferBatchResultDto`, `AccountDto`), so the fast path can replay it.
 
 ### 17.7 Audit (`AuditService`, `audit_log`)
 
@@ -3374,23 +3389,23 @@ Phase 2 adds an `agent_run` table and an admin UI over the same runner.
 | `POST /players/{handle}/password` | R | `{newPassword}` → 204 (humans; deletes their sessions and revokes their personal keys) | `WEAK_PASSWORD` |
 | `POST /players/{handle}/reset` + `Idempotency-Key` | R | `{startingCash?: Dec, memo}` → `Account` (new run) | `IDEMPOTENCY_KEY_CONFLICT` |
 | `GET /players/{handle}/api-keys` | | → `ApiKeyInfo[]` | |
-| `POST /players/{handle}/api-keys` | R | `{name, scopes?: string[] (default all 4), expiresInDays?}` → 201 `ApiKeyCreated` | |
+| `POST /players/{handle}/api-keys` | R | `{name, scopes?: string[] (default all 4 for an AI player; for a human the read scopes, plus `trade` if `apiTradingAllowed`), expiresInDays?}` → 201 `ApiKeyCreated` | `FORBIDDEN_SCOPE` (`trade` for a human without `apiTradingAllowed`) |
 | `DELETE /api-keys/{keyId}` | | → 204 (immediate; cache evicted) | `NOT_FOUND` |
 | `POST /cash-transfers/preview` | | `CashTransferRequest` → `CashTransferPreview` (no writes) | `VALIDATION_FAILED` |
 | `POST /cash-transfers` + `Idempotency-Key` | R | `CashTransferRequest` → 201 `TransferBatchResult` (422 with results if `allOrNothing` and anything skipped) | `INSUFFICIENT_WITHDRAWABLE`, `MARKS_DEGRADED` (§21.2), `IDEMPOTENCY_KEY_CONFLICT` |
 | `GET /cash-transfers?handle&batchId&from&to&cursor&limit` | | → `Page<TransferRow>` | |
 | `GET /settings` | | → `Settings` | |
-| `PUT /settings` | R | `Partial<Settings>` → `Settings` | `SETTING_INVALID` |
+| `PUT /settings` (also `PATCH`) | R | `Partial<Settings>` → `Settings` (every value validated first, then all written in one transaction) | `SETTING_INVALID` |
 | `POST /invites` | | `{maxUses: 1..50, expiresInHours: 1..720}` → 201 `{inviteId, code, url, expiresAt}` | |
 | `GET /invites` | | → `{inviteId, uses, maxUses, expiresAt, revokedAt}[]` | |
 | `DELETE /invites/{inviteId}` | | → 204 | |
 | `GET /audit?category&action&actor&from&to&cursor&limit` | | → `Page<AuditRow>` | |
 | `GET /system` | | → `SystemStatus` | |
-| `POST /system/jobs/{jobName}/run` | R | `{runKey?}` (default: the latest past occurrence from the job's `occurrencesBetween`) → 202 | `NOT_FOUND` |
+| `POST /system/jobs/{jobName}/run` | R | `{runKey?}` (default: the latest past occurrence from the job's `occurrencesBetween`) → 202 (runs in the background through `JobRunGuard`; the outcome shows in `GET /system`) | `NOT_FOUND` |
 | `POST /engine/halt` | R | `{reason}` → `SystemStatus` | |
 | `POST /engine/resume` | R | → `SystemStatus` (runs invariants first) | |
 | `DELETE /orders/{orderId}` | R | → `Order` (any player's open order; `CancelReason.ADMIN`, visible to the player in the order timeline) | `ORDER_NOT_FOUND`, `ORDER_NOT_CANCELLABLE` |
-| `GET /calendar/overrides?from&to` | | → `CalendarOverride[]` (WS2 `CalendarAdmin`) | |
+| `GET /calendar/overrides?from&to` | | → `CalendarOverride[]` (WS2 `CalendarAdmin`; default today − 30 days to one year later, at most 400 days) | `VALIDATION_FAILED` |
 | `POST /calendar/overrides` | R | `{date, closed, rthCloseAt?, postCloseAt?, reason}` → 201 `CalendarOverride` | `VALIDATION_FAILED` |
 | `DELETE /calendar/overrides/{date}` | R | → 204 | `NOT_FOUND` |
 | `GET /corporate-actions?status&cursor&limit` | | → `Page<CorporateAction>` (WS3 `CorporateActionQueries`) | |

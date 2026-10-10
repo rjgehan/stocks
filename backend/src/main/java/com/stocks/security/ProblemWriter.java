@@ -36,11 +36,19 @@ public final class ProblemWriter {
   /** Writes the problem unless the response is already committed; {@code wwwAuthenticate} may be null. */
   public void write(HttpServletRequest request, HttpServletResponse response, ErrorCode code, String detail,
                     String wwwAuthenticate) throws IOException {
+    write(request, response, code, detail, wwwAuthenticate, null);
+  }
+
+  /**
+   * Same, with {@code retryAfterS} in the body and the {@code Retry-After} header (429, §6.5) when not null.
+   */
+  public void write(HttpServletRequest request, HttpServletResponse response, ErrorCode code, String detail,
+                    String wwwAuthenticate, Long retryAfterS) throws IOException {
     if (response.isCommitted()) {
       return;
     }
     String requestId = RequestIds.of(request);
-    Problem problem = Problem.of(code, code.status(), detail, null, List.of(), null, requestId);
+    Problem problem = Problem.of(code, code.status(), detail, null, List.of(), retryAfterS, requestId);
     response.resetBuffer();
     response.setStatus(code.status());
     response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
@@ -50,6 +58,9 @@ public final class ProblemWriter {
     }
     if (wwwAuthenticate != null) {
       response.setHeader(HttpHeaders.WWW_AUTHENTICATE, wwwAuthenticate);
+    }
+    if (retryAfterS != null) {
+      response.setHeader(HttpHeaders.RETRY_AFTER, Long.toString(retryAfterS));
     }
     response.getOutputStream().write(jsonMapper.writeValueAsBytes(problem));
     response.flushBuffer();

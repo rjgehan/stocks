@@ -65,6 +65,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -161,6 +162,7 @@ class McpServerIT {
     }
 
     @Bean
+    @Primary // WS1's real RateLimitServiceImpl exists too; this double pins the whoami numbers
     RateLimitService testRateLimits() {
       return new RateLimitService() {
         @Override

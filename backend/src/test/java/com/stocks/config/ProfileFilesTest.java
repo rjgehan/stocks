@@ -3,6 +3,7 @@ package com.stocks.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.stocks.testkit.TestProperties;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
@@ -74,5 +75,23 @@ class ProfileFilesTest {
     assertThat(test.getProperty("stocks.single-instance.enabled")).isEqualTo("false");
     assertThat(test.getProperty("stocks.marketdata.sim.clock")).isEqualTo("fixed");
     assertThat(test.getProperty("stocks.marketdata.sim.seed")).isEqualTo("42"); // merged, not replaced
+  }
+
+  @Test
+  void rateLimitAndCacheDefaultsAreTheSpecValues() throws Exception {
+    StocksProperties defaults = TestProperties.stocks();   // @DefaultValue
+    StandardEnvironment yml = load("application.yml");      // application.yml
+    assertThat(defaults.ratelimit().writesPerMin()).isEqualTo(20);
+    assertThat(defaults.ratelimit().writesPerDay()).isEqualTo(300);
+    assertThat(defaults.ratelimit().keyReadsPerMin()).isEqualTo(120);
+    assertThat(defaults.ratelimit().keyReadsBurst()).isEqualTo(30);
+    assertThat(defaults.ratelimit().loginPerMinIp()).isEqualTo(10);
+    assertThat(defaults.ratelimit().signupPerHourIp()).isEqualTo(5);
+    assertThat(defaults.security().apiKeyCacheTtl()).hasSeconds(60);
+    assertThat(yml.getProperty("stocks.ratelimit.writes-per-min")).isEqualTo("20");
+    assertThat(yml.getProperty("stocks.ratelimit.anon-per-min-ip")).isEqualTo("300");
+    assertThat(yml.getProperty("stocks.security.api-key-cache-ttl")).isEqualTo("60s");
+    StandardEnvironment test = load("application.yml", "application-test.yml");
+    assertThat(test.getProperty("stocks.security.api-key-cache-ttl")).isEqualTo("0s");
   }
 }

@@ -43,6 +43,17 @@ public class SessionLogin {
     rotateCsrf(request, response);
   }
 
+  /**
+   * Replaces the principal of the current session without rotating anything (§17.1 {@code POST /auth/reauth}: a new
+   * {@code authenticatedAt}). The session id and the CSRF token stay, so the SPA's in-flight requests keep working.
+   */
+  public void refresh(PlayerPrincipal principal, HttpServletRequest request, HttpServletResponse response) {
+    SecurityContext context = contexts.createEmptyContext();
+    context.setAuthentication(new PlayerAuthenticationToken(principal));
+    contexts.setContext(context);
+    contextRepository.saveContext(context, request, response);
+  }
+
   /** Ends the session, if any, and clears the request's security context. */
   public void end(HttpServletRequest request, HttpServletResponse response) {
     contexts.clearContext();
