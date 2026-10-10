@@ -1,0 +1,6 @@
+# §15.7 scenario: a $0.50 cash dividend of SIMD (§14), ex-date then payable date.
+type: cash-dividend
+symbols: [SIMD]
+exDate: 2026-10-14
+payableDate: 2026-10-28
+cash: 0.50

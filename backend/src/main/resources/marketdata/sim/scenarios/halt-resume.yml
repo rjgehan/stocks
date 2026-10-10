@@ -1,0 +1,6 @@
+# §15.7 scenario: a trading halt (StatusEvent halted=true); quotes and prints freeze, no fills (§12.6).
+# Every trading day 11:00-11:10 ET on SIMH (add `date: 2026-10-09` to run it once).
+type: halt-resume
+symbols: [SIMH]
+time: "11:00"
+duration: PT10M

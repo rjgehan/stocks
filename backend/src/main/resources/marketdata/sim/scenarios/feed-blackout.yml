@@ -1,0 +1,5 @@
+# §15.7 scenario: the feed goes silent (no updates, no confirmations), so the symbol turns STALE (§15.9).
+type: feed-blackout
+symbols: [SIMB]
+time: "13:00"
+duration: PT5M
