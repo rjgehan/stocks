@@ -69,6 +69,7 @@ import type {
   Warning,
 } from '../types'
 import { MOCK_INDEX_SYMBOLS, MOCK_INVITE_CODE, MOCK_ME_BASE, MOCK_PLAYERS, POPULAR_SYMBOLS } from './data'
+import { registerAlertsAndPush } from './alerts'
 import { MockMarket, hashString, mulberry32, unitsToDec } from './market'
 import { mockRules } from './rules'
 import { type Lot, type MockOtherPlayer, type MockState, clearState, loadState, saveState } from './state'
@@ -185,6 +186,8 @@ export class MockServer {
   private csrfToken: string | null = null
   private s: MockState
   private readonly routes: Array<[string, RegExp, Handler]> = []
+  /** Phase 2 price alerts and Web Push settings (mock/alerts.ts). */
+  private p2: ReturnType<typeof registerAlertsAndPush> | null = null
 
   constructor(market = new MockMarket()) {
     this.market = market
@@ -505,13 +508,15 @@ export class MockServer {
 
   /** Symbols with a working order: the fake market keeps stepping them so stops and limits work off screen. */
   workingSymbols(): string[] {
-    return [...new Set(this.s.orders.filter((o) => o.status === 'WORKING' && o.symbol).map((o) => o.symbol!))]
+    const orders = this.s.orders.filter((o) => o.status === 'WORKING' && o.symbol).map((o) => o.symbol!)
+    return [...new Set([...orders, ...(this.p2?.symbols() ?? [])])]
   }
 
   /** Called by the fake realtime driver on each market step. */
   onMarketStep(symbol: string): void {
     this.evaluateStops(symbol)
     this.sweepRestingLimits(symbol)
+    this.p2?.evaluate(symbol)
   }
 
   // ================================================================ HTTP
@@ -556,6 +561,14 @@ export class MockServer {
 
   private registerRoutes(): void {
     const r = this.route.bind(this)
+    this.p2 = registerAlertsAndPush(r, {
+      quote: (symbol) => this.market.quote(symbol),
+      known: (symbol) => this.market.has(symbol),
+      notify: (kind, title, body, payload) => {
+        this.notify(kind, title, body, payload)
+        this.persist()
+      },
+    })
     // identity
     r('POST', '/auth/logout', () => {
       this.audit('AUTH', 'LOGOUT', 'OK', this.s.me.handle, null, null)

@@ -1,5 +1,6 @@
 import { useMe } from '@/lib/api/hooks/identity'
 import { useSessionTopic, useUserEvents } from '@/lib/realtime/useUserEvents'
+import { PwaRuntime } from '@/features/pwa/PwaRuntime'
 import { DesktopShell } from './DesktopShell'
 import { MobileShell } from './MobileShell'
 import { ReauthDialog } from './ReauthDialog'
@@ -15,6 +16,7 @@ export function AppShell() {
     <>
       {bp === 'phone' ? <MobileShell /> : <DesktopShell breakpoint={bp} />}
       <ReauthDialog />
+      <PwaRuntime />
     </>
   )
 }

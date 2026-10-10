@@ -75,6 +75,17 @@ export type ResolveCorporateActionRequest = S['ResolveCorporateActionRequest']
 // rules (bots and the ticket read the order matrix from here, §18.3 Rules)
 export type Rules = S['Rules']
 export type OrderMatrixRow = S['OrderMatrixRow']
+// Phase 2: price alerts and Web Push (§19.1, §19.2)
+export type Alert = S['Alert']
+export type CreateAlertRequest = S['CreateAlertRequest']
+export type UpdateAlertRequest = S['UpdateAlertRequest']
+export type AlertCondition = NN<Alert['condition']>
+export type AlertStatus = NN<Alert['status']>
+export type PushSettings = S['PushSettings']
+export type PushPreferences = S['PushPreferences']
+export type PushDevice = S['PushDevice']
+export type PushSync = S['PushSync']
+export type PushTestResult = S['PushTestResult']
 /** Planned (`planned.d.ts`): `Activity.detail` of a dividend entitlement. */
 export type DividendDetail = S['DividendDetail']
 

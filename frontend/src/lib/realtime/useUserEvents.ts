@@ -101,7 +101,11 @@ export function useUserEvents(isAdmin: boolean): void {
       hub.subscribe('/user/queue/notifications', (body) => {
         const n = body as Notification
         pushNotification(qc, n)
-        if (n.kind && TOAST_KINDS.has(n.kind)) {
+        if (n.kind === 'PRICE_ALERT') {
+          // Phase 2 (§19.1, §22.10): a price alert fired (or was paused by a split): toast it, refresh the alert list
+          toast({ tone: 'neutral', title: n.title ?? 'Price alert', body: n.body ?? undefined })
+          void qc.invalidateQueries({ queryKey: queryKeys.alerts })
+        } else if (n.kind && TOAST_KINDS.has(n.kind)) {
           toast({ tone: n.kind === 'WITHDRAWAL' ? 'neutral' : n.kind === 'DEPOSIT' ? 'up' : 'warn', title: n.title ?? 'Notification', body: n.body ?? undefined })
           void qc.invalidateQueries({ queryKey: ['activities'] })
           void qc.invalidateQueries({ queryKey: queryKeys.account })
@@ -116,6 +120,7 @@ export function useUserEvents(isAdmin: boolean): void {
         void qc.invalidateQueries({ queryKey: queryKeys.orders('OPEN') })
         void qc.invalidateQueries({ queryKey: ['leaderboard'] })
         void qc.invalidateQueries({ queryKey: queryKeys.notifications })
+        void qc.invalidateQueries({ queryKey: queryKeys.alerts })
       }),
     ]
     if (isAdmin) {

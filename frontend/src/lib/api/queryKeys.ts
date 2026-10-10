@@ -32,4 +32,7 @@ export const queryKeys = {
   apiKeys: ['apiKeys'] as const,
   admin: (...rest: unknown[]) => ['admin', ...rest] as const,
   orderPreview: (request: unknown) => ['orderPreview', request] as const,
+  // Phase 2 (§19.1, §19.2)
+  alerts: ['alerts'] as const,
+  push: ['push'] as const,
 } as const
