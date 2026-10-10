@@ -117,6 +117,12 @@ test('add and delete a market calendar override', async ({ page }) => {
   await panel.getByLabel('Regular session closes (ET)').fill('13:00')
   await panel.getByLabel('Reason (audited)').fill('e2e early close')
   await panel.getByRole('button', { name: 'Add override' }).click()
+  if (!MOCK) {
+    // The e2e profile runs the always-open SIM calendar (§9.3, §23.2), which refuses overrides (400 on `date`);
+    // the form must show the server's message instead of failing silently.
+    await expect(panel.getByRole('alert')).toContainText(/always-open SIM calendar/)
+    return
+  }
   const row = panel.getByRole('list', { name: 'Overrides' }).getByRole('listitem').filter({ hasText: 'e2e early close' })
   await expect(row).toBeVisible()
   await expect(row).toContainText('Early close 1:00 PM ET')

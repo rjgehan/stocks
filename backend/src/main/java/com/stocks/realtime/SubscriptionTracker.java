@@ -296,6 +296,15 @@ public class SubscriptionTracker {
     return Optional.empty();
   }
 
+  /** The live STOMP session ids of a player (empty when not connected). */
+  public List<String> sessionsOf(long playerId) {
+    Set<String> mine = sessionsByPlayer.get(playerId);
+    if (mine == null) {
+      return List.of();
+    }
+    return mine.stream().filter(sessions::containsKey).toList();
+  }
+
   public boolean isConnected(long playerId) {
     return userOf(playerId).isPresent();
   }

@@ -3276,6 +3276,8 @@ The controller is absent from production by construction (`@Profile("test")`), a
 | `/user/queue/notifications` | `Notification` | After commit |
 | `/user/queue/admin` | `AdminAlertDto` `{level: "INFO"\|"WARN"\|"ERROR", title, body, at}` | Admin only |
 
+User-queue messages go to **every** STOMP session of the player (phone and desktop at once): `UserPush` sends one message per session (`simpSessionId` header), because Spring 7.0's ordered user-destination path (`preserveReceiveOrder`) fails a single message resolved to several sessions.
+
 The named payload records are Java records in `com.stocks.contract.realtime.dto` (`TickDto` in `contract.marketdata.dto`, produced by `QuoteDtoMapper`); see the §18.3 package table.
 
 **Publishers.** WS5 (`realtime`) publishes the quote, tick and bars topics (`QuoteFanout`, a `MarketUpdateListener` with its own 100 ms flush thread), `/topic/market.session` (`MarketSessionTopic`: on `SessionChanged` and every 60 s), the user queues (`UserEventPublisher`, from the §5.3 events after commit, on one serial `realtime-events` thread so a player sees ACCEPTED before FILL) and the periodic account push (`AccountTopic`). **`/topic/leaderboard` and `/topic/feed` are published by WS4** next to the data they describe: `LeaderboardServiceImpl` (`LEADERBOARD_RECOMPUTE`, after a recompute that changed any number) and `FeedService` (`FEED_PUBLISHER`, rows whose `visible_at` passed since the last tick), both through `SimpMessageSendingOperations`. WS5 owns the endpoint, the destination rules and the caps for every topic.

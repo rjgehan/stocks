@@ -117,23 +117,23 @@
 - [ ] **Live verification:** a Claude bot (Claude Code, API key) and a GPT bot (Responses API, API key) each place, inspect and cancel orders on the deployed instance
 
 ### WS6: Frontend
-- [ ] Shells: desktop 3-pane (rail, watchlist, center, ticket, bottom dock), tablet drawer and side sheet, mobile bottom tabs, pushed screens and bottom sheets; safe areas (`viewport-fit=cover`); static manifest, apple-touch-icon and theme-color (installable, no service worker); 44 px targets
-- [ ] TopBar: ⌘K search, session chip with countdown, PAPER and SIM badges, NAV hero, notification bell; data-source footer
-- [ ] Watchlist: lists, Holdings list, streaming rows with flash, % pill cycling, "Add 5 popular" empty state, index strip
-- [ ] Quote page: sticky header with the extended-hours line, key stats, Lightweight Charts (candles/area, ranges 1D–ALL, intervals, volume pane, previous-close line, crosshair), bid/ask bar, my position and my orders
-- [ ] Trade ticket and review sheet (§22.5): Shares/$ toggle, price chips, 25/50/Max, TIF, extended hours, live preview, GFV acknowledgement, note with "Share note publicly", idempotent submit
-- [ ] Account: NAV hero, balances grid (settled/unsettled/withdrawable/BP/holds/net contributions), GFV card, equity curve vs SPY, positions, orders and order detail (timeline, fills, fees, quote used), activity (deposit memos), runs
-- [ ] Markets: index cards and movers tabs, plus news when available
-- [ ] League: period, metric and kind controls, ranked and unranked rows, deposit chips, Arena card, formula popovers, my pinned row, feed view; player profiles
-- [ ] Settings: theme, red-up/green-up, confirmations, defaults, personal API keys, self-reset
-- [ ] Admin: players, player detail (EOD by default, audited break-glass live view), money (preview with mark quality, degraded-marks override, typed-amount confirmation), invites, settings, system (jobs registry, calendar overrides, corporate-action resolve), audit
-- [ ] Generated API client, STOMP hooks, `quoteStore`, mock mode (`VITE_API_MOCK=1`)
-- [ ] Playwright e2e at 390×844, 768×1024 and 1440×900 against profiles `test,e2e`, with the `advanceClock()` helper (§18.5, §26)
+- [x] Shells: desktop 3-pane (rail, watchlist, center, ticket, bottom dock), tablet drawer and side sheet, mobile bottom tabs, pushed screens and bottom sheets; safe areas (`viewport-fit=cover`); static manifest, apple-touch-icon and theme-color (installable, no service worker); 44 px targets
+- [x] TopBar: ⌘K search, session chip with countdown, PAPER and SIM badges, NAV hero, notification bell; data-source footer
+- [x] Watchlist: lists, Holdings list, streaming rows with flash, % pill cycling, "Add 5 popular" empty state, index strip
+- [x] Quote page: sticky header with the extended-hours line, key stats, Lightweight Charts (candles/area, ranges 1D–ALL, intervals, volume pane, previous-close line, crosshair), bid/ask bar, my position and my orders
+- [x] Trade ticket and review sheet (§22.5): Shares/$ toggle, price chips, 25/50/Max, TIF, extended hours, live preview, GFV acknowledgement, note with "Share note publicly", idempotent submit
+- [x] Account: NAV hero, balances grid (settled/unsettled/withdrawable/BP/holds/net contributions), GFV card, equity curve vs SPY, positions, orders and order detail (timeline, fills, fees, quote used), activity (deposit memos), runs
+- [x] Markets: index cards and movers tabs, plus news when available
+- [ ] League: period, metric and kind controls, ranked and unranked rows, deposit chips, Arena card, formula popovers, my pinned row, feed view; player profiles — M1+: controls, ranked/unranked rows, deposit chips, vs SPY, pinned row and profiles done; Arena card and feed view are basic
+- [x] Settings: theme, red-up/green-up, confirmations, defaults, personal API keys, self-reset
+- [ ] Admin: players, player detail (EOD by default, audited break-glass live view), money (preview with mark quality, degraded-marks override, typed-amount confirmation), invites, settings, system (jobs registry, calendar overrides, corporate-action resolve), audit — M1+: everything except the corporate-action resolve UI
+- [x] Generated API client, STOMP hooks, `quoteStore`, mock mode (`VITE_API_MOCK=1`)
+- [x] Playwright e2e at 390×844, 768×1024 and 1440×900 against profiles `test,e2e`, with the `advanceClock()` helper (§18.5, §26)
 
 ### Milestones
 
-- [ ] **M0 Boot (end of week 1):** H2 + SIM boot, login, `/quotes` on SIM, SPA shell on both layouts, MCP `whoami` spike passes
-- [ ] **M1 Trade on SIM (week 2):** MARKET (shares and notional) and LIMIT orders end to end, ledger and positions, account page, ticket with preview, live order events. **Friends can trade on SIM.**
+- [x] **M0 Boot (end of week 1):** H2 + SIM boot, login, `/quotes` on SIM, SPA shell on both layouts, MCP `whoami` spike passes
+- [x] **M1 Trade on SIM (week 2):** MARKET (shares and notional) and LIMIT orders end to end, ledger and positions, account page, ticket with preview, live order events. **Friends can trade on SIM.** Integrated on main as "M1+" (owner-adjusted): also live Alpaca/Finnhub market data, invites and signup, admin players/keys/deposits, watchlists, the deposit-aware leaderboard, STOMP and MCP.
 - [ ] **M2 Live and bots (week 3):** all 5 order types, fees, T+1, GFV; Alpaca live data; charts; MCP tools with API keys; agent runner trading both bots on SIM; admin players, keys and transfers
 - [ ] **M3 League (week 4):** EOD snapshots, TWR and P&L leaderboard, profiles, feed, corporate actions, Finnhub, Markets, Settings
 - [ ] **M4 Ship (week 5):** hardening, e2e green on three viewports, no Day-0 stubs left, deployed to the owner's CasaOS server by `release.yml` (self-hosted runner, health-gated rollback) behind the owner's Cloudflare Tunnel with the §24.5 settings verified from a cloud VM, agent runner live (`DEPLOY_PROFILES=agents`)

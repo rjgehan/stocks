@@ -16,6 +16,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -163,6 +164,30 @@ class StompIT {
   }
 
   @Test
+  void userQueuesReachEverySessionOfTheOwner() throws Exception {
+    // phone + desktop: Spring's ordered user-destination path fails a message resolved to two sessions, so UserPush
+    // sends one message per session
+    Fixtures.PlayerRef alice = fx.human("alice" + SEQ.incrementAndGet());
+    Browser phone = loginAs(alice);
+    Browser desktop = loginAs(alice);
+    Client a = connect(phone, phone.xsrf());
+    Client b = connect(desktop, desktop.xsrf());
+    a.subscribe("/user/queue/orders");
+    b.subscribe("/user/queue/orders");
+    awaitSubscribers("/user/queue/orders", 2);
+    assertThat(tracker.sessionsOf(alice.id())).hasSize(2);
+
+    for (int i = 1; i <= 3; i++) {
+      assertThat(push.toPlayer(alice.id(), "/queue/orders", Map.of("seq", i))).isTrue();
+    }
+    for (Client c : List.of(a, b)) {
+      for (int i = 1; i <= 3; i++) {
+        assertThat(jsonMapper.readTree(c.next("/user/queue/orders")).get("seq").asInt()).isEqualTo(i);
+      }
+    }
+  }
+
+  @Test
   void unknownDestinationsAndTheAdminQueueEndTheConnectionWithAnError() throws Exception {
     Browser alice = login("alice");
     Client c = connect(alice, alice.xsrf());
@@ -203,7 +228,11 @@ class StompIT {
   }
 
   Browser login(String prefix) throws Exception {
-    Fixtures.PlayerRef player = fx.human(prefix + SEQ.incrementAndGet());
+    return loginAs(fx.human(prefix + SEQ.incrementAndGet()));
+  }
+
+  /** A new browser session of {@code player} (a second device of the same player when called twice). */
+  Browser loginAs(Fixtures.PlayerRef player) throws Exception {
     CookieManager cookies = new CookieManager();
     HttpClient http = HttpClient.newBuilder().cookieHandler(cookies).build();
     String base = "http://127.0.0.1:" + port;
