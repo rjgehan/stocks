@@ -53,11 +53,11 @@ public class AdminKeyController {
   @PostMapping("/players/{handle}/api-keys")
   @ResponseStatus(HttpStatus.CREATED)
   @RecentAuth
-  @Operation(summary = "Issue an API key for a player",
-      description = "Recent password check. scopes default to all four for an AI player (the read scopes, plus "
-          + "'trade' if allowed, for a human); expiresInDays 1-365 or omitted. The token and the Claude Code, Claude "
-          + "API, OpenAI Responses and curl snippets are shown once. Errors: PLAYER_NOT_FOUND, VALIDATION_FAILED, "
-          + "FORBIDDEN_SCOPE.")
+  @Operation(summary = "Issue an API key for an AI player",
+      description = "Recent password check. AI players only: a human's keys are personal (Settings > API keys), so "
+          + "the admin never holds a token that reads a friend's live account (§16.7). scopes default to all four; "
+          + "expiresInDays 1-365 or omitted. The token and the Claude Code, Claude API, OpenAI Responses and curl "
+          + "snippets are shown once. Errors: PLAYER_NOT_FOUND, VALIDATION_FAILED, FORBIDDEN (a human).")
   public ApiKeyCreatedDto issue(@PathVariable String handle, @Valid @RequestBody CreateApiKeyRequest body,
                                 HttpServletRequest request) {
     PlayerPrincipal admin = CurrentPlayer.require();

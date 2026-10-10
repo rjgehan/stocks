@@ -178,8 +178,9 @@ public class SecurityConfig {
                                SecurityContextRepository contexts, ApiKeyAuthenticationProvider apiKeys,
                                RateLimitServiceImpl rateLimits, ActivityRecorder activity) throws Exception {
     SecurityErrors errors = new SecurityErrors(problems, true, PUBLIC_API);
+    AuthFailureLimiter failures = new AuthFailureLimiter(rateLimits, problems);
     http.securityMatcher(API_PATHS)
-        .addFilterBefore(new BearerTokenFilter(apiKeys, problems), CsrfFilter.class)
+        .addFilterBefore(new BearerTokenFilter(apiKeys, problems, rateLimits), CsrfFilter.class)
         // §17.5: reads and per-IP limits, charged only for requests that passed authorization
         .addFilterAfter(new RateLimitFilter(rateLimits, activity, problems), AuthorizationFilter.class)
         .csrf(c -> c.spa().csrfTokenRepository(csrf).ignoringRequestMatchers(BearerTokenFilter.BEARER))
@@ -220,6 +221,12 @@ public class SecurityConfig {
             // Each MCP tool's scope is checked per call by McpToolHandler (McpToolCatalog.SCOPES, §20.3).
             .anyRequest().authenticated());
     common(http, errors, contexts, true);
+    // §17.5: an anonymous 401 (an unknown or expired session cookie, no credentials) costs the IP's anonymous budget
+    http.exceptionHandling(e -> e.authenticationEntryPoint((request, response, ex) -> {
+      if (!failures.charge(request, response)) {
+        errors.commence(request, response, ex);
+      }
+    }));
     return http.build();
   }
 

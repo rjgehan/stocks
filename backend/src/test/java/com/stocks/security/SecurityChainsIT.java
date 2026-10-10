@@ -194,6 +194,70 @@ class SecurityChainsIT {
         .param(p.handle()).query(Long.class).single()).isEqualTo(11);
   }
 
+  /**
+   * Review regression (§17.3): 10 wrong passwords from a stranger's IP used to lock the account itself, so the owner
+   * (the admin) could not re-authenticate for @RecentAuth actions, including the freeze kill switch. The lockout is
+   * now per (handle, IP) for anonymous login and never applies to re-authentication from a session.
+   */
+  @Test
+  void aStrangersFailedLoginsLockOnlyTheirOwnIpAndNeverTheOwnersReauth() {
+    Fixtures.PlayerRef p = fx.human(handle("victim"));
+    WebSession owner = WebSession.login(mvc, p.handle(), Fixtures.PASSWORD);
+    WebSession attacker = WebSession.anonymous(mvc);
+    for (int i = 1; i < 10; i++) {
+      assertThat(code(loginFrom(attacker, "203.0.113.9", p.handle(), "wrong-password"))).isEqualTo("BAD_CREDENTIALS");
+    }
+    assertThat(code(loginFrom(attacker, "203.0.113.9", p.handle(), "wrong-password"))).isEqualTo("LOGIN_LOCKED");
+    assertThat(code(loginFrom(attacker, "203.0.113.9", p.handle(), Fixtures.PASSWORD))).isEqualTo("LOGIN_LOCKED");
+
+    MvcResult reauth = owner.perform(post("/api/v1/auth/reauth").contentType(MediaType.APPLICATION_JSON)
+        .content("{\"password\":\"" + Fixtures.PASSWORD + "\"}"));
+    assertThat(reauth.getResponse().getStatus()).as(WebSession.contentOf(reauth)).isEqualTo(204);
+    assertThat(WebSession.anonymous(mvc).login(p.handle(), Fixtures.PASSWORD).getResponse().getStatus())
+        .as("the owner's own IP is not locked").isEqualTo(200);
+  }
+
+  /** Unknown handles lock exactly like real ones, so the lockout does not reveal which handles exist. */
+  @Test
+  void unknownHandlesLockLikeRealOnes() {
+    WebSession s = WebSession.anonymous(mvc);
+    String nobody = handle("nobody");
+    for (int i = 1; i < 10; i++) {
+      assertThat(code(loginFrom(s, "198.51.100.7", nobody, "wrong-password"))).isEqualTo("BAD_CREDENTIALS");
+    }
+    MvcResult tenth = loginFrom(s, "198.51.100.7", nobody, "wrong-password");
+    assertThat(tenth.getResponse().getStatus()).isEqualTo(429);
+    assertThat(code(tenth)).isEqualTo("LOGIN_LOCKED");
+  }
+
+  /** The per-handle ceiling (100 failures from anywhere within the window) still bounds distributed guessing. */
+  @Test
+  void aHandleGuessedFromManyIpsLocksForEveryone() {
+    Fixtures.PlayerRef p = fx.human(handle("spray"));
+    WebSession s = WebSession.anonymous(mvc);
+    int max = properties.security().loginMaxFailuresPerHandle();
+    int perIp = properties.security().loginMaxFailures() - 1;   // stay under the per-IP lock
+    for (int n = 0, ip = 1; n < max; ip++) {
+      for (int i = 0; i < perIp && n < max; i++, n++) {
+        loginFrom(s, "192.0.2." + ip, p.handle(), "wrong-password");
+      }
+    }
+    assertThat(code(loginFrom(s, "192.0.2.250", p.handle(), Fixtures.PASSWORD))).isEqualTo("LOGIN_LOCKED");
+    time.advance(Duration.ofMinutes(15).plusSeconds(1));
+    assertThat(loginFrom(s, "192.0.2.250", p.handle(), Fixtures.PASSWORD).getResponse().getStatus()).isEqualTo(200);
+  }
+
+  private static MvcResult loginFrom(WebSession s, String ip, String handle, String password) {
+    if (s.xsrf() == null) {
+      s.perform(get("/api/v1/auth/csrf"));
+    }
+    return s.perform(post("/api/v1/auth/login").with(r -> {
+      r.setRemoteAddr(ip);
+      return r;
+    }).contentType(MediaType.APPLICATION_JSON)
+        .content("{\"handle\":\"" + handle + "\",\"password\":\"" + password + "\"}"));
+  }
+
   @Test
   void disabledHumansCannotLogInButFrozenOnesCan() {
     Fixtures.PlayerRef disabled = fx.human(handle("gone"));

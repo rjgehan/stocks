@@ -40,6 +40,7 @@ import com.stocks.contract.trading.dto.OrderDto;
 import com.stocks.contract.trading.dto.PositionDto;
 import com.stocks.identity.AccountProvisioner;
 import com.stocks.identity.ApiKeyService;
+import com.stocks.identity.LoginThrottle;
 import com.stocks.identity.PlayerQueriesImpl;
 import com.stocks.identity.PlayerRecord;
 import com.stocks.identity.PlayerService;
@@ -48,7 +49,6 @@ import com.stocks.security.ApiKeyAuthenticationProvider;
 import com.stocks.security.PlayerSessions;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -91,12 +91,14 @@ public class AdminPlayerService {
   private final ApplicationEventPublisher events;
   private final TransactionTemplate tx;
   private final TimeSource time;
+  private final LoginThrottle loginThrottle;
 
   public AdminPlayerService(PlayerService players, PlayerQueriesImpl playerQueries, AdminPlayerViews views,
                             ApiKeyService apiKeys, ApiKeyAuthenticationProvider keyCache, PlayerSessions sessions,
                             AccountProvisioner accounts, AccountService accountService, AccountQueries accountQueries,
                             OrderQueries orderQueries, IdempotencyFastPath idempotency, AuditService audit,
-                            ApplicationEventPublisher events, TransactionTemplate tx, TimeSource time) {
+                            ApplicationEventPublisher events, TransactionTemplate tx, TimeSource time,
+                            LoginThrottle loginThrottle) {
     this.players = players;
     this.playerQueries = playerQueries;
     this.views = views;
@@ -112,6 +114,7 @@ public class AdminPlayerService {
     this.events = events;
     this.tx = tx;
     this.time = time;
+    this.loginThrottle = loginThrottle;
   }
 
   // ------------------------------------------------------------------------------------------- create
@@ -348,6 +351,7 @@ public class AdminPlayerService {
       }
       revoked[0] = apiKeys.revokeAll(p.id(), admin.playerId());
     });
+    loginThrottle.reset(p.handle());   // a fresh password starts with no login lockout (§17.3)
     audit.record(AuditEntry.of(AuditCategory.ADMIN, "PLAYER_PASSWORD_RESET", AuditOutcome.OK).withActor(admin)
         .withMeta(meta).withTarget("player", p.publicId()).withDetail("handle", p.handle())
         .withDetail("keysRevoked", revoked[0]));
@@ -404,23 +408,24 @@ public class AdminPlayerService {
 
   // ------------------------------------------------------------------------------------------- keys
 
-  /** {@code POST /admin/players/{handle}/api-keys}: all four scopes by default for a bot (§17.2). */
+  /**
+   * {@code POST /admin/players/{handle}/api-keys}: AI players only, all four scopes by default (§17.2). A human's keys
+   * are personal: the admin, who is also a competitor, must not hold a token that reads a friend's live positions and
+   * orders outside the audited break-glass view (§16.7 item 3), so a human creates their own keys in Settings and
+   * the admin only toggles {@code apiTradingAllowed}.
+   */
   public ApiKeyCreatedDto issueKey(String handle, CreateApiKeyRequest req, PlayerPrincipal admin, RequestMeta meta) {
     PlayerRecord p = players.requireByHandle(handle);
+    if (p.kind() != PlayerKind.AI) {
+      audit.record(AuditEntry.of(AuditCategory.KEY, "KEY_ISSUE", AuditOutcome.DENIED).withActor(admin).withMeta(meta)
+          .withTarget("player", p.publicId()).withDetail("handle", p.handle()).withDetail("code", "FORBIDDEN"));
+      throw ApiException.of(ErrorCode.FORBIDDEN, "API keys of a human are personal; the admin issues keys for AI "
+              + "players only.")
+          .withHint("The player creates their own key in Settings → API keys (PATCH apiTradingAllowed to let it "
+              + "trade).");
+    }
     Set<String> defaults = Scopes.ALL;
-    if (p.kind() == PlayerKind.HUMAN) {
-      Set<String> human = new LinkedHashSet<>(Scopes.READ_ONLY);
-      if (p.apiTradingAllowed()) {
-        human.add(Scopes.TRADE);
-      }
-      defaults = Set.copyOf(human);
-    }
     Set<String> scopes = ApiKeyService.parseScopes(req.scopes(), defaults);
-    if (p.kind() == PlayerKind.HUMAN && scopes.contains(Scopes.TRADE) && !p.apiTradingAllowed()) {
-      throw ApiException.of(ErrorCode.FORBIDDEN_SCOPE, "This human may not trade through API keys.")
-          .withField("scopes", ErrorCode.FORBIDDEN_SCOPE, "'trade' needs apiTradingAllowed")
-          .withHint("PATCH the player with apiTradingAllowed: true first.");
-    }
     ApiKeyService.IssuedKey key = apiKeys.issue(p.id(), req.name(), scopes, apiKeys.expiry(req.expiresInDays()),
         admin.playerId());
     audit.record(AuditEntry.of(AuditCategory.KEY, "KEY_ISSUE", AuditOutcome.OK).withActor(admin).withMeta(meta)

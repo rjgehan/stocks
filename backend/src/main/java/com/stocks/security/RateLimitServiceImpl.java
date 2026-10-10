@@ -134,15 +134,35 @@ public class RateLimitServiceImpl implements RateLimitService {
 
   /** Charges one request of an unauthenticated caller from {@code ip}. */
   public Decision consumeIp(String ip, IpClass ipClass) {
-    String key = "ip:" + ipClass + ":" + (ip == null ? "?" : ip);
-    long rate = switch (ipClass) {
+    long rate = ipRate(ipClass);
+    return consume(ipBucket(ip, ipClass), rate, rate);
+  }
+
+  /** Whether {@code ip} has budget left in {@code ipClass}, without charging it. */
+  public Decision peekIp(String ip, IpClass ipClass) {
+    long rate = ipRate(ipClass);
+    Bucket bucket = ipBucket(ip, ipClass);
+    long reset = ceilSeconds(nanosUntilFull(bucket, rate));
+    long available = bucket.getAvailableTokens();
+    if (available > 0) {
+      return new Decision(true, rate, available, reset, 0);
+    }
+    long wait = bucket.estimateAbilityToConsume(1).getNanosToWaitForRefill();
+    return new Decision(false, rate, 0, reset, Math.max(1, ceilSeconds(wait)));
+  }
+
+  private long ipRate(IpClass ipClass) {
+    return switch (ipClass) {
       case LOGIN -> limits.loginPerMinIp();
       case SIGNUP -> limits.signupPerHourIp();
       case ANONYMOUS -> limits.anonPerMinIp();
     };
+  }
+
+  private Bucket ipBucket(String ip, IpClass ipClass) {
+    long rate = ipRate(ipClass);
     Duration period = ipClass == IpClass.SIGNUP ? Duration.ofHours(1) : Duration.ofMinutes(1);
-    Bucket bucket = buckets.get(key, k -> bucket(rate, rate, period));
-    return consume(bucket, rate, rate);
+    return buckets.get("ip:" + ipClass + ":" + (ip == null ? "?" : ip), k -> bucket(rate, rate, period));
   }
 
   // ------------------------------------------------------------------------------------------- internals

@@ -192,4 +192,86 @@ class RateLimitIT {
     }
     assertThat(perform(from(get("/api/v1/auth/csrf"), ip)).getResponse().getStatus()).isEqualTo(429);
   }
+
+  // ------------------------------------------------------------------------------------------- review regressions
+
+  /** Requests are classified on the decoded path: an encoded {@code /auth/logi%6E} is still a login (10/min). */
+  @Test
+  void anEncodedLoginPathPaysTheLoginBucket() throws Exception {
+    String ip = ip();
+    String body = "{\"handle\":\"nobody_here\",\"password\":\"whatever-password\"}";
+    for (int i = 0; i < 2; i++) {
+      MvcResult r = perform(csrf(post(java.net.URI.create("/api/v1/auth/logi%6E")), ip)
+          .contentType(MediaType.APPLICATION_JSON).content(body));
+      assertThat(r.getResponse().getStatus()).as(WebSession.contentOf(r)).isEqualTo(401);
+      assertThat(r.getResponse().getHeader(RateLimitFilter.LIMIT)).isEqualTo("2");
+    }
+    MvcResult limited = perform(csrf(post(java.net.URI.create("/api/v1/auth/logi%6E")), ip)
+        .contentType(MediaType.APPLICATION_JSON).content(body));
+    assertThat(code(limited)).isEqualTo("RATE_LIMITED");
+  }
+
+  /** A signed-in caller's login attempts are per IP too, not charged to the session's much larger read bucket. */
+  @Test
+  void aSignedInCallerStillPaysTheLoginBucket() throws Exception {
+    String ip = ip();
+    Fixtures.PlayerRef p = fx.human("signedin" + SEQ.incrementAndGet());
+    WebSession s = WebSession.anonymous(mvc);
+    s.perform(from(get("/api/v1/auth/csrf"), ip));
+    MvcResult in = s.perform(from(post("/api/v1/auth/login"), ip).contentType(MediaType.APPLICATION_JSON)
+        .content("{\"handle\":\"" + p.handle() + "\",\"password\":\"" + Fixtures.PASSWORD + "\"}"));
+    assertThat(in.getResponse().getStatus()).isEqualTo(200);
+    String guess = "{\"handle\":\"someone_else\",\"password\":\"guess-guess-1\"}";
+    MvcResult first = s.perform(from(post("/api/v1/auth/login"), ip).contentType(MediaType.APPLICATION_JSON)
+        .content(guess));
+    assertThat(first.getResponse().getStatus()).isEqualTo(401);
+    assertThat(first.getResponse().getHeader(RateLimitFilter.LIMIT)).isEqualTo("2");
+    MvcResult second = s.perform(from(post("/api/v1/auth/login"), ip).contentType(MediaType.APPLICATION_JSON)
+        .content(guess));
+    assertThat(code(second)).isEqualTo("RATE_LIMITED");
+  }
+
+  /** Bad API keys cost the IP's anonymous budget; once it is gone, keys are refused before any lookup. */
+  @Test
+  void badApiKeysAreChargedToTheCallerIp() throws Exception {
+    String ip = ip();
+    for (int i = 0; i < 4; i++) {
+      MvcResult r = perform(from(get("/api/v1/me"), ip).header("Authorization", "Bearer stk_aaaaaaaaaaaa_"
+          + "x".repeat(40) + i));
+      assertThat(r.getResponse().getStatus()).isEqualTo(401);
+    }
+    MvcResult refused = perform(from(get("/api/v1/me"), ip).header("Authorization", "Bearer stk_aaaaaaaaaaaa_"
+        + "y".repeat(40)));
+    assertThat(refused.getResponse().getStatus()).isEqualTo(429);
+    assertThat(code(refused)).isEqualTo("RATE_LIMITED");
+    // a valid key from another IP is unaffected
+    Fixtures.PlayerRef p = fx.human("goodkey" + SEQ.incrementAndGet());
+    String key = fx.apiKey(p, properties.security().apiKeyPepper());
+    assertThat(perform(from(get("/api/v1/me"), ip()).header("Authorization", "Bearer " + key)).getResponse()
+        .getStatus()).isEqualTo(200);
+  }
+
+  /** Anonymous 401s (no or an expired session) are charged to the IP as well. */
+  @Test
+  void anonymousUnauthorizedRequestsAreCharged() throws Exception {
+    String ip = ip();
+    for (int i = 0; i < 4; i++) {
+      assertThat(perform(from(get("/api/v1/account"), ip)).getResponse().getStatus()).isEqualTo(401);
+    }
+    assertThat(code(perform(from(get("/api/v1/account"), ip)))).isEqualTo("RATE_LIMITED");
+  }
+
+  /** An encoded heavy path ({@code /le%61derboard}) is still a heavy read. */
+  @Test
+  void anEncodedHeavyPathIsStillHeavy() throws Exception {
+    Fixtures.PlayerRef p = fx.human("encheavy" + SEQ.incrementAndGet());
+    String key = fx.apiKey(p, properties.security().apiKeyPepper());
+    for (int i = 0; i < 2; i++) {
+      MvcResult r = perform(get(java.net.URI.create("/api/v1/le%61derboard")).header("Authorization", "Bearer " + key));
+      assertThat(r.getResponse().getStatus()).as(WebSession.contentOf(r)).isNotEqualTo(429);
+      assertThat(r.getResponse().getHeader(RateLimitFilter.LIMIT)).isEqualTo("2");
+    }
+    assertThat(perform(get(java.net.URI.create("/api/v1/le%61derboard")).header("Authorization", "Bearer " + key))
+        .getResponse().getStatus()).isEqualTo(429);
+  }
 }

@@ -71,11 +71,11 @@ public class ProfileService {
    * Changes the password and revokes every personal API key of the player.
    *
    * @return the number of keys revoked
-   * @throws ApiException 401 {@code BAD_CREDENTIALS}, 429 {@code LOGIN_LOCKED}, 422 {@code WEAK_PASSWORD}
+   * @throws ApiException 401 {@code BAD_CREDENTIALS}, 422 {@code WEAK_PASSWORD}
    */
   public int changePassword(PlayerPrincipal who, String currentPassword, String newPassword, RequestMeta meta) {
     PlayerRecord p = require(who);
-    logins.checkPassword(p, currentPassword, "PASSWORD_CHANGE_FAIL", meta);
+    logins.verifySessionPassword(p, currentPassword, "PASSWORD_CHANGE_FAIL", meta);
     PlayerService.validatePassword(newPassword);
     if (newPassword.equals(currentPassword)) {
       throw ApiException.of(ErrorCode.WEAK_PASSWORD, "The new password must differ from the current one.")

@@ -50,8 +50,11 @@ public record StocksProperties(
       /* API_KEY_PEPPER: 32+ random bytes, base64; prod fails fast when shorter (§23.2). The HMAC key is the UTF-8
          bytes of this string (§17.2). Blank = API keys can be neither issued nor verified. */
       String apiKeyPepper,
+      /* §17.3: consecutive failed logins per (handle, client IP) before that pair is locked. */
       @DefaultValue("10") int loginMaxFailures,
       @DefaultValue("15m") Duration loginLockout,
+      /* §17.3: failed logins per handle, from any IP, within one lockout window before the handle is locked. */
+      @DefaultValue("100") int loginMaxFailuresPerHandle,
       @DefaultValue("15m") Duration recentAuth,
       /* Extra STOMP origins besides public-url; dev adds http://localhost:5173. */
       @DefaultValue List<String> extraWsOrigins,

@@ -415,13 +415,25 @@ class AdminPlayersIT extends ContractMocksWebTest {
         .isEqualTo("API_KEY_REVOKED");
     assertThat(status(root.perform(delete("/api/v1/admin/api-keys/nonexistent12")))).isEqualTo(404);
 
+  }
+
+  /**
+   * Review regression (§16.7 item 3, §21.1): the admin used to be able to mint a read key for a human and read their
+   * live positions and orders with it, with no break-glass event, audit or notification. Keys of humans are personal
+   * now; the admin issues keys for AI players only.
+   */
+  @Test
+  void theAdminCannotIssueKeysForHumans() throws Exception {
     Fixtures.PlayerRef human = fx.human(handle("plain"));
-    MvcResult humanKey = send(root, post("/api/v1/admin/players/" + human.handle() + "/api-keys"),
-        "{\"name\":\"script\"}");
-    List<String> scopes = json(humanKey, "$.key.scopes");
-    assertThat(scopes).doesNotContain("trade");
-    assertThat(code(send(root, post("/api/v1/admin/players/" + human.handle() + "/api-keys"),
-        "{\"name\":\"script\",\"scopes\":[\"trade\"]}"))).isEqualTo("FORBIDDEN_SCOPE");
+    for (String body : List.of("{\"name\":\"script\"}", "{\"name\":\"script\",\"scopes\":[\"account:read\"]}")) {
+      MvcResult humanKey = send(root, post("/api/v1/admin/players/" + human.handle() + "/api-keys"), body);
+      assertThat(status(humanKey)).as(body(humanKey)).isEqualTo(403);
+      assertThat(code(humanKey)).isEqualTo("FORBIDDEN");
+    }
+    assertThat(jdbc.sql("SELECT COUNT(*) FROM api_key WHERE player_id = ?").param(human.id()).query(Long.class)
+        .single()).isZero();
+    assertThat(jdbc.sql("SELECT COUNT(*) FROM audit_log WHERE action = 'KEY_ISSUE' AND outcome = 'DENIED'"
+        + " AND target_id = ?").param(human.publicId()).query(Long.class).single()).isEqualTo(2);
   }
 
   @Test

@@ -13,6 +13,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UrlPathHelper;
 
 /**
  * Chain 2's read limiter (§17.5), placed after authorization so only requests that would be served are charged:
@@ -23,9 +24,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *       {@code PATCH}/{@code DELETE /orders…}, position close) are <b>not</b> charged here: {@code OrderGate} charges
  *       the write bucket once per write, after its idempotency fast path, so replays stay free. Every {@code /mcp}
  *       call counts as one read; order tools additionally go through {@code OrderGate}.</li>
- *   <li>an anonymous caller, per client IP: {@code POST /auth/login} 10/min, {@code POST /auth/signup} 5/hour,
- *       anything else 300/min.</li>
+ *   <li>{@code POST /auth/login} 10/min and {@code POST /auth/signup} 5/hour per client IP, <b>whether or not the
+ *       caller is signed in</b>;</li>
+ *   <li>any other anonymous request, per client IP: 300/min. Failed authentications (a bad API key, an anonymous
+ *       401) are charged to the same bucket by {@link AuthFailureLimiter}.</li>
  * </ul>
+ * Requests are classified on the decoded, normalized path ({@link #path}), the one Security and MVC route by.
  * Every charged response carries {@code X-RateLimit-Limit} (the bucket's rate per period), {@code X-RateLimit-Remaining}
  * and {@code X-RateLimit-Reset} (seconds until the bucket is full again). Over the limit: 429 {@code RATE_LIMITED} with
  * {@code Retry-After} and {@code retryAfterS}. The admin chain is never limited (§17.5). Not a Spring bean.
@@ -66,7 +70,11 @@ public final class RateLimitFilter extends OncePerRequestFilter {
     }
     String path = path(request);
     RateLimitServiceImpl.Decision decision;
-    if (principal != null) {
+    RateLimitServiceImpl.IpClass credentials = credentialClass(request.getMethod(), path);
+    if (credentials != null) {
+      // login and signup are always per IP, signed in or not: a session must not buy 60x the login budget
+      decision = limits.consumeIp(ClientIp.resolve(request), credentials);
+    } else if (principal != null) {
       if (isOrderWrite(request.getMethod(), path)) {
         chain.doFilter(request, response);
         return;
@@ -75,13 +83,7 @@ public final class RateLimitFilter extends OncePerRequestFilter {
           && HEAVY.matcher(path).matches() ? RateLimitServiceImpl.ReadClass.HEAVY : RateLimitServiceImpl.ReadClass.READ;
       decision = limits.consumeRead(principal.playerId(), principal.authMethod() != AuthMethod.SESSION, readClass);
     } else {
-      RateLimitServiceImpl.IpClass ipClass = RateLimitServiceImpl.IpClass.ANONYMOUS;
-      if (HttpMethod.POST.matches(request.getMethod()) && "/api/v1/auth/login".equals(path)) {
-        ipClass = RateLimitServiceImpl.IpClass.LOGIN;
-      } else if (HttpMethod.POST.matches(request.getMethod()) && "/api/v1/auth/signup".equals(path)) {
-        ipClass = RateLimitServiceImpl.IpClass.SIGNUP;
-      }
-      decision = limits.consumeIp(ClientIp.resolve(request), ipClass);
+      decision = limits.consumeIp(ClientIp.resolve(request), RateLimitServiceImpl.IpClass.ANONYMOUS);
     }
     response.setHeader(LIMIT, Long.toString(decision.limit()));
     response.setHeader(REMAINING, Long.toString(decision.remaining()));
@@ -107,12 +109,24 @@ public final class RateLimitFilter extends OncePerRequestFilter {
     return HttpMethod.PATCH.matches(method) || HttpMethod.DELETE.matches(method);
   }
 
-  private static String path(HttpServletRequest request) {
-    String uri = request.getRequestURI();
-    String context = request.getContextPath();
-    if (context != null && !context.isEmpty() && uri.startsWith(context)) {
-      uri = uri.substring(context.length());
+  /** {@code POST /auth/login} → LOGIN, {@code POST /auth/signup} → SIGNUP, else null. */
+  static RateLimitServiceImpl.IpClass credentialClass(String method, String path) {
+    if (!HttpMethod.POST.matches(method)) {
+      return null;
     }
-    return uri;
+    return switch (path) {
+      case "/api/v1/auth/login" -> RateLimitServiceImpl.IpClass.LOGIN;
+      case "/api/v1/auth/signup" -> RateLimitServiceImpl.IpClass.SIGNUP;
+      default -> null;
+    };
+  }
+
+  /**
+   * The path the request is routed by: percent-decoded, without {@code ;} parameters and with {@code //} collapsed,
+   * within the application (as Spring Security and MVC match it). Classifying the raw URI let
+   * {@code /api/v1/auth/logi%6E} log in on the 300/min anonymous budget instead of login's 10/min.
+   */
+  static String path(HttpServletRequest request) {
+    return UrlPathHelper.defaultInstance.getPathWithinApplication(request);
   }
 }

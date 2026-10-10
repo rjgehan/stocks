@@ -10,6 +10,7 @@ import com.stocks.identity.LoginService;
 import com.stocks.identity.PlayerService;
 import com.stocks.identity.ProfileService;
 import com.stocks.security.PlayerSessions;
+import com.stocks.security.SessionPasswordGuard;
 import com.stocks.security.RequestMetas;
 import com.stocks.security.SessionLogin;
 import io.swagger.v3.oas.annotations.Operation;
@@ -42,15 +43,17 @@ public class MeController {
   private final LoginService logins;
   private final SessionLogin sessionLogin;
   private final PlayerSessions sessions;
+  private final SessionPasswordGuard passwordGuard;
 
   public MeController(MeQueries meQueries, ProfileService profiles, PlayerService players, LoginService logins,
-                      SessionLogin sessionLogin, PlayerSessions sessions) {
+                      SessionLogin sessionLogin, PlayerSessions sessions, SessionPasswordGuard passwordGuard) {
     this.meQueries = meQueries;
     this.profiles = profiles;
     this.players = players;
     this.logins = logins;
     this.sessionLogin = sessionLogin;
     this.sessions = sessions;
+    this.passwordGuard = passwordGuard;
   }
 
   @GetMapping("/me")
@@ -75,11 +78,12 @@ public class MeController {
   @Operation(summary = "Change my password",
       description = "Session only. Verifies the current password, sets the new one (at least 10 characters), "
           + "rotates this session's id, ends every other session and revokes all of my API keys (§17.3). Errors: "
-          + "BAD_CREDENTIALS, LOGIN_LOCKED, WEAK_PASSWORD.")
+          + "BAD_CREDENTIALS, WEAK_PASSWORD; 5 wrong current passwords end this session (UNAUTHENTICATED).")
   public void changePassword(@Valid @RequestBody ChangePasswordRequest body, HttpServletRequest request,
                              HttpServletResponse response) {
     PlayerPrincipal who = CurrentPlayer.require();
-    profiles.changePassword(who, body.currentPassword(), body.newPassword(), RequestMetas.of(request, who));
+    passwordGuard.check(request, response,
+        () -> profiles.changePassword(who, body.currentPassword(), body.newPassword(), RequestMetas.of(request, who)));
     HttpSession current = request.getSession(false);
     sessions.deleteOthers(who.playerPublicId(), current == null ? null : current.getId());
     PlayerPrincipal refreshed = players.byId(who.playerId()).map(logins::principal).orElse(who);

@@ -16,6 +16,7 @@ import com.stocks.identity.MeService;
 import com.stocks.identity.SignupService;
 import com.stocks.security.RequestMetas;
 import com.stocks.security.SessionLogin;
+import com.stocks.security.SessionPasswordGuard;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -52,15 +53,18 @@ public class AuthController {
   private final MeService meService;
   private final AccountProvisioner accounts;
   private final AuditService audit;
+  private final SessionPasswordGuard passwordGuard;
 
   public AuthController(LoginService loginService, SignupService signupService, SessionLogin sessionLogin,
-                        MeService meService, AccountProvisioner accounts, AuditService audit) {
+                        MeService meService, AccountProvisioner accounts, AuditService audit,
+                        SessionPasswordGuard passwordGuard) {
     this.loginService = loginService;
     this.signupService = signupService;
     this.sessionLogin = sessionLogin;
     this.meService = meService;
     this.accounts = accounts;
     this.audit = audit;
+    this.passwordGuard = passwordGuard;
   }
 
   @GetMapping("/csrf")
@@ -79,7 +83,8 @@ public class AuthController {
   @SecurityRequirements
   @Operation(summary = "Log in with handle and password",
       description = "Humans only. Starts a session (stocks_sid cookie), rotates XSRF-TOKEN and returns Me. Errors: "
-          + "BAD_CREDENTIALS, LOGIN_LOCKED, PLAYER_DISABLED. Limited to 10 attempts per minute per IP.")
+          + "BAD_CREDENTIALS, LOGIN_LOCKED (10 failures of one handle from one IP, or 100 from anywhere, lock it for "
+          + "15 minutes), PLAYER_DISABLED. Limited to 10 attempts per minute per IP.")
   public MeDto login(@Valid @RequestBody LoginRequest body, HttpServletRequest request,
                      HttpServletResponse response) {
     PlayerPrincipal principal = loginService.authenticate(body.handle(), body.password(),
@@ -109,12 +114,13 @@ public class AuthController {
   @Operation(summary = "Confirm the password again",
       description = "Session only. Refreshes the session's authenticatedAt, which @RecentAuth actions (cash "
           + "transfers, resets, freeze, key issuance, role changes, break-glass view) require to be at most 15 "
-          + "minutes old (RECENT_AUTH_REQUIRED otherwise). Errors: BAD_CREDENTIALS, LOGIN_LOCKED.")
+          + "minutes old (RECENT_AUTH_REQUIRED otherwise). Never locked by failed logins from elsewhere; 5 wrong "
+          + "passwords end this session (UNAUTHENTICATED). Errors: BAD_CREDENTIALS, UNAUTHENTICATED.")
   public void reauth(@Valid @RequestBody ReauthRequest body, HttpServletRequest request,
                      HttpServletResponse response) {
     PlayerPrincipal current = CurrentPlayer.require();
-    PlayerPrincipal refreshed = loginService.reauthenticate(current, body.password(),
-        RequestMetas.of(request, current));
+    PlayerPrincipal refreshed = passwordGuard.check(request, response,
+        () -> loginService.reauthenticate(current, body.password(), RequestMetas.of(request, current)));
     sessionLogin.refresh(refreshed, request, response);
   }
 

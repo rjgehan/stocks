@@ -113,8 +113,9 @@ function SettingsForm({ initial }: { initial: Settings }) {
           options={[
             { value: 'EOD_WEIGHTS', label: 'End-of-day weights (default)' },
             { value: 'EOD_FULL', label: 'End-of-day weights and quantities' },
-            { value: 'HIDDEN', label: 'Hidden (also hides equity)' },
+            { value: 'HIDDEN', label: 'Hidden (no holdings)' },
           ]}
+          hint="Hidden removes holdings and the equity figure, but not account size: dollar P&L and deposits stay public, and equity = deposits + all-time P&L."
         />
         <Switch checked={s['social.showDepositsInFeed']} onChange={(v) => set('social.showDepositsInFeed', v)} label="Show deposits in the feed" />
         <Switch checked={s['bots.requireRationale']} onChange={(v) => set('bots.requireRationale', v)} label="Bots must explain each order" description="AI orders without a rationale are rejected (RATIONALE_REQUIRED)." />

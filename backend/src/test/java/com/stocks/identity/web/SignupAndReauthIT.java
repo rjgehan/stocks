@@ -170,6 +170,26 @@ class SignupAndReauthIT extends ContractMocksWebTest {
     assertThat(status(again)).as(body(again)).isEqualTo(201);
   }
 
+  /** §17.3: re-authentication is never locked from outside, but 5 wrong passwords end the session itself. */
+  @Test
+  void fiveWrongReauthPasswordsEndTheSession() {
+    Fixtures.PlayerRef p = fx.human(handle("guess"));
+    WebSession s = WebSession.login(mvc, p.handle(), Fixtures.PASSWORD);
+    for (int i = 1; i < 5; i++) {
+      MvcResult wrong = s.perform(post("/api/v1/auth/reauth").contentType(MediaType.APPLICATION_JSON)
+          .content("{\"password\":\"wrong-password\"}"));
+      assertThat(code(wrong)).isEqualTo("BAD_CREDENTIALS");
+    }
+    MvcResult fifth = s.perform(post("/api/v1/auth/reauth").contentType(MediaType.APPLICATION_JSON)
+        .content("{\"password\":\"wrong-password\"}"));
+    assertThat(status(fifth)).isEqualTo(401);
+    assertThat(code(fifth)).isEqualTo("UNAUTHENTICATED");
+    assertThat(status(s.perform(get("/api/v1/me")))).as("the session ended").isEqualTo(401);
+    // the anonymous login lockout was never touched: the player signs straight back in
+    assertThat(WebSession.anonymous(mvc).login(p.handle(), Fixtures.PASSWORD).getResponse().getStatus())
+        .isEqualTo(200);
+  }
+
   @Test
   void reauthIsSessionOnly() throws Exception {
     Fixtures.PlayerRef p = fx.human(handle("keyreauth"));

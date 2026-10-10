@@ -94,6 +94,8 @@ class McpConfigTest {
     String text = McpConfig.instructions();
     assertThat(text).contains("get_rules", "client_order_id", "rationale", "decimal strings", "untrusted",
         "RATE_LIMITED", "retry_after_s", "ENGINE_TIMEOUT", "preview_order");
+    // §17.8 (review): other players' names are plain fields, so the instructions name them as data too
+    assertThat(text).contains("`handle` and `displayName`");
 
     BeanPostProcessor loader = McpConfig.mcpInstructionsLoader();
     McpServerProperties unset = new McpServerProperties();

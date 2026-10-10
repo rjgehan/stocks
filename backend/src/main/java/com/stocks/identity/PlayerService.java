@@ -13,8 +13,6 @@ import com.stocks.common.web.Text;
 import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -267,30 +265,6 @@ public class PlayerService {
   public void recordLoginSuccess(long playerId) {
     jdbc.sql("UPDATE player SET failed_logins = 0, locked_until = NULL, last_seen_at = ? WHERE id = ?")
         .params(Jdbc.ts(time.now()), playerId).update();
-  }
-
-  /**
-   * Counts a failed password. On the {@code maxFailures}-th consecutive failure the player is locked for
-   * {@code lockout} and the counter restarts (§17.3: 10 failures → 15 minutes).
-   *
-   * @return the lock's end if this failure locked the player, else empty
-   */
-  public Optional<Instant> recordLoginFailure(long playerId, int maxFailures, Duration lockout) {
-    jdbc.sql("UPDATE player SET failed_logins = failed_logins + 1 WHERE id = ?").param(playerId).update();
-    int failures = jdbc.sql("SELECT failed_logins FROM player WHERE id = ?").param(playerId)
-        .query(Integer.class).single();
-    if (failures < maxFailures) {
-      return Optional.empty();
-    }
-    Instant until = time.now().plus(lockout);
-    jdbc.sql("UPDATE player SET failed_logins = 0, locked_until = ? WHERE id = ?")
-        .params(Jdbc.ts(until), playerId).update();
-    return Optional.of(until);
-  }
-
-  /** True while {@code locked_until} is in the future. */
-  public boolean isLocked(PlayerRecord player) {
-    return player.lockedUntil() != null && player.lockedUntil().isAfter(time.now());
   }
 
   static PlayerRecord map(ResultSet rs, int rowNum) throws SQLException {

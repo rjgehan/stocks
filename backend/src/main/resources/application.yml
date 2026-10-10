@@ -59,8 +59,9 @@ stocks:
     seed-demo: false
   security:
     api-key-pepper: ${API_KEY_PEPPER:}
-    login-max-failures: 10
+    login-max-failures: 10            # per (handle, client IP), §17.3
     login-lockout: 15m
+    login-max-failures-per-handle: 100
     recent-auth: 15m
     extra-ws-origins: []                    # dev adds http://localhost:5173
     password-hash-cost: 12                  # bcrypt cost (§17.3); the test profile lowers it for speed
