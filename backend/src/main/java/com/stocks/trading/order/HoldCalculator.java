@@ -19,7 +19,10 @@ import org.springframework.stereotype.Component;
  *   <tr><td>MARKET by shares, entered in REGULAR</td><td>{@code qty × ask × 1.02 + estFees}</td></tr>
  *   <tr><td>MARKET by shares, queued (or no ask)</td><td>{@code qty × ref × 1.15 + estFees}</td></tr>
  *   <tr><td>MARKET notional</td><td>{@code notional} (all-in, D7)</td></tr>
- *   <tr><td>LIMIT</td><td>{@code qty × limit + estFees}</td></tr>
+ *   <tr><td>LIMIT, STOP_LIMIT</td><td>{@code qty × limit + estFees}</td></tr>
+ *   <tr><td>STOP</td><td>{@code qty × max(stop, ref) × 1.02 + estFees}</td></tr>
+ *   <tr><td>TRAILING_STOP</td><td>{@code qty × (ref + trail) × 1.02 + estFees}, trail = the amount or
+ *       {@code ref × pct / 100}</td></tr>
  * </table>
  * A SELL reserves shares instead: {@code reserved_qty = qty}, or for a notional sell
  * {@code min(available, ceil5(notional / ref × 1.05))}. The cushions come from Webull [V].
@@ -40,8 +43,20 @@ public class HoldCalculator {
 
   /** The per-share price a BUY hold is based on, or null when no price is known (check 25). */
   public BigDecimal holdPrice(NormalizedOrder o, boolean queued, BigDecimal ask, BigDecimal ref) {
-    if (o.type() == OrderType.LIMIT) {
+    if (OrderTypes.usesLimit(o.type())) {
       return o.limitPrice();
+    }
+    BigDecimal reference = ref != null && ref.signum() > 0 ? ref : null;
+    if (o.type() == OrderType.STOP) {
+      // §10.3: the stop triggers into a market order, so hold the stop (or the market, if higher) plus the cushion
+      BigDecimal base = reference == null || o.stopPrice().compareTo(reference) >= 0 ? o.stopPrice() : reference;
+      return cushioned(base, rules.holdPctRegular());
+    }
+    if (o.type() == OrderType.TRAILING_STOP) {
+      if (reference == null) {
+        return null;
+      }
+      return cushioned(reference.add(trail(o, reference)), rules.holdPctRegular());
     }
     if (!queued && ask != null && ask.signum() > 0) {
       return ask.multiply(rules.holdPctRegular()).divide(HUNDRED, 8, RoundingMode.HALF_UP);
@@ -50,6 +65,18 @@ public class HoldCalculator {
       return ref.multiply(rules.holdPctQueued()).divide(HUNDRED, 8, RoundingMode.HALF_UP);
     }
     return null;
+  }
+
+  /** A trailing stop's distance in dollars: the amount, or {@code ref × pct / 100} (§10.3, §12.7). */
+  public static BigDecimal trail(NormalizedOrder o, BigDecimal ref) {
+    if (o.trailAmount() != null) {
+      return o.trailAmount();
+    }
+    return ref.multiply(o.trailPercent()).divide(HUNDRED, 8, RoundingMode.HALF_UP);
+  }
+
+  private static BigDecimal cushioned(BigDecimal price, BigDecimal pct) {
+    return price.multiply(pct).divide(HUNDRED, 8, RoundingMode.HALF_UP);
   }
 
   /**

@@ -31,6 +31,7 @@ import com.stocks.trading.order.OrderEvaluation;
 import com.stocks.trading.order.OrderOrigin;
 import com.stocks.trading.order.OrderReplay;
 import com.stocks.trading.order.OrderStateMachine;
+import com.stocks.trading.order.OrderTypes;
 import com.stocks.trading.order.RequestHasher;
 import com.stocks.trading.order.TradingClock;
 import com.stocks.trading.order.mapper.OrderDtoMapper;
@@ -39,6 +40,7 @@ import com.stocks.trading.store.AccountStore;
 import com.stocks.trading.store.OrderRow;
 import com.stocks.trading.store.OrderStore;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Types;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -114,12 +116,15 @@ class OrderHandler {
     BigDecimal qty = o.qty() == null ? null : Qty.normalize(o.qty());
     BigDecimal notional = o.notional() == null ? null : Money.require("notional", o.notional());
     BigDecimal limit = o.limitPrice() == null ? null : Prices.normalize(o.limitPrice());
+    BigDecimal stop = o.stopPrice() == null ? null : Prices.normalize(o.stopPrice());
+    BigDecimal trailAmount = o.trailAmount() == null ? null : Prices.normalize(o.trailAmount());
+    BigDecimal trailPercent = o.trailPercent() == null ? null : o.trailPercent().setScale(4, RoundingMode.UNNECESSARY);
     long id = writer.insert(new OrderWriter.NewOrder(publicId, acc.id(), acc.playerId(), o.clientOrderId(),
         requestHash, o.symbol(), o.side(), o.type(), qty, notional, o.fractional(), limit, o.timeInForce(),
         o.extendedHours(), ev.acceptance().waitReason(), ev.result().reservedCash(), ev.result().reservedQty(),
         ev.expiry().sessionDate(), receivedAt, now, eligibleAt, ev.expiry().expiresAt(),
         replacing == null ? null : replacing.id(), origin.channel(), origin.apiKeyId(), origin.oauthClientId(),
-        origin.mcpClient(), origin.clientIp(), o.rationale(), rationalePublic));
+        origin.mcpClient(), origin.clientIp(), o.rationale(), rationalePublic, stop, trailAmount, trailPercent));
     Map<String, Object> detail = new LinkedHashMap<>();
     detail.put("channel", origin.channel().name());
     detail.put("eligibleAt", eligibleAt.toString());
@@ -139,12 +144,20 @@ class OrderHandler {
         ev.result().buyingPowerAfter(), ev.result().warnings(), false);
   }
 
-  /** After commit: index the order and lease its symbol so market data keeps it fresh (§12.2, §15.5). */
+  /**
+   * After commit: index the order and lease its symbol so market data keeps it fresh (§12.2, §15.5): an armed stop
+   * holds an {@code ORDER_TRIGGER} lease (it needs prints), everything else {@code ORDER_RESTING}.
+   */
   void track(OrderRow row) {
     OpenOrderIndex.Entry e = index.put(row);
+    if (OrderTypes.isStop(row.type()) && e.trigger == null) {
+      e.trigger = TriggerEvaluator.stateFor(row, clock.now());
+    }
     if (e.lease == null) {
+      LeasePriority priority = OrderTypes.isStop(row.type()) && !row.triggered() ? LeasePriority.ORDER_TRIGGER
+          : LeasePriority.ORDER_RESTING;
       try {
-        e.lease = marketData.lease(row.symbol(), LeasePriority.ORDER_RESTING, "order:" + row.publicId());
+        e.lease = marketData.lease(row.symbol(), priority, "order:" + row.publicId());
       } catch (RuntimeException ignored) {
         e.lease = null;   // market data unavailable: evaluation requests refreshes instead
       }
@@ -228,15 +241,23 @@ class OrderHandler {
         response.buyingPowerAfter(), response.warnings(), false);
   }
 
-  /** The new order of a replace: immutable symbol, side and type; null fields keep the old value (§11.6). */
+  /**
+   * The new order of a replace: immutable symbol, side and type; null fields keep the old value (§11.6). A trailing
+   * stop's trail is replaced as a pair (sending one of {@code trailAmount}/{@code trailPercent} drops the other), and
+   * its computed stop is never carried over: the new order starts a fresh watermark (§12.7).
+   */
   static NormalizedOrder replacementOf(OrderRow old, ReplaceOrderRequest req, String clientOrderId) {
     TimeInForce tif = req.timeInForce() != null ? req.timeInForce() : old.timeInForce();
     boolean ext = req.extendedHours() != null ? req.extendedHours() : old.extendedHours();
+    BigDecimal stop = req.stopPrice() != null ? req.stopPrice()
+        : OrderTypes.usesStop(old.type()) ? old.stopPrice() : null;
+    boolean newTrail = req.trailAmount() != null || req.trailPercent() != null;
+    BigDecimal trailAmount = newTrail ? req.trailAmount() : old.trailAmount();
+    BigDecimal trailPercent = newTrail ? req.trailPercent() : old.trailPercent();
     return new NormalizedOrder(clientOrderId, old.symbol(), old.side(), old.type(),
         req.qty() != null ? req.qty() : old.qty(), null,
-        req.limitPrice() != null ? req.limitPrice() : old.limitPrice(), req.stopPrice(), req.trailAmount(),
-        req.trailPercent(), tif, ext, req.rationale() != null ? req.rationale().trim() : old.rationale(),
-        old.rationalePublic(), Set.of());
+        req.limitPrice() != null ? req.limitPrice() : old.limitPrice(), stop, trailAmount, trailPercent, tif, ext,
+        req.rationale() != null ? req.rationale().trim() : old.rationale(), old.rationalePublic(), Set.of());
   }
 
   // ------------------------------------------------------------------------------------------- cancel

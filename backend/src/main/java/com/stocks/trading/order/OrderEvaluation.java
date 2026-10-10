@@ -2,6 +2,9 @@ package com.stocks.trading.order;
 
 import com.stocks.common.domain.PlayerKind;
 import com.stocks.common.domain.Side;
+import com.stocks.common.domain.WaitReason;
+import com.stocks.common.error.ApiException;
+import com.stocks.common.error.ErrorCode;
 import com.stocks.common.money.Money;
 import com.stocks.common.money.Qty;
 import com.stocks.common.time.Et;
@@ -13,6 +16,7 @@ import com.stocks.trading.store.AccountRow;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import org.springframework.stereotype.Component;
 
 /**
@@ -51,8 +55,19 @@ public class OrderEvaluation {
   public Evaluated evaluate(AccountRow acc, PlayerKind kind, NormalizedOrder o, Instant now) {
     OrderValidator.requireShape(o);
     SessionState session = clock.session(now);
-    var acceptance = SessionOrderMatrix.accept(clock.calendar(), o.type(), o.extendedHours(), o.timeInForce(),
-        session, now);
+    SessionOrderMatrix.Acceptance acceptance;
+    ApiException sessionRejection = null;
+    try {
+      acceptance = SessionOrderMatrix.accept(clock.calendar(), o.type(), o.extendedHours(), o.timeInForce(), session,
+          now);
+    } catch (ApiException e) {
+      if (e.code() != ErrorCode.SESSION_NOT_ALLOWED) {
+        throw e;
+      }
+      // a trailing stop outside REGULAR: rejected at check 18, so checks 7–17 still win (§11.2 row order)
+      sessionRejection = e;
+      acceptance = new SessionOrderMatrix.Acceptance(now, WaitReason.LATENCY, false, List.of());
+    }
     var expiry = ExpiryCalculator.compute(clock.calendar(), rules, now, o.extendedHours(), o.timeInForce());
     LocalDate today = Et.date(now);
     var market = context.market(o.symbol(), today);
@@ -64,7 +79,7 @@ public class OrderEvaluation {
       gfvRisk = gfv.predict(acc.id(), o.symbol(), sellQty, snapshot.reservedSellQty(), expiry.sessionDate());
     }
     var result = validator.validate(new OrderValidator.Input(o, kind, settings.botsRequireRationale(), market,
-        snapshot, acceptance, expiry.sessionDate(), gfvRisk, Money.ZERO, now));
+        snapshot, acceptance, expiry.sessionDate(), gfvRisk, Money.ZERO, now, sessionRejection));
     return new Evaluated(acceptance, expiry, result, market);
   }
 }

@@ -23,14 +23,33 @@ import org.springframework.stereotype.Component;
 @Component
 public class OrderWriter {
 
-  /** The columns of a new order. */
+  /**
+   * The columns of a new order. {@code stopPrice} is the client's trigger price (STOP, STOP_LIMIT); a trailing stop
+   * starts without one (§12.7: it is computed from the watermark at activation).
+   */
   public record NewOrder(String publicId, long accountId, long playerId, String clientOrderId, String requestHash,
                          String symbol, Side side, OrderType type, BigDecimal qty, BigDecimal notional,
                          boolean fractional, BigDecimal limitPrice, TimeInForce timeInForce, boolean extendedHours,
                          WaitReason waitReason, BigDecimal reservedCash, BigDecimal reservedQty, LocalDate sessionDate,
                          Instant receivedAt, Instant acceptedAt, Instant eligibleAt, Instant expiresAt,
                          Long replacesOrderId, Channel channel, Long apiKeyId, String oauthClientId, String mcpClient,
-                         String clientIp, String rationale, boolean rationalePublic) {}
+                         String clientIp, String rationale, boolean rationalePublic, BigDecimal stopPrice,
+                         BigDecimal trailAmount, BigDecimal trailPercent) {
+
+    /** A MARKET or LIMIT order (no stop or trail). */
+    public NewOrder(String publicId, long accountId, long playerId, String clientOrderId, String requestHash,
+                    String symbol, Side side, OrderType type, BigDecimal qty, BigDecimal notional, boolean fractional,
+                    BigDecimal limitPrice, TimeInForce timeInForce, boolean extendedHours, WaitReason waitReason,
+                    BigDecimal reservedCash, BigDecimal reservedQty, LocalDate sessionDate, Instant receivedAt,
+                    Instant acceptedAt, Instant eligibleAt, Instant expiresAt, Long replacesOrderId, Channel channel,
+                    Long apiKeyId, String oauthClientId, String mcpClient, String clientIp, String rationale,
+                    boolean rationalePublic) {
+      this(publicId, accountId, playerId, clientOrderId, requestHash, symbol, side, type, qty, notional, fractional,
+          limitPrice, timeInForce, extendedHours, waitReason, reservedCash, reservedQty, sessionDate, receivedAt,
+          acceptedAt, eligibleAt, expiresAt, replacesOrderId, channel, apiKeyId, oauthClientId, mcpClient, clientIp,
+          rationale, rationalePublic, null, null, null);
+    }
+  }
 
   private final JdbcClient jdbc;
 
@@ -47,8 +66,10 @@ public class OrderWriter {
                                      order_type, qty, notional, fractional, limit_price, time_in_force,
                                      extended_hours, status, wait_reason, reserved_cash, reserved_qty, session_date,
                                      received_at, accepted_at, eligible_at, expires_at, replaces_order_id, channel,
-                                     api_key_id, oauth_client_id, mcp_client, client_ip, rationale, rationale_public)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""")
+                                     api_key_id, oauth_client_id, mcp_client, client_ip, rationale, rationale_public,
+                                     stop_price, trail_amount, trail_percent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?)""")
         .params(o.publicId(), o.accountId(), o.playerId(), o.clientOrderId(), o.requestHash(), o.symbol(),
             o.side().name(), o.type().name(), Jdbc.decimalParam(o.qty()), Jdbc.decimalParam(o.notional()),
             o.fractional(), Jdbc.decimalParam(o.limitPrice()), o.timeInForce().name(), o.extendedHours(),
@@ -56,7 +77,8 @@ public class OrderWriter {
             o.sessionDate(), Jdbc.ts(o.receivedAt()), Jdbc.ts(o.acceptedAt()), Jdbc.ts(o.eligibleAt()),
             Jdbc.ts(o.expiresAt()), longParam(o.replacesOrderId()), o.channel().name(), longParam(o.apiKeyId()),
             text(o.oauthClientId()), text(o.mcpClient()), text(o.clientIp()), text(o.rationale()),
-            o.rationalePublic())
+            o.rationalePublic(), Jdbc.decimalParam(o.stopPrice()), Jdbc.decimalParam(o.trailAmount()),
+            Jdbc.decimalParam(o.trailPercent()))
         .update(keys, "id");
     return keys.getKeyAs(Long.class);
   }
@@ -87,6 +109,26 @@ public class OrderWriter {
     EngineThread.assertCurrent();
     jdbc.sql("UPDATE trade_order SET collar_price = ?, version = version + 1 WHERE id = ?")
         .params(collar, orderId).update();
+  }
+
+  /** A trailing stop's watermark and the stop computed from it (§12.7; written at most once per second). */
+  public void setTrailing(long orderId, BigDecimal watermark, BigDecimal stopPrice) {
+    EngineThread.assertCurrent();
+    jdbc.sql("UPDATE trade_order SET watermark_price = ?, stop_price = ?, version = version + 1 WHERE id = ?")
+        .params(Jdbc.decimalParam(watermark), Jdbc.decimalParam(stopPrice), orderId).update();
+  }
+
+  /**
+   * A stop triggered (§12.7): {@code triggered}, {@code triggered_at}, and a fresh latency window after which it works
+   * as a market (STOP, TRAILING_STOP) or limit (STOP_LIMIT) order.
+   */
+  public void trigger(long orderId, Instant at, Instant eligibleAt) {
+    EngineThread.assertCurrent();
+    jdbc.sql("""
+            UPDATE trade_order SET triggered = TRUE, triggered_at = ?, eligible_at = ?, wait_reason = 'LATENCY',
+                   version = version + 1
+             WHERE id = ?""")
+        .params(Jdbc.ts(at), Jdbc.ts(eligibleAt), orderId).update();
   }
 
   /** The limit order now rests (§12.5). */

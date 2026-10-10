@@ -241,9 +241,9 @@ class OrderLifecycleTest extends TradingTestBase {
         false)));
     expect(ErrorCode.RATIONALE_REQUIRED, () -> place(bot, new PlaceOrderRequest(cid(), s, Side.BUY, OrderType.MARKET,
         BigDecimal.ONE, null, null, null, null, null, TimeInForce.DAY, false, null, null, Set.of())));
-    // STOP / STOP_LIMIT / TRAILING_STOP are out of this milestone's scope: rejected, never accepted and stranded
-    expect(ErrorCode.VALIDATION_FAILED, () -> place(p, new PlaceOrderRequest(cid(), s, Side.BUY, OrderType.STOP,
-        BigDecimal.ONE, null, null, new BigDecimal("101.00"), null, null, TimeInForce.DAY, false, "x", null,
+    // a buy stop must sit above the market (StopOrderValidationTest covers every stop path)
+    expect(ErrorCode.STOP_PRICE_WRONG_SIDE, () -> place(p, new PlaceOrderRequest(cid(), s, Side.BUY, OrderType.STOP,
+        BigDecimal.ONE, null, null, new BigDecimal("99.00"), null, null, TimeInForce.DAY, false, "x", null,
         Set.of())));
     assertThat(jdbc.sql("SELECT COUNT(*) FROM trade_order WHERE account_id = ?").param(p.accountId())
         .query(Integer.class).single()).as("synchronous rejections are not persisted (D15)").isZero();

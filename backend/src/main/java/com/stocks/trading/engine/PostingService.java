@@ -4,7 +4,6 @@ import com.stocks.common.domain.CancelReason;
 import com.stocks.common.domain.LedgerEntryType;
 import com.stocks.common.domain.OrderEventType;
 import com.stocks.common.domain.OrderStatus;
-import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.Side;
 import com.stocks.common.events.AccountChanged;
 import com.stocks.common.events.ExecutionCreated;
@@ -28,6 +27,7 @@ import com.stocks.trading.fees.FeeCalculator;
 import com.stocks.trading.fees.Fees;
 import com.stocks.trading.order.HoldCalculator;
 import com.stocks.trading.order.OrderStateMachine;
+import com.stocks.trading.order.OrderTypes;
 import com.stocks.trading.order.TradingClock;
 import com.stocks.trading.store.AccountRow;
 import com.stocks.trading.store.AccountStore;
@@ -251,12 +251,12 @@ public class PostingService {
     return Qty.ZERO;
   }
 
-  /** §10.3: the hold for the remaining quantity on the order's own basis. */
+  /** §10.3: the hold for the remaining quantity on the order's own basis (the limit for LIMIT and STOP_LIMIT). */
   private BigDecimal remainingHold(OrderRow order, BigDecimal remaining, BigDecimal fillPrice, LocalDate tradeDate) {
     if (remaining.signum() <= 0 || order.notional() != null) {
       return Money.ZERO;
     }
-    BigDecimal basis = order.type() == OrderType.LIMIT ? order.limitPrice()
+    BigDecimal basis = OrderTypes.usesLimit(order.type()) ? order.limitPrice()
         : fillPrice.multiply(rules.holdPctRegular()).divide(HUNDRED, 8, RoundingMode.HALF_UP);
     return holds.holdFor(remaining, basis, tradeDate);
   }
