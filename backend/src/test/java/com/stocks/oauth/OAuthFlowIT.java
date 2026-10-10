@@ -165,6 +165,17 @@ class OAuthFlowIT {
 
     assertThat(mvc.perform(get("/.well-known/openid-configuration")).andReturn().getResponse().getStatus())
         .isEqualTo(404);
+
+    // browser-based MCP tools may call the token endpoint cross-origin (no credentials); authorize never answers CORS
+    MvcResult preflight = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+        .options("/oauth2/token").header("Origin", "https://inspector.example")
+        .header("Access-Control-Request-Method", "POST")).andReturn();
+    assertThat(preflight.getResponse().getStatus()).isEqualTo(200);
+    assertThat(preflight.getResponse().getHeader("Access-Control-Allow-Origin")).isEqualTo("*");
+    assertThat(preflight.getResponse().getHeader("Access-Control-Allow-Credentials")).isNull();
+    MvcResult authorize = claude.authorize(OAuthTestClient.attempt(), null, Map.of());
+    assertThat(authorize.getResponse().getHeader("Access-Control-Allow-Origin")).isNull();
+    assertThat(authorize.getResponse().getHeader("Cache-Control")).isEqualTo("no-store");
   }
 
   @Test
