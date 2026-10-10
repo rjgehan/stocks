@@ -157,7 +157,7 @@ public final class StreamConnection {
   void run() {
     long lastWrite = nanos.getAsLong();
     try {
-      while (closing == null) {
+      while (true) {
         String frame;
         try {
           frame = queue.poll(TICK_NANOS, TimeUnit.NANOSECONDS);
@@ -166,13 +166,16 @@ public final class StreamConnection {
           break;
         }
         long now = nanos.getAsLong();
-        if (closing != null) {
-          break;
+        if (closing == StreamByeDto.Reason.SLOW_CONSUMER) {
+          break;                                       // what is queued is dropped; the client resumes by id
         }
         while (frame != null) {
           sink.send(frame);
           lastWrite = now;
           frame = queue.poll();
+        }
+        if (closing != null) {
+          break;
         }
         if (sendDueQuotes(now)) {
           lastWrite = now;

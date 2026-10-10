@@ -305,6 +305,11 @@ public class StreamHub implements SmartLifecycle {
   }
 
   private void closed(StreamConnection c) {
+    try {
+      marketData.releaseOwner(ownerKey(c.id()));
+    } catch (RuntimeException e) {
+      log.debug("SSE lease release {} failed: {}", c.id(), e.toString());
+    }
     synchronized (lock) {
       if (connections.remove(c.id()) == null) {
         return;
@@ -321,11 +326,6 @@ public class StreamHub implements SmartLifecycle {
       if (connections.values().stream().noneMatch(o -> o.playerId() == c.playerId())) {
         lastClosed.put(c.playerId(), time.now());
       }
-    }
-    try {
-      marketData.releaseOwner(ownerKey(c.id()));
-    } catch (RuntimeException e) {
-      log.debug("SSE lease release {} failed: {}", c.id(), e.toString());
     }
   }
 
