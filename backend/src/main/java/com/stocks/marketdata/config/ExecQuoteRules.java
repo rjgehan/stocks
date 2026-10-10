@@ -4,6 +4,7 @@ import com.stocks.common.domain.LiquidityTier;
 import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
+import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
 
@@ -57,11 +58,16 @@ public record ExecQuoteRules(Map<LiquidityTier, Integer> tierSpreadBps, Map<Liqu
     return Map.copyOf(m);
   }
 
+  /** {@code key: { MEGA: 2, MID: 10, SMALL: 50 }}; tier names are matched ignoring case. */
   private static Map<LiquidityTier, Integer> tierMap(Binder b, String key, Map<LiquidityTier, Integer> fallback) {
     Map<LiquidityTier, Integer> m = new EnumMap<>(fallback);
-    for (LiquidityTier t : LiquidityTier.values()) {
-      b.bind(key + "." + t.name(), Integer.class).ifBound(v -> m.put(t, v));
-    }
+    b.bind(key, Bindable.mapOf(String.class, Integer.class)).ifBound(bound -> bound.forEach((k, v) -> {
+      for (LiquidityTier t : LiquidityTier.values()) {
+        if (t.name().equalsIgnoreCase(k.trim())) {
+          m.put(t, v);
+        }
+      }
+    }));
     return Map.copyOf(m);
   }
 }

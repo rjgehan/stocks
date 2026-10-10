@@ -18,7 +18,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Admin calendar overrides (§9.1 source 1, §21.1 {@code /admin/calendar/overrides}): an ad-hoc closure or a shortened
  * session. Saving reloads the calendar and asks the job scheduler to re-plan (so today's "16:20" jobs move), through
- * the {@code onChange} hook wired by {@code CalendarConfiguration}.
+ * the {@code onChange} hook wired by {@code MarketDataAutoConfiguration}. With the in-memory always-open SIM calendar
+ * (dev, e2e) there is nothing to override: listing works, saving answers {@code VALIDATION_FAILED}.
  */
 public class CalendarAdminImpl implements CalendarAdmin {
 
@@ -30,10 +31,11 @@ public class CalendarAdminImpl implements CalendarAdmin {
   private final TimeSource time;
   private final Runnable onChange;
 
-  public CalendarAdminImpl(CalendarRepository repository, DbMarketCalendar calendar, TimeSource time,
+  /** {@code calendarOrNull}: null when the active calendar is not database-backed (always-open SIM). */
+  public CalendarAdminImpl(CalendarRepository repository, DbMarketCalendar calendarOrNull, TimeSource time,
                            Runnable onChange) {
     this.repository = repository;
-    this.calendar = calendar;
+    this.calendar = calendarOrNull;
     this.time = time;
     this.onChange = onChange == null ? () -> { } : onChange;
   }
@@ -51,6 +53,9 @@ public class CalendarAdminImpl implements CalendarAdmin {
                                       Instant postCloseAtOrNull, String reason, long actorPlayerId) {
     if (date == null) {
       throw ApiException.validation("date", "date is required");
+    }
+    if (calendar == null) {
+      throw ApiException.validation("date", "calendar overrides are not available with the always-open SIM calendar");
     }
     String why = reason == null ? "" : reason.strip();
     if (why.isEmpty() || why.length() > MAX_REASON) {
@@ -97,7 +102,9 @@ public class CalendarAdminImpl implements CalendarAdmin {
     if (!repository.deleteOverride(date)) {
       throw ApiException.of(ErrorCode.NOT_FOUND, "No calendar override on " + date + ".");
     }
-    calendar.reload();
+    if (calendar != null) {
+      calendar.reload();
+    }
     log.info("Calendar override on {} deleted by player {}", date, actorPlayerId);
     onChange.run();
   }
