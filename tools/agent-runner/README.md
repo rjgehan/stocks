@@ -32,3 +32,8 @@ override with `STOCKS_E2E_PORT` / `STOCKS_E2E_MANAGEMENT_PORT`, or reuse a runni
 and `STOCKS_E2E_KEYS_FILE`) and drives its real MCP server.
 
 The image (`Dockerfile`) is published by `release.yml` as `ghcr.io/<owner>/stocks:agent-runner-<tag>`.
+
+Dependencies are pinned exactly, each to a release at least 14 days old when pinned. `npm audit` reports
+GHSA-6qxp-vccf-f47h for `@modelcontextprotocol/sdk` < 1.31.0: it concerns the SDK's OAuth client (`authProvider`),
+which the runner does not use (it sends a static `Authorization: Bearer` header). Move to 1.31.0 or later once that
+release is 14 days old (from 2026-10-12).
