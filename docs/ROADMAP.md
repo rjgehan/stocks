@@ -49,7 +49,8 @@
 - [x] `SingleInstanceGuard` (PG advisory lock or H2 lease with dead-PID takeover; throws instead of exiting; disabled in tests), `JobScheduler` (job SPI, registry), `JobRunGuard`, `CatchUpRunner` (catch-up policies), `StartupGate`
 - [x] `TestClockController` (`@Profile("test")`, prod fail-fast) for e2e
 - [x] Security headers, cache headers, SPA fallback, forwarded headers (§24.3)
-- [ ] First real deploy to the owner's CasaOS server through `release.yml` (docs/deploy.md: GHCR access, runner as a systemd service, `/DATA/AppData/stocks/.env`, `DEPLOY_ENABLED`), the Cloudflare Tunnel route to `stocks-app:8080` with WebSockets, a deliberate failed deploy that rolls back, and the runbook kept current as Phase 1 features land (engine halt, invariants, provider 406, restore; "delete `backend/.data/` after the V1 squash")
+- [x] First real deploy to the owner's CasaOS server: `https://stocks.gehan.cloud` runs `ghcr.io/rjgehan/stocks:latest` under **Watchtower** (public package, `/DATA/AppData/stocks/.env`, no host port; the `stocks-cloudflared` sidecar routes the tunnel to `stocks-app:8080` over `stocks-edge`, WebSockets included); production applied V1, V1_0_1, V1_3_01 and V1_4_01, so V1 is never squashed and new migrations are `V2…` (§8 "As deployed", `MigrationOrderTest`); the runbook covers Watchtower deploys and pinning, engine halt/resume and bootstrap halts, invariants and I10 warnings, corporate-action resolve, the agent runner, Alpaca 406 and restore
+- [ ] Optional self-hosted runner path (`release.yml` deploy job: runner as a systemd service, `DEPLOY_ENABLED`, a deliberate failed deploy that rolls back): documented, not exercised. *Needs the owner* (only if health-gated deploys are wanted over Watchtower)
 - [x] OpenAPI rules (§18): BigDecimal as decimal strings, required + nullable record components, wire-value enums, `Dto` suffix stripped
 - [x] `AdminSecurityIT`: every admin route rejects anonymous callers, bot keys, the admin's own key and non-admin sessions
 - [x] Housekeeping job (§25, 02:00 ET); `eventsExecutor` (§5.3) and the engine-event audit listener
@@ -107,14 +108,14 @@
 ### WS5: Agents and realtime
 - [x] STOMP `/ws`: session auth, CSRF on CONNECT (raw cookie token, non-masking `csrfChannelInterceptor`), heartbeats, subscription caps, leases (quote and `bars.{SYM}.1Min` → VIEWING, tick → LIST)
 - [x] `QuoteFanout` as a `MarketUpdateListener` (≤ 4/s and ≤ 1/s), bars topic, session topic, leaderboard signal, feed topic (the leaderboard signal and feed topic are published by WS4's `LeaderboardServiceImpl` and `FeedService`, §19)
-- [x] `UserEventPublisher` (`/user/queue/orders|account|notifications|admin`) and `NotificationService` (sole writer, idempotent by `source_ref`) with `/me/notifications` (`/user/queue/admin` is subscribable by admins; no `AdminAlertDto` source publishes to it yet)
+- [x] `UserEventPublisher` (`/user/queue/orders|account|notifications|admin`) and `NotificationService` (sole writer, idempotent by `source_ref`) with `/me/notifications` (`/user/queue/admin` carries `AdminAlertRaised`, e.g. a corporate action that needs the admin)
 - [x] `RulesService` and `GET /rules` (the bots' source of truth, versioned); the order matrix publishes all five order types since M2
 - [x] MCP server (STATELESS, `/mcp`): `McpConfig` (Boot `JsonMapper` as `mcpServerJsonMapper`, transport override with `contextExtractor`, output schemas with decimal strings); all 38 tools of §20.3 with explicit hints, fixed order, snake_case inputs, the `untrusted` envelope, stable error codes, rate limits, audit; `mcpClient` from `X-Stocks-Client` / last `initialize` / User-Agent
 - [x] MCP tests: `tools/list` snapshot, identity, JSON contract (decimal strings, nulls, `outputSchema` validation), tool coverage vs `docs/openapi.json`, idempotent `place_order`, `RATIONALE_REQUIRED`, no admin tools (idempotent replay, `RATIONALE_REQUIRED` and rate limits are WS3/WS1 behavior passed through; covered with fakes)
 - [x] **Agent runner** (`tools/agent-runner/`, §20.5): compose service `agent-runner` (profile `agents`, image `stocks:agent-runner-<tag>`); one model-agnostic loop for Claude and ChatGPT; same prompt, tools and schedule (09:45, 12:30, 15:30 ET); per-run tool-call and time caps; per-bot daily dollar cap (built-in price table, `AGENT_PRICE_*`); notes-file memory; JSONL run log; `--once` CLI; tested against fake LLM APIs and the real MCP server (CI). Owner steps to go live: docs/agents.md §2.5
 - [x] `docs/agents.md`: agent runner, Claude Code, Claude API MCP connector and OpenAI Responses recipes; optional claude.ai custom connector with "No sign-in" + Request headers (beta); why there is no ChatGPT-app or GPT-Actions route in Phase 1; the shared bot system prompt; `X-Stocks-Client`
 - [x] `docs/rules.md`: the player-facing rulebook (mirrors `/rules`, with [V]/[U] notes)
-- [ ] **Live verification:** a Claude bot (Claude Code, API key) and a GPT bot (Responses API, API key) each place, inspect and cancel orders on the deployed instance
+- [ ] **Live verification:** a Claude bot (Claude Code, API key) and a GPT bot (Responses API, API key) each place, inspect and cancel orders on the deployed instance. *Needs the owner* (real LLM keys and the bots' `stk_…` keys in the server's `.env`; steps in docs/agents.md §2.5; locally verified with scripted fake LLMs against the real MCP server)
 
 ### WS6: Frontend
 - [x] Shells: desktop 3-pane (rail, watchlist, center, ticket, bottom dock), tablet drawer and side sheet, mobile bottom tabs, pushed screens and bottom sheets; safe areas (`viewport-fit=cover`); static manifest, apple-touch-icon and theme-color (installable, no service worker); 44 px targets
@@ -134,18 +135,18 @@
 
 - [x] **M0 Boot (end of week 1):** H2 + SIM boot, login, `/quotes` on SIM, SPA shell on both layouts, MCP `whoami` spike passes
 - [x] **M1 Trade on SIM (week 2):** MARKET (shares and notional) and LIMIT orders end to end, ledger and positions, account page, ticket with preview, live order events. **Friends can trade on SIM.** Integrated on main as "M1+" (owner-adjusted): also live Alpaca/Finnhub market data, invites and signup, admin players/keys/deposits, watchlists, the deposit-aware leaderboard, STOMP and MCP.
-- [ ] **M2 Live and bots (week 3):** all 5 order types, fees, T+1, GFV; Alpaca live data; charts; MCP tools with API keys; agent runner trading both bots on SIM; admin players, keys and transfers
-- [ ] **M3 League (week 4):** EOD snapshots, TWR and P&L leaderboard, profiles, feed, corporate actions, Finnhub, Markets, Settings
-- [ ] **M4 Ship (week 5):** hardening, e2e green on three viewports, no Day-0 stubs left, deployed to the owner's CasaOS server by `release.yml` (self-hosted runner, health-gated rollback) behind the owner's Cloudflare Tunnel with the §24.5 settings verified from a cloud VM, agent runner live (`DEPLOY_PROFILES=agents`)
+- [x] **M2 Live and bots (week 3):** all 5 order types, fees, T+1, GFV; Alpaca live data; charts; MCP tools with API keys; agent runner trading both bots on SIM; admin players, keys and transfers. Integrated on main 2026-10-10 (p1f/stops, p1f/runner); the runner's SIM trading is verified with scripted fake LLM APIs (real LLM runs need the owner's keys)
+- [x] **M3 League (week 4):** EOD snapshots, TWR and P&L leaderboard, profiles, feed, corporate actions, Finnhub, Markets, Settings. Corporate actions integrated on main 2026-10-10 (p1f/corp), with the league arena, live feed and admin corporate-action screens (p1f/frontend)
+- [ ] **M4 Ship (week 5):** hardening, e2e green on three viewports, no Day-0 stubs left, deployed to the owner's CasaOS server (owner decision: Watchtower pulling `:latest`; the `release.yml` runner deploy stays optional) behind the owner's Cloudflare Tunnel with the §24.5 settings verified from a cloud VM, agent runner live (`--profile agents`). Done: e2e green on three viewports, no Day-0 stub beans, deployed under Watchtower behind the tunnel. *Needs the owner:* the §24.5 Cloudflare settings (WebSockets, cache bypass, Bot Fight Mode off, AI Crawl Control, Access on `/admin*`) checked from a cloud VM, and the agent runner started with real LLM keys (docs/agents.md §2.5)
 
 ### Phase 1 exit criteria
 
-- [ ] At least 3 humans (one on a phone) and 2 AI bots (Claude, ChatGPT, both driven by the agent runner within their daily caps) trade for **5 consecutive trading days** on live IEX data with $500 starting cash.
+- [ ] *Needs the owner and the league:* at least 3 humans (one on a phone) and 2 AI bots (Claude, ChatGPT, both driven by the agent runner within their daily caps) trade for **5 consecutive trading days** on live IEX data with $500 starting cash.
 - [ ] Every order type works in its allowed sessions. Fractional and notional orders work in RTH. Settled vs unsettled cash and GFV warnings behave as specified.
 - [ ] An admin **deposit to ALL** shows up in each player's activity with its memo and **does not change anyone's TWR**, including an account below $1. The leaderboard ranks by TWR and by net-contribution P&L, and a reset does not erase a period's loss.
-- [ ] Invariants I1–I9 are green every night. No retroactive fills after a restart.
-- [ ] A bot can never reach an admin endpoint (`AdminSecurityIT` green).
-- [ ] Backups run nightly (and before every deploy), are copied off the server, and a restore (`deploy/scripts/restore.sh`) has been rehearsed once.
+- [ ] Invariants I1–I9 are green every night. No retroactive fills after a restart. (Covered by tests and the property suites; to be observed on production during the 5-day run)
+- [x] A bot can never reach an admin endpoint (`AdminSecurityIT` green).
+- [ ] Backups run nightly (and before every deploy), are copied off the server, and a restore (`deploy/scripts/restore.sh`) has been rehearsed once. *Needs the owner:* the off-server copy and the restore rehearsal on the server (docs/runbook.md "Restore"; under Watchtower there is no pre-deploy dump, only the nightly one)
 
 ---
 
@@ -223,8 +224,8 @@
 ## Pre-launch verification checklist (from ARCHITECTURE §28)
 
 - [x] V1 schema applied on PostgreSQL 18.6 (embedded PG, 2026-10-09); re-run `-Ppg-it` after the v1.1 schema additions
-- [ ] Spring Session JDBC starter artifact name in Boot 4.1.1
-- [ ] Spring AI 2.0.1: Day-1 spike confirms the `contextExtractor` transport override and that `mcpServerJsonMapper` backs off (property names are resolved in §20.1)
+- [x] Spring Session JDBC starter artifact name in Boot 4.1.1 (`spring-boot-starter-session-jdbc`, §28 #14)
+- [x] Spring AI 2.0.1: Day-1 spike confirms the `contextExtractor` transport override and that `mcpServerJsonMapper` backs off (property names are resolved in §20.1)
 - [ ] Alpaca probe results recorded: quote-size units, `statuses` wildcard, movers, most-actives, news, `delayed_sip`, snapshot batch maximum
 - [ ] Finnhub stream symbol cap and extended-hours prints
 - [ ] Condition-code tables for eligible prints (Alpaca SIP and Finnhub)
@@ -232,5 +233,5 @@
 - [ ] Separate Alpaca accounts for dev and prod (avoid 406)
 - [ ] Cloudflare: WebSockets on; cache bypass rules (incl. `/swagger-ui/*`); Bot Fight Mode **off** for the zone (Free plan cannot skip it per path) or Pro Super Bot Fight Mode with a skip rule; AI Crawl Control allows the Agent category; no WAF challenges on `/api`, `/mcp`, `/.well-known` or `/oauth2`; Cloudflare Access with MFA on `/admin*` and `/api/v1/admin/*` only
 - [ ] From a cloud VM: `/mcp` returns 401 JSON (not a challenge page); one live Claude API MCP-connector call and one OpenAI Responses MCP call run `whoami`
-- [ ] CasaOS deploy path (docs/deploy.md): GHCR package pullable by the deploy job (or public / server logged in with a `read:packages` PAT); runner `casaos` online as a systemd service under an unprivileged `docker`-group user; fork PR workflows disabled and `main` protected; `DEPLOY_ENABLED=true`; one push-to-main deploy, one forced-failure rollback and one `workflow_dispatch` rollback to an older `sha-…` tag observed; cloudflared reaches `http://stocks-app:8080` (or `localhost:8080`) and `/ws` upgrades through the tunnel
+- [ ] CasaOS deploy path (docs/deploy.md): GHCR package pullable by the deploy job (or public / server logged in with a `read:packages` PAT); runner `casaos` online as a systemd service under an unprivileged `docker`-group user; fork PR workflows disabled and `main` protected; `DEPLOY_ENABLED=true`; one push-to-main deploy, one forced-failure rollback and one `workflow_dispatch` rollback to an older `sha-…` tag observed; cloudflared reaches `http://stocks-app:8080` over `stocks-edge` (no host port) and `/ws` upgrades through the tunnel. Production uses Watchtower instead; this item is only for the optional runner path
 - [ ] claude.ai "Request headers" connector setting available on the owner's account (optional Phase 1 route)

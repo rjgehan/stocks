@@ -2,7 +2,8 @@
 #
 # For a LOCALLY-managed tunnel (config.yml + credentials file). For a remotely-managed tunnel (token; the usual
 # CasaOS cloudflared app), add the same hostname under Zero Trust → Networks → Tunnels → <tunnel> →
-# Public hostnames instead: type HTTP, URL = one of the `service` values below.
+# Public hostnames instead: type HTTP, URL = stocks-app:8080. The default setup needs neither: the stocks-cloudflared
+# sidecar in docker-compose.yml runs this app's own token tunnel (CLOUDFLARE_TUNNEL_TOKEN in .env).
 #
 # One hostname carries HTTP and WebSocket (/ws): no extra rule is needed for WebSockets.
 tunnel: <tunnel-uuid>
@@ -10,13 +11,9 @@ credentials-file: /etc/cloudflared/<tunnel-uuid>.json
 
 ingress:
   - hostname: stocks.example.com
-    # Pick the line that matches where cloudflared runs:
-    #   cloudflared container joined to the `stocks-edge` Docker network (recommended on CasaOS):
+    # The app publishes no host port: cloudflared must be on the `stocks-edge` Docker network, like the
+    # stocks-cloudflared sidecar in docker-compose.yml (or join yours: docker network connect stocks-edge <name>).
     service: http://stocks-app:8080
-    #   cloudflared on the host network or installed as a system service (STOCKS_BIND_IP=127.0.0.1):
-    # service: http://localhost:8080
-    #   cloudflared container on another Docker network (needs STOCKS_BIND_IP=0.0.0.0 in .env):
-    # service: http://<server-lan-ip>:8080
     originRequest:
       connectTimeout: 10s
       keepAliveTimeout: 90s

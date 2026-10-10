@@ -1026,6 +1026,8 @@ enum NotificationKind { FILL, PARTIAL_FILL, ORDER_CANCELLED, ORDER_EXPIRED, DEPO
 
 **Migrations after V1.** Until the first production deploy, V1 is the baseline. WS1 owns `V1__init.sql` and the vendor `V1_0_1` files. Each workstream adds its own `V1_<ws>_<nn>__<desc>.sql` (for example `V1_3_01__order_index.sql`) under `db/migration/**`, reviewed by WS1, so parallel branches never collide. Dev and test set `spring.flyway.out-of-order=true` (§23.2). **Merge the files into a clean V1 just before the first production deploy.** The squash changes V1's checksum, so every existing dev H2 database fails `flyway validate` afterwards: **delete `backend/.data/` after the squash** (README and `docs/runbook.md` say so; the dev seed is idempotent, so a fresh database costs nothing). After that, use normal `V2…` numbering.
 
+**As deployed (2026-10).** The first production deploy shipped without the squash: production applied `V1__init`, `V1_0_1`, `V1_3_01` and `V1_4_01`, and runs `spring.flyway.out-of-order=false`. Those four files are frozen (never edit, rename or delete them), and the per-workstream `V1_<ws>_<nn>` lanes are closed: a file that sorts before `V1_4_01` is "ignored" by Flyway and fails validation at boot. Every new migration is the next whole version (`V2__…`, `V3__…`), numbered at merge time by the integrator. `MigrationOrderTest` enforces this and upgrades a production-baseline database with out-of-order off.
+
 ### 8.1 `db/migration/common/V1__init.sql`
 
 ```sql
@@ -1305,7 +1307,7 @@ CREATE TABLE trade_order (
   extended_hours        BOOLEAN       NOT NULL,
   status                VARCHAR(18)   NOT NULL CHECK (status IN ('PENDING','WORKING','PARTIALLY_FILLED','FILLED',
                                         'CANCELLED','EXPIRED','REPLACED','REJECTED')),
-  wait_reason           VARCHAR(20),                  -- VARCHAR(24) since V1_3_20 (CORPORATE_ACTION_HOLD is 21 chars)
+  wait_reason           VARCHAR(20),                  -- VARCHAR(24) since V2 (CORPORATE_ACTION_HOLD is 21 chars)
   status_reason         VARCHAR(48),                  -- CancelReason or expiry note
   triggered             BOOLEAN       NOT NULL DEFAULT FALSE,
   has_rested            BOOLEAN       NOT NULL DEFAULT FALSE,
@@ -2377,7 +2379,7 @@ Golden tests (WS3, `golden/engine`): 2:1 mid-GTC (orders cancelled, quantity dou
 - While a split for a symbol is NEEDS_ADMIN with `ex_date ≤ today` (a **corporate-action hold**): `isHalted(symbol)` is true and the engine does not evaluate its orders (`CORPORATE_ACTION_HOLD`); new orders are rejected with `SYMBOL_NOT_TRADABLE` (hint: "pending corporate-action review"); `MarkService` returns the last pre-ex-date `day_end_mark`, unadjusted (consistent with the unadjusted quantities), with quality `STALE` and basis `DAY_END`. The leaderboard therefore holds the position at its pre-split value instead of showing a fake −90% or +100%.
 - `flagDetectedSplit` is idempotent per (symbol, ex-date): an APPLIED split or an earlier DETECTED row (whatever its status, so an admin SKIP sticks) is returned unchanged; a provider split still PENDING for that day (its 03:45 application failed) becomes NEEDS_ADMIN instead of a second row.
 - The admin resolves it with `POST /admin/corporate-actions/{id}/resolve` (§21.1): `APPLY` with confirmed rates runs `ResolveCorporateActionCmd`, which applies the split as of now with the same arithmetic (the type follows from the rates; `account_event.actor_kind = ADMIN`; `resolved_by` and the note are recorded in `detail`); `SKIP` releases the hold. The same endpoint resolves a provider-reported split that is NEEDS_ADMIN for any other reason, and SKIPs any other NEEDS_ADMIN type. Once a split is APPLIED, every other PENDING or NEEDS_ADMIN split of the same symbol and ex-date is SKIPPED (superseded), so a split is never applied twice.
-- An order evaluated while its symbol is on hold waits with `wait_reason = CORPORATE_ACTION_HOLD` (`trade_order.wait_reason` is `VARCHAR(24)` since `V1_3_20`; it was one character short).
+- An order evaluated while its symbol is on hold waits with `wait_reason = CORPORATE_ACTION_HOLD` (`trade_order.wait_reason` is `VARCHAR(24)` since `V2`; it was one character short).
 
 ## 15. Market data
 
@@ -3958,9 +3960,9 @@ stocks:
 | `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY` | hybrid | Alpaca **paper** account keys (Basic data plan) |
 | `ALPACA_FEED` | no | `iex` (default) or `sip` |
 | `FINNHUB_TOKEN` | recommended | Finnhub free key |
-| `TRUSTED_PROXIES` | no | Peers whose forwarded headers are trusted (Tomcat `internal-proxies`): a regex (the default: loopback + 10/8, 172.16/12, 192.168/16) **or a comma-separated CIDR list** (any value containing `/`, Tomcat 11), e.g. `172.18.0.0/16` for a cloudflared container on another Docker network. A CIDR list also avoids the Compose `}` problem of §24.3. **Required narrowing** with `STOCKS_BIND_IP=0.0.0.0`: the broad default would then trust every LAN device (§24.3). |
+| `TRUSTED_PROXIES` | no | Peers whose forwarded headers are trusted (Tomcat `internal-proxies`): a regex (the default: loopback + 10/8, 172.16/12, 192.168/16) **or a comma-separated CIDR list** (any value containing `/`, Tomcat 11), e.g. `172.18.0.0/16` for a cloudflared container on another Docker network. A CIDR list also avoids the Compose `}` problem of §24.3. The broad default is safe because the app publishes no host port: only containers on the `stocks-edge` network reach it (§24.3). |
 | `STOCKS_IMAGE`, `STOCKS_TAG` | compose | Image repository without tag (`ghcr.io/<owner>/stocks`, lowercase) and the tag to run; every deploy rewrites `STOCKS_TAG` (§24.7) |
-| `STOCKS_BIND_IP`, `STOCKS_PORT` | no | Published host address and port of the app (`127.0.0.1`, `8080`; §24.2) |
+| `CLOUDFLARE_TUNNEL_TOKEN` | compose | Token of this app's own Cloudflare Tunnel, read by the `stocks-cloudflared` sidecar (§24.2, §24.5). Empty only when a cloudflared elsewhere routes to `stocks-app:8080` over `stocks-edge` (then stop the sidecar) |
 | `APP_PUBLIC_HOST` | compose | The host of `APP_PUBLIC_URL` (e.g. `stocks.example.com`); the CasaOS dashboard tile opens `https://` it (§24.2). `init-host.sh --url` sets both. |
 | `BACKUP_KEEP_DAYS`, `BACKUP_TIME_UTC` | no | Backup service: retention (`14`) and daily dump time (`05:00` UTC) (§24.2) |
 | `JDK_JAVA_OPTIONS` | no | Extra JVM flags, applied after the image's `JAVA_TOOL_OPTIONS` baseline (§24.1); usually empty |
@@ -4052,7 +4054,7 @@ ENTRYPOINT ["java","org.springframework.boot.loader.launch.JarLauncher"]
 
 ### 24.2 `docker-compose.yml` (production: plain Compose and CasaOS Import)
 
-The owner self-hosts on a **CasaOS** server that already runs Cloudflare Tunnels. One compose file serves two consumers: plain `docker compose -p stocks up -d` with a `.env` next to it (what the deploy job of §24.7 runs), and CasaOS "App Store → Custom Install → Import". CasaOS reads the `x-casaos` blocks (top level: `main: app`, `scheme: https`, `hostname: ${APP_PUBLIC_HOST:-}`, `port_map: "443"`, `index: /`, `title`, `icon`, `category`, `architectures: [amd64, arm64]`, `tips`; per service: `envs`/`ports`/`volumes` descriptions); Compose ignores every `x-` key. The dashboard tile opens `scheme://hostname:port_map/index`, i.e. the tunnel hostname: the host port is bound to `127.0.0.1` and the session cookie is `Secure`, so `http://<casaos-host>:8080` could not sign in. Abridged (the file in the repository is authoritative for the metadata):
+The owner self-hosts on a **CasaOS** server that already runs Cloudflare Tunnels. One compose file serves two consumers: plain `docker compose -p stocks up -d` with a `.env` next to it (what the deploy job of §24.7 runs), and CasaOS "App Store → Custom Install → Import". CasaOS reads the `x-casaos` blocks (top level: `main: app`, `scheme: https`, `hostname: ${APP_PUBLIC_HOST:-}`, `port_map: "443"`, `index: /`, `title`, `icon`, `category`, `architectures: [amd64, arm64]`, `tips`; per service: `envs`/`ports`/`volumes` descriptions); Compose ignores every `x-` key. The dashboard tile opens `scheme://hostname:port_map/index`, i.e. the tunnel hostname: **no host port is published** (the `stocks-cloudflared` sidecar reaches `http://stocks-app:8080` on the `stocks-edge` network) and the session cookie is `Secure`. Production updates are **Watchtower** pulling `:latest` (labels below; §24.7). Abridged (the file in the repository is authoritative for the metadata):
 
 ```yaml
 name: stocks
@@ -4061,6 +4063,7 @@ services:
     image: postgres:18.6-alpine
     container_name: stocks-db
     restart: unless-stopped
+    labels: { com.centurylinklabs.watchtower.enable: "false" }   # never auto-restarted
     environment: { POSTGRES_DB: stocks, POSTGRES_USER: stocks, POSTGRES_PASSWORD: "${DB_PASSWORD:?…}" }
     volumes:   # long syntax: type bind, bind.create_host_path: true
       - { type: bind, source: /DATA/AppData/stocks/pgdata, target: /var/lib/postgresql }   # PG 18 image layout
@@ -4072,6 +4075,7 @@ services:
     image: ${STOCKS_IMAGE:?…}:${STOCKS_TAG:-latest}     # ghcr.io/<owner>/stocks; never `build:`
     container_name: stocks-app
     restart: unless-stopped
+    labels: { com.centurylinklabs.watchtower.enable: "true" }    # Watchtower pulls :latest and restarts it
     depends_on: { db: { condition: service_healthy } }
     environment:                                     # explicit list; no env_file (least privilege, CasaOS-safe)
       SPRING_PROFILES_ACTIVE: prod
@@ -4085,8 +4089,7 @@ services:
       # ADMIN_BOOTSTRAP_USERNAME/PASSWORD, STARTING_CASH_DEFAULT (500.00), MARKETDATA_PROFILE (hybrid),
       # ALPACA_KEY_ID, ALPACA_SECRET_KEY, ALPACA_FEED (iex), FINNHUB_TOKEN, JDK_JAVA_OPTIONS: ${VAR:-default}
       TRUSTED_PROXIES: '${TRUSTED_PROXIES:-<the §24.3 default, written with \d+>}'   # never passed empty
-    ports:
-      - { target: 8080, published: "${STOCKS_PORT:-8080}", host_ip: "${STOCKS_BIND_IP:-127.0.0.1}" }  # 8081 never
+    # no `ports:`: nothing is published on the host; cloudflared reaches http://stocks-app:8080 over stocks-edge
     healthcheck: { test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/actuator/health/readiness"],
                    interval: 15s, timeout: 3s, start_period: 90s, retries: 5 }
     stop_grace_period: 30s
@@ -4097,6 +4100,7 @@ services:
     image: postgres:18.6-alpine
     container_name: stocks-backup
     restart: unless-stopped
+    labels: { com.centurylinklabs.watchtower.enable: "false" }
     depends_on: { db: { condition: service_healthy } }
     entrypoint: [ "/bin/sh", "/opt/stocks/pg_backup.sh", "--daemon" ]
     environment: { PGHOST: db, PGUSER: stocks, PGDATABASE: stocks, PGPASSWORD: "${DB_PASSWORD:?…}",
@@ -4107,11 +4111,21 @@ services:
     healthcheck: { test: ["CMD-SHELL", "find /backups/.last-success -mmin -1500 | grep -q ."], interval: 5m }
     networks: [ backend ]
 
+  cloudflared:                                     # this app's own Cloudflare Tunnel (one tunnel per app)
+    image: cloudflare/cloudflared:latest
+    container_name: stocks-cloudflared
+    restart: unless-stopped
+    labels: { com.centurylinklabs.watchtower.enable: "true" }
+    command: tunnel --no-autoupdate run
+    environment: { TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN:-}" }   # public hostname → HTTP stocks-app:8080
+    networks: [ edge ]                             # reaches stocks-app:8080; never the db
+
   agent-runner:                                    # Phase 1 bots (§20.5): docker compose --profile agents up -d
     profiles: [ agents ]
     image: ${STOCKS_IMAGE:?…}:agent-runner-${STOCKS_TAG:-latest}   # same package, tag prefix (release.yml, §24.7)
     container_name: stocks-agent-runner
     restart: unless-stopped
+    labels: { com.centurylinklabs.watchtower.enable: "true" }
     depends_on: { app: { condition: service_healthy } }
     environment: { STOCKS_MCP_URL: "http://app:8080/mcp", TZ: "America/New_York" }   # + the §20.5 keys, explicitly
     stop_grace_period: 30s
@@ -4120,7 +4134,7 @@ services:
 
 networks:
   backend: { name: stocks-backend, internal: true }   # db has no internet access
-  edge: { name: stocks-edge }                         # app egress; a cloudflared container may join it
+  edge: { name: stocks-edge }                         # app egress and the tunnel (cloudflared → stocks-app:8080)
 # every service: logging json-file, max-size 10m, max-file 5
 ```
 
@@ -4141,13 +4155,13 @@ networks:
 
 The Compose **project directory** (`compose/`, the deploy job's `DEPLOY_DIR`) is deliberately not the data root. CasaOS lists every Compose project (`docker compose ls`), and its Uninstall always runs `os.RemoveAll` on the project's working directory, even when the user keeps the data (verified in CasaOS-AppManagement; it also rewrites the compose file as root, mode 600, on a settings save). With this layout an Uninstall removes only `compose/` and the `.env` link, never `pgdata/`, the dumps or the real `.env` (with `API_KEY_PEPPER`). An Uninstall that does **not** keep the data still deletes the bind-source parent `/DATA/AppData/stocks`, so `docs/deploy.md` and the runbook say: never Uninstall or save this app's settings in CasaOS; stop it with `docker compose -p stocks down`. `init-host.sh` migrates a host from the earlier layout (compose file in the data root), and `deploy.sh` refuses to run on it.
 
-**Environment.** `.env.example` documents every key of §23.3 plus the compose-only keys `STOCKS_IMAGE` (lowercase repository without tag), `STOCKS_TAG` (rewritten by every deploy), `STOCKS_BIND_IP` (default `127.0.0.1`), `STOCKS_PORT` (8080), `APP_PUBLIC_HOST` (the host of `APP_PUBLIC_URL`, for the CasaOS tile), `BACKUP_KEEP_DAYS`, `BACKUP_TIME_UTC` and `JDK_JAVA_OPTIONS`. Optional variables are never passed empty when Spring has a non-empty default (an empty `TRUSTED_PROXIES` would trust no proxy).
+**Environment.** `.env.example` documents every key of §23.3 plus the compose-only keys `STOCKS_IMAGE` (lowercase repository without tag), `STOCKS_TAG` (`latest` under Watchtower; rewritten by every runner deploy), `CLOUDFLARE_TUNNEL_TOKEN`, `APP_PUBLIC_HOST` (the host of `APP_PUBLIC_URL`, for the CasaOS tile), `BACKUP_KEEP_DAYS`, `BACKUP_TIME_UTC` and `JDK_JAVA_OPTIONS`. Optional variables are never passed empty when Spring has a non-empty default (an empty `TRUSTED_PROXIES` would trust no proxy).
 
 **`deploy/backup/pg_backup.sh`** (mounted read-only at `/opt/stocks`; busybox `sh`): `pg_backup.sh [LABEL]` writes `/backups/stocks-YYYY-MM-DD[-LABEL].dump` (`pg_dump -Fc` through a `.tmp` file), records `/backups/.last-success` and deletes dumps older than `KEEP_DAYS`; `pg_backup.sh --daemon` runs one at start when today's dump is missing, then daily at `BACKUP_TIME_UTC` (05:00 UTC, after the 20:20 ET snapshots). Every deploy adds a `predeploy-<tag>` dump.
 
 **Restore** (`docs/runbook.md`): `deploy/scripts/restore.sh backups/stocks-YYYY-MM-DD.dump` takes a `prerestore` dump, stops `app`, drops and recreates the database, runs `pg_restore --no-owner --exit-on-error` and starts the stack again.
 
-**Upgrade:** merge to `main`; `release.yml` builds, pushes and deploys with a health-gated rollback (§24.7). Flyway migrates on start, and the advisory lock prevents overlap.
+**Upgrade:** merge to `main`; `release.yml` builds and pushes `sha-…` and `latest`, and Watchtower restarts `stocks-app` (and `stocks-agent-runner`) on the new `latest` within its poll interval (§24.7). The optional self-hosted runner deploys with a health-gated rollback instead. Flyway migrates on start, and the advisory lock prevents overlap.
 
 ### 24.3 Proxy, cookies and headers (`application-prod.yml`)
 
@@ -4162,7 +4176,7 @@ server:
 logging.structured.format.console: ecs
 ```
 
-- The host port binds to `127.0.0.1` by default (`STOCKS_BIND_IP`, §24.2), so only a host-network `cloudflared` can reach it (the broad default regex is safe only while nothing on the LAN can reach the app port: with `STOCKS_BIND_IP=0.0.0.0`, Docker keeps LAN clients' source addresses, so `TRUSTED_PROXIES` must then be narrowed to cloudflared's Docker network, e.g. `172.18.0.0/16`; `docs/deploy.md` §8); a `cloudflared` container joined to the `stocks-edge` network uses `http://stocks-app:8080` and needs no published port. Either way the peer is loopback, a Docker bridge address (172.x) or the cloudflared container's address, all covered by the default internal-proxies regex. Compose passes `TRUSTED_PROXIES` with an equivalent default (`\d+` instead of `\d{1,3}`, because a `}` cannot appear inside a Compose `${…:-…}` default) and never empty. **CIDR lists work too:** Tomcat 11's `RemoteIpValve` treats a value containing `/` as a comma-separated CIDR list (`NetMaskSet`), e.g. `TRUSTED_PROXIES=127.0.0.0/8, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16` (verified by `ForwardedHeadersIT` with both forms; an untrusted peer's headers are ignored).
+- **No host port is published** (§24.2): the only peers that reach the app are containers on the `stocks-edge` network, i.e. the `stocks-cloudflared` sidecar (or the owner's own cloudflared joined to that network) and the agent runner. Their addresses are Docker bridge addresses (172.x), covered by the default internal-proxies regex, so the broad default is safe. Compose passes `TRUSTED_PROXIES` with an equivalent default (`\d+` instead of `\d{1,3}`, because a `}` cannot appear inside a Compose `${…:-…}` default) and never empty. **CIDR lists work too:** Tomcat 11's `RemoteIpValve` treats a value containing `/` as a comma-separated CIDR list (`NetMaskSet`), e.g. `TRUSTED_PROXIES=127.0.0.0/8, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16` (verified by `ForwardedHeadersIT` with both forms; an untrusted peer's headers are ignored).
 - `ClientIp.resolve()` uses `request.getRemoteAddr()` after the valve. It feeds rate limiting, audit and `last_used_ip`.
 
 **Security headers** (Spring Security):
@@ -4206,14 +4220,12 @@ HSTS is sent when `isSecure()` is true, and is also set at Cloudflare.
 # deploy/cloudflared/config.example.yml (locally managed tunnel; a token tunnel sets the same URL as a "Public hostname")
 ingress:
   - hostname: stocks.example.com
-    service: http://stocks-app:8080         # cloudflared container joined to the `stocks-edge` network (CasaOS default)
-    # service: http://localhost:8080        # cloudflared on the host network / as a system service
-    # service: http://<server-lan-ip>:8080  # cloudflared container on another network (STOCKS_BIND_IP=0.0.0.0)
+    service: http://stocks-app:8080         # cloudflared on the `stocks-edge` network (the app publishes no host port)
     originRequest: { connectTimeout: 10s, keepAliveTimeout: 90s }
   - service: http_status:404
 ```
 
-- **Where cloudflared runs** (the owner's existing tunnel, often the CasaOS cloudflared app): joined to `stocks-edge` (`docker network connect stocks-edge <cloudflared>`, or `networks: [stocks-edge]` as an external network in its compose) → `http://stocks-app:8080`; host network → `http://localhost:8080`; otherwise `STOCKS_BIND_IP=0.0.0.0` and `http://<server-lan-ip>:8080`.
+- **Where cloudflared runs:** by default the `stocks-cloudflared` sidecar of §24.2 runs this app's own remotely managed tunnel (`CLOUDFLARE_TUNNEL_TOKEN`; public hostname → HTTP `stocks-app:8080`), like the owner's other CasaOS apps. A cloudflared elsewhere must join `stocks-edge` (`docker network connect stocks-edge <cloudflared>`, or `networks: [stocks-edge]` as an external network in its compose) and use the same URL; leave the token empty and stop the sidecar then. There is no host-port route.
 - **One hostname, one port** carries HTTP and WebSocket. The zone setting "WebSockets" must be on (it is by default).
 - Use a **named tunnel with a stable hostname**, never Quick Tunnels: the Phase 2 OAuth issuer is bound to the hostname, and Quick Tunnels do not support SSE.
 - Cache rules: **bypass** `/api/*`, `/ws`, `/mcp`, `/v3/*`, `/swagger-ui/*`, `/oauth2/*`, `/.well-known/*`. **Cache** `/assets/*`. Turn Rocket Loader off.
@@ -4240,7 +4252,7 @@ ingress:
 
 ### 24.7 CI/CD and self-hosting (GitHub Actions → GHCR → CasaOS)
 
-The repository lives on GitHub (private). GitHub-hosted runners test and build; a **self-hosted runner on the owner's CasaOS server** deploys. Nothing connects into the server: the runner long-polls GitHub over outbound HTTPS, so it works behind NAT and Cloudflare, with no SSH. Step-by-step setup: `docs/deploy.md`.
+The repository lives on GitHub (`rjgehan/stocks`, public; the GHCR package is public too). GitHub-hosted runners test and build. **Production (`stocks.gehan.cloud`) deploys through Watchtower**: every push to `main` publishes `ghcr.io/rjgehan/stocks:latest` (and `agent-runner-latest`), and the server's Watchtower restarts the containers labelled `com.centurylinklabs.watchtower.enable: "true"` (`stocks-app`, `stocks-agent-runner`, `stocks-cloudflared`) on the new image; `DEPLOY_ENABLED` is unset, so the deploy job below is skipped. The **self-hosted runner** path stays documented as an option (it adds a pre-deploy dump and a health-gated rollback). Either way nothing connects into the server: Watchtower polls GHCR and the runner long-polls GitHub over outbound HTTPS. Step-by-step setup: `docs/deploy.md`.
 
 | Workflow | Trigger | Does |
 |---|---|---|
@@ -4253,7 +4265,7 @@ Actions are pinned to their current major versions: `actions/checkout@v7`, `acti
 
 **Concurrency.** Builds of one ref are serialized (`release-<ref>`); a tag-only dispatch (deploy or roll back an existing image) gets its own group (`release-rollback-<run id>`), so it neither waits behind a build-and-deploy run nor is replaced by a newer pending push. The deploy job's `deploy-casaos` group serializes the server.
 
-**Deploy job** (`runs-on: [self-hosted, casaos]`, `permissions: { contents: read, packages: read }`, `concurrency: deploy-casaos` without cancellation):
+**Deploy job** (optional; `runs-on: [self-hosted, casaos]`, `permissions: { contents: read, packages: read }`, `concurrency: deploy-casaos` without cancellation):
 - Runs only when the repository variable `DEPLOY_ENABLED == 'true'` and the event is a push to `main` or a `workflow_dispatch` with `deploy: true` **from `main` or a `v*` tag** (a guard against deploying a feature branch by mistake, not a security boundary: a branch runs its own copy of the workflow); never for pull requests or tag pushes. With the `tag` input set, it skips CI and the build and deploys or rolls back to that existing tag: dispatched from `main` it changes only the image (`--no-sync-compose`, keeping the server's compose file); dispatched from a `v*` tag it also installs that tag's compose file.
 - Logs in to GHCR with the job's own `GITHUB_TOKEN` in a job-scoped `DOCKER_CONFIG`, sparse-checks out `docker-compose.yml` and `deploy/`, and runs `deploy/scripts/deploy.sh --tag <tag> --sync-from $GITHUB_WORKSPACE`:
   1. preflight (`.env` present and writable, tag format, refuses the pre-`compose/` layout);
@@ -4269,7 +4281,7 @@ Actions are pinned to their current major versions: `actions/checkout@v7`, `acti
 
 **Runner security.** The runner is the official binary as a systemd service, registered to this repository only, running as an unprivileged user in the `docker` group (root-equivalent, so write access to the repository = control of the server). Fork pull request workflows stay disabled, `main` is protected, and only `release.yml`'s deploy job targets the `casaos` label (`.github/actionlint.yaml` declares it).
 
-**Without a runner.** `docs/deploy.md` documents the zero-runner alternative: a Watchtower container (the maintained fork; `containrrr/watchtower` was archived in December 2025) polling `latest` for `stocks-app` only, with no health-gated rollback and no pre-deploy dump.
+**Watchtower (production).** `docs/deploy.md` §11: a Watchtower container (the maintained fork; `containrrr/watchtower` was archived in December 2025) with label filtering polls `latest` and restarts only the `"true"`-labelled containers; the database and backup services are labelled `"false"`. Compared with the runner there is no health-gated rollback (pin `STOCKS_TAG` to an older `sha-…` and `docker compose -p stocks up -d` by hand) and no pre-deploy dump (the nightly dump still runs), and changes to `docker-compose.yml` or `pg_backup.sh` are copied to the server by hand when a release notes them.
 
 ---
 
@@ -4363,7 +4375,7 @@ WS3 owns **`DirectEngineExecutor`** (`src/test/java/com/stocks/trading/engine/te
 4. **Contracts.**
    - Every interface and record in §5.3, under `com.stocks.contract.<feature>`, including the job SPI (`ScheduledJob`, `PeriodicTask`).
    - **Every DTO in §18.3 as a Java record** named per the §18.3 rule (`TDto`) in `com.stocks.contract.<producer>.dto`, plus the admin DTOs of §21.1.
-   - **Stub beans** so the app boots before features land. They are registered by `StubsAutoConfiguration` (`config/stubs`), listed in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Auto-configuration is processed after all user beans, so each stub's `@ConditionalOnMissingBean` reliably backs off when the real bean exists; in ordinary component-scanned configuration that condition is order-dependent and could yield two beans or the wrong one. Stubs throw `ApiException(NOT_IMPLEMENTED)` (501). The market-data default is the main-code `NoopMarketDataService` (every quote `quality=NONE`); `ScriptedMarketData` stays in test sources. **Each workstream deletes its stubs in the PR that lands the real bean**; at M4 `StubsAutoConfiguration` is empty and removed. Every stub implements the marker `ContractStub` (owner `WS1`–`WS4`), so a test can list the contracts that are still stubbed. The contract tests (`src/test/java/com/stocks/contract/`) keep the list of contract service interfaces (`ContractServices.ALL`): the full context must hold exactly one bean of each (real or stub), every remaining stub must throw 501, and a new contract service interface fails the build until it is listed and stubbed. Deleting a stub needs no test change.
+   - **Stub beans** so the app boots before features land. They are registered by `StubsAutoConfiguration` (`config/stubs`), listed in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Auto-configuration is processed after all user beans, so each stub's `@ConditionalOnMissingBean` reliably backs off when the real bean exists; in ordinary component-scanned configuration that condition is order-dependent and could yield two beans or the wrong one. Stubs throw `ApiException(NOT_IMPLEMENTED)` (501). The market-data default is the main-code `NoopMarketDataService` (every quote `quality=NONE`); `ScriptedMarketData` stays in test sources. **Each workstream deletes its stubs in the PR that lands the real bean**; since M3 (the corporate-action contracts) `StubsAutoConfiguration` declares no bean. As built, the empty class stays registered as the documented extension point for a future contract's Day-0 stub, and `ContractStubsIT.noDayZeroStubIsLeft` fails the build if any `ContractStub` bean reaches the application. Every stub implements the marker `ContractStub` (owner `WS1`–`WS4`), so a test can list the contracts that are still stubbed. The contract tests (`src/test/java/com/stocks/contract/`) keep the list of contract service interfaces (`ContractServices.ALL`): the full context must hold exactly one bean of each (real or stub), every remaining stub must throw 501, and a new contract service interface fails the build until it is listed and stubbed. Deleting a stub needs no test change.
 5. **Security skeleton.** Dev login, so the SPA can authenticate.
 6. **Jobs.** `JobScheduler`, `JobRunGuard`, `CatchUpRunner` and `StartupGate` skeletons, so WS2–WS4 implement `ScheduledJob` from day 1.
 7. **Test kit and ArchUnit** (§26). `DirectEngineExecutor` is WS3's (week 1).
@@ -4393,7 +4405,7 @@ WS3 owns **`DirectEngineExecutor`** (`src/test/java/com/stocks/trading/engine/te
    | `stocks.performance` | WS4 | `portfolio.config.PerformanceProperties` |
    | `spring.ai.mcp` | WS5 | Spring AI |
 
-4. **Migrations.** Each workstream adds only `db/migration/**/V1_<own ws>_<nn>__desc.sql`, reviewed by WS1 (§8). `V1__init.sql` and `V1_0_1` stay WS1's.
+4. **Migrations.** Each workstream adds only `db/migration/**/V1_<own ws>_<nn>__desc.sql`, reviewed by WS1 (§8). `V1__init.sql` and `V1_0_1` stay WS1's. Since the first production deploy, new migrations are `V2`, `V3`, … numbered at merge time (§8 "As deployed").
 5. **Test resources.** `test/resources/golden/<area>/` belongs to the workstream named in §27.2; fixtures belong to WS2.
 6. **Contracts.** Changes to §5.3, §7, §8, §18.3, §19 or §20.3 need a PR labeled `contract`, approval from every consumer, and an update to this document in the same PR.
 7. **OpenAPI.** A PR that touches controllers or DTOs regenerates `docs/openapi.json` and `schema.d.ts` (`make openapi`). CI enforces this.

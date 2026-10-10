@@ -17,17 +17,18 @@ Spec: ARCHITECTURE §24 (deployment) and §26 (CI). Day-2 operations: [runbook.m
 ```
  git push main ─► GitHub Actions (GitHub-hosted)                    your CasaOS server
                   ci.yml: backend H2 + PG, frontend, contract     ┌───────────────────────────────────────────┐
-                  release.yml: multi-arch image ─► ghcr.io ◄──pull─┤ self-hosted runner [self-hosted, casaos]  │
-                                                                  │   deploy/scripts/deploy.sh                │
-                  release.yml deploy job ──(runner polls GitHub)─►│   docker compose -p stocks up -d          │
-                                                                  │ stocks-app :8080 ◄─ cloudflared ◄─ Cloudflare ◄─ players
+                  release.yml: multi-arch image ─► ghcr.io ◄──pull─┤ Watchtower (production; polls :latest)    │
+                                                                  │   or the optional self-hosted runner      │
+                  (optional) release.yml deploy job ─────────────►│   (deploy/scripts/deploy.sh)              │
+                                                                  │ stocks-app :8080 ◄─ stocks-cloudflared ◄─ Cloudflare ◄─ players
+                                                                  │   (stocks-edge network; no host port)     │
                                                                   │ stocks-db (PostgreSQL 18.6), stocks-backup│
                                                                   │ /DATA/AppData/stocks/ (.env, data, dumps) │
                                                                   └───────────────────────────────────────────┘
 ```
 
-Nothing connects **into** your server: the runner polls GitHub over outbound HTTPS, and players arrive through
-the tunnel. Secrets stay in `/DATA/AppData/stocks/.env` on the server; GitHub holds no secrets for this project.
+Nothing connects **into** your server: Watchtower polls GHCR (the runner, if you use it, polls GitHub) over
+outbound HTTPS, and players arrive through the tunnel. Secrets stay in `/DATA/AppData/stocks/.env` on the server; GitHub holds no secrets for this project.
 
 ## Contents
 
@@ -52,7 +53,7 @@ the tunnel. Secrets stay in `/DATA/AppData/stocks/.env` on the server; GitHub ho
   capped at 2 GB, plus PostgreSQL.
 - SSH access to it with `sudo`.
 - Your Cloudflare account with the domain and the tunnel you already run.
-- A GitHub account. A private repository is assumed.
+- A GitHub account. `rjgehan/stocks` and its GHCR package are public; a private fork works too (step 3).
 - Market data keys for production: an **Alpaca paper** account (Basic data plan, free; use a different Alpaca
   account than the one you develop with, because Alpaca allows one stream per key) and a **Finnhub** free key.
 
@@ -324,8 +325,10 @@ runs:
 | cloudflared runs… | Tunnel service URL | `.env` |
 |---|---|---|
 | **as the `stocks-cloudflared` sidecar in this compose file** (default; one tunnel per app, like the owner's other CasaOS apps) | `http://stocks-app:8080` | `CLOUDFLARE_TUNNEL_TOKEN=<this app's tunnel token>` |
-| **as a container, joined to the `stocks-edge` network** (recommended with the CasaOS cloudflared app) | `http://stocks-app:8080` | defaults (the published port is not even used) |
-| as a container or service elsewhere | `http://stocks-app:8080` after joining it to the `stocks-edge` network (below) | leave `CLOUDFLARE_TUNNEL_TOKEN` empty and stop `stocks-cloudflared` |
+| your own cloudflared container (e.g. the CasaOS cloudflared app), **joined to the `stocks-edge` network** (below) | `http://stocks-app:8080` | leave `CLOUDFLARE_TUNNEL_TOKEN` empty and stop `stocks-cloudflared` |
+
+The app publishes **no host port**, so `http://localhost:8080` or `http://<server-lan-ip>:8080` never work: every
+route goes over the `stocks-edge` network.
 
 **The sidecar (default).** Zero Trust → **Networks → Tunnels → Create a tunnel → Cloudflared**, name it `stocks`,
 and copy the token from the install command it shows (the long string after `--token`). Put it in `.env` as
@@ -374,10 +377,9 @@ networks:
   these settings are wrong; the settings matter for the documented Claude API and OpenAI Responses recipes.
 
 **Proxy headers.** The app trusts `X-Forwarded-Proto` and `CF-Connecting-IP` only from addresses matching
-`TRUSTED_PROXIES` (default: loopback, the Docker bridges and private LAN ranges). That default is safe for the first
-two placements, where nothing on the LAN can reach the app port; the `stocks-edge` placement is the recommended
-one. With `STOCKS_BIND_IP=0.0.0.0`, Docker keeps LAN clients' source addresses, so narrow `TRUSTED_PROXIES` to
-cloudflared's network as a CIDR list (ARCHITECTURE §24.3). `APP_PUBLIC_URL` must be the exact `https://` hostname.
+`TRUSTED_PROXIES` (default: loopback, the Docker bridges and private LAN ranges). That default is safe because no
+host port is published: only containers on `stocks-edge` (cloudflared, the agent runner) can reach the app
+(ARCHITECTURE §24.3). `APP_PUBLIC_URL` must be the exact `https://` hostname.
 
 **Check it** from outside your network (a phone on mobile data, or a cloud VM):
 

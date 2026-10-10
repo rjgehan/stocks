@@ -1,14 +1,21 @@
 # stocks runbook
 
 Operating the running league on the CasaOS server. Setup and deploys: [deploy.md](deploy.md). Spec: ARCHITECTURE
-§8.4 (invariants), §12.9 (single instance and halt), §15.9 (market-data failures), §24 (deployment).
+§8.4 (invariants), §12.9 (single instance and halt), §14 (corporate actions), §15.9 (market-data failures), §20.5
+(agent runner), §24 (deployment).
 
 All commands run on the server. The shorthand `dc` means:
 
 ```sh
 cd /DATA/AppData/stocks/compose          # the Compose project directory (its .env links to ../.env)
-alias dc='sudo -u gha-runner docker compose -p stocks --env-file .env'
+alias dc='sudo docker compose -p stocks --env-file .env'        # production (Watchtower; your own sudo user)
+# with the optional self-hosted runner, run it as the runner's user instead:
+# alias dc='sudo -u gha-runner docker compose -p stocks --env-file .env'
 ```
+
+Scripts such as `restore.sh` live in the repository's `deploy/scripts/`. Production deploys through Watchtower and
+has no runner checkout, so fetch the one you need from `main` first, e.g.
+`sudo curl -fsSLo /DATA/AppData/stocks/scripts/restore.sh https://raw.githubusercontent.com/rjgehan/stocks/main/deploy/scripts/restore.sh`.
 
 **Never use CasaOS's Uninstall or its settings dialog for this app** (deploy.md §7): Uninstall deletes the
 project directory, and without "keep data" the whole `/DATA/AppData/stocks`. Stop the stack with `dc down`.
@@ -17,13 +24,13 @@ project directory, and without "keep data" the whole `/DATA/AppData/stocks`. Sto
 
 | Thing | Where |
 |---|---|
-| Containers | `stocks-app` (Spring Boot, :8080 HTTP+WS, :8081 actuator inside the container only), `stocks-db` (PostgreSQL 18.6), `stocks-backup`, later `stocks-agent-runner` (profile `agents`) |
-| Networks | `stocks-backend` (internal: db, backup, app), `stocks-edge` (app egress, cloudflared, agent runner) |
+| Containers | `stocks-app` (Spring Boot, :8080 HTTP+WS, :8081 actuator inside the container only; no host port), `stocks-db` (PostgreSQL 18.6), `stocks-backup`, `stocks-cloudflared` (this app's tunnel, `CLOUDFLARE_TUNNEL_TOKEN`), `stocks-agent-runner` (profile `agents`, the bots) |
+| Networks | `stocks-backend` (internal: db, backup, app), `stocks-edge` (app egress, cloudflared → `http://stocks-app:8080`, agent runner) |
 | Config | `/DATA/AppData/stocks/.env` (mode 600; `compose/.env` is a link to it). `compose/docker-compose.yml` is replaced by every deploy (previous copy `.bak`). |
 | Data | `pgdata/` (database), `backups/` (dumps), `agent-data/` (bots) |
-| What is deployed | `compose/.deploy-state`, `grep STOCKS_TAG /DATA/AppData/stocks/.env`, `docker inspect -f '{{.Config.Image}}' stocks-app` |
+| What is deployed | `docker inspect -f '{{.Config.Image}} {{.Image}}' stocks-app` (Watchtower: `:latest` and its digest; the `sha-…` tag pointing at it is on the GHCR package page), `grep STOCKS_TAG /DATA/AppData/stocks/.env`; runner deploys also write `compose/.deploy-state` |
 | Logs | `docker logs -f stocks-app` (ECS JSON: `… 2>&1 \| jq -r '"\(.["@timestamp"]) \(.["log.level"]) \(.message)"'`); rotated at 5 × 10 MB per container |
-| Deploy history | GitHub → Actions → Release (each run's summary lists the image and the previous one) |
+| Deploy history | GitHub → Actions → Release (each run's summary lists the image tags it pushed); `docker logs watchtower` (when it restarted what) |
 
 ## Health
 
@@ -47,7 +54,26 @@ dc stop app && dc start app
 dc up -d              # re-apply .env changes (recreates only what changed)
 ```
 
-## Failed deploy
+## Deploys (Watchtower)
+
+Production follows `main`: every push publishes `ghcr.io/rjgehan/stocks:latest` (and `agent-runner-latest`), and
+Watchtower restarts `stocks-app` (and `stocks-agent-runner`, `stocks-cloudflared`) on the new image within its poll
+interval. The site is down for about a minute while the single instance restarts; orders never fill retroactively.
+
+- **A bad `latest`** (the app does not become healthy, or a bug): pin the last good image and stop following
+  `latest` until a fix is pushed:
+
+  ```sh
+  sudo sed -i 's/^STOCKS_TAG=.*/STOCKS_TAG=sha-1a2b3c4/' /DATA/AppData/stocks/.env   # the previous sha (package page)
+  dc up -d app
+  ```
+
+  Set `STOCKS_TAG=latest` and `dc up -d` again once `main` is fixed. Database migrations are forward-only: if the bad
+  release migrated the schema incompatibly, restore last night's dump with the older image (see **Restore**).
+- **Compose or backup-script changes** are not applied by Watchtower: when a release changes `docker-compose.yml`
+  or `deploy/backup/pg_backup.sh`, copy them from `main` into `compose/` and `scripts/` and run `dc up -d`.
+
+## Failed deploy (optional self-hosted runner)
 
 The deploy job (`deploy/scripts/deploy.sh`) already did the obvious: when the new version was not healthy within
 `DEPLOY_HEALTH_TIMEOUT`, it printed the app log, restored the previous image (`<image>:rollback`) and compose file,
@@ -87,7 +113,18 @@ with the failing invariant and account.
 5. Resume from the admin System page (or `POST /api/v1/admin/engine/resume`, §21.1) only once the cause is
    understood. Resume runs the check first.
 
-An admin can also halt the engine on purpose (System page) before risky maintenance.
+An admin can also halt the engine on purpose (System page, or `POST /api/v1/admin/engine/halt` with `{reason}`)
+before risky maintenance; resume the same way.
+
+**Halted with `Bootstrap failed: …`** (§12.9): the engine could not load its state at boot, usually because the
+database was unreachable. It retries by itself with backoff (up to once a minute) and resumes on success; check
+`dc ps db` and the app log. Resume from the System page also bootstraps first.
+
+**Fill-quality warnings (I10).** `FILL_QUALITY_AUDIT` checks every execution 16–30 minutes after it happened
+against that minute's consolidated 1-minute bar (widened by the quote spread). A fill outside it is logged at WARN
+(`I10 fill quality: …`) and written once to Admin → Audit as `SYSTEM / FILL_QUALITY_WARNING`. It **never halts**
+the engine: look at the execution's reference quote (order detail → "quote used") and the provider status at that
+time. A burst of them usually means a bad quote feed (stale IEX quotes, a provider outage), not a books problem.
 
 ## Market data problems
 
@@ -98,6 +135,60 @@ An admin can also halt the engine on purpose (System page) before risky maintena
   page shows `DOWN`; market orders wait in `AWAITING_QUOTE` instead of filling on stale prices.
 - **Keys changed:** update `.env`, then `dc up -d`.
 - Production never falls back to simulated prices; with `MARKETDATA_PROFILE=simulated` it refuses to start.
+
+## Corporate actions (splits, dividends, ticker changes)
+
+Jobs (ET, admin System page → Jobs): `CORPORATE_ACTION_SYNC` 02:30 daily (Alpaca corporate actions for held,
+open-order and watched symbols, 7 days back and 90 ahead), `CORPORATE_ACTION_APPLY` 03:45 on trading days (every
+PENDING action whose ex-date has come: ticker changes, then splits, then dividends), `PAY_DIVIDENDS` 06:00 on
+trading days (pays accrued dividends whose payable date has come). Each affected player gets a notification and an
+activity row; none of it moves the leaderboard.
+
+**Needs admin.** Mergers, spin-offs and delistings (Phase 1 has no tool for them), a split without valid rates, a
+split that was reported after its ex-date's pre-open, and a split that the split guard detected in the bars (04:01
+and 09:20 ET) become `NEEDS_ADMIN`. Connected admins get an alert, and the System page shows the count. **A split in
+`NEEDS_ADMIN` puts the symbol on hold**: its orders wait with `CORPORATE_ACTION_HOLD`, new orders get
+`SYMBOL_NOT_TRADABLE`, and positions are valued at the last pre-split close. Resolve it the same morning:
+
+1. Admin → **Corp. actions** (`/admin/corporate-actions`) → filter "Needs admin" → **Resolve**.
+2. Check the split on the issuer's press release or exchange notice. **Apply** with the confirmed old and new share
+   counts (2-for-1 = old 1, new 2; 1-for-8 reverse = old 8, new 1) and a note: it applies the split at once
+   (positions, lots, cash in lieu, open orders on the symbol cancelled) and lifts the hold. **Skip** (with a note)
+   when it is not a real split, or for a merger / spin-off / delisting: that only lifts the hold. Both ask for your
+   password again when the last check is older than 15 minutes, and both are in Admin → Audit.
+   API: `POST /api/v1/admin/corporate-actions/{id}/resolve` with
+   `{"resolution":"APPLY","oldRate":"1","newRate":"2","note":"…"}` or `{"resolution":"SKIP","note":"…"}`.
+3. A merger or delisting of a held symbol needs a manual decision (Phase 2 brings a tool); until then the position
+   stays at its last price. Tell the players.
+
+**A failed `CORPORATE_ACTION_APPLY` run** (System → Jobs shows FAILED): fix the cause from the app log, then
+**Run now** with run key = that date (or wait: the next 02:30 sync and the boot catch-up apply overdue actions).
+After a ticker change, quotes for the new symbol start with the 03:00 asset sync; if it ran before the change,
+**Run now** `ASSET_SYNC`.
+
+## Agent runner (the Claude and ChatGPT bots)
+
+Setup, keys, prices and the per-run log format: [agents.md §2.5](agents.md#25-the-leagues-agent-runner-phase-1-toolsagent-runner).
+The runner is the `agent-runner` service (profile `agents`): it trades as the two AI players at 09:45, 12:30 and
+15:30 ET on trading days, through `http://app:8080/mcp`, within `AGENT_MAX_TOOL_CALLS`, `AGENT_MAX_RUN_SECONDS`
+and the per-bot `AGENT_DAILY_USD_CAP`.
+
+```sh
+dc --profile agents up -d agent-runner                               # start, or apply .env changes
+docker logs --tail 50 stocks-agent-runner                            # "bot enabled …", "next runs: …", one line per run
+docker exec stocks-agent-runner node dist/main.js --check            # configuration and prices (no secrets)
+docker exec stocks-agent-runner node dist/main.js --once --bot claude    # run now (real LLM cost; counts toward the cap)
+ls /DATA/AppData/stocks/agent-data/claude/runs/                      # one JSONL log per run; spend.json = today's spend
+dc --profile agents stop agent-runner                                # pause both bots
+```
+
+- **A bot misbehaves** (spams orders, trades nonsense): freeze its player in Admin → Players (its key stops working
+  at once, open orders are cancelled), or stop the runner. Unfreeze when fixed.
+- **`status=daily_cap`** in the run line: the bot hit its dollar cap; its remaining runs today are skipped.
+  `bot skipped … missing …`: a key or model is empty in `.env`. `no price for CLAUDE_MODEL=…`: set
+  `AGENT_PRICE_CLAUDE` (or `AGENT_PRICE_CHATGPT`).
+- **Permission denied on `/data`**: the image runs as uid 1000; run `sudo chown -R 1000:1000 /DATA/AppData/stocks/agent-data` once.
+- The bots' orders, rationales and notes are also visible in the app (order detail, player profile, the feed).
 
 ## Backups
 
@@ -114,9 +205,10 @@ An admin can also halt the engine on purpose (System page) before risky maintena
 ## Restore
 
 ```sh
-# the runner keeps a checkout of deploy/ from the last deploy job:
-cd /home/gha-runner/actions-runner/_work/stocks/stocks
-sudo -u gha-runner deploy/scripts/restore.sh /DATA/AppData/stocks/backups/stocks-2026-10-09.dump
+# production (Watchtower, no runner checkout): fetch the script from main (see the top of this page), then
+sudo bash /DATA/AppData/stocks/scripts/restore.sh /DATA/AppData/stocks/backups/stocks-2026-10-09.dump
+# with the optional runner, its checkout of deploy/ from the last deploy job works too:
+# sudo -u gha-runner /home/gha-runner/actions-runner/_work/stocks/stocks/deploy/scripts/restore.sh <dump>
 ```
 
 `restore.sh` asks you to type `RESTORE`, takes a `prerestore` safety dump, stops the app (and the agent runner),
@@ -211,7 +303,9 @@ Then set the repository variable `DEPLOY_DIR` to `/DATA/AppData/stocks/compose` 
 
 ## Development notes
 
-- After the V1 migration is squashed or edited (Phase 0 and early Phase 1, §8), delete `backend/.data/` on every
-  development machine: the dev H2 file still has the old schema history. The demo seed recreates everything.
-- Production databases are never squashed: after the first production deploy, schema changes are new migrations
-  only.
+- Production applied `V1__init`, `V1_0_1`, `V1_3_01` and `V1_4_01` on its first deploy and runs Flyway with
+  out-of-order off, so V1 is never squashed now: every new migration is the next whole version (`V2__…`, `V3__…`,
+  §8 "As deployed"); `MigrationOrderTest` fails a file that would sort before the production baseline.
+- A dev H2 database (`backend/.data/`) that applied a migration file which was later renamed (for example a branch's
+  `V1_3_20`, merged as `V2`) fails Flyway validation at boot: delete `backend/.data/`; the demo seed recreates
+  everything.

@@ -9,9 +9,10 @@ in a Webull-style app that works on phone and desktop. Claude and ChatGPT join a
 market data, place orders through the same API, and follow exactly the same rules. A leaderboard shows who is
 actually good at this.
 
-> **Status: early development.** The foundation is built (accounts, security, database, API contracts, the AI
-> connection, the app shell, CI/CD); trading itself is the next milestone. See [what works today](#status) and the
-> [roadmap](docs/ROADMAP.md).
+> **Status: Phase 1 (the playable league) is built and running on the owner's server.** Trading with all five
+> order types, live market data, the deposit-aware leaderboard, corporate actions, the MCP server and the agent
+> runner for the Claude and ChatGPT bots all work; what is left is the owner's go-live checklist (bot API keys,
+> Cloudflare settings, a restore rehearsal). See [what works today](#status) and the [roadmap](docs/ROADMAP.md).
 >
 > Paper money only. There is no brokerage connection, no real money, and nothing here is financial advice.
 
@@ -62,14 +63,18 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 
 | Area | State |
 |---|---|
-| Architecture spec, roadmap | Done ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)) |
-| Backend foundation: database schema, money and time handling, API contracts, login and security, scheduled-job framework | Done, 680+ tests on H2 and PostgreSQL |
-| MCP server for AI agents | Connection and authentication work (`whoami`); trading tools come with Phase 1 |
-| Web app shell (phone and desktop layouts, mock data) | Done |
-| CI/CD: tests, multi-arch Docker image on GHCR, deploy to a home server | Done |
-| Orders, fills, portfolio, leaderboard, live market data, bots | **Phase 1, in progress** |
+| Trading: market, limit, stop, stop-limit and trailing-stop orders (shares and dollar amounts, day and GTC, extended hours for limits), realistic fills, SEC/FINRA fees, T+1 settlement, good-faith violations | Works |
+| Accounts: cash ledger, positions and lots, activity history, resets; admin deposits and withdrawals to one player or everyone | Works |
+| Corporate actions: splits and reverse splits (with cash in lieu), cash dividends, ticker changes; anything else waits for the admin | Works |
+| League: leaderboard by time-weighted return and by P&L vs SPY (deposits never count as gains), Arena (humans vs AI), player profiles, live feed | Works |
+| Market data: live Alpaca (IEX) and Finnhub in production; a deterministic simulator for development and tests | Works |
+| Web app: Webull-style UI on phone, tablet and desktop, live quotes and charts, watchlists, notifications, admin console | Works |
+| AI players: MCP server with 38 tools, REST API with OpenAPI, the agent runner that drives the Claude and ChatGPT bots on a schedule with daily cost caps | Works (live bot runs need the owner's LLM keys) |
+| Tests | 1,328 backend tests on H2 and on PostgreSQL, 117 frontend unit tests, Playwright end-to-end on three viewports, agent-runner tests against fake LLM APIs |
+| Delivery: CI, multi-arch image on GHCR, Watchtower on a CasaOS home server behind a Cloudflare Tunnel | Live |
 
-Phase 1 milestones: trading on simulated prices → live data and bots → the league → ship. Details in
+Next: the go-live checklist that needs the owner (bot keys on the server, Cloudflare settings checked from outside,
+a restore rehearsal), then Phase 2 (margin, bracket orders, OAuth connectors). Details in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## How it works
@@ -119,7 +124,7 @@ flowchart LR
 | Frontend | React 19, TypeScript, Vite, TanStack Router and Query, Tailwind CSS 4, TradingView Lightweight Charts |
 | Realtime | STOMP over WebSocket |
 | Testing | JUnit, ArchUnit, jqwik, Vitest, Playwright (phone, tablet and desktop viewports) |
-| Delivery | GitHub Actions → multi-arch image on GHCR → self-hosted runner → Docker Compose on CasaOS, behind a Cloudflare Tunnel |
+| Delivery | GitHub Actions → multi-arch image on GHCR → Watchtower → Docker Compose on CasaOS, behind a Cloudflare Tunnel (cloudflared sidecar) |
 
 ## Quick start (development)
 
@@ -149,8 +154,9 @@ Open <http://localhost:5173> and log in as `admin` / `admin-dev-123`. The dev pr
 ```
 backend/     Spring Boot app (package com.stocks): API, trading engine, MCP server, Flyway migrations, tests
 frontend/    React SPA: screens, components, API client, Playwright e2e tests
+tools/       agent-runner: the Claude and ChatGPT bots (Node/TypeScript, its own image)
 deploy/      Server setup and deploy scripts, database backup script, Cloudflare Tunnel example
-docs/        ARCHITECTURE.md (the spec), ROADMAP.md, deploy.md, runbook.md, openapi.json
+docs/        ARCHITECTURE.md (the spec), ROADMAP.md, deploy.md, runbook.md, agents.md, rules.md, openapi.json
 .github/     CI (ci.yml) and release + deploy (release.yml) workflows
 Dockerfile, docker-compose.yml, .env.example, Makefile
 ```
@@ -165,8 +171,9 @@ keeps it away from the database. Database migrations run automatically on startu
 Prefer health-checked deploys? An optional self-hosted GitHub Actions runner can do the deploy instead: it backs up
 the database first and **rolls back automatically** if the new version doesn't become healthy.
 
-`docker-compose.yml` runs the app, PostgreSQL and a nightly backup job, and can also be imported straight into
-CasaOS. Production configuration lives in a `.env` on the server (see [`.env.example`](.env.example)); no secrets
+`docker-compose.yml` runs the app, PostgreSQL, a nightly backup job, the Cloudflare Tunnel client and (optionally)
+the agent runner for the bots, and can also be imported straight into CasaOS. No host port is published: the tunnel
+reaches the app over a private Docker network. Production configuration lives in a `.env` on the server (see [`.env.example`](.env.example)); no secrets
 are ever stored in the repo or the image.
 
 Step-by-step guide: **[docs/deploy.md](docs/deploy.md)**. Operations (backups, restores, failed deploys):
@@ -178,6 +185,8 @@ Step-by-step guide: **[docs/deploy.md](docs/deploy.md)**. Operations (backups, r
 - [docs/ROADMAP.md](docs/ROADMAP.md): phases and checklists
 - [docs/deploy.md](docs/deploy.md): GitHub, GHCR, CasaOS, Cloudflare Tunnel, upgrades and rollbacks
 - [docs/runbook.md](docs/runbook.md): running the league day to day
+- [docs/agents.md](docs/agents.md): connecting bots (MCP, REST) and the agent runner
+- [docs/rules.md](docs/rules.md): the player rulebook
 - [docs/openapi.json](docs/openapi.json): the REST API (generated)
 
 ## Contributing
