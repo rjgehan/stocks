@@ -71,6 +71,7 @@ import type {
 import { MOCK_INDEX_SYMBOLS, MOCK_INVITE_CODE, MOCK_ME_BASE, MOCK_PLAYERS, POPULAR_SYMBOLS } from './data'
 import { MockMarket, hashString, mulberry32, unitsToDec } from './market'
 import { mockRules } from './rules'
+import { Phase2Mock } from './phase2'
 import { type Lot, type MockOtherPlayer, type MockState, clearState, loadState, saveState } from './state'
 
 type Listener = (destination: string, body: unknown) => void
@@ -179,6 +180,8 @@ export class MockServer {
   /** Jobs the admin ran by hand this session (§21.1 "Run now"): shown as the job's last run. */
   private readonly manualRuns = new Map<string, { runKey: string; finishedAt: string }>()
   readonly market: MockMarket
+  /** Phase 2 market endpoints (§15.10): Time & Sales, recommendations, screener, calendar. */
+  readonly phase2: Phase2Mock
   private readonly listeners = new Set<Listener>()
   private readonly startedAt = Date.now()
   private loggedIn = true
@@ -188,6 +191,7 @@ export class MockServer {
 
   constructor(market = new MockMarket()) {
     this.market = market
+    this.phase2 = new Phase2Mock(market)
     try {
       this.loggedIn = sessionStorage.getItem('stocks.mock.loggedOut') !== '1'
     } catch {
@@ -650,6 +654,25 @@ export class MockServer {
       return json(this.market.bars(symbol, range, timeframe))
     })
     r('GET', '/news', ({ url }) => json({ items: this.news(url.searchParams.get('symbols') ?? '') }))
+    // Phase 2 (§15.10)
+    r('GET', '/assets/{symbol}/trades', ({ params, url }) => {
+      const symbol = params[0]!.toUpperCase()
+      if (!this.market.has(symbol)) return problem(404, 'SYMBOL_NOT_FOUND', 'Symbol not found', `Unknown symbol ${symbol}.`)
+      return json(this.phase2.trades(symbol, Math.min(200, Number(url.searchParams.get('limit') ?? 60))))
+    })
+    r('GET', '/assets/{symbol}/recommendations', ({ params }) => {
+      const symbol = params[0]!.toUpperCase()
+      if (!this.market.has(symbol)) return problem(404, 'SYMBOL_NOT_FOUND', 'Symbol not found', `Unknown symbol ${symbol}.`)
+      return json(this.phase2.recommendations(symbol))
+    })
+    r('GET', '/market/screener', ({ url }) => {
+      const res = this.phase2.screen(url)
+      return 'field' in res ? problem(400, 'VALIDATION_FAILED', 'Validation failed', `Bad ${res.field}.`, null, [{ field: res.field, code: 'Invalid', message: `Bad ${res.field}.` }]) : json(res)
+    })
+    r('GET', '/market/calendar', ({ url }) => {
+      const today = iso().slice(0, 10)
+      return json(this.phase2.calendar(url.searchParams.get('from') ?? today, url.searchParams.get('to') ?? today))
+    })
 
     // account
     r('GET', '/account', () => json(this.account()))

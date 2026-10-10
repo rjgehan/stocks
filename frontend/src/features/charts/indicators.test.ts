@@ -9,23 +9,28 @@ const CLOSES = '44.34 44.09 44.15 43.61 44.33 44.83 45.10 45.42 45.84 46.08 45.8
   .split(' ')
   .map(Number)
 
-const close = (actual: (number | null)[], expected: (number | null)[], digits: number) => {
+const expectClose = (actual: (number | null)[], expected: (number | null)[], digits: number) => {
   expect(actual).toHaveLength(expected.length)
-  actual.forEach((v, i) => {
-    if (expected[i] === null) expect(v, `index ${i}`).toBeNull()
-    else expect(v, `index ${i}`).toBeCloseTo(expected[i]!, digits)
-  })
+  expect(close(actual, expected, digits)).not.toContain(false)
 }
+
+/** Each value within 10^-digits of the golden one (null where the indicator has not started). */
+const close = (actual: (number | null)[], expected: (number | null)[], digits: number) =>
+  actual.map((v, i) => (expected[i] === null ? v === null : v !== null && Math.abs(v - expected[i]!) < 10 ** -digits))
+
+const regular = (t: number) => t >= 3 && t <= 5
 
 const bars: PlotOhlcv[] = CLOSES.map((c, i) => ({ time: 1_000 + i * 60, open: c, high: c + 0.5, low: c - 0.5, close: c, volume: 100 }))
 
 describe('moving averages', () => {
   it('SMA is null until n values, then the mean of the last n', () => {
-    close(sma(CLOSES, 5).slice(0, 10), [null, null, null, null, 44.104, 44.202, 44.404, 44.658, 45.104, 45.454], 9)
+    const golden = [null, null, null, null, 44.104, 44.202, 44.404, 44.658, 45.104, 45.454]
+    expect(close(sma(CLOSES, 5).slice(0, 10), golden, 9)).toEqual(golden.map(() => true))
   })
 
   it('EMA is seeded with the SMA of the first n values', () => {
-    close(ema(CLOSES, 10).slice(8, 14), [null, 44.779, 44.981, 45.171727, 45.251413, 45.438429], 5)
+    const golden = [null, 44.779, 44.981, 45.171727, 45.251413, 45.438429]
+    expect(close(ema(CLOSES, 10).slice(8, 14), golden, 5)).toEqual(golden.map(() => true))
   })
 
   it('EMA skips leading nulls (the MACD signal line) and n < 1 yields nothing', () => {
@@ -51,7 +56,7 @@ describe('RSI (Wilder)', () => {
   it('matches the reference series from the first full window on', () => {
     const r = rsi(CLOSES, 14)
     expect(r.slice(0, 14).every((v) => v === null)).toBe(true)
-    close(
+    expectClose(
       r.slice(14),
       [70.4641, 66.2496, 66.4809, 69.3469, 66.2947, 57.915, 62.8807, 63.2088, 56.0116, 62.3399, 54.671, 50.3868, 40.0194, 41.4926, 41.9024, 45.4995, 37.3228, 33.0905, 37.7888],
       3,
@@ -69,9 +74,9 @@ describe('MACD', () => {
   it('EMA(fast) − EMA(slow), its signal EMA and the histogram', () => {
     const m = macd(CLOSES, 3, 6, 4)
     expect(m.macd[4]).toBeNull()
-    close(m.macd.slice(5, 12), [0.247917, 0.311458, 0.358229, 0.413757, 0.425909, 0.328691, 0.277014], 5)
-    close(m.signal.slice(5, 12), [null, null, null, 0.33284, 0.370068, 0.353517, 0.322916], 5)
-    close(m.hist.slice(5, 12), [null, null, null, 0.080917, 0.055841, -0.024826, -0.045902], 5)
+    expectClose(m.macd.slice(5, 12), [0.247917, 0.311458, 0.358229, 0.413757, 0.425909, 0.328691, 0.277014], 5)
+    expectClose(m.signal.slice(5, 12), [null, null, null, 0.33284, 0.370068, 0.353517, 0.322916], 5)
+    expectClose(m.hist.slice(5, 12), [null, null, null, 0.080917, 0.055841, -0.024826, -0.045902], 5)
   })
 })
 
@@ -79,9 +84,9 @@ describe('KDJ', () => {
   it('RSV over n with K and D smoothed from 50, J = 3K − 2D', () => {
     const r = kdj(bars, 9, 3, 3)
     expect(r.k[7]).toBeNull()
-    close(r.k.slice(8, 13), [61.506708, 69.534731, 73.061579, 76.757671, 72.747538], 5)
-    close(r.d.slice(8, 13), [53.835569, 59.068623, 63.732942, 68.074518, 69.632192], 5)
-    close(r.j.slice(8, 13), [76.848985, 90.466947, 91.718853, 94.123977, 78.978232], 5)
+    expectClose(r.k.slice(8, 13), [61.506708, 69.534731, 73.061579, 76.757671, 72.747538], 5)
+    expectClose(r.d.slice(8, 13), [53.835569, 59.068623, 63.732942, 68.074518, 69.632192], 5)
+    expectClose(r.j.slice(8, 13), [76.848985, 90.466947, 91.718853, 94.123977, 78.978232], 5)
   })
 
   it('a flat window has RSV 50', () => {
@@ -138,7 +143,6 @@ describe('chart types', () => {
   })
 
   it('groups consecutive extended-hours bars into spans', () => {
-    const regular = (t: number) => t >= 3 && t <= 5
     expect(extendedSpans([1, 2, 3, 4, 5, 6, 7, 9], regular)).toEqual([
       { from: 1, to: 2 },
       { from: 6, to: 9 },

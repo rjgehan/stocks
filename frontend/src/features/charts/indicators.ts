@@ -17,9 +17,11 @@ export interface PlotOhlcv {
 
 export type Line = (number | null)[]
 
+const nulls = (n: number): Line => Array.from({ length: n }, () => null)
+
 /** Simple moving average of the last `n` values (null for the first n − 1). */
 export function sma(values: readonly number[], n: number): Line {
-  const out: Line = new Array<number | null>(values.length).fill(null)
+  const out: Line = nulls(values.length)
   if (n < 1) return out
   let sum = 0
   for (let i = 0; i < values.length; i++) {
@@ -35,7 +37,7 @@ export function sma(values: readonly number[], n: number): Line {
  * Null inputs (e.g. a MACD line before it starts) are skipped: the EMA starts at the first `n` non-null values.
  */
 export function ema(values: readonly (number | null)[], n: number): Line {
-  const out: Line = new Array<number | null>(values.length).fill(null)
+  const out: Line = nulls(values.length)
   if (n < 1) return out
   const alpha = 2 / (n + 1)
   let count = 0
@@ -68,8 +70,8 @@ export interface Bands {
 /** Bollinger bands: SMA(n) ± k population standard deviations of the last `n` closes. */
 export function bollinger(closes: readonly number[], n: number, k: number): Bands {
   const mid = sma(closes, n)
-  const upper: Line = new Array<number | null>(closes.length).fill(null)
-  const lower: Line = new Array<number | null>(closes.length).fill(null)
+  const upper: Line = nulls(closes.length)
+  const lower: Line = nulls(closes.length)
   for (let i = n - 1; i < closes.length; i++) {
     const m = mid[i]
     if (m == null) continue
@@ -88,7 +90,7 @@ export function bollinger(closes: readonly number[], n: number, k: number): Band
  * with no volume yet has no VWAP.
  */
 export function vwap(bars: readonly PlotOhlcv[], sessionOf: (time: number) => string): Line {
-  const out: Line = new Array<number | null>(bars.length).fill(null)
+  const out: Line = nulls(bars.length)
   let session: string | null = null
   let pv = 0
   let vol = 0
@@ -130,7 +132,7 @@ export function macd(closes: readonly number[], fast: number, slow: number, sign
  * the price did not move at all. Null for the first `n` bars.
  */
 export function rsi(closes: readonly number[], n: number): Line {
-  const out: Line = new Array<number | null>(closes.length).fill(null)
+  const out: Line = nulls(closes.length)
   if (n < 1 || closes.length <= n) return out
   let gain = 0
   let loss = 0
@@ -168,9 +170,9 @@ export interface Kdj {
  * J = 3K − 2D. Null for the first n − 1 bars.
  */
 export function kdj(bars: readonly PlotOhlcv[], n: number, m1: number, m2: number): Kdj {
-  const k: Line = new Array<number | null>(bars.length).fill(null)
-  const d: Line = new Array<number | null>(bars.length).fill(null)
-  const j: Line = new Array<number | null>(bars.length).fill(null)
+  const k: Line = nulls(bars.length)
+  const d: Line = nulls(bars.length)
+  const j: Line = nulls(bars.length)
   let prevK = 50
   let prevD = 50
   for (let i = n - 1; i < bars.length; i++) {
