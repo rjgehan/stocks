@@ -61,6 +61,10 @@ test('chart types and indicators persist, oscillators get their own panes', asyn
   await expect(page.getByRole('dialog', { name: 'Indicators' })).toHaveCount(0)
   await expect(chart(page)).toHaveAttribute('data-oscillators', '0')
   await expect(page.getByTestId('indicator-legend')).toHaveCount(0)
+  // leaving the page tears the chart down cleanly (no draw on a disposed chart)
+  await page.goto('/markets')
+  await expect(page.getByTestId('screener-card')).toBeVisible()
+  await page.waitForTimeout(500)
   expect(errors).toEqual([])
 })
 

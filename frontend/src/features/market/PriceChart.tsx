@@ -228,8 +228,11 @@ export default function PriceChart({
     price.current = s
     shading.current = band
     return () => {
-      s.detachPrimitive(band)
-      if (chart.current) chart.current.removeSeries(s)
+      // after chart.remove() (unmount) the series is gone: touching it would schedule a draw on a disposed chart
+      if (chart.current) {
+        s.detachPrimitive(band)
+        chart.current.removeSeries(s)
+      }
       price.current = null
       shading.current = null
     }

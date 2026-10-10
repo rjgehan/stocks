@@ -17,6 +17,7 @@ import { Route as AppAccountRouteRouteImport } from './routes/_app/account/route
 import { Route as AppAdminRouteRouteImport } from './routes/_app/admin/route'
 import { Route as AppLeagueRouteImport } from './routes/_app/league'
 import { Route as AppMarketsRouteImport } from './routes/_app/markets'
+import { Route as AppScreenerRouteImport } from './routes/_app/screener'
 import { Route as AppSearchRouteImport } from './routes/_app/search'
 import { Route as AppSettingsRouteRouteImport } from './routes/_app/settings/route'
 import { Route as AppWatchlistRouteImport } from './routes/_app/watchlist'
@@ -81,6 +82,11 @@ const AppLeagueRoute = AppLeagueRouteImport.update({
 const AppMarketsRoute = AppMarketsRouteImport.update({
   id: '/markets',
   path: '/markets',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppScreenerRoute = AppScreenerRouteImport.update({
+  id: '/screener',
+  path: '/screener',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSearchRoute = AppSearchRouteImport.update({
@@ -224,6 +230,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRouteRouteWithChildren
   '/league': typeof AppLeagueRoute
   '/markets': typeof AppMarketsRoute
+  '/screener': typeof AppScreenerRoute
   '/search': typeof AppSearchRoute
   '/watchlist': typeof AppWatchlistRoute
   '/join/$code': typeof JoinCodeRoute
@@ -255,6 +262,7 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/league': typeof AppLeagueRoute
   '/markets': typeof AppMarketsRoute
+  '/screener': typeof AppScreenerRoute
   '/search': typeof AppSearchRoute
   '/watchlist': typeof AppWatchlistRoute
   '/join/$code': typeof JoinCodeRoute
@@ -292,6 +300,7 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRouteRouteWithChildren
   '/_app/league': typeof AppLeagueRoute
   '/_app/markets': typeof AppMarketsRoute
+  '/_app/screener': typeof AppScreenerRoute
   '/_app/search': typeof AppSearchRoute
   '/_app/watchlist': typeof AppWatchlistRoute
   '/join/$code': typeof JoinCodeRoute
@@ -330,6 +339,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/league'
     | '/markets'
+    | '/screener'
     | '/search'
     | '/watchlist'
     | '/join/$code'
@@ -361,6 +371,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/league'
     | '/markets'
+    | '/screener'
     | '/search'
     | '/watchlist'
     | '/join/$code'
@@ -397,6 +408,7 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_app/league'
     | '/_app/markets'
+    | '/_app/screener'
     | '/_app/search'
     | '/_app/watchlist'
     | '/join/$code'
@@ -488,6 +500,13 @@ declare module '@tanstack/react-router' {
       path: '/markets'
       fullPath: '/markets'
       preLoaderRoute: typeof AppMarketsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/screener': {
+      id: '/_app/screener'
+      path: '/screener'
+      fullPath: '/screener'
+      preLoaderRoute: typeof AppScreenerRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/search': {
@@ -750,6 +769,7 @@ interface AppRouteChildren {
   AppSettingsRouteRoute: typeof AppSettingsRouteRouteWithChildren
   AppLeagueRoute: typeof AppLeagueRoute
   AppMarketsRoute: typeof AppMarketsRoute
+  AppScreenerRoute: typeof AppScreenerRoute
   AppSearchRoute: typeof AppSearchRoute
   AppWatchlistRoute: typeof AppWatchlistRoute
   AppIndexRoute: typeof AppIndexRoute
@@ -763,6 +783,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRouteRoute: AppSettingsRouteRouteWithChildren,
   AppLeagueRoute: AppLeagueRoute,
   AppMarketsRoute: AppMarketsRoute,
+  AppScreenerRoute: AppScreenerRoute,
   AppSearchRoute: AppSearchRoute,
   AppWatchlistRoute: AppWatchlistRoute,
   AppIndexRoute: AppIndexRoute,
