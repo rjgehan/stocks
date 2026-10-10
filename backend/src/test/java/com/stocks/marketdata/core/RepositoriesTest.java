@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +33,11 @@ class RepositoriesTest {
   void setUp() {
     db = TestDb.fresh();
     time = TestTimes.clock();
+  }
+
+  @AfterEach
+  void closeDb() throws Exception {
+    ((AutoCloseable) db.dataSource()).close();         // PG has a connection limit: release the pool
   }
 
   static Asset asset(String symbol, String name, boolean fractionable, LiquidityTier tier) {

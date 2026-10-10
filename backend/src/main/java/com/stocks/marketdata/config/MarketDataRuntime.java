@@ -211,7 +211,26 @@ public final class MarketDataRuntime implements AutoCloseable {
     started = true;
     this.listeners = List.copyOf(updateListeners);
     assetSync.seed();
+    if (sim == null) {
+      loadOfficialCloses();
+    }
     feed.start();
+  }
+
+  /**
+   * Live profiles: the quote book learns the stored official closes of the last two trading days, so quotes have the
+   * official {@code prevClose} right after a restart (snapshots only carry IEX daily bars).
+   */
+  void loadOfficialCloses() {
+    try {
+      java.time.LocalDate day = calendar.currentPnlDay(time.now());
+      Set<String> symbols = officialCloseSymbols();
+      for (java.time.LocalDate d : List.of(calendar.previousTradingDay(day), day)) {
+        dailyMarks.officialCloses(d, symbols).forEach((s, c) -> feed.officialClose(s, d, c));
+      }
+    } catch (RuntimeException e) {
+      log.warn("Could not load official closes: {}", e.toString());
+    }
   }
 
   /** Live boot work that needs the network: the probe and, when the table has no provider rows yet, an asset sync. */

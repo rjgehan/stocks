@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -34,16 +35,22 @@ class MarkServiceTest {
   SplitAdjustmentsImpl splits;
   Set<String> holds;
   MarkService service;
+  TestDb db;
 
   @BeforeEach
   void setUp() {
-    TestDb db = TestDb.fresh();
+    db = TestDb.fresh();
     feed = mock(MarketFeed.class);
     marks = new DailyMarkRepository(db.dataSource());
     splits = new SplitAdjustmentsImpl(db.dataSource(), time);
     holds = new java.util.HashSet<>();
     service = new MarkService(feed, calendar, time, marks, splits, holds::contains, Duration.ofSeconds(15),
         Duration.ofSeconds(120));
+  }
+
+  @AfterEach
+  void closeDb() throws Exception {
+    ((AutoCloseable) db.dataSource()).close();         // PG has a connection limit: release the pool
   }
 
   static Trade trade(String price, Instant at, boolean consolidated) {

@@ -19,6 +19,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -47,6 +48,11 @@ class DbMarketCalendarTest {
     replans = new AtomicInteger();
     admin = new CalendarAdminImpl(repository, calendar, time, replans::incrementAndGet);
     owner = new Fixtures(db.jdbc(), time).admin("owner");
+  }
+
+  @AfterEach
+  void closeDb() throws Exception {
+    ((AutoCloseable) db.dataSource()).close();         // PG has a connection limit: release the pool
   }
 
   @Test

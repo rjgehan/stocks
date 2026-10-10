@@ -166,9 +166,10 @@ public class MarketDataServiceImpl implements MarketDataService {
     Instant now = time.now();
     LocalDate today = calendar.tradeDateFor(now);
     LocalDate prev = calendar.previousTradingDay(calendar.currentPnlDay(now));
-    BigDecimal close = feed.markInputs(s).closes().get(prev);
+    // the stored official (SIP) close first: a live snapshot's prevDailyBar is the IEX-only daily bar
+    BigDecimal close = safe(() -> dailyMarks.officialClose(s, prev)).orElse(null);
     if (close == null) {
-      close = safe(() -> dailyMarks.officialClose(s, prev)).orElse(null);
+      close = feed.markInputs(s).closes().get(prev);
     }
     if (close == null && sim != null) {
       close = sim.officialClose(s, prev).orElse(null);

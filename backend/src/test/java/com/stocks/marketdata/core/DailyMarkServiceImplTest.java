@@ -32,10 +32,18 @@ class DailyMarkServiceImplTest {
 
   static final LocalDate D = LocalDate.of(2026, 10, 9);
   final MarketCalendar calendar = InMemoryCalendars.bundled();
+  TestDb db;
+
+  @org.junit.jupiter.api.AfterEach
+  void closeDb() throws Exception {
+    if (db != null) {
+      ((AutoCloseable) db.dataSource()).close();
+    }
+  }
 
   @Test
   void simWritesFinalSimulatedMarksOnlyAfterTheSessions() {
-    TestDb db = TestDb.fresh();
+    db = TestDb.fresh();
     MutableTimeSource time = new MutableTimeSource(Instant.parse("2026-10-09T19:00:00Z"));   // 15:00 ET
     SimulatedMarketDataProvider sim = new SimulatedMarketDataProvider(42, calendar, Universe.load(),
         SimScenarios.none(), time);
@@ -62,7 +70,7 @@ class DailyMarkServiceImplTest {
 
   @Test
   void liveUsesTheLastSip1MinBarThenFallsBack() {
-    TestDb db = TestDb.fresh();
+    db = TestDb.fresh();
     MutableTimeSource time = new MutableTimeSource(Instant.parse("2026-10-10T00:20:00Z"));   // 20:20 ET
     List<BarQuery> queries = new ArrayList<>();
     MarketDataProvider sip = new MarketDataProvider() {
