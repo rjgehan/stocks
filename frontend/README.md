@@ -7,11 +7,11 @@ origin. Node ≥ 22.12.
 |---|---|
 | `npm ci` | Install from the committed lockfile (carries the §2.2 `openapi-typescript → $typescript` override) |
 | `npm run dev` | Vite on :5173, proxying `/api`, `/ws`, `/mcp`, `/v3`, `/swagger-ui` to `localhost:8080` (§24.6). `STOCKS_BACKEND_URL` overrides the target |
-| `npm run dev:mock` | Same UI against the in-memory fake API and quote stream (`VITE_API_MOCK=1`, §22.9); no backend needed |
+| `npm run dev:mock` | Same UI against the in-memory fake API and quote stream (`VITE_API_MOCK=1`, §22.9); no backend needed. Signed in as the admin `demo`; any password except `wrong` works; `/join/welcome-friends` is a valid invite. `VITE_QUERY_DEVTOOLS=1` shows the TanStack Query devtools |
 | `npm run build` | Typecheck, then build to `dist/` |
 | `npm run lint` / `typecheck` / `test` | oxlint (warnings fail) · `tsc -b` · Vitest (run once) |
 | `npm run gen:api` | `openapi-typescript ../docs/openapi.json -o src/lib/api/schema.d.ts` (normally via `make openapi`) |
-| `npm run e2e` | Playwright at 390×844, 768×1024 and 1440×900. Defaults to mock mode on :5174; set `E2E_BASE_URL` (plus `E2E_USER`/`E2E_PASSWORD` to sign in) for a real backend, and `E2E_CHANNEL=chrome` to use the installed Chrome. `make e2e` does all of that against the built jar |
+| `npm run e2e` | Playwright at 390×844, 768×1024 and 1440×900: sign in/out, search, a $25 dollar buy into a position, cancel a resting limit, watchlist add/reorder/remove, admin deposit to ALL, invite signup, AI player + one-time key, calendar override. Defaults to mock mode on :5174 (`E2E_MOCK_PORT` changes it); set `E2E_BASE_URL` (plus `E2E_USER`/`E2E_PASSWORD` to sign in) for a real backend, and `E2E_CHANNEL=chrome` to use the installed Chrome. `make e2e` does all of that against the built jar |
 | `npm run icons` | Regenerate `public/` icons (SVG + PNG 192/512/maskable/apple-touch) from `scripts/gen-icons.mjs` |
 
 ## Layout

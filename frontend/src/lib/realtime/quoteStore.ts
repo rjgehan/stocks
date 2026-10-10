@@ -9,21 +9,36 @@ import type { Quote, Tick } from '../api/types'
 interface QuoteState {
   quotes: Record<string, Quote>
   upsertQuote: (q: Quote) => void
-  upsertQuotes: (qs: Quote[]) => void
+  upsertQuotes: (qs: readonly Quote[]) => void
   applyTick: (t: Tick) => void
+}
+
+/** A REST or pushed quote never replaces a fresher one already in the store (out-of-order responses). */
+function newer(next: Quote, prev: Quote | undefined): boolean {
+  if (!prev || !prev.asOf || !next.asOf) return true
+  return Date.parse(next.asOf) >= Date.parse(prev.asOf)
 }
 
 export const useQuoteStore = create<QuoteState>()((set) => ({
   quotes: {},
-  upsertQuote: (q) => set((s) => ({ quotes: { ...s.quotes, [q.symbol]: q } })),
+  upsertQuote: (q) =>
+    set((s) => {
+      if (!q.symbol || !newer(q, s.quotes[q.symbol])) return s
+      return { quotes: { ...s.quotes, [q.symbol]: q } }
+    }),
   upsertQuotes: (qs) =>
     set((s) => {
-      const next = { ...s.quotes }
-      for (const q of qs) next[q.symbol] = q
-      return { quotes: next }
+      let next: Record<string, Quote> | null = null
+      for (const q of qs) {
+        if (!q.symbol || !newer(q, s.quotes[q.symbol])) continue
+        next ??= { ...s.quotes }
+        next[q.symbol] = q
+      }
+      return next ? { quotes: next } : s
     }),
   applyTick: (t) =>
     set((s) => {
+      if (!t.symbol) return s
       const prev = s.quotes[t.symbol]
       if (!prev) return s // a tick carries no bid/ask; wait for a REST seed or a full quote
       const extended =

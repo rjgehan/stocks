@@ -5,13 +5,14 @@ import { formatTimeEt } from '@/lib/format/time'
 import { Pill } from '@/components/ui/Pill'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
+import { StarButton } from '@/features/watchlist/StarButton'
 import { Change } from './Change'
 import { QualityBadge } from './QualityBadge'
 import { usePriceFlash } from './usePriceFlash'
 
 /**
  * Quote page header (§22.4): symbol, name and exchange; the last price large (32/600 phone, 28/600
- * desktop); signed change; the extended-hours line; fractionable and data-quality badges. On scroll a
+ * desktop); signed change; the extended-hours line; fractionable and data-quality badges; the watch star. On scroll a
  * compact sticky bar takes over ("sticky, shrinking").
  */
 export function QuoteHeader({
@@ -21,6 +22,7 @@ export function QuoteHeader({
   actions,
   scrollRoot,
   stickyTopClass = 'top-0',
+  showStar = true,
 }: {
   symbol: string
   asset: Asset | undefined
@@ -30,6 +32,7 @@ export function QuoteHeader({
   scrollRoot?: React.RefObject<HTMLElement | null>
   /** Offset of the compact bar when another sticky header sits above it (phone pushed screens). */
   stickyTopClass?: string
+  showStar?: boolean
 }) {
   const sentinel = useRef<HTMLDivElement>(null)
   const [compact, setCompact] = useState(false)
@@ -64,11 +67,16 @@ export function QuoteHeader({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-[20px] leading-7 font-bold tracking-tight">{symbol}</h1>
-              {asset?.fractionable ? <Pill tone="accent" title="Fractional shares and dollar orders allowed">Fractional</Pill> : null}
+              {asset?.fractionable ? (
+                <Pill tone="accent" title="Fractional shares and dollar orders allowed">
+                  Fractional
+                </Pill>
+              ) : null}
               <QualityBadge quality={quote?.quality} />
               {quote?.halted ? <Pill tone="down">Halted</Pill> : null}
+              {asset && !asset.tradable ? <Pill tone="warn">Not tradable</Pill> : null}
             </div>
-            <p className="mt-0.5 truncate text-caption text-text-2">
+            <div className="mt-0.5 truncate text-caption text-text-2">
               {asset ? (
                 <>
                   {asset.name}
@@ -77,39 +85,42 @@ export function QuoteHeader({
               ) : (
                 <Skeleton className="h-3 w-40" />
               )}
-            </p>
+            </div>
           </div>
-          {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
+          <div className="flex shrink-0 items-center gap-1">
+            {showStar ? <StarButton symbol={symbol} /> : null}
+            {actions}
+          </div>
         </div>
 
         <div ref={sentinel} className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          {quote ? (
+          {quote?.last ? (
             <span
               key={flash.key}
-              className={cx(
-                'rounded-sm px-0.5 -mx-0.5 text-hero-phone font-semibold tablet:text-hero',
-                flash.dir === 'up' && 'animate-flash-up',
-                flash.dir === 'down' && 'animate-flash-down',
-              )}
+              data-testid="quote-last"
+              className={cx('-mx-0.5 rounded-sm px-0.5 text-hero-phone font-semibold tablet:text-hero', flash.dir === 'up' && 'animate-flash-up', flash.dir === 'down' && 'animate-flash-down')}
             >
               {formatPrice(quote.last)}
             </span>
+          ) : quote ? (
+            <span className="text-hero-phone font-semibold text-text-3 tablet:text-hero">--</span>
           ) : (
             <Skeleton className="h-8 w-32" />
           )}
           {quote ? <Change change={quote.change} pct={quote.changePct} reference={quote.last} className="text-body" /> : null}
         </div>
         <p className="mt-1 text-caption text-text-3">
-          {ext ? (
+          {ext?.price ? (
             <>
-              <span className="font-semibold text-session-ext">{ext.session === 'PRE' ? 'Pre-market' : 'After hours'}</span>{' '}
-              <span className="text-text-1">{formatPrice(ext.price)}</span>{' '}
+              <span className="font-semibold text-session-ext">{ext.session === 'PRE' ? 'Pre-market' : 'After hours'}</span> <span className="text-text-1">{formatPrice(ext.price)}</span>{' '}
               <Change change={ext.change} pct={ext.changePct} reference={ext.price} showArrow={false} /> · {formatTimeEt(ext.at)}
             </>
           ) : quote?.asOf ? (
-            <>As of {formatTimeEt(quote.asOf)}</>
+            <>
+              {quote.session === 'CLOSED' ? 'At close' : 'As of'} {formatTimeEt(quote.asOf)}
+            </>
           ) : (
-            ' '
+            ' '
           )}
         </p>
       </header>

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { api, unwrap } from '../client'
 import { queryKeys } from '../queryKeys'
-import type { ChartRange } from '../types'
+import type { ChartRange, MoverList, Timeframe } from '../types'
 
 export function useClock() {
   return useQuery({
@@ -16,25 +16,51 @@ export function useAsset(symbol: string) {
   return useQuery({
     queryKey: queryKeys.asset(symbol),
     queryFn: () => unwrap(api.GET('/api/v1/assets/{symbol}', { params: { path: { symbol } } })),
-    staleTime: 5 * 60_000,
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
     enabled: symbol.length > 0,
   })
 }
 
-export function useBars(symbol: string, range: ChartRange) {
+/** Bars for a chart range (§18.2 `GET /bars/{symbol}?range=`), optionally with an explicit interval (`tf`). */
+export function useBars(symbol: string, range: ChartRange, tf?: Timeframe) {
   return useQuery({
-    queryKey: queryKeys.bars(symbol, range),
-    queryFn: () => unwrap(api.GET('/api/v1/bars/{symbol}', { params: { path: { symbol }, query: { range } } })),
-    staleTime: 60_000,
+    queryKey: queryKeys.bars(symbol, range, tf),
+    queryFn: () =>
+      unwrap(api.GET('/api/v1/bars/{symbol}', { params: { path: { symbol }, query: tf ? { range, timeframe: tf } : { range } } })),
+    // intraday ranges move every minute; longer ranges are stable for the session
+    staleTime: range === '1D' || range === '5D' ? 30_000 : 5 * 60_000,
+    refetchInterval: range === '1D' ? 60_000 : false,
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[1] === symbol ? prev : undefined),
     enabled: symbol.length > 0,
   })
 }
 
 export function useAssetSearch(q: string) {
+  const query = q.trim()
   return useQuery({
-    queryKey: ['assetSearch', q],
-    queryFn: () => unwrap(api.GET('/api/v1/assets/search', { params: { query: { q, limit: 10 } } })),
-    enabled: q.trim().length > 0,
+    queryKey: queryKeys.assetSearch(query.toUpperCase()),
+    queryFn: () => unwrap(api.GET('/api/v1/assets/search', { params: { query: { q: query, limit: 12 } } })),
+    enabled: query.length > 0,
+    staleTime: 5 * 60_000,
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useMovers(list: MoverList) {
+  return useQuery({
+    queryKey: queryKeys.movers(list),
+    queryFn: () => unwrap(api.GET('/api/v1/market/movers', { params: { query: { list, limit: 20 } } })),
     staleTime: 60_000,
+    refetchInterval: 120_000,
+  })
+}
+
+export function useNews(symbols: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.news(symbols),
+    queryFn: () => unwrap(api.GET('/api/v1/news', { params: { query: symbols ? { symbols, limit: 10 } : { limit: 10 } } })),
+    staleTime: 5 * 60_000,
+    enabled,
   })
 }

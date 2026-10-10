@@ -5,6 +5,7 @@ import { IconLogout, IconPanelLeft, IconSearch, LogoMark } from '@/components/ui
 import { NotificationBell } from '@/features/notifications/NotificationBell'
 import { SymbolSearch } from '@/features/market/SymbolSearch'
 import { PaperBadge, SimBadge } from './Badges'
+import { ConnectionIndicator } from './ConnectionIndicator'
 import { NavHero } from './NavHero'
 import { SessionChip } from './SessionChip'
 import { ThemeToggle } from './ThemeToggle'
@@ -38,6 +39,7 @@ export function TopBar({ onToggleWatchlist, showWatchlistToggle }: { onToggleWat
       <IconButton label="Search" className="desktop:hidden" onClick={() => void navigate({ to: '/search' })}>
         <IconSearch />
       </IconButton>
+      <ConnectionIndicator />
       <SessionChip detailClassName="hidden desktop:inline" />
       <div className="flex items-center gap-1">
         <PaperBadge />
@@ -49,7 +51,7 @@ export function TopBar({ onToggleWatchlist, showWatchlistToggle }: { onToggleWat
         <NotificationBell />
         {me ? (
           <IconButton
-            label={`Sign out ${me.handle}`}
+            label={`Sign out ${me.handle ?? ''}`.trim()}
             onClick={() => logout.mutate(undefined, { onSettled: () => void navigate({ to: '/login' }) })}
           >
             <IconLogout />
@@ -62,17 +64,24 @@ export function TopBar({ onToggleWatchlist, showWatchlistToggle }: { onToggleWat
 
 /** Phone top bar for root screens: brand or title, session chip, badges, bell. */
 export function PhoneTopBar({ title }: { title?: string }) {
+  const navigate = useNavigate()
   return (
     <header className="shrink-0 border-b border-divider bg-bg-1 pt-safe pl-safe pr-safe">
-      <div className="flex h-12 items-center gap-2 px-3">
+      <div className="flex h-12 items-center gap-1.5 px-3">
         {title ? <h1 className="text-[20px] leading-7 font-bold tracking-tight">{title}</h1> : <Brand />}
         <div className="flex-1" />
         <PaperBadge />
         <SimBadge />
+        <IconButton label="Search" size="touch" onClick={() => void navigate({ to: '/search' })}>
+          <IconSearch />
+        </IconButton>
         <NotificationBell size="touch" />
       </div>
       <div className="flex items-center justify-between gap-2 px-3 pb-2">
-        <SessionChip />
+        <div className="flex min-w-0 items-center gap-1.5">
+          <SessionChip />
+          <ConnectionIndicator />
+        </div>
         <NavHero />
       </div>
     </header>

@@ -3,7 +3,7 @@
  * rendered as §18.3 `Quote`, `Tick` and `Bars` DTOs with decimal strings. Quality is always SIMULATED.
  */
 import { type Dec, div, fromInteger, shift } from '../../format/decimal'
-import type { Bar, Bars, ChartRange, Quote, Tick } from '../types'
+import type { Bar, Bars, ChartRange, MoverItem, MoverList, Quote, Tick, Timeframe } from '../types'
 import { MOCK_UNIVERSE, type MockSymbol } from './data'
 
 const UNITS_PER_DOLLAR = 10_000
@@ -53,16 +53,27 @@ interface SymbolState {
   lastAt: number
 }
 
-const RANGE_SPEC: Record<ChartRange, { timeframe: string; count: number; stepMs: number }> = {
+const RANGE_SPEC: Record<ChartRange, { timeframe: Timeframe; count: number; stepMs: number }> = {
   '1D': { timeframe: '1Min', count: 390, stepMs: 60_000 },
-  '5D': { timeframe: '15Min', count: 130, stepMs: 15 * 60_000 },
-  '1M': { timeframe: '1Hour', count: 154, stepMs: 60 * 60_000 },
+  '5D': { timeframe: '5Min', count: 390, stepMs: 5 * 60_000 },
+  '1M': { timeframe: '30Min', count: 286, stepMs: 30 * 60_000 },
   '3M': { timeframe: '1Day', count: 63, stepMs: 86_400_000 },
   '6M': { timeframe: '1Day', count: 126, stepMs: 86_400_000 },
   YTD: { timeframe: '1Day', count: 194, stepMs: 86_400_000 },
   '1Y': { timeframe: '1Day', count: 252, stepMs: 86_400_000 },
   '5Y': { timeframe: '1Week', count: 260, stepMs: 7 * 86_400_000 },
   ALL: { timeframe: '1Month', count: 120, stepMs: 30 * 86_400_000 },
+}
+
+const TIMEFRAME_MS: Record<Timeframe, number> = {
+  '1Min': 60_000,
+  '5Min': 5 * 60_000,
+  '15Min': 15 * 60_000,
+  '30Min': 30 * 60_000,
+  '1Hour': 60 * 60_000,
+  '1Day': 86_400_000,
+  '1Week': 7 * 86_400_000,
+  '1Month': 30 * 86_400_000,
 }
 
 export class MockMarket {
@@ -182,11 +193,30 @@ export class MockMarket {
     }
   }
 
-  bars(symbol: string, range: ChartRange): Bars {
+  /** Gainers / losers / most active among the stocks (ETFs excluded), from the live random walks. */
+  movers(list: MoverList, limit: number): MoverItem[] {
+    const rows = [...this.states.values()]
+      .filter((s) => s.meta.type !== 'ETF')
+      .map((s) => {
+        const q = this.quote(s.meta.symbol)
+        return { symbol: s.meta.symbol, name: s.meta.name, price: q.last, change: q.change, changePct: q.changePct, volume: q.volume, move: s.last / s.meta.prevClose }
+      })
+    if (list === 'GAINERS') rows.sort((a, b) => b.move - a.move)
+    else if (list === 'LOSERS') rows.sort((a, b) => a.move - b.move)
+    else rows.sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
+    return rows.slice(0, limit).map(({ move: _move, ...item }) => item)
+  }
+
+  /** Bars for a range, at its default interval or at `timeframe` (the same span, ≤ 1000 bars). */
+  bars(symbol: string, range: ChartRange, timeframe?: Timeframe | null): Bars {
     const s = this.states.get(symbol)
-    const spec = RANGE_SPEC[range]
+    const base = RANGE_SPEC[range]
+    const spec =
+      timeframe && timeframe !== base.timeframe
+        ? { timeframe, stepMs: TIMEFRAME_MS[timeframe], count: Math.min(1000, Math.max(2, Math.round((base.count * base.stepMs) / TIMEFRAME_MS[timeframe]))) }
+        : base
     if (!s) return { symbol, timeframe: spec.timeframe, adjustment: 'SPLIT', bars: [], tailFrom: null, source: 'mock' }
-    const rng = mulberry32(hashString(`${symbol}:${range}`))
+    const rng = mulberry32(hashString(`${symbol}:${range}:${spec.timeframe}`))
     const stepVol = s.meta.vol * 0.0009 * Math.sqrt(spec.stepMs / 60_000)
     const closes: number[] = Array.from({ length: spec.count }, () => 0)
     closes[spec.count - 1] = s.last

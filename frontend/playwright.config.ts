@@ -3,11 +3,12 @@ import { defineConfig } from '@playwright/test'
 /**
  * Playwright e2e (§26): viewports 390×844, 768×1024 and 1440×900.
  *  - CI / real backend: E2E_BASE_URL=http://localhost:8080 (the jar serving the built SPA, profiles test,e2e).
- *  - Local default: Vite in mock mode (§22.9) on port 5174, started automatically.
+ *  - Local default: Vite in mock mode (§22.9) on port E2E_MOCK_PORT (default 5174), started automatically.
  *  - E2E_CHANNEL=chrome uses the installed Google Chrome instead of Playwright's Chromium download.
  */
 const external = process.env.E2E_BASE_URL
-const baseURL = external ?? 'http://localhost:5174'
+const mockPort = Number(process.env.E2E_MOCK_PORT ?? 5174)
+const baseURL = external ?? `http://localhost:${mockPort}`
 const channel = process.env.E2E_CHANNEL
 
 export default defineConfig({
@@ -29,7 +30,7 @@ export default defineConfig({
   webServer: external
     ? undefined
     : {
-        command: 'npm run dev:mock -- --port 5174',
+        command: `npm run dev:mock -- --port ${mockPort} --strictPort`,
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,

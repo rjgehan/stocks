@@ -1,5 +1,7 @@
 import { Outlet, createFileRoute } from '@tanstack/react-router'
 import { NavHero } from '@/app/NavHero'
+import { useBreakpoint } from '@/app/useBreakpoint'
+import { useRouteMeta } from '@/app/useRouteMeta'
 import { LinkTabs } from '@/components/ui/Tabs'
 
 export const Route = createFileRoute('/_app/account')({
@@ -9,6 +11,13 @@ export const Route = createFileRoute('/_app/account')({
 
 /** Account (§22.4): NAV hero with day and total P&L, then Overview · Positions · Orders · Activity · History. */
 function AccountLayout() {
+  const bp = useBreakpoint()
+  const meta = useRouteMeta()
+  // Phone pushed screens (order detail) bring their own back header instead of the account chrome.
+  if (bp === 'phone' && meta.phone === 'pushed') {
+    return <Outlet />
+
+  }
   return (
     <div className="scrollbar-thin h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-4 desktop:px-6">
