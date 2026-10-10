@@ -3581,7 +3581,7 @@ type SystemStatus = { version: string; startedAt: Ts; db: "postgresql"|"h2";
 | **Money** | Transfer form: target Single or All (+ kinds), type, amount, memo, `treatAs` for adjustments, all-or-nothing. A live preview (`POST /cash-transfers/preview`) lists affected accounts with cash, withdrawable, E⁻, U, **worst mark quality** and warnings (`ACCOUNT_EQUITY_TOO_LOW`, `MARKS_DEGRADED`). Degraded marks require ticking "Value with degraded marks anyway". Confirmation requires **typing the amount**. The transfers table is filterable. |
 | **Invites** | Create (copy link), list, revoke |
 | **Settings** | Default starting cash, self-reset, season start, eligibility, feed delay, holdings visibility, show deposits, require rationale |
-| **System** | Engine state and queue, invariants, provider stream usage ("Alpaca 23/30 · LIVE"), REST budget, probe results, stale symbols, corporate-action holds, jobs (from the `JobScheduler` registry: next occurrence, last `run_key`, status) with "Run now", halt and resume, calendar overrides (add, delete), corporate actions needing admin (apply with confirmed rates, or skip) |
+| **System** | Engine state and queue, invariants, provider stream usage ("Alpaca 23/30 · LIVE"), REST budget, probe results, stale symbols, corporate-action holds, jobs (from the `JobScheduler` registry: next occurrence, last `run_key`, status) with "Run now", halt and resume, calendar overrides (add, delete), corporate actions needing admin (a count linking to the **Corp. actions** tab, `/admin/corporate-actions`: the list by status, and resolve: apply with confirmed rates, or skip, with an audited note) |
 | **Audit** | Filterable `audit_log` viewer |
 
 ---
@@ -3609,9 +3609,11 @@ frontend/src/
                 OrdersTable, OrderCard, OrderDetail (timeline, fills, fees, "quote used", rationale), ActivityList,
                 ViolationsCard, RunsList, MyPositionCard (quote page)
     league/     LeaderboardTable, LeaderboardCard, PeriodTabs, MetricToggle, KindFilter, ArenaCard,
-                MetricInfoPopover (exact formulas), PlayerProfile, PlayerBadge ("AI · Claude"), FeedList, Sparkline
+                MetricInfoPopover + FormulaPopover (exact formulas), PlayerProfile, PlayerBadge ("AI · Claude"),
+                FeedList (live /topic/feed), Sparkline
     admin/      PlayersTable, PlayerDetail, CreatePlayerDialog, IssueKeyDialog (copy-once + snippets), TransferForm,
-                TransfersTable, InvitesPanel, SettingsForm, SystemPanel, AuditTable, KillSwitchDialog, ReauthDialog
+                TransfersTable, InvitesPanel, SettingsForm, SystemPanel, CorporateActions (+ ResolveDialog),
+                AuditTable, KillSwitchDialog, ReauthDialog
     settings/   AppearanceSettings, TradingDefaults, MyApiKeys, ResetAccount (type "RESET")
     notifications/ NotificationBell, ToastHost
   lib/
@@ -3641,7 +3643,7 @@ frontend/src/
 | `/players/$handle` | `range` | Profile | Stacked profile |
 | `/account` (+ `/positions`, `/orders?status=OPEN`, `/orders/$orderId`, `/activity?types`, `/history?range`) | | Overview with tabs; the watchlist panel stays | **Tab: Account** |
 | `/settings` (+ `/appearance`, `/trading`, `/api-keys`, `/account`) | | Settings page | **Tab: Menu** |
-| `/admin` (+ `/players`, `/players/$handle`, `/money`, `/invites`, `/settings`, `/system`, `/audit`) | | Admin console with tabs | Card lists; ADMIN only |
+| `/admin` (+ `/players`, `/players/$handle`, `/money`, `/invites`, `/settings`, `/system`, `/corporate-actions?status`, `/audit`) | | Admin console with tabs | Card lists; ADMIN only |
 
 ### 22.3 Layouts and breakpoints
 
@@ -3698,8 +3700,8 @@ frontend/src/
 |---|---|
 | Header | Symbol, live last, bid × size, ask × size, quality badge |
 | Side | Segmented **Buy / Sell**. Sell is disabled without a position (no shorting). |
-| Type | Market, Limit (default), Stop, Stop Limit, Trailing Stop |
-| Price | A stepper on tick ($0.01, or $0.0001 below $1), with chips **Bid · Mid · Ask · Last**. Stop price and trail use the same control; trail has a $ / % toggle. |
+| Type | A picker with the types `GET /rules` `orders.matrix` publishes (only what this release accepts; Market and Limit until the rulebook loads): Market, Limit (default), Stop, Stop Limit, Trailing Stop. A stop type adds a one-line description of what will happen ("When AAPL trades at or above 229.46, a market order to buy is sent") and, outside REGULAR, a session note. |
+| Price | A stepper on tick ($0.01, or $0.0001 below $1), with chips **Bid · Mid · Ask · Last** (on a Stop Limit they fill the price focused last). Stop price and trail use the same control; trail has a $ / % toggle and shows where the stop would start. Defaults: a stop 1% through the market on the side check 19 accepts, a stop limit's limit at its stop, a 1% trail. |
 | Quantity | Toggle **Shares / Amount ($)**. Amount forces Market + Day + no extended hours and requires a fractionable symbol (inline hint otherwise). Chips **25% · 50% · Max**: Max is buying power ÷ (ask × 1.02) for share buys, buying power for amount buys, and the available position for sells. |
 | TIF | Day or GTC. GTC is disabled for Trailing and Amount. |
 | Extended hours | A toggle, enabled for Limit only. It shows the IEX data-gap note at 04:00–08:00 and 17:00–20:00 ET. |
@@ -3778,6 +3780,8 @@ body { background: var(--bg-0); color: var(--text-1); font-family: var(--font-sa
 ### 22.9 Parallel-development mock mode
 
 `VITE_API_MOCK=1` switches `lib/api/client.ts` to `lib/api/mock/`. This is an in-memory fake that implements the §18 DTOs, built from the §18.4 example data, with a fake ticking quote stream. It needs no extra dependencies. WS6 can therefore build every screen before the backend endpoints exist. Until a controller lands, its types come from `lib/api/planned.d.ts`; `contract.ts` merges them under the generated `schema.d.ts` per path, HTTP method and schema name, so `make openapi` can regenerate `schema.d.ts` at any time without breaking the build, and a planned entry is deleted once the backend publishes it. Generated response types are stricter than the planned ones about `null` (§18 rule 2: every non-primitive response field is `T | null`), so moving a screen onto a generated type means handling `null`. CI runs the e2e suite against the **real** backend (profiles `test,e2e`: SIM with a wall-advancing clock anchored on a Friday in RTH, always-open, plus the test clock endpoint of §18.5), signed in as the `e2e` profile's bootstrap admin (§23.2).
+
+Mock mode also seeds a corporate-action history (a split, a reverse split paid partly as cash in lieu, a symbol change, a paid and an accrued dividend, a detected split on hold and a merger waiting for the admin), runs a stand-in `TriggerEvaluator` for the stop types, and publishes a league `/topic/feed` event every 20–45 s while the feed is open. Mock builds expose test hooks on `window.stocksMock` (`nudge(symbol, bps)` moves a price through a stop, `emitFeed(kind, handle)`, `expireRecentAuth()`), which the Playwright specs use only when no `E2E_BASE_URL` is set; production builds never include the mock.
 
 ---
 

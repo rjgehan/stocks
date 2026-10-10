@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { describeError, errorBody } from '@/lib/api/errors'
 import { useHaltEngine, useResumeEngine, useRunJob, useSystemStatus } from '@/lib/api/hooks/admin'
 import { formatDateTimeEt } from '@/lib/format/time'
@@ -107,20 +107,18 @@ function SystemPage() {
   const [haltOpen, setHaltOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [jobConfirm, setJobConfirm] = useState<string | null>(null)
+  const [runKey, setRunKey] = useState('')
   if (isPending) return <Skeleton className="h-80 w-full" />
   if (isError || !s) return <EmptyState title="System status is unavailable" body="The backend may be restarting." />
   const engine = s.engine
   const halted = engine?.status === 'HALTED'
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 text-caption text-text-2">
-        <span>
-          Version <span className="font-mono text-text-1">{s.version}</span>
-        </span>
-        <span>· started {formatDateTimeEt(s.startedAt)}</span>
-        <span>· database {s.db}</span>
-        <span className="flex-1" />
-        <Button size="sm" variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
+      <div className="flex items-center gap-2 text-caption text-text-2">
+        <p className="min-w-0 flex-1">
+          Version <span className="font-mono text-text-1">{s.version}</span> · started {formatDateTimeEt(s.startedAt)} · database {s.db}
+        </p>
+        <Button size="sm" variant="ghost" className="shrink-0" onClick={() => void refetch()} disabled={isFetching}>
           <IconRefresh size={16} /> Refresh
         </Button>
       </div>
@@ -177,11 +175,47 @@ function SystemPage() {
           ) : (
             <p className="mt-1 text-caption text-text-3">Cash, positions, lots and units all reconcile.</p>
           )}
-          {s.corporateActionsNeedingAdmin ? <p className="mt-2 text-caption text-warn">{s.corporateActionsNeedingAdmin} corporate action(s) need a decision.</p> : null}
+          {s.corporateActionsNeedingAdmin ? (
+            <Link to="/admin/corporate-actions" className="mt-2 inline-flex min-h-11 items-center gap-1 text-caption font-semibold text-warn hover:underline tablet:min-h-0">
+              {s.corporateActionsNeedingAdmin} corporate action{s.corporateActionsNeedingAdmin === 1 ? '' : 's'} need{s.corporateActionsNeedingAdmin === 1 ? 's' : ''} a decision →
+            </Link>
+          ) : null}
         </Card>
       </div>
       <Card title="Market data" aside={<span className="font-mono text-caption text-text-2">{s.marketData?.profile}</span>}>
-        <div className="overflow-x-auto">
+        {/* phones: one card per provider (§22.3 tables become cards) */}
+        <ul className="space-y-2 tablet:hidden" aria-label="Providers">
+          {(s.marketData?.providers ?? []).map((p) => (
+            <li key={p.id} className="rounded-md border border-divider p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold">{p.id}</span>
+                <Pill tone={p.state === 'LIVE' || p.state === 'CONNECTED' ? 'up' : p.state === 'DISABLED' ? 'flat' : 'warn'}>{p.state}</Pill>
+              </div>
+              <dl className="mt-2 space-y-1 text-caption">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-text-2">Stream symbols</dt>
+                  <dd>
+                    <Usage used={p.streamSymbolsUsed} max={p.streamSymbolsMax} />
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-text-2">REST / min</dt>
+                  <dd>
+                    <Usage used={p.restPerMinUsed} max={p.restPerMinMax} />
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-text-2">Last message</dt>
+                  <dd className="text-text-3">{formatDateTimeEt(p.lastMessageAt)}</dd>
+                </div>
+              </dl>
+              <div className="mt-2">
+                <ProviderDetails provider={p} />
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden overflow-x-auto tablet:block">
           <table className="w-full text-table">
             <thead className="text-left text-micro tracking-wide text-text-3 uppercase">
               <tr className="h-8 border-b border-divider">
@@ -219,7 +253,14 @@ function SystemPage() {
           </table>
         </div>
         {(s.marketData?.staleSymbols ?? []).length ? <p className="mt-2 text-caption text-warn">Stale: {(s.marketData?.staleSymbols ?? []).join(', ')}</p> : null}
-        {(s.marketData?.corporateActionHolds ?? []).length ? <p className="mt-1 text-caption text-warn">On corporate-action hold: {(s.marketData?.corporateActionHolds ?? []).join(', ')}</p> : null}
+        {(s.marketData?.corporateActionHolds ?? []).length ? (
+          <p className="mt-1 text-caption text-warn">
+            On corporate-action hold: {(s.marketData?.corporateActionHolds ?? []).join(', ')} ·{' '}
+            <Link to="/admin/corporate-actions" className="font-semibold underline">
+              resolve
+            </Link>
+          </p>
+        ) : null}
       </Card>
       <Card title="Jobs">
         <ul className="divide-y divide-divider">
@@ -265,22 +306,37 @@ function SystemPage() {
       </ConfirmDialog>
       <ConfirmDialog
         open={jobConfirm !== null}
-        onClose={() => setJobConfirm(null)}
+        onClose={() => {
+          setJobConfirm(null)
+          setRunKey('')
+        }}
         title={`Run ${jobConfirm ?? ''} now?`}
         confirmLabel="Run job"
         pending={runJob.isPending}
         onConfirm={() =>
           jobConfirm &&
-          runJob.mutate(jobConfirm, {
-            onSuccess: () => {
-              toast({ tone: 'neutral', title: `${jobConfirm} started` })
-              setJobConfirm(null)
+          runJob.mutate(
+            { jobName: jobConfirm, runKey: runKey.trim() || undefined },
+            {
+              onSuccess: () => {
+                toast({ tone: 'neutral', title: `${jobConfirm} started`, body: runKey.trim() ? `Run key ${runKey.trim()}` : 'Latest past occurrence' })
+                setJobConfirm(null)
+                setRunKey('')
+              },
+              onError: (e) => toast({ tone: 'error', title: 'Job not started', body: errorBody(describeError(e)) ?? describeError(e).title }),
             },
-            onError: (e) => toast({ tone: 'error', title: 'Job not started', body: describeError(e).title }),
-          })
+          )
         }
       >
-        Runs the latest past occurrence. Jobs are idempotent, so a duplicate run is harmless.
+        <p>Runs in the background; the outcome shows in the jobs list. Jobs are idempotent, so a duplicate run is harmless.</p>
+        <TextField
+          label="Run key (optional)"
+          hint="Leave empty for the latest past occurrence, e.g. 2026-10-09 for a daily job."
+          value={runKey}
+          onChange={(e) => setRunKey(e.target.value)}
+          maxLength={40}
+          placeholder="Latest past occurrence"
+        />
       </ConfirmDialog>
     </div>
   )

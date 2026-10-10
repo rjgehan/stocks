@@ -35,6 +35,12 @@ export function orderEventToast(e: OrderUpdateEvent): Parameters<typeof toast>[0
         body: e.execution?.principal ? `${buy ? 'Cost' : 'Proceeds'} ${formatMoney(e.execution.principal)}` : undefined,
       }
     }
+    case 'TRIGGERED':
+      return {
+        tone: 'warn',
+        title: `Stop triggered: ${buy ? 'Buy' : 'Sell'} ${formatQty(order.qty)} ${sym}`,
+        body: order.stopPrice ? `Stop ${formatPrice(order.stopPrice)} reached; ${order.type === 'STOP_LIMIT' ? `working as a limit at ${formatPrice(order.limitPrice)}` : 'sending a market order'}.` : undefined,
+      }
     case 'CANCELLED':
       return { tone: 'neutral', title: `Cancelled: ${buy ? 'Buy' : 'Sell'} ${sym}`, body: order.statusReason && order.statusReason !== 'USER' ? reasonLabel(order.statusReason) : undefined }
     case 'EXPIRED':

@@ -131,6 +131,19 @@ export class MockMarket {
     s.lastAt = this.now()
   }
 
+  /**
+   * Moves a symbol's last price by `bps` basis points at once (mock-mode test hook: e2e drives a stop through its
+   * trigger without waiting for the random walk).
+   */
+  nudge(symbol: string, bps: number): void {
+    const s = this.states.get(symbol)
+    if (!s) return
+    s.last = toTick(Math.round(s.last * (1 + bps / 10_000)))
+    s.high = Math.max(s.high, s.last)
+    s.low = Math.min(s.low, s.last)
+    s.lastAt = this.now()
+  }
+
   /** Executable side prices in units. */
   bidAsk(symbol: string): { bid: number; ask: number; last: number } | null {
     const s = this.states.get(symbol)

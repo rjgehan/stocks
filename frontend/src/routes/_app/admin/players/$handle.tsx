@@ -109,7 +109,7 @@ function AdminPlayerPage() {
           </p>
         </div>
         <div className="flex w-full items-center justify-end gap-2 tablet:w-auto">
-          <Link to="/admin/money" search={{ handle: p.handle ?? undefined }} className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-caption font-semibold text-white hover:bg-accent-hover">
+          <Link to="/admin/money" search={{ handle: p.handle ?? undefined }} className="inline-flex h-11 items-center rounded-md bg-accent px-3 tablet:h-8 text-caption font-semibold text-white hover:bg-accent-hover">
             Deposit / withdraw
           </Link>
           <PlayerActions p={p} myHandle={me?.handle} onIssueKey={setIssueFor} />

@@ -36,7 +36,7 @@ export function NavHero({ size = 'bar' }: { size?: 'bar' | 'hero' }) {
   return (
     <Link
       to="/account"
-      className="flex shrink-0 flex-col items-end rounded-md px-2 py-0.5 leading-tight hover:bg-bg-2"
+      className="flex min-h-11 shrink-0 flex-col items-end justify-center rounded-md px-2 py-0.5 leading-tight hover:bg-bg-2 tablet:min-h-0"
       aria-label={`Net account value ${formatMoney(account.equity)}, today ${formatMoney(account.dayPnl, { signed: true })}`}
     >
       <span key={flash.key} className={cx('rounded-sm px-0.5 text-body font-semibold text-text-1', flash.className)}>

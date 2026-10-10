@@ -29,7 +29,7 @@ const STATUS_TONE: Record<string, PillTone> = { ACTIVE: 'up', FROZEN: 'warn', DI
 
 function PlayerCell({ p }: { p: AdminPlayer }) {
   return (
-    <Link to="/admin/players/$handle" params={{ handle: p.handle ?? '' }} className="flex min-w-0 items-center gap-2.5 hover:text-accent">
+    <Link to="/admin/players/$handle" params={{ handle: p.handle ?? '' }} className="flex min-h-11 min-w-0 items-center gap-2.5 hover:text-accent">
       <Avatar player={p} size={30} />
       <span className="min-w-0">
         <span className="flex flex-wrap items-center gap-1.5">
@@ -71,7 +71,7 @@ function PlayersPage() {
           ]}
         />
         <div className="flex-1" />
-        <Link to="/admin/invites" className="text-caption font-semibold text-accent hover:text-accent-hover">
+        <Link to="/admin/invites" className="inline-flex min-h-11 items-center text-caption font-semibold text-accent hover:text-accent-hover tablet:min-h-0">
           Invite friends
         </Link>
         <Button variant="primary" size="sm" onClick={() => setCreating(true)}>

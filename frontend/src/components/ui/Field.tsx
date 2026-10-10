@@ -174,7 +174,7 @@ export function Switch({
 /** A checkbox row (agreements, options). */
 export function Checkbox({ checked, onChange, children, disabled, className }: { checked: boolean; onChange: (v: boolean) => void; children: ReactNode; disabled?: boolean; className?: string }) {
   return (
-    <label className={cx('flex cursor-pointer items-start gap-2 text-caption text-text-1', disabled && 'cursor-not-allowed opacity-50', className)}>
+    <label className={cx('flex min-h-11 cursor-pointer items-center gap-2 text-caption text-text-1 tablet:min-h-0 tablet:items-start', disabled && 'cursor-not-allowed opacity-50', className)}>
       <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]" />
       <span>{children}</span>
     </label>

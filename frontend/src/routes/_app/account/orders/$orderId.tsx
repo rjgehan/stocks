@@ -1,9 +1,11 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useOrder } from '@/lib/api/hooks/account'
 import { isApiError } from '@/lib/api/problem'
-import { type Execution, type OrderEvent, isOpenStatus } from '@/lib/api/types'
+import { type Execution, type Order, type OrderEvent, isOpenStatus } from '@/lib/api/types'
+import { abs, div, isDecimal, sign, sub } from '@/lib/format/decimal'
+import { useQuote } from '@/lib/realtime/useQuote'
 import { formatMoney } from '@/lib/format/money'
-import { formatInteger, formatPrice, formatQty, moneyDirection } from '@/lib/format/number'
+import { formatDecimal, formatInteger, formatPct, formatPrice, formatQty, moneyDirection, priceScale } from '@/lib/format/number'
 import { formatDateEt, formatDateTimeEt } from '@/lib/format/time'
 import { PushedHeader } from '@/app/PushedHeader'
 import { useBreakpoint } from '@/app/useBreakpoint'
@@ -14,7 +16,18 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { IconChevronLeft } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { useCancelWithToast } from '@/features/account/OrdersTable'
-import { CHANNEL_LABEL, ORDER_TYPE_LABEL, STATUS_LABEL, STATUS_TONE, orderSizeLabel, statusLine } from '@/features/account/orderLabels'
+import {
+  CHANNEL_LABEL,
+  ORDER_TYPE_LABEL,
+  STATUS_LABEL,
+  STATUS_TONE,
+  eventDetailLine,
+  isArmedStop,
+  orderPriceLabel,
+  orderSizeLabel,
+  statusLine,
+  trailLabel,
+} from '@/features/account/orderLabels'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { QualityBadge } from '@/features/market/QualityBadge'
 
@@ -105,6 +118,57 @@ function FillCard({ e }: { e: Execution }) {
   )
 }
 
+/**
+ * The stop section of an order (§12.7): its trigger, the limit it becomes, the trail, the live watermark and how far
+ * the last price is from the stop. The server owns the watermark and stop; the distance uses the live quote.
+ */
+function StopPanel({ o }: { o: Order }) {
+  const q = useQuote(o.symbol ?? '', 'quote')
+  const armed = isArmedStop(o)
+  const last = q?.last ?? null
+  const stop = o.stopPrice
+  const distance = armed && stop && last && isDecimal(last) && sign(last) > 0 ? sub(last, stop) : null
+  const distancePct = distance && last ? div(distance, last, 6, 'HALF_UP') : null
+  const trailing = o.type === 'TRAILING_STOP'
+  const buy = o.side === 'BUY'
+  return (
+    <section className="rounded-lg border border-divider bg-bg-1 p-4" aria-label="Stop">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h2 className="text-section font-semibold">{trailing ? 'Trailing stop' : 'Stop'}</h2>
+        <Pill tone={o.triggered ? 'warn' : armed ? 'accent' : 'neutral'}>{o.triggered ? 'Triggered' : armed ? 'Armed' : 'Not triggered'}</Pill>
+      </div>
+      <dl>
+        {trailing ? <Field label="Trail">{trailLabel(o) ?? '--'}</Field> : null}
+        {trailing ? (
+          <Field label={buy ? 'Lowest price (watermark)' : 'Highest price (watermark)'}>
+            <span className="tabular-nums">{formatPrice(o.watermarkPrice)}</span>
+            {armed ? <span className="ml-1.5 inline-block size-1.5 animate-pulse rounded-full bg-up align-middle" aria-label="live" /> : null}
+          </Field>
+        ) : null}
+        <Field label={trailing ? 'Current stop' : 'Stop price'}>{formatPrice(stop)}</Field>
+        {o.type === 'STOP_LIMIT' ? <Field label="Limit after trigger">{formatPrice(o.limitPrice)}</Field> : null}
+        {armed && last ? (
+          <Field label="Last price">
+            {formatPrice(last)}
+            {distance ? (
+              <span className="ml-1.5 text-caption text-text-3">
+                {formatDecimal(abs(distance), { scale: priceScale(last) })} ({formatPct(distancePct ? abs(distancePct) : null, { signed: false })}) {sign(distance) >= 0 ? 'above' : 'below'} the stop
+              </span>
+            ) : null}
+          </Field>
+        ) : null}
+        {o.triggeredAt ? <Field label="Triggered">{formatDateTimeEt(o.triggeredAt)}</Field> : null}
+      </dl>
+      {armed ? (
+        <p className="mt-2 text-caption text-text-3">
+          {buy ? 'Triggers when a trade prints at or above the stop' : 'Triggers when a trade prints at or below the stop'}, during regular hours only.
+          {trailing ? ` The stop follows the ${buy ? 'lowest' : 'highest'} price since the order started.` : ''}
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
 function Timeline({ events }: { events: OrderEvent[] }) {
   if (!events.length) return <p className="text-caption text-text-3">No events yet.</p>
   return (
@@ -114,14 +178,17 @@ function Timeline({ events }: { events: OrderEvent[] }) {
         .map((ev) => (
           <li key={ev.seq} className="relative">
             <span
-              className={cx('absolute top-1.5 -left-[21px] size-2.5 rounded-full border-2 border-bg-1', ev.type === 'FILL' || ev.type === 'PARTIAL_FILL' ? 'bg-up' : ev.type === 'CANCELLED' || ev.type === 'EXPIRED' ? 'bg-text-3' : 'bg-accent')}
+              className={cx(
+                'absolute top-1.5 -left-[21px] size-2.5 rounded-full border-2 border-bg-1',
+                ev.type === 'FILL' || ev.type === 'PARTIAL_FILL' ? 'bg-up' : ev.type === 'CANCELLED' || ev.type === 'EXPIRED' ? 'bg-text-3' : ev.type === 'TRIGGERED' ? 'bg-warn' : 'bg-accent',
+              )}
               aria-hidden="true"
             />
             <p className="text-body font-medium">{ev.type ? (EVENT_LABEL[ev.type] ?? ev.type) : 'Event'}</p>
+            {eventDetailLine(ev) ? <p className="text-caption text-text-2">{eventDetailLine(ev)}</p> : null}
             <p className="text-caption text-text-3">
               {formatDateTimeEt(ev.at)}
               {ev.statusAfter ? ` · ${STATUS_LABEL[ev.statusAfter]}` : ''}
-              {ev.detail && typeof ev.detail.reason === 'string' ? ` · ${ev.detail.reason.toLowerCase().replaceAll('_', ' ')}` : ''}
             </p>
           </li>
         ))}
@@ -173,7 +240,7 @@ function OrderDetail() {
             </h1>
             <p className="text-caption text-text-2">
               {o.type ? ORDER_TYPE_LABEL[o.type] : ''}
-              {o.limitPrice ? ` ${formatPrice(o.limitPrice)}` : ''} · {o.timeInForce === 'GTC' ? 'Good till cancelled' : 'Day'}
+              {orderPriceLabel(o) ? ` ${orderPriceLabel(o)}` : ''} · {o.timeInForce === 'GTC' ? 'Good till cancelled' : 'Day'}
               {o.extendedHours ? ' · Extended hours' : ''}
             </p>
           </div>
@@ -190,6 +257,8 @@ function OrderDetail() {
         {o.rationale ? <p className="mt-2 rounded-sm bg-bg-2 p-2 text-caption text-text-2">Note: “{o.rationale}”</p> : null}
       </section>
 
+      {o.type === 'STOP' || o.type === 'STOP_LIMIT' || o.type === 'TRAILING_STOP' ? <StopPanel o={o} /> : null}
+
       <div className="grid gap-4 desktop:grid-cols-2">
         <section className="rounded-lg border border-divider bg-bg-1 p-4">
           <h2 className="mb-1 text-section font-semibold">Details</h2>
@@ -199,6 +268,7 @@ function OrderDetail() {
               {o.qty ? ` of ${formatQty(o.qty)}` : ''} {o.avgFillPrice ? `@ ${formatPrice(o.avgFillPrice)}` : ''}
             </Field>
             {o.notional ? <Field label="Amount">{formatMoney(o.notional)}</Field> : null}
+            {o.type === 'LIMIT' ? <Field label="Limit price">{formatPrice(o.limitPrice)}</Field> : null}
             <Field label="Principal">{formatMoney(o.filledPrincipal)}</Field>
             <Field label="Fees">{formatMoney(o.fees)}</Field>
             {open ? <Field label="Cash held">{formatMoney(o.reservedCash)}</Field> : null}

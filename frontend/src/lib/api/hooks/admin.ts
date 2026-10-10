@@ -6,7 +6,16 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { api, unwrap } from '../client'
 import { queryKeys } from '../queryKeys'
 import { withRecentAuth } from '../reauth'
-import type { CashTransferBody, CashTransferRequest, CreateCalendarOverrideRequest, CreatePlayerRequest, PlayerKind, UpdateSettingsRequest } from '../types'
+import type {
+  CashTransferBody,
+  CashTransferRequest,
+  CorporateActionStatus,
+  CreateCalendarOverrideRequest,
+  CreatePlayerRequest,
+  PlayerKind,
+  ResolveCorporateActionRequest,
+  UpdateSettingsRequest,
+} from '../types'
 
 const K = {
   players: queryKeys.admin('players'),
@@ -18,6 +27,7 @@ const K = {
   audit: (filter: Record<string, unknown>) => queryKeys.admin('audit', filter),
   system: queryKeys.admin('system'),
   calendar: queryKeys.admin('calendar'),
+  corporateActions: (status: string) => queryKeys.admin('corporate-actions', status),
 }
 export const adminKeys = K
 
@@ -266,8 +276,11 @@ export function useSystemStatus() {
 export function useRunJob() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (jobName: string) =>
-      withRecentAuth(() => unwrap(api.POST('/api/v1/admin/system/jobs/{jobName}/run', { params: { path: { jobName } }, body: {} }))),
+    /** `runKey` defaults (server side) to the latest past occurrence of the job. */
+    mutationFn: ({ jobName, runKey }: { jobName: string; runKey?: string }) =>
+      withRecentAuth(() =>
+        unwrap(api.POST('/api/v1/admin/system/jobs/{jobName}/run', { params: { path: { jobName } }, body: runKey ? { runKey } : {} })),
+      ),
     onSuccess: () => void qc.invalidateQueries({ queryKey: K.system }),
   })
 }
@@ -319,6 +332,46 @@ export function useDeleteCalendarOverride() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: K.calendar })
       void qc.invalidateQueries({ queryKey: queryKeys.clock })
+    },
+  })
+}
+
+// ---------------------------------------------------------------- corporate actions (§14, §21.1; resolve is R)
+
+export type CorporateActionFilter = CorporateActionStatus | 'ALL'
+
+/** `GET /admin/corporate-actions?status` (newest first, cursor-paged). */
+export function useCorporateActions(status: CorporateActionFilter) {
+  return useInfiniteQuery({
+    queryKey: K.corporateActions(status),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        api.GET('/api/v1/admin/corporate-actions', {
+          params: { query: { ...(status === 'ALL' ? {} : { status }), ...(pageParam ? { cursor: pageParam } : {}), limit: 50 } },
+        }),
+      ),
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    staleTime: 10_000,
+  })
+}
+
+/**
+ * `POST /admin/corporate-actions/{id}/resolve` (§14 split guard, `@RecentAuth`): APPLY a split with confirmed rates,
+ * or SKIP it to release the corporate-action hold. The note (1–200 characters) is audited.
+ */
+export function useResolveCorporateAction() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: ResolveCorporateActionRequest }) =>
+      withRecentAuth(() => unwrap(api.POST('/api/v1/admin/corporate-actions/{id}/resolve', { params: { path: { id } }, body }))),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.admin('corporate-actions') })
+      void qc.invalidateQueries({ queryKey: K.system })
+      void qc.invalidateQueries({ queryKey: queryKeys.positions })
+      void qc.invalidateQueries({ queryKey: queryKeys.account })
+      void qc.invalidateQueries({ queryKey: ['activities'] })
+      void qc.invalidateQueries({ queryKey: ['orders'] })
     },
   })
 }

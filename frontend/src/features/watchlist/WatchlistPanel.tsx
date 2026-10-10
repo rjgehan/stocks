@@ -177,7 +177,7 @@ export function WatchlistPanel({ activeSymbol, variant = 'panel' }: { activeSymb
             aria-selected={t.id === currentId}
             onClick={() => select(t.id)}
             className={cx(
-              'h-8 shrink-0 rounded-sm px-2.5 text-caption font-semibold transition-colors',
+              'h-11 shrink-0 rounded-sm px-2.5 text-caption font-semibold transition-colors tablet:h-8',
               t.id === currentId ? 'bg-bg-3 text-text-1' : 'text-text-2 hover:bg-bg-2 hover:text-text-1',
             )}
           >
@@ -213,7 +213,7 @@ export function WatchlistPanel({ activeSymbol, variant = 'panel' }: { activeSymb
           <span>Symbol</span>
           <span className="flex items-center gap-6">
             <span>Last</span>
-            <button type="button" onClick={cyclePill} className="w-[76px] text-right uppercase hover:text-text-1">
+            <button type="button" onClick={cyclePill} className="-my-3.5 h-11 w-[76px] text-right uppercase hover:text-text-1 tablet:my-0 tablet:h-auto">
               {pillMode === 'pct' ? 'Chg %' : 'Chg $'}
             </button>
           </span>

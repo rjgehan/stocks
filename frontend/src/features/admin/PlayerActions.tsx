@@ -67,7 +67,7 @@ export function PlayerActions({ p, myHandle, onIssueKey }: { p: AdminPlayer; myH
       <Popover
         label={`Actions for @${handle}`}
         renderTrigger={(props) => (
-          <IconButton label={`Actions for @${handle}`} size="sm" {...props}>
+          <IconButton label={`Actions for @${handle}`} size="touch" className="tablet:size-8" {...props}>
             <IconMore size={18} />
           </IconButton>
         )}

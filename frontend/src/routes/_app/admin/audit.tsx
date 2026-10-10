@@ -21,7 +21,7 @@ function AuditItem({ a }: { a: AuditRow }) {
   const [open, setOpen] = useState(false)
   return (
     <li className="px-4 py-2.5">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-left text-table">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex min-h-11 w-full flex-wrap items-center gap-x-3 gap-y-1 text-left text-table tablet:min-h-0">
         <Pill tone={a.outcome === 'OK' ? 'neutral' : 'down'}>{a.category}</Pill>
         <span className="font-semibold">{a.action}</span>
         <span className="text-text-2">{a.actor ? `@${a.actor}` : 'system'}</span>

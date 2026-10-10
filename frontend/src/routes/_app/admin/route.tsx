@@ -30,6 +30,7 @@ function AdminLayout() {
             { to: '/admin/invites', label: 'Invites' },
             { to: '/admin/settings', label: 'Settings' },
             { to: '/admin/system', label: 'System' },
+            { to: '/admin/corporate-actions', label: 'Corp. actions' },
             { to: '/admin/audit', label: 'Audit' },
           ]}
         />

@@ -247,6 +247,44 @@ export const IconCash = (p: IconProps) => (
   </Svg>
 )
 
+export const IconSplit = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 20v-6M12 14 6 8M12 14l6-6M6 8V4M18 8V4" />
+    <path d="M4 6l2-2 2 2M16 6l2-2 2 2" />
+  </Svg>
+)
+export const IconRename = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 7h11M11 3l4 4-4 4" />
+    <path d="M20 17H9M13 13l-4 4 4 4" />
+  </Svg>
+)
+export const IconCoins = (p: IconProps) => (
+  <Svg {...p}>
+    <ellipse cx="9" cy="7" rx="5" ry="2.5" />
+    <path d="M4 7v4c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5V7" />
+    <path d="M10 15.4c.6 1.2 2.7 2.1 5 2.1 2.8 0 5-1.1 5-2.5v-4c0-1.4-2.2-2.5-5-2.5" />
+  </Svg>
+)
+export const IconRotate = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 12a8 8 0 1 0 2.3-5.6L4 8.7" />
+    <path d="M4 4v4.7h4.7" />
+  </Svg>
+)
+export const IconTrophy = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" />
+    <path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4" />
+  </Svg>
+)
+export const IconUserPlus = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="10" cy="8" r="3.5" />
+    <path d="M3.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6" />
+  </Svg>
+)
+
 /** The "stocks" mark: the same rising line and live dot as the app icon (public/icon.svg). */
 export function LogoMark({ size = 24 }: { size?: number }) {
   return (

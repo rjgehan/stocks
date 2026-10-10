@@ -6,18 +6,22 @@
  *  - Sell is disabled without a position (no shorting);
  *  - the clientOrderId (`web-<uuid>`) is created when the ticket opens and reused on retry.
  */
-import type { OrderType, PlaceOrderRequest, Preferences, Side, TimeInForce } from '@/lib/api/types'
+import type { OrderMatrixRow, OrderType, PlaceOrderRequest, Preferences, Side, TimeInForce } from '@/lib/api/types'
 import {
   type Dec,
   add,
   div,
+  isDecimal,
   isZero,
   mul,
   parseUserDecimal,
   roundToTick,
   setScale,
   sign,
+  sub,
+  tickFor,
 } from '@/lib/format/decimal'
+import { formatPrice } from '@/lib/format/number'
 
 export type QtyMode = 'SHARES' | 'AMOUNT'
 export type TrailMode = 'AMOUNT' | 'PERCENT'
@@ -113,11 +117,98 @@ export function ticketReducer(s: TicketState, a: TicketAction): TicketState {
 }
 
 /** §11.1: MARKET and TRAILING_STOP are Day only; dollar (notional) orders are Day only too. */
-export const gtcAllowed = (s: Pick<TicketState, 'type' | 'qtyMode'>): boolean => s.type !== 'TRAILING_STOP' && s.type !== 'MARKET' && s.qtyMode !== 'AMOUNT'
+export const gtcAllowed = (s: Pick<TicketState, 'type' | 'qtyMode'>, row?: Pick<OrderMatrixRow, 'timeInForce'> | null): boolean =>
+  s.type !== 'TRAILING_STOP' && s.type !== 'MARKET' && s.qtyMode !== 'AMOUNT' && (!row?.timeInForce || row.timeInForce.includes('GTC'))
 export const extAllowed = (s: Pick<TicketState, 'type'>): boolean => s.type === 'LIMIT'
 export const showsLimit = (t: OrderType): boolean => t === 'LIMIT' || t === 'STOP_LIMIT'
 export const showsStop = (t: OrderType): boolean => t === 'STOP' || t === 'STOP_LIMIT'
 export const showsTrail = (t: OrderType): boolean => t === 'TRAILING_STOP'
+export const isStopType = (t: OrderType | null | undefined): boolean => t === 'STOP' || t === 'STOP_LIMIT' || t === 'TRAILING_STOP'
+
+/** §11.1 order, which the ticket's type picker follows. */
+export const ALL_ORDER_TYPES: readonly OrderType[] = ['MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT', 'TRAILING_STOP']
+/** What a backend that does not publish `GET /rules` (or has not answered yet) is sure to accept (M1). */
+export const BASE_ORDER_TYPES: readonly OrderType[] = ['MARKET', 'LIMIT']
+
+/**
+ * The order types this release accepts, from `GET /rules` `orders.matrix` (§18.3: only the types in
+ * `RulesService.AVAILABLE_ORDER_TYPES`), in §11.1 order. Without the rulebook the ticket offers MARKET and LIMIT.
+ */
+export function availableOrderTypes(matrix: ReadonlyArray<Pick<OrderMatrixRow, 'type'>> | null | undefined): OrderType[] {
+  if (!matrix?.length) return [...BASE_ORDER_TYPES]
+  const listed = new Set(matrix.map((r) => r.type).filter((t): t is OrderType => t != null))
+  const types = ALL_ORDER_TYPES.filter((t) => listed.has(t))
+  return types.length ? types : [...BASE_ORDER_TYPES]
+}
+
+/**
+ * The stop price a ticket starts with, 1% through the market on the side the server accepts (check 19: a buy stop
+ * above the last price, a sell stop below it), on tick. Null without a price.
+ */
+export function defaultStopPrice(side: Side, last: Dec | null | undefined): Dec | null {
+  if (!last || !isDecimal(last) || sign(last) <= 0) return null
+  return side === 'BUY' ? roundToTick(mul(last, '1.01'), 'CEILING') : roundToTick(mul(last, '0.99'), 'FLOOR')
+}
+
+/** A trail to start with: 1% (percent mode) or 1% of the last price in dollars, on tick. */
+export function defaultTrail(mode: TrailMode, last: Dec | null | undefined): string {
+  if (mode === 'PERCENT') return '1'
+  if (!last || !isDecimal(last) || sign(last) <= 0) return ''
+  const t = roundToTick(mul(last, '0.01'))
+  return sign(t) > 0 ? t : tickFor(last)
+}
+
+/** One step of the trail stepper: a tick in dollars, a tenth of a percent. */
+export function stepTrail(value: string, dir: 1 | -1, mode: TrailMode, last: Dec | null | undefined): string {
+  const current = parseUserDecimal(value)
+  const unit = mode === 'PERCENT' ? '0.1' : last && isDecimal(last) ? tickFor(last) : '0.01'
+  const next = current ? (dir === 1 ? add(current, unit) : sub(current, unit)) : unit
+  return sign(next) > 0 ? (mode === 'PERCENT' ? setScale(next, 1, 'HALF_UP') : roundToTick(next)) : unit
+}
+
+/**
+ * Where a trailing stop would start right now (§12.7, display only): SELL `TICK_DOWN(last − trail)`, BUY
+ * `TICK_UP(last + trail)`, with a percent trail taken of the last price. The server owns the real watermark.
+ */
+export function trailingStopStart(side: Side, last: Dec | null | undefined, trail: string, mode: TrailMode): Dec | null {
+  const t = parseUserDecimal(trail)
+  if (!t || sign(t) <= 0 || !last || !isDecimal(last) || sign(last) <= 0) return null
+  const distance = mode === 'PERCENT' ? div(mul(last, t), '100', 8, 'HALF_UP') : t
+  const stop = side === 'SELL' ? roundToTick(sub(last, distance), 'FLOOR') : roundToTick(add(last, distance), 'CEILING')
+  return sign(stop) > 0 ? stop : null
+}
+
+/** A one-line, plain-English description of what a stop order will do (shown in the ticket and the review sheet). */
+export function stopExplanation(o: {
+  side: Side
+  type: OrderType
+  symbol: string
+  stopPrice?: Dec | null
+  limitPrice?: Dec | null
+  trailAmount?: Dec | null
+  trailPercent?: Dec | null
+}): string | null {
+  const buy = o.side === 'BUY'
+  const verb = buy ? 'buy' : 'sell'
+  const crosses = buy ? 'at or above' : 'at or below'
+  switch (o.type) {
+    case 'STOP':
+      return o.stopPrice ? `When ${o.symbol} trades ${crosses} ${formatPrice(o.stopPrice)}, a market order to ${verb} is sent.` : null
+    case 'STOP_LIMIT':
+      return o.stopPrice && o.limitPrice
+        ? `When ${o.symbol} trades ${crosses} ${formatPrice(o.stopPrice)}, a limit order to ${verb} at ${formatPrice(o.limitPrice)} ${buy ? 'or lower' : 'or higher'} is placed. It may not fill.`
+        : null
+    case 'TRAILING_STOP': {
+      const trail = o.trailAmount ? `$${formatPrice(o.trailAmount)}` : o.trailPercent ? `${o.trailPercent}%` : null
+      if (!trail) return null
+      return buy
+        ? `The stop follows ${o.symbol}'s lowest price ${trail} above it; when ${o.symbol} rises to the stop, a market order to buy is sent.`
+        : `The stop follows ${o.symbol}'s highest price ${trail} below it; when ${o.symbol} falls to the stop, a market order to sell is sent.`
+    }
+    default:
+      return null
+  }
+}
 
 export interface TicketContext {
   fractionable: boolean

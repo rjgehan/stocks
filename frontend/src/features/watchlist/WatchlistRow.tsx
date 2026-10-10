@@ -118,7 +118,8 @@ export const WatchlistRow = memo(function WatchlistRow({
         type="button"
         onClick={onCyclePill}
         aria-label={`${symbol} change ${pill}; tap to switch between percent and dollars`}
-        className={cx('h-7 w-[76px] shrink-0 rounded-sm text-caption font-semibold transition-colors', PILL[dir])}
+        // a 28 px pill with a 44 px hit area on phones (§22.3); the row around it is its own (larger) target
+        className={cx('relative h-7 w-[76px] shrink-0 rounded-sm text-caption font-semibold transition-colors before:absolute before:-inset-y-2 before:inset-x-0 tablet:before:hidden', PILL[dir])}
       >
         {pill}
       </button>

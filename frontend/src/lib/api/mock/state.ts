@@ -9,7 +9,9 @@ import type {
   ApiKeyInfo,
   AuditRow,
   CalendarOverride,
+  CorporateAction,
   Execution,
+  FeedItem,
   Invite,
   Notification,
   Order,
@@ -69,7 +71,7 @@ export interface MockInvite extends Invite {
 }
 
 export interface MockState {
-  v: 2
+  v: 3
   me: MockIdentity
   apiTradingAllowed: boolean
   preferences: NonNullable<Preferences>
@@ -98,19 +100,23 @@ export interface MockState {
   engineHalted: string | null
   /** §21.1 admin calendar overrides (optional: states saved by older mock builds lack it) */
   calendarOverrides?: CalendarOverride[]
+  /** §14 corporate actions (admin list and resolve) */
+  corporateActions: CorporateAction[]
+  /** league feed items that are not derived from transfers or trades (joins, leaders, resets, live bot trades) */
+  liveFeed: FeedItem[]
   /** epoch ms of the last password confirmation (`@RecentAuth`, 15 min) */
   reauthAt: number
   seq: number
 }
 
-const KEY = 'stocks.mock.state.v2'
+const KEY = 'stocks.mock.state.v3'
 
 export function loadState(): MockState | null {
   try {
     const raw = sessionStorage.getItem(KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as MockState
-    return parsed.v === 2 ? parsed : null
+    return parsed.v === 3 ? parsed : null
   } catch {
     return null
   }

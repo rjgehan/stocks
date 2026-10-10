@@ -58,7 +58,7 @@ export function KeyRevealDialog({ created, onClose, owner }: { created: ApiKeyCr
               <div className="pt-2">{snippet ? <CopyField label={`${SNIPPETS.find((s) => s.value === tab)?.label} snippet`} value={snippet} multiline /> : null}</div>
             </div>
           ) : null}
-          <label className="flex items-center gap-2 text-caption text-text-1">
+          <label className="flex min-h-11 items-center gap-2 text-caption text-text-1 tablet:min-h-0">
             <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="size-4 accent-[var(--accent)]" />
             I copied the key
           </label>

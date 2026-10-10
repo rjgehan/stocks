@@ -20,6 +20,14 @@ export function usePositions() {
   })
 }
 
+/**
+ * An order about to change state by itself: accepted and only waiting out the order latency (§11.3, ≈ 0.5 s), or a
+ * triggered stop on its way to the market. Lists showing one re-check after 2 s, so a missed push (a page that was
+ * still connecting) never leaves it on "sending to market".
+ */
+const settling = (o: { status?: string | null; waitReason?: string | null }): boolean => (o.status === 'PENDING' || o.status === 'WORKING') && o.waitReason === 'LATENCY'
+const SETTLE_POLL_MS = 2_000
+
 /** First page (≤ 100) of orders; `symbol` narrows server-side. Open orders poll while the socket is down. */
 export function useOrders(status: OrdersFilter, symbol?: string) {
   const poll = usePollWhenOffline(status === 'CLOSED' ? 30_000 : 8_000)
@@ -27,7 +35,7 @@ export function useOrders(status: OrdersFilter, symbol?: string) {
     queryKey: queryKeys.orders(status, symbol),
     queryFn: () => unwrap(api.GET('/api/v1/orders', { params: { query: symbol ? { status, symbol, limit: 100 } : { status, limit: 100 } } })),
     staleTime: 5_000,
-    refetchInterval: poll,
+    refetchInterval: (q) => ((q.state.data?.items ?? []).some(settling) ? SETTLE_POLL_MS : poll),
   })
 }
 
@@ -40,6 +48,7 @@ export function useOrdersPaged(status: OrdersFilter) {
       unwrap(api.GET('/api/v1/orders', { params: { query: pageParam ? { status, cursor: pageParam, limit: 50 } : { status, limit: 50 } } })),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     staleTime: 5_000,
+    refetchInterval: (q) => ((q.state.data?.pages ?? []).some((p) => (p.items ?? []).some(settling)) ? SETTLE_POLL_MS : false),
   })
 }
 
@@ -49,6 +58,13 @@ export function useOrder(orderId: string) {
     queryKey: queryKeys.order(orderId),
     queryFn: () => unwrap(api.GET('/api/v1/orders/{orderId}', { params: { path: { orderId } } })),
     staleTime: 5_000,
+    // an armed trailing stop's watermark moves without an order event (TRAIL_UPDATED is throttled to 10 s, §11.5):
+    // keep the detail fresh while one is open
+    refetchInterval: (q) => {
+      const o = q.state.data
+      if (o && settling(o)) return SETTLE_POLL_MS
+      return o && o.type === 'TRAILING_STOP' && !o.triggered && (o.status === 'PENDING' || o.status === 'WORKING') ? 3_000 : false
+    },
   })
 }
 

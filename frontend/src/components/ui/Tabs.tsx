@@ -30,7 +30,7 @@ export function Tabs<T extends string>({
           aria-selected={t.value === value}
           onClick={() => onChange(t.value)}
           className={cx(
-            '-mb-px h-10 shrink-0 border-b-2 text-body font-semibold transition-colors',
+            '-mb-px h-11 shrink-0 border-b-2 tablet:h-10 text-body font-semibold transition-colors',
             t.value === value ? 'border-accent text-text-1' : 'border-transparent text-text-2 hover:text-text-1',
           )}
         >
@@ -50,7 +50,7 @@ export function LinkTabs({ items, className, label }: { items: ReadonlyArray<{ t
           key={t.label}
           to={t.to}
           activeOptions={{ exact: t.exact ?? false }}
-          className="-mb-px flex h-10 shrink-0 items-center border-b-2 border-transparent text-body font-semibold text-text-2 transition-colors hover:text-text-1 data-[status=active]:border-accent data-[status=active]:text-text-1"
+          className="-mb-px flex h-11 shrink-0 items-center tablet:h-10 border-b-2 border-transparent text-body font-semibold text-text-2 transition-colors hover:text-text-1 data-[status=active]:border-accent data-[status=active]:text-text-1"
         >
           {t.label}
         </Link>

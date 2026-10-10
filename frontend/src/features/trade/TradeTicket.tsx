@@ -1,13 +1,14 @@
 /**
  * Trade ticket (§22.5): desktop right column, tablet side sheet, phone bottom sheet.
- * Side · Type (Market | Limit) · Limit price (tick stepper + Bid/Mid/Ask/Last) · Shares | Amount ($) with 25%/50%/Max ·
- * TIF · Extended hours · live preview (debounced 250 ms, re-quoted every 15 s) · warnings with the GFV acknowledgement ·
- * note with "Share note publicly" · submit (disabled until the preview is valid) · review dialog · result toast.
- * Server rejections (§7.2 codes) map to inline field errors or a banner.
+ * Side · Type (the types `GET /rules` publishes: Market, Limit, Stop, Stop Limit, Trailing Stop) · stop / limit price
+ * (tick steppers + Bid/Mid/Ask/Last chips for the price last focused) · trail ($ | %) · Shares | Amount ($) with
+ * 25%/50%/Max · TIF (per the order matrix) · Extended hours · live preview (debounced 250 ms) · warnings with the GFV
+ * acknowledgement · note with "Share note publicly" · submit (disabled until the preview is valid) · review dialog ·
+ * result toast. Server rejections (§7.2 codes) map to inline field errors or a banner.
  */
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useAccount, useOrderPreview, usePlaceOrder, usePositions } from '@/lib/api/hooks/account'
-import { useAsset } from '@/lib/api/hooks/market'
+import { useAsset, useClock, useRules } from '@/lib/api/hooks/market'
 import { useMe } from '@/lib/api/hooks/identity'
 import { type DescribedError, describeError, errorField } from '@/lib/api/errors'
 import { isApiError } from '@/lib/api/problem'
@@ -20,38 +21,44 @@ import { formatMoney } from '@/lib/format/money'
 import { useDebounced } from '@/lib/useDebounced'
 import { Button } from '@/components/ui/Button'
 import { Checkbox, Switch } from '@/components/ui/Field'
+import { IconChevronDown } from '@/components/ui/icons'
 import { Segmented } from '@/components/ui/Segmented'
 import { Stepper } from '@/components/ui/Stepper'
 import { cx } from '@/components/ui/cx'
 import { IconInfo } from '@/components/ui/icons'
-import { ORDER_TYPE_LABEL } from '@/features/account/orderLabels'
+import { ORDER_TYPE_LABEL, orderPriceLabel } from '@/features/account/orderLabels'
 import { QualityBadge } from '@/features/market/QualityBadge'
 import { toast } from '@/features/notifications/toastStore'
 import { EstimatesPanel } from './EstimatesPanel'
 import { OrderReviewSheet } from './OrderReviewSheet'
 import {
+  BASE_ORDER_TYPES,
   amountHint,
+  availableOrderTypes,
   buildOrderRequest,
   canSell,
   defaultLimitPrice,
+  defaultStopPrice,
+  defaultTrail,
   extAllowed,
   gtcAllowed,
   initialTicket,
+  isStopType,
   midPrice,
   newClientOrderId,
   quickQuantity,
   showsLimit,
   showsStop,
   showsTrail,
+  stepTrail,
+  stopExplanation,
   ticketReducer,
+  trailingStopStart,
   withoutQueueDuplicates,
 } from './ticketState'
 
-/**
- * The order types the ticket offers. Phase 1 milestone M1 ships MARKET and LIMIT end to end; STOP, STOP_LIMIT and
- * TRAILING_STOP (§11.1) are wired in the ticket state and request builder and switch on here when the engine supports them.
- */
-export const ENABLED_ORDER_TYPES: readonly OrderType[] = ['MARKET', 'LIMIT']
+/** The price inputs the Bid · Mid · Ask · Last chips can fill. */
+type PriceField = 'limitPrice' | 'stopPrice'
 
 function step(value: string, dir: 1 | -1, reference: Dec | null | undefined): string {
   const current = parseUserDecimal(value) ?? reference ?? null
@@ -73,11 +80,16 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const account = useAccount()
   const positions = usePositions()
   const asset = useAsset(symbol)
+  const rules = useRules()
+  const clock = useClock()
   const quote = useQuote(symbol, 'quote')
+  const matrix = rules.data?.orders?.matrix ?? null
+  const orderTypes = useMemo(() => availableOrderTypes(matrix), [matrix])
   const [state, dispatch] = useReducer(ticketReducer, undefined, () => {
     const s = initialTicket({ side: initialSide, preferences: me.data?.preferences })
-    return ENABLED_ORDER_TYPES.includes(s.type) ? s : ticketReducer(s, { type: 'orderType', orderType: 'LIMIT' })
+    return BASE_ORDER_TYPES.includes(s.type) ? s : ticketReducer(s, { type: 'orderType', orderType: 'LIMIT' })
   })
+  const [priceField, setPriceField] = useState<PriceField>('limitPrice')
   const [noteOpen, setNoteOpen] = useState(false)
   const [reviewing, setReviewing] = useState(false)
   const [submitErrors, setSubmitErrors] = useState<Record<string, string>>({})
@@ -92,6 +104,18 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const tradable = asset.data ? asset.data.tradable : true
   const amountMode = state.qtyMode === 'AMOUNT'
 
+  // A type the rulebook no longer lists (or a stale default) falls back to Limit.
+  useEffect(() => {
+    if (!orderTypes.includes(state.type)) dispatch({ type: 'orderType', orderType: orderTypes.includes('LIMIT') ? 'LIMIT' : orderTypes[0]! })
+  }, [orderTypes, state.type])
+  const matrixRow = matrix?.find((r) => r.type === state.type) ?? null
+  const gtcOk = gtcAllowed(state, matrixRow)
+  useEffect(() => {
+    if (state.tif === 'GTC' && !gtcOk) dispatch({ type: 'tif', tif: 'DAY' })
+  }, [state.tif, gtcOk])
+  // the chips fill the stop price on a Stop order, the limit on Limit; on Stop Limit, whichever was focused last
+  const chipTarget: PriceField | null = showsStop(state.type) && showsLimit(state.type) ? priceField : showsStop(state.type) ? 'stopPrice' : showsLimit(state.type) ? 'limitPrice' : null
+
   // A sell ticket on a symbol you no longer hold falls back to Buy.
   useEffect(() => {
     if (state.side === 'SELL' && positions.isSuccess && !sellable) dispatch({ type: 'side', side: 'BUY' })
@@ -105,10 +129,14 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
     const key = `${state.type}:${state.side}`
     if (!q || defaulted.current === key) return
     defaulted.current = key
-    const limit = defaultLimitPrice(state.side, q)
+    const stop = defaultStopPrice(state.side, q.last)
+    // a stop limit starts with its limit at the stop (it fills at the stop or better once triggered)
+    const limit = state.type === 'STOP_LIMIT' ? stop : defaultLimitPrice(state.side, q)
     if (showsLimit(state.type) && limit) dispatch({ type: 'field', field: 'limitPrice', value: limit })
-    if (showsStop(state.type) && q.last) dispatch({ type: 'field', field: 'stopPrice', value: roundToTick(q.last) })
-  }, [symbol, state.type, state.side, hasQuote])
+    if (showsStop(state.type) && stop) dispatch({ type: 'field', field: 'stopPrice', value: stop })
+    if (showsTrail(state.type) && !state.trail) dispatch({ type: 'field', field: 'trail', value: defaultTrail(state.trailMode, q.last) })
+    setPriceField(showsStop(state.type) ? 'stopPrice' : 'limitPrice')
+  }, [symbol, state.type, state.side, state.trail, state.trailMode, hasQuote])
 
   const request = useMemo(() => buildOrderRequest(state, symbol, ctx), [state, symbol, ctx])
   const debounced = useDebounced(request, 250)
@@ -127,7 +155,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
     }
     return { ...out, ...submitErrors }
   }, [previewErrors, submitErrors, amountMode])
-  const placed = new Set(['qty', 'notional', 'limitPrice', 'stopPrice'])
+  const placed = new Set(['qty', 'notional', 'limitPrice', 'stopPrice', 'trailAmount', 'trailPercent'])
   const generalErrors = previewErrors.filter((e) => !placed.has(inputFor(e.field, e.code, amountMode) ?? ''))
   // "Fix the highlighted fields" only when an error really sits on an input (not for ENGINE_HALTED, type errors, …)
   const highlighted = previewErrors.length > generalErrors.length
@@ -139,7 +167,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const bp = account.data?.buyingPower ?? null
 
   // Clear stale submit errors once the user edits the ticket.
-  const editKey = `${state.qty}|${state.amount}|${state.limitPrice}|${state.type}|${state.side}|${state.qtyMode}`
+  const editKey = `${state.qty}|${state.amount}|${state.limitPrice}|${state.stopPrice}|${state.trail}|${state.trailMode}|${state.type}|${state.side}|${state.qtyMode}|${state.tif}`
   const lastEdit = useRef(editKey)
   useEffect(() => {
     if (lastEdit.current === editKey) return
@@ -158,11 +186,20 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
       const o = res.order
       if (o) {
         const size = o.notional ? formatMoney(o.notional) : formatQty(o.qty)
-        const price = o.limitPrice ? ` ${formatPrice(o.limitPrice)}` : ''
+        const price = orderPriceLabel(o)
         toast({
           tone: o.side === 'BUY' ? 'up' : 'down',
-          title: `${o.side === 'BUY' ? 'Buy' : 'Sell'} ${size} ${o.symbol} ${o.type ? ORDER_TYPE_LABEL[o.type] : ''}${price} · ${res.replayed ? 'Already placed' : 'Pending'}`,
-          body: o.waitReason === 'QUEUED_FOR_OPEN' ? 'Queued for the 9:30 ET open.' : o.waitReason === 'QUEUED_FOR_EXT_OPEN' ? 'Queued for 4:00 ET pre-market.' : undefined,
+          title: `${o.side === 'BUY' ? 'Buy' : 'Sell'} ${size} ${o.symbol} ${o.type ? ORDER_TYPE_LABEL[o.type] : ''}${price ? ` ${price}` : ''} · ${res.replayed ? 'Already placed' : 'Pending'}`,
+          body:
+            o.waitReason === 'QUEUED_FOR_OPEN'
+              ? isStopType(o.type)
+                ? 'Arms at the 9:30 ET open.'
+                : 'Queued for the 9:30 ET open.'
+              : o.waitReason === 'QUEUED_FOR_EXT_OPEN'
+                ? 'Queued for 4:00 ET pre-market.'
+                : isStopType(o.type)
+                  ? 'Waiting for the stop price.'
+                  : undefined,
         })
       }
       dispatch({ type: 'submitted', clientOrderId: newClientOrderId() })
@@ -195,8 +232,8 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const onSubmitClick = () => (confirmOrders ? setReviewing(true) : void submit())
 
   const setPriceFromChip = (value: Dec | null | undefined) => {
-    if (!value) return
-    dispatch({ type: 'field', field: state.type === 'STOP' ? 'stopPrice' : 'limitPrice', value: roundToTick(value) })
+    if (!value || !chipTarget) return
+    dispatch({ type: 'field', field: chipTarget, value: roundToTick(value) })
   }
   const quick = (fraction: '0.25' | '0.5' | '1') => {
     const v = quickQuantity(fraction, {
@@ -211,10 +248,18 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
     if (v !== null && sign(v) > 0) dispatch({ type: 'field', field: amountMode ? 'amount' : 'qty', value: v })
   }
 
-  const showPriceChips = showsLimit(state.type) || state.type === 'STOP'
+  const showPriceChips = chipTarget !== null
   const sideLabel = state.side === 'BUY' ? 'Buy' : 'Sell'
   const est = previewData?.estimate
-  const types = ENABLED_ORDER_TYPES.map((t) => ({ value: t, label: ORDER_TYPE_LABEL[t] }))
+  const trailStart = showsTrail(state.type) ? trailingStopStart(state.side, quote?.last, state.trail, state.trailMode) : null
+  const explanation = isStopType(state.type) ? stopExplanation({ ...request, side: state.side, type: state.type, symbol }) : null
+  const session = clock.data?.session
+  const stopSessionNote =
+    session && session !== 'REGULAR' && isStopType(state.type)
+      ? state.type === 'TRAILING_STOP'
+        ? 'Trailing stops can only be placed during regular hours, 9:30–16:00 ET.'
+        : 'Stops only trigger during regular hours (9:30–16:00 ET); this one arms at the next open.'
+      : null
   return (
     <div className={cx('flex flex-col', className)}>
       {/* Header: symbol, live last, bid × size, ask × size, quality badge */}
@@ -236,7 +281,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
       </div>
 
       <div className="space-y-3 px-4 pb-4">
-        {!tradable ? <p className="rounded-sm bg-warn/10 p-2 text-caption text-warn">{symbol} cannot be traded right now.</p> : null}
+        {!tradable ? <p className="rounded-sm bg-warn/10 p-2 text-caption text-warn">{symbol} cannot be traded right now (halted, inactive, or a corporate action under review).</p> : null}
         <Segmented
           label="Side"
           block
@@ -249,8 +294,24 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
         />
 
         <div className="flex items-center justify-between gap-3">
-          <span className="text-caption font-medium text-text-2">Order type</span>
-          <Segmented label="Order type" size="sm" value={state.type} onChange={(orderType) => dispatch({ type: 'orderType', orderType })} options={types} />
+          <label htmlFor={`${symbol}-order-type`} className="text-caption font-medium text-text-2">
+            Order type
+          </label>
+          <div className="relative">
+            <select
+              id={`${symbol}-order-type`}
+              value={state.type}
+              onChange={(e) => dispatch({ type: 'orderType', orderType: e.target.value as OrderType })}
+              className="h-11 appearance-none rounded-md border border-border bg-bg-2 pr-8 pl-3 text-caption font-semibold text-text-1 outline-none focus:border-accent tablet:h-8"
+            >
+              {orderTypes.map((t) => (
+                <option key={t} value={t}>
+                  {ORDER_TYPE_LABEL[t]}
+                </option>
+              ))}
+            </select>
+            <IconChevronDown size={16} className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-text-3" />
+          </div>
         </div>
 
         {showsStop(state.type) ? (
@@ -259,6 +320,8 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             value={state.stopPrice}
             onChange={(v) => dispatch({ type: 'field', field: 'stopPrice', value: v })}
             onStep={(d) => dispatch({ type: 'field', field: 'stopPrice', value: step(state.stopPrice, d, quote?.last) })}
+            onFocus={() => setPriceField('stopPrice')}
+            active={chipTarget === 'stopPrice' && showsLimit(state.type)}
             error={fieldErrors.stopPrice}
             placeholder="0.00"
           />
@@ -269,18 +332,51 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             value={state.limitPrice}
             onChange={(v) => dispatch({ type: 'field', field: 'limitPrice', value: v })}
             onStep={(d) => dispatch({ type: 'field', field: 'limitPrice', value: step(state.limitPrice, d, quote?.last) })}
+            onFocus={() => setPriceField('limitPrice')}
+            active={chipTarget === 'limitPrice' && showsStop(state.type)}
             error={fieldErrors.limitPrice}
             placeholder="0.00"
           />
         ) : null}
         {showsTrail(state.type) ? (
-          <Stepper
-            label={state.trailMode === 'AMOUNT' ? 'Trail ($)' : 'Trail (%)'}
-            value={state.trail}
-            onChange={(v) => dispatch({ type: 'field', field: 'trail', value: v })}
-            error={fieldErrors.trailAmount ?? fieldErrors.trailPercent}
-            placeholder={state.trailMode === 'AMOUNT' ? '1.00' : '2.5'}
-          />
+          <div>
+            <Stepper
+              label="Trail"
+              labelAside={
+                <Segmented
+                  label="Trail type"
+                  size="sm"
+                  value={state.trailMode}
+                  onChange={(mode) => {
+                    dispatch({ type: 'trailMode', mode })
+                    dispatch({ type: 'field', field: 'trail', value: defaultTrail(mode, quote?.last) })
+                  }}
+                  options={[
+                    { value: 'AMOUNT', label: '$', title: 'Trail by a dollar amount' },
+                    { value: 'PERCENT', label: '%', title: 'Trail by a percentage' },
+                  ]}
+                />
+              }
+              prefix={state.trailMode === 'AMOUNT' ? '$' : undefined}
+              suffix={state.trailMode === 'PERCENT' ? <span className="pr-2 text-text-3">%</span> : undefined}
+              value={state.trail}
+              onChange={(v) => dispatch({ type: 'field', field: 'trail', value: v })}
+              onStep={(d) => dispatch({ type: 'field', field: 'trail', value: stepTrail(state.trail, d, state.trailMode, quote?.last) })}
+              error={fieldErrors.trailAmount ?? fieldErrors.trailPercent}
+              placeholder={state.trailMode === 'AMOUNT' ? '1.00' : '2.5'}
+            />
+            <p className="mt-1 text-caption text-text-3">
+              Stop starts at <span className="font-semibold text-text-1">{trailStart ? formatPrice(trailStart) : '--'}</span>
+              <span className="text-text-3"> · then follows the {state.side === 'SELL' ? 'highest' : 'lowest'} price</span>
+            </p>
+          </div>
+        ) : null}
+        {explanation ? <p className="rounded-sm bg-accent-bg px-2 py-1.5 text-caption text-text-1">{explanation}</p> : null}
+        {stopSessionNote ? (
+          <p className="flex gap-1.5 rounded-sm bg-warn/10 p-2 text-caption text-warn">
+            <IconInfo size={16} className="mt-0.5 shrink-0" />
+            {stopSessionNote}
+          </p>
         ) : null}
         {showPriceChips ? (
           <div className="grid grid-cols-4 gap-1.5">
@@ -297,7 +393,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
                 type="button"
                 disabled={!value}
                 onClick={() => setPriceFromChip(value)}
-                aria-label={`Use the ${label.toLowerCase()} price ${formatPrice(value)}`}
+                aria-label={`Use the ${label.toLowerCase()} price ${formatPrice(value)}${chipTarget === 'stopPrice' ? ' as the stop' : ''}`}
                 className="flex h-11 flex-col items-center justify-center rounded-sm bg-bg-2 text-micro font-semibold text-text-2 hover:bg-bg-3 hover:text-text-1 disabled:opacity-40 tablet:h-10"
               >
                 <span>{label}</span>
@@ -380,7 +476,12 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             onChange={(tif) => dispatch({ type: 'tif', tif })}
             options={[
               { value: 'DAY', label: 'Day' },
-              { value: 'GTC', label: 'GTC', disabled: !gtcAllowed(state), title: gtcAllowed(state) ? 'Good till cancelled (60 days)' : 'Market and dollar orders are Day only' },
+              {
+                value: 'GTC',
+                label: 'GTC',
+                disabled: !gtcOk,
+                title: gtcOk ? 'Good till cancelled (60 days)' : state.type === 'TRAILING_STOP' ? 'Trailing stops are Day only' : 'Market and dollar orders are Day only',
+              },
             ]}
           />
         </div>
@@ -401,7 +502,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
 
         <div className="rounded-md bg-bg-2/60 px-3 py-2" aria-live="polite">
           {request ? (
-            <EstimatesPanel preview={previewData} loading={preview.isPending} notional={amountMode} highlighted={highlighted} />
+            <EstimatesPanel preview={previewData} loading={preview.isPending} notional={amountMode} stop={isStopType(state.type)} highlighted={highlighted} />
           ) : (
             <p className="py-1 text-caption text-text-3">Enter {amountMode ? 'an amount' : 'a quantity'} to see the estimate.</p>
           )}

@@ -119,7 +119,7 @@ function PlayerPage() {
             )}
           </div>
           {p ? (
-            <dl className="flex gap-6 text-right">
+            <dl className="grid w-full grid-cols-2 gap-4 border-t border-divider pt-3 tablet:flex tablet:w-auto tablet:gap-6 tablet:border-0 tablet:pt-0 tablet:text-right">
               <div>
                 <dt className="text-micro text-text-3 uppercase">Equity</dt>
                 <dd className="text-section font-semibold">{p.equity ? formatMoney(p.equity) : <span className="text-text-3">hidden</span>}</dd>
@@ -135,13 +135,30 @@ function PlayerPage() {
               </div>
             </dl>
           ) : null}
+          {p ? (
+            <p className="w-full border-t border-divider pt-2 text-caption text-text-2">
+              <span className="font-semibold text-text-1">{p.fills ?? 0}</span> fills
+              {p.winRate ? (
+                <>
+                  {' · '}win rate <span className="font-semibold text-text-1">{formatPct(p.winRate, { signed: false, scale: 0 })}</span>
+                </>
+              ) : null}
+              {p.moneyWeightedReturnAll ? (
+                <>
+                  {' · '}money-weighted return{' '}
+                  <span className={cx('font-semibold', DIRECTION_TEXT[pctDirection(p.moneyWeightedReturnAll)])}>{formatPct(p.moneyWeightedReturnAll)}</span>
+                </>
+              ) : null}
+              {p.runNo && p.runNo > 1 ? ` · run #${p.runNo}` : ''}
+            </p>
+          ) : null}
         </section>
 
         <section aria-label="Stats" className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-divider bg-divider tablet:grid-cols-5">
           {(Object.keys(PERIOD_LABEL) as Array<keyof typeof PERIOD_LABEL>).map((k) => {
             const s = p?.stats?.[k]
             return (
-              <div key={k} className="bg-bg-1 p-3">
+              <div key={k} className={cx('bg-bg-1 p-3', k === 'ALL' && 'col-span-2 tablet:col-span-1')}>
                 <div className="text-caption text-text-2">{PERIOD_LABEL[k]}</div>
                 {p ? (
                   <>
@@ -181,7 +198,7 @@ function PlayerPage() {
                   role="radio"
                   aria-checked={r === range}
                   onClick={() => void navigate({ search: { range: r === '1M' ? undefined : r }, replace: true })}
-                  className={cx('h-7 min-w-10 shrink-0 rounded-sm px-2 text-caption font-semibold', r === range ? 'bg-bg-3 text-text-1' : 'text-text-2 hover:bg-bg-2')}
+                  className={cx('h-11 min-w-10 shrink-0 rounded-sm px-2 text-caption font-semibold tablet:h-7', r === range ? 'bg-bg-3 text-text-1' : 'text-text-2 hover:bg-bg-2')}
                 >
                   {r}
                 </button>

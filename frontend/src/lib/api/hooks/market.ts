@@ -3,6 +3,19 @@ import { api, unwrap } from '../client'
 import { queryKeys } from '../queryKeys'
 import type { ChartRange, MoverList, Timeframe } from '../types'
 
+/**
+ * `GET /rules` (§18.3 `Rules`): the rulebook the bots read, and the ticket's source for which order types this
+ * release accepts (`orders.matrix`, one row per type with its sessions and time-in-force). Versioned, rarely changes.
+ */
+export function useRules() {
+  return useQuery({
+    queryKey: queryKeys.rules,
+    queryFn: () => unwrap(api.GET('/api/v1/rules')),
+    staleTime: 10 * 60_000,
+    gcTime: 60 * 60_000,
+  })
+}
+
 export function useClock() {
   return useQuery({
     queryKey: queryKeys.clock,

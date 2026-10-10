@@ -20,11 +20,14 @@ export function EstimatesPanel({
   preview,
   loading,
   notional,
+  stop = false,
   highlighted = false,
 }: {
   preview: Preview | undefined
   loading: boolean
   notional: boolean
+  /** A stop order: the estimate is priced at the trigger, not at today's touch. */
+  stop?: boolean
   /** Some preview error is shown on an input; otherwise the ticket's general error list explains what is wrong. */
   highlighted?: boolean
 }) {
@@ -47,7 +50,7 @@ export function EstimatesPanel({
   return (
     <dl className="text-table">
       <Row
-        label="Est. price"
+        label={stop ? 'Est. price at trigger' : 'Est. price'}
         value={
           <span className="inline-flex items-center gap-1.5">
             {formatPrice(est.price)}

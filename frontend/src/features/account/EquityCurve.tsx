@@ -103,7 +103,7 @@ export function EquityCurve() {
             role="radio"
             aria-checked={r === range}
             onClick={() => setRange(r)}
-            className={cx('h-7 min-w-10 shrink-0 rounded-sm px-2 text-caption font-semibold', r === range ? 'bg-bg-3 text-text-1' : 'text-text-2 hover:bg-bg-2 hover:text-text-1')}
+            className={cx('h-11 min-w-10 shrink-0 rounded-sm px-2 text-caption font-semibold tablet:h-7', r === range ? 'bg-bg-3 text-text-1' : 'text-text-2 hover:bg-bg-2 hover:text-text-1')}
           >
             {r}
           </button>

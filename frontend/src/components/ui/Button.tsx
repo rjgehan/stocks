@@ -16,8 +16,9 @@ const VARIANTS: Record<ButtonVariant, string> = {
 }
 
 const SIZES: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3 text-caption',
-  md: 'h-10 px-4 text-body',
+  // §22.3: 44 px touch targets below the tablet breakpoint
+  sm: 'h-11 px-3 text-caption tablet:h-8',
+  md: 'h-11 px-4 text-body tablet:h-10',
   lg: 'h-12 px-5 text-section',
 }
 

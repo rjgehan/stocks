@@ -119,6 +119,7 @@ describe('mock server: §18.3 shapes', () => {
   }, 10_000)
 
   it('previews never write and report §7.2 codes for invalid input', async () => {
+    const seeded = (await call<{ items: unknown[] }>('GET', '/orders?status=ALL')).body.items.length
     const bad = await call<{ valid: boolean; errors: Array<{ code: string; field: string | null }> }>('POST', '/orders/preview', {
       symbol: 'AAPL',
       side: 'BUY',
@@ -128,7 +129,7 @@ describe('mock server: §18.3 shapes', () => {
     expect(bad.body.valid).toBe(false)
     expect(bad.body.errors.map((e) => e.code)).toContain('LIMIT_PRICE_REQUIRED')
     const orders = await call<{ items: unknown[] }>('GET', '/orders?status=ALL')
-    expect(orders.body.items).toHaveLength(1) // only the seeded NVDA order
+    expect(orders.body.items).toHaveLength(seeded) // only the seeded orders (NVDA and the corporate-action history)
   })
 
   it('cancels a resting limit order', async () => {
@@ -230,4 +231,67 @@ describe('mock server: auth', () => {
     expect(ok.status).toBe(201)
     expect(ok.body.handle).toBe('zed')
   })
+})
+
+const lastOf = async (symbol: string) => (await call<{ quotes: Array<{ last: string }> }>('GET', `/quotes?symbols=${symbol}`)).body.quotes[0]!.last
+const cents = (n: number) => (Math.round(n * 100) / 100).toFixed(2)
+const preview = async (body: Record<string, unknown>) =>
+  (await call<{ valid: boolean; errors: Array<{ code: string; field: string | null }> }>('POST', '/orders/preview', { symbol: 'AAPL', side: 'BUY', qty: '1', ...body })).body
+
+describe('mock server: stop orders (§11.1, §12.7)', () => {
+
+  it('validates stop prices, trails and TIF per type', async () => {
+    const last = Number(await lastOf('AAPL'))
+    expect((await preview({ type: 'STOP' })).errors.map((e) => e.code)).toContain('STOP_PRICE_REQUIRED')
+    expect((await preview({ type: 'STOP', stopPrice: cents(last * 0.98) })).errors).toEqual([expect.objectContaining({ code: 'STOP_PRICE_WRONG_SIDE', field: 'stopPrice' })])
+    expect((await preview({ type: 'STOP_LIMIT', stopPrice: cents(last * 1.02) })).errors.map((e) => e.code)).toContain('LIMIT_PRICE_REQUIRED')
+    expect((await preview({ type: 'TRAILING_STOP' })).errors).toEqual([expect.objectContaining({ code: 'TRAIL_REQUIRED', field: 'trailAmount' })])
+    expect((await preview({ type: 'TRAILING_STOP', trailPercent: '2', timeInForce: 'GTC' })).errors.map((e) => e.code)).toEqual(['TIF_NOT_ALLOWED'])
+    expect((await preview({ type: 'TRAILING_STOP', trailPercent: '2', stopPrice: '1.00' })).errors.map((e) => e.code)).toContain('PRICE_NOT_ALLOWED')
+    const ok = await preview({ type: 'STOP', stopPrice: cents(last * 1.02), timeInForce: 'GTC' })
+    expect(ok.valid).toBe(true)
+  })
+
+  it('a buy stop waits NOT_TRIGGERED, triggers on a print through the stop, then fills', async () => {
+    const last = Number(await lastOf('AAPL'))
+    const stop = cents(last * 1.01)
+    const placed = await call<PlaceOrderResponse>('POST', '/orders', { clientOrderId: 'web-stop-1', symbol: 'AAPL', side: 'BUY', type: 'STOP', qty: '1', stopPrice: stop, timeInForce: 'DAY' })
+    expect(placed.status).toBe(201)
+    await sleep(1_000)
+    const id = placed.body.order!.orderId!
+    let o = (await call<Order>('GET', `/orders/${id}`)).body
+    expect(o).toMatchObject({ status: 'WORKING', waitReason: 'NOT_TRIGGERED', triggered: false, stopPrice: stop })
+    server.market.nudge('AAPL', 300)
+    server.onMarketStep('AAPL')
+    o = (await call<Order>('GET', `/orders/${id}`)).body
+    expect(o.triggered).toBe(true)
+    const trig = o.events!.find((e) => e.type === 'TRIGGERED')!
+    expect(trig.detail).toMatchObject({ basis: 'PRINT', stopPrice: stop })
+    await sleep(800)
+    o = (await call<Order>('GET', `/orders/${id}`)).body
+    expect(o.status).toBe('FILLED')
+    expect(o.events!.map((e) => e.type)).toEqual(['ACCEPTED', 'WORKING', 'TRIGGERED', 'FILL'])
+  }, 10_000)
+
+  it('a sell trailing stop follows the high-water mark and triggers on the pullback', async () => {
+    const placed = await call<PlaceOrderResponse>('POST', '/orders', { clientOrderId: 'web-trail-1', symbol: 'F', side: 'SELL', type: 'TRAILING_STOP', qty: '2', trailPercent: '2', timeInForce: 'DAY' })
+    expect(placed.status).toBe(201)
+    await sleep(1_000)
+    const id = placed.body.order!.orderId!
+    const o1 = (await call<Order>('GET', `/orders/${id}`)).body
+    expect(o1.watermarkPrice).not.toBeNull()
+    const stop1 = Number(o1.stopPrice)
+    expect(stop1).toBeLessThan(Number(o1.watermarkPrice))
+    server.market.nudge('F', 100) // +1%: the watermark and the stop move up
+    server.onMarketStep('F')
+    const o2 = (await call<Order>('GET', `/orders/${id}`)).body
+    expect(Number(o2.watermarkPrice)).toBeGreaterThan(Number(o1.watermarkPrice))
+    expect(Number(o2.stopPrice)).toBeGreaterThan(stop1)
+    expect(o2.events!.map((e) => e.type)).toContain('TRAIL_UPDATED')
+    server.market.nudge('F', -300) // −3%: through the trailing stop
+    server.onMarketStep('F')
+    await sleep(800)
+    const o3 = (await call<Order>('GET', `/orders/${id}`)).body
+    expect(o3).toMatchObject({ status: 'FILLED', triggered: true })
+  }, 10_000)
 })
