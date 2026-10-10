@@ -3,8 +3,8 @@ package com.stocks.league.web;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.web.Cursor;
 import com.stocks.common.web.Page;
+import com.stocks.contract.portfolio.PerformanceQueries;
 import com.stocks.contract.portfolio.dto.FeedItemDto;
-import com.stocks.league.FeedService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -13,16 +13,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** §18.2 {@code GET /feed} ({@code league:read}). */
+/** §18.2 {@code GET /feed} ({@code league:read}); the same contract method as MCP {@code get_league_feed}. */
 @RestController
 @RequestMapping("/api/v1")
 @Tag(name = "league", description = "Leaderboard, players and the league feed")
 public class FeedController {
 
-  private final FeedService feed;
+  private final PerformanceQueries performance;
 
-  public FeedController(FeedService feed) {
-    this.feed = feed;
+  public FeedController(PerformanceQueries performance) {
+    this.performance = performance;
   }
 
   @GetMapping("/feed")
@@ -35,6 +35,6 @@ public class FeedController {
     if (limit != null && (limit < 1 || limit > Page.MAX_LIMIT)) {
       throw ApiException.validation("limit", "limit must be between 1 and 200");
     }
-    return feed.page(Cursor.parse(cursor), Page.clampLimit(limit));
+    return performance.feed(Cursor.parse(cursor), Page.clampLimit(limit));
   }
 }

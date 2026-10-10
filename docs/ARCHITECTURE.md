@@ -397,11 +397,12 @@ com.stocks
 │                                                              ValuationServiceImpl, MarkResolver, HoldingsReconstructor,
 │                                                              EodSnapshotJob, EodValuator, EodSnapshots (anchors), IntradaySampler,
 │                                                              BenchmarkService, BenchmarkBackfillJob, PortfolioHistoryService,
-│                                                              PerformanceQueriesImpl, AccountPerformance, MetricsCalculator,
+│                                                              AccountPerformance, MetricsCalculator,
 │                                                              PeriodResolver, PnlCalendar, RunAnchors, PublicProfileService,
 │                                                              PlayerDirectory, LeagueSettings, web/PerformanceController
 │                                                              (UnitMath is the pure contract class itself, no Impl)
-├── league/                                             [WS4]  LeaderboardServiceImpl (+ 5 s PeriodicTask), LeaderboardComputer,
+├── league/                                             [WS4]  PerformanceQueriesImpl (fronts portfolio and league; league → portfolio only),
+│                                                              LeaderboardServiceImpl (+ 5 s PeriodicTask), LeaderboardComputer,
 │                                                              LeaderboardRowMapper, Eligibility, LeaderboardSnapshotWriter,
 │                                                              FeedService (+ /topic/feed publisher), FeedEventListener (sole feed_event writer),
 │                                                              web/{LeaderboardController, PlayerController, FeedController}
@@ -742,6 +743,7 @@ public interface PerformanceQueries {
   Page<PublicTradeDto> publicTrades(String handle, Cursor cursor, int limit);
   AccountPnl accountPnl(long accountId);                          // §16.2 day/total, same anchors as the board
   Map<String, PositionDayPnl> positionDayPnl(long accountId);     // maps NAME_CHANGE symbol_before → symbol_after (§16.4)
+  Page<FeedItemDto> feed(Cursor cursor, int limit);               // GET /feed and MCP get_league_feed: visible_at ≤ now
 }
 
 // ===== com.stocks.contract.watchlist [WS4] =====

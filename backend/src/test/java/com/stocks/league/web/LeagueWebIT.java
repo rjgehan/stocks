@@ -7,7 +7,9 @@ import com.jayway.jsonpath.JsonPath;
 import com.stocks.common.time.MutableTimeSource;
 import com.stocks.config.StocksProperties;
 import com.stocks.contract.marketdata.MarketDataService;
+import com.stocks.contract.portfolio.PerformanceQueries;
 import com.stocks.contract.portfolio.ValuationService;
+import com.stocks.contract.portfolio.dto.FeedItemDto;
 import com.stocks.contract.security.Scopes;
 import com.stocks.league.FeedEventListener;
 import com.stocks.league.LeaderboardServiceImpl;
@@ -54,6 +56,7 @@ class LeagueWebIT {
   @Autowired JdbcClient jdbc;
   @Autowired MutableTimeSource time;
   @Autowired ValuationService valuation;
+  @Autowired PerformanceQueries performance;
   @Autowired MarketDataService market;
   @Autowired LeaderboardServiceImpl leaderboard;
   @Autowired FeedEventListener feed;
@@ -205,5 +208,8 @@ class LeagueWebIT {
     });
     assertThat(as(alice, get("/api/v1/feed").param("limit", "0")).getStatus()).isEqualTo(400);
     assertThat(JsonPath.<Object>read(r.getContentAsString(), "$.nextCursor")).isNull();
+    // MCP get_league_feed reads the same rows through the contract
+    List<String> restIds = JsonPath.read(r.getContentAsString(), "$.items[*].id");
+    assertThat(performance.feed(null, 50).items()).extracting(FeedItemDto::id).containsExactlyElementsOf(restIds);
   }
 }
