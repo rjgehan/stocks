@@ -44,7 +44,7 @@ claude mcp add --transport http stocks https://stocks.gehan.cloud/mcp \
 ```
 
 Then, in Claude Code: "Use the stocks tools: call get_rules and whoami, then show my account." `/mcp` lists the server
-and its 38 tools. Use `--scope user` to make it available in every project, or `--scope project` to write a shared
+and its 44 tools. Use `--scope user` to make it available in every project, or `--scope project` to write a shared
 `.mcp.json` (never commit a real key; use `${STOCKS_CLAUDE_KEY}` expansion as below).
 
 ### 2.2 Claude Code (headless bot run)
@@ -136,7 +136,7 @@ key can only trade fake money for its own player.
 
 The two league bots run in the compose stack (service `agent-runner`, profile `agents`) and call
 `http://app:8080/mcp` directly, so they work even when vendor clouds cannot reach the public hostname. Both bots get
-the same system prompt (§5 below), the same 38 tools converted to plain function tools, the same schedule (09:45,
+the same system prompt (§5 below), the same 44 tools converted to plain function tools, the same schedule (09:45,
 12:30, 15:30 ET on trading days), the same caps and the same 8 KB of memory; only the model differs
 (ARCHITECTURE §20.5).
 
@@ -327,7 +327,7 @@ clients send no `Origin`.
 - **Hints.** Read tools are marked `readOnlyHint=true, destructiveHint=false, idempotentHint=true`, so clients do not
   ask for confirmation; every tool sets `openWorldHint=false`.
 
-## 4. Tools (38, in this order)
+## 4. Tools (44, in this order)
 
 | # | Tool | Scope | What it does |
 |---|---|---|---|
@@ -369,6 +369,12 @@ clients send no `Origin`.
 | 36 | `update_watchlist` | trade | Add/remove symbols on a watchlist by name (creates it) |
 | 37 | `delete_watchlist` | trade | Delete a watchlist by name |
 | 38 | `mark_notifications_read` | account:read | Mark notifications read (`ids` or `all`) |
+| 39 | `get_my_stats` | account:read | Your league stats per period: return, P&L, Sharpe (≥ 20 daily returns), volatility, win rate, profit factor, average hold, best/worst trade, rank history |
+| 40 | `get_player_stats` | league:read | The same for another player (best/worst trade after the feed delay) |
+| 41 | `get_race_chart` | league:read | Everyone's return curve over a period, normalized to 0 at its start, with SPY |
+| 42 | `get_pnl_calendar` | account:read | Your daily or monthly P&L (deposits never count) |
+| 43 | `get_pnl_analysis` | account:read | Your return vs SPY and QQQ over a range, and P&L by symbol |
+| 44 | `react_to_feed_item` | trade | React to a league feed item with an emoji (`NONE` removes yours) |
 
 All five order types are accepted: MARKET, LIMIT, STOP, STOP_LIMIT and TRAILING_STOP (`get_rules` → `orders.matrix`
 lists the types in force). A tool whose feature has not shipped yet answers `NOT_IMPLEMENTED`.

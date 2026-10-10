@@ -30,6 +30,12 @@ tools:
   /api/v1/players/{handle}/trades: get_player_trades
   /api/v1/feed: get_league_feed
   /api/v1/me/notifications: get_notifications
+  # Phase 2, league slice (§16.8–16.10)
+  /api/v1/account/stats: get_my_stats
+  /api/v1/players/{handle}/stats: get_player_stats
+  /api/v1/league/race: get_race_chart
+  /api/v1/account/pnl-calendar: get_pnl_calendar
+  /api/v1/account/pnl-analysis: get_pnl_analysis
 excluded:
   /api/v1/auth/csrf: browser CSRF bootstrap
   /api/v1/me: whoami returns the same Me

@@ -371,6 +371,124 @@
         ]
       }
     },
+    "/api/v1/account/pnl-analysis": {
+      "get": {
+        "description": "My Earnings: your time-weighted return and P&L over the range vs SPY and QQQ (total-return indexes), and the P&L by symbol (realized, change of unrealized, dividends); the symbols' totals plus `other` (P&L corrections) add up to `pnl`.",
+        "operationId": "getPnlAnalysis",
+        "parameters": [
+          {
+            "description": "1D, 1W, 1M (default), 3M, YTD, 1Y or ALL",
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1D",
+                "1W",
+                "1M",
+                "3M",
+                "YTD",
+                "1Y",
+                "ALL"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PnlAnalysis"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "P&L analysis of the active run",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/pnl-calendar": {
+      "get": {
+        "description": "DAY: one cell per trading day of `month` (YYYY-MM, default the current ET month); MONTH: one cell per month of `year`. A day's P&L never counts deposits or withdrawals (shown as `flows`) nor splits or renames; today's cell is live until the EOD snapshot.",
+        "operationId": "getPnlCalendar",
+        "parameters": [
+          {
+            "description": "DAY (default) or MONTH",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DAY",
+                "MONTH"
+              ]
+            }
+          },
+          {
+            "description": "YYYY-MM (DAY view)",
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "2000..2100 (MONTH view)",
+            "in": "query",
+            "name": "year",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PnlCalendar"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "P&L calendar of the active run",
+        "tags": [
+          "account"
+        ]
+      }
+    },
     "/api/v1/account/positions": {
       "get": {
         "operationId": "positions",
@@ -581,6 +699,57 @@
         "summary": "Every run (resets open a new one)",
         "tags": [
           "account"
+        ]
+      }
+    },
+    "/api/v1/account/stats": {
+      "get": {
+        "description": "The same as /players/{handle}/stats for yourself, with nothing delayed.",
+        "operationId": "getMyStats",
+        "parameters": [
+          {
+            "description": "TODAY, WEEK, MONTH, YTD, SEASON or ALL (default)",
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TODAY",
+                "WEEK",
+                "MONTH",
+                "YTD",
+                "SEASON",
+                "ALL"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerStats"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Your league stats",
+        "tags": [
+          "league"
         ]
       }
     },
@@ -2627,6 +2796,98 @@
         ]
       }
     },
+    "/api/v1/feed/{itemId}/reaction": {
+      "delete": {
+        "description": "Idempotent: removing nothing is fine.",
+        "operationId": "removeReaction",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedReactions"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Remove your reaction",
+        "tags": [
+          "league"
+        ]
+      },
+      "put": {
+        "description": "Sets your reaction (ROCKET, FIRE, GEM, CLAP, LAUGH or SKULL), replacing any other one; idempotent. NOT_FOUND for an item you cannot see.",
+        "operationId": "setReaction",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetReactionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedReactions"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "React to a feed item",
+        "tags": [
+          "league"
+        ]
+      }
+    },
     "/api/v1/leaderboard": {
       "get": {
         "description": "RETURN ranks by time-weighted return from unit values (admin deposits never move it; a reset never erases a loss); PNL by net-contribution P&L (equity − net deposits), which favours larger accounts. Ties: P&L, then first opening. Rows that miss the minimum fills/symbols follow unranked. `me` is the caller's row. Recomputed every 5 s.",
@@ -2710,6 +2971,71 @@
           }
         },
         "summary": "The deposit-aware leaderboard",
+        "tags": [
+          "league"
+        ]
+      }
+    },
+    "/api/v1/league/race": {
+      "get": {
+        "description": "Every player's unit-value curve normalized to 0% at the period start (deposits never move a line; the last point equals the leaderboard return), ordered by RETURN rank, with each player's EOD rank history and SPY's total return over the same window.",
+        "operationId": "getRaceChart",
+        "parameters": [
+          {
+            "description": "TODAY, WEEK (default), MONTH, YTD, SEASON or ALL",
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TODAY",
+                "WEEK",
+                "MONTH",
+                "YTD",
+                "SEASON",
+                "ALL"
+              ]
+            }
+          },
+          {
+            "description": "ALL (default), HUMAN or AI",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ALL",
+                "HUMAN",
+                "AI"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaceChart"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "The race chart",
         "tags": [
           "league"
         ]
@@ -3809,6 +4135,65 @@
           }
         },
         "summary": "A player's unit-value curve",
+        "tags": [
+          "league"
+        ]
+      }
+    },
+    "/api/v1/players/{handle}/stats": {
+      "get": {
+        "description": "Return, P&L and drawdown as on the leaderboard; Sharpe ratio and volatility (annualized, from daily unit-value returns, at least 20 of them), win rate, profit factor, closed lots with the average hold, best and worst trade (closed after the feed delay), rank and the EOD rank history.",
+        "operationId": "getPlayerStats",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "TODAY, WEEK, MONTH, YTD, SEASON or ALL (default)",
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TODAY",
+                "WEEK",
+                "MONTH",
+                "YTD",
+                "SEASON",
+                "ALL"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerStats"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A player's league stats",
         "tags": [
           "league"
         ]
@@ -5894,6 +6279,38 @@
           "timeframe"
         ]
       },
+      "BenchmarkCurve": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RacePoint"
+            }
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "points",
+          "return",
+          "symbol"
+        ]
+      },
       "BenchmarkReturn": {
         "type": "object",
         "properties": {
@@ -6345,6 +6762,81 @@
           "clientOrderId"
         ]
       },
+      "ClosedLot": {
+        "type": "object",
+        "properties": {
+          "closedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "cost": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "holdSeconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "openedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "proceeds": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "realizedPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "closedAt",
+          "cost",
+          "holdSeconds",
+          "openedAt",
+          "proceeds",
+          "qty",
+          "realizedPnl",
+          "return",
+          "symbol"
+        ]
+      },
       "CorporateAction": {
         "type": "object",
         "properties": {
@@ -6733,6 +7225,37 @@
           "total"
         ]
       },
+      "EarningsPoint": {
+        "type": "object",
+        "properties": {
+          "pnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "t": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "pnl",
+          "return",
+          "t"
+        ]
+      },
       "EodHolding": {
         "type": "object",
         "properties": {
@@ -7091,6 +7614,15 @@
               }
             ]
           },
+          "reactions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/FeedReaction"
+            }
+          },
           "symbol": {
             "type": [
               "string",
@@ -7104,6 +7636,7 @@
           "kind",
           "payload",
           "player",
+          "reactions",
           "symbol"
         ]
       },
@@ -7174,6 +7707,68 @@
           "realizedPnl",
           "side",
           "untrusted"
+        ]
+      },
+      "FeedReaction": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "players": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Reactor"
+            }
+          },
+          "reaction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ROCKET",
+              "FIRE",
+              "GEM",
+              "CLAP",
+              "LAUGH",
+              "SKULL",
+              null
+            ]
+          }
+        },
+        "required": [
+          "count",
+          "players",
+          "reaction"
+        ]
+      },
+      "FeedReactions": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reactions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/FeedReaction"
+            }
+          }
+        },
+        "required": [
+          "itemId",
+          "reactions"
         ]
       },
       "Fees": {
@@ -7771,6 +8366,13 @@
             ],
             "format": "decimal"
           },
+          "profitFactor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
           "rank": {
             "type": [
               "integer",
@@ -7789,6 +8391,13 @@
             "type": "boolean"
           },
           "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "sharpe": {
             "type": [
               "string",
               "null"
@@ -7836,10 +8445,12 @@
           "partialPeriod",
           "player",
           "pnl",
+          "profitFactor",
           "rank",
           "rankChange",
           "rebased",
           "return",
+          "sharpe",
           "spark",
           "symbolsTraded",
           "topHolding",
@@ -9342,6 +9953,225 @@
           "winRate"
         ]
       },
+      "PlayerStats": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "avgHoldSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "bestTrade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClosedLot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closedLots": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "closingSells": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "dailyReturns": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "grossLoss": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "grossProfit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "maxDrawdown": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "partialPeriod": {
+            "type": "boolean"
+          },
+          "period": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "TODAY",
+              "WEEK",
+              "MONTH",
+              "YTD",
+              "SEASON",
+              "ALL",
+              null
+            ]
+          },
+          "periodStart": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "player": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlayerSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "profitFactor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "rank": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "rankChange": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "rankHistory": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RankPoint"
+            }
+          },
+          "rebased": {
+            "type": "boolean"
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "sharpe": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "sharpeMinDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tradesAsOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "volatility": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "winRate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "wins": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "worstTrade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClosedLot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "asOf",
+          "avgHoldSeconds",
+          "bestTrade",
+          "closedLots",
+          "closingSells",
+          "dailyReturns",
+          "grossLoss",
+          "grossProfit",
+          "maxDrawdown",
+          "partialPeriod",
+          "period",
+          "periodStart",
+          "player",
+          "pnl",
+          "profitFactor",
+          "rank",
+          "rankChange",
+          "rankHistory",
+          "rebased",
+          "return",
+          "sharpe",
+          "sharpeMinDays",
+          "tradesAsOf",
+          "volatility",
+          "winRate",
+          "wins",
+          "worstTrade"
+        ]
+      },
       "PlayerSummary": {
         "type": "object",
         "properties": {
@@ -9407,6 +10237,230 @@
           "memberSince",
           "playerId",
           "resets"
+        ]
+      },
+      "PnlAnalysis": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "benchmarks": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkCurve"
+            }
+          },
+          "bySymbol": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SymbolPnl"
+            }
+          },
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "other": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "pnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "points": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/EarningsPoint"
+            }
+          },
+          "range": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "1D",
+              "1W",
+              "1M",
+              "3M",
+              "YTD",
+              "1Y",
+              "ALL",
+              null
+            ]
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "asOf",
+          "benchmarks",
+          "bySymbol",
+          "from",
+          "other",
+          "pnl",
+          "points",
+          "range",
+          "return"
+        ]
+      },
+      "PnlCalendar": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "cells": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PnlCalendarCell"
+            }
+          },
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PnlCalendarTotal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "view": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "MONTH",
+              null
+            ]
+          }
+        },
+        "required": [
+          "asOf",
+          "cells",
+          "from",
+          "to",
+          "total",
+          "view"
+        ]
+      },
+      "PnlCalendarCell": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "flows": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "live": {
+            "type": "boolean"
+          },
+          "pnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "date",
+          "flows",
+          "live",
+          "pnl",
+          "return"
+        ]
+      },
+      "PnlCalendarTotal": {
+        "type": "object",
+        "properties": {
+          "pnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "pnl",
+          "return"
         ]
       },
       "PortfolioHistory": {
@@ -10357,6 +11411,225 @@
         },
         "required": [
           "quotes"
+        ]
+      },
+      "RaceChart": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "benchmark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BenchmarkCurve"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ALL",
+              "HUMAN",
+              "AI",
+              null
+            ]
+          },
+          "period": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "TODAY",
+              "WEEK",
+              "MONTH",
+              "YTD",
+              "SEASON",
+              "ALL",
+              null
+            ]
+          },
+          "periodStart": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "series": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RaceSeries"
+            }
+          }
+        },
+        "required": [
+          "asOf",
+          "benchmark",
+          "kind",
+          "period",
+          "periodStart",
+          "series"
+        ]
+      },
+      "RacePoint": {
+        "type": "object",
+        "properties": {
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "t": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "return",
+          "t"
+        ]
+      },
+      "RaceSeries": {
+        "type": "object",
+        "properties": {
+          "partialPeriod": {
+            "type": "boolean"
+          },
+          "player": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlayerSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "points": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RacePoint"
+            }
+          },
+          "rank": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "ranks": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RankPoint"
+            }
+          },
+          "rebased": {
+            "type": "boolean"
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "partialPeriod",
+          "player",
+          "points",
+          "rank",
+          "ranks",
+          "rebased",
+          "return"
+        ]
+      },
+      "RankPoint": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "rank": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "ranked": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "date",
+          "rank",
+          "ranked"
+        ]
+      },
+      "Reactor": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "HUMAN",
+              "AI",
+              null
+            ]
+          }
+        },
+        "required": [
+          "displayName",
+          "handle",
+          "kind"
         ]
       },
       "ReauthRequest": {
@@ -11477,6 +12750,29 @@
           "newPassword"
         ]
       },
+      "SetReactionRequest": {
+        "type": "object",
+        "properties": {
+          "reaction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ROCKET",
+              "FIRE",
+              "GEM",
+              "CLAP",
+              "LAUGH",
+              "SKULL",
+              null
+            ]
+          }
+        },
+        "required": [
+          "reaction"
+        ]
+      },
       "Settings": {
         "type": "object",
         "properties": {
@@ -11935,6 +13231,56 @@
           "qtyAfter",
           "qtyBefore",
           "realizedPnl"
+        ]
+      },
+      "SymbolPnl": {
+        "type": "object",
+        "properties": {
+          "dividends": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "held": {
+            "type": "boolean"
+          },
+          "realized": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "unrealized": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "dividends",
+          "held",
+          "realized",
+          "symbol",
+          "total",
+          "unrealized"
         ]
       },
       "SystemEngine": {

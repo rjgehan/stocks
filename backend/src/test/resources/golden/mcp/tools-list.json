@@ -3637,6 +3637,10 @@
             "type" : [ "string", "null" ],
             "format" : "decimal"
           },
+          "profitFactor" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
           "rank" : {
             "type" : [ "integer", "null" ],
             "format" : "int32"
@@ -3649,6 +3653,10 @@
             "type" : "boolean"
           },
           "return" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "sharpe" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
           },
@@ -3671,7 +3679,7 @@
             "format" : "decimal"
           }
         },
-        "required" : [ "rank", "rankChange", "eligible", "eligibilityNote", "partialPeriod", "rebased", "player", "apiTrader", "return", "pnl", "excessVsBenchmark", "maxDrawdown", "equity", "netContributions", "flowsInPeriod", "fills", "symbolsTraded", "winRate", "topHolding", "spark" ]
+        "required" : [ "rank", "rankChange", "eligible", "eligibilityNote", "partialPeriod", "rebased", "player", "apiTrader", "return", "pnl", "excessVsBenchmark", "maxDrawdown", "equity", "netContributions", "flowsInPeriod", "fills", "symbolsTraded", "winRate", "topHolding", "spark", "sharpe", "profitFactor" ]
       }
     },
     "type" : "object",
@@ -4210,6 +4218,12 @@
   },
   "outputSchema" : {
     "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "$defs" : {
+      "PlayerKind" : {
+        "type" : "string",
+        "enum" : [ "HUMAN", "AI" ]
+      }
+    },
     "type" : "object",
     "properties" : {
       "items" : {
@@ -4285,8 +4299,11 @@
                   "type" : [ "string", "null" ]
                 },
                 "kind" : {
-                  "type" : [ "string", "null" ],
-                  "enum" : [ "HUMAN", "AI", null ]
+                  "anyOf" : [ {
+                    "$ref" : "#/$defs/PlayerKind"
+                  }, {
+                    "type" : "null"
+                  } ]
                 },
                 "memberSince" : {
                   "type" : [ "string", "null" ],
@@ -4302,11 +4319,50 @@
               },
               "required" : [ "playerId", "handle", "displayName", "kind", "aiModel", "avatarSeed", "memberSince", "resets" ]
             },
+            "reactions" : {
+              "type" : [ "array", "null" ],
+              "items" : {
+                "type" : "object",
+                "properties" : {
+                  "count" : {
+                    "type" : "integer",
+                    "format" : "int32"
+                  },
+                  "players" : {
+                    "type" : [ "array", "null" ],
+                    "items" : {
+                      "type" : "object",
+                      "properties" : {
+                        "displayName" : {
+                          "type" : [ "string", "null" ]
+                        },
+                        "handle" : {
+                          "type" : [ "string", "null" ]
+                        },
+                        "kind" : {
+                          "anyOf" : [ {
+                            "$ref" : "#/$defs/PlayerKind"
+                          }, {
+                            "type" : "null"
+                          } ]
+                        }
+                      },
+                      "required" : [ "handle", "displayName", "kind" ]
+                    }
+                  },
+                  "reaction" : {
+                    "type" : [ "string", "null" ],
+                    "enum" : [ "ROCKET", "FIRE", "GEM", "CLAP", "LAUGH", "SKULL", null ]
+                  }
+                },
+                "required" : [ "reaction", "count", "players" ]
+              }
+            },
             "symbol" : {
               "type" : [ "string", "null" ]
             }
           },
-          "required" : [ "id", "at", "kind", "player", "symbol", "payload" ]
+          "required" : [ "id", "at", "kind", "player", "symbol", "payload", "reactions" ]
         }
       },
       "nextCursor" : {
@@ -6608,5 +6664,947 @@
       }
     },
     "required" : [ "marked" ]
+  }
+}, {
+  "name" : "get_my_stats",
+  "title" : "My league stats",
+  "description" : "Your league stats for a leaderboard period (default ALL): time-weighted return and P&L as on the leaderboard, max drawdown, Sharpe ratio and volatility (annualized from daily unit-value returns; null until 20 daily returns exist), win rate, profit factor (gross profit / gross loss of closing sells; null without a loss), closed lots with the average hold in seconds, best and worst trade, rank and the EOD rank history. Returns are fractions (0.0123 = +1.23%).",
+  "annotations" : {
+    "title" : "My league stats",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "period" : {
+        "type" : "string",
+        "enum" : [ "TODAY", "WEEK", "MONTH", "YTD", "SEASON", "ALL" ],
+        "description" : "TODAY, WEEK, MONTH, YTD, SEASON or ALL (default)"
+      }
+    },
+    "required" : [ ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "$defs" : {
+      "ClosedLotDto" : {
+        "type" : "object",
+        "properties" : {
+          "closedAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "cost" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "holdSeconds" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "openedAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "proceeds" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "qty" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "realizedPnl" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "return" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "symbol" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "symbol", "qty", "openedAt", "closedAt", "holdSeconds", "cost", "proceeds", "realizedPnl", "return" ]
+      }
+    },
+    "type" : "object",
+    "properties" : {
+      "asOf" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "avgHoldSeconds" : {
+        "type" : [ "integer", "null" ],
+        "format" : "int64"
+      },
+      "bestTrade" : {
+        "anyOf" : [ {
+          "$ref" : "#/$defs/ClosedLotDto"
+        }, {
+          "type" : "null"
+        } ]
+      },
+      "closedLots" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "closingSells" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "dailyReturns" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "grossLoss" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "grossProfit" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "maxDrawdown" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "partialPeriod" : {
+        "type" : "boolean"
+      },
+      "period" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "TODAY", "WEEK", "MONTH", "YTD", "SEASON", "ALL", null ]
+      },
+      "periodStart" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "player" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "aiModel" : {
+            "type" : [ "string", "null" ]
+          },
+          "avatarSeed" : {
+            "type" : [ "string", "null" ]
+          },
+          "displayName" : {
+            "type" : [ "string", "null" ]
+          },
+          "handle" : {
+            "type" : [ "string", "null" ]
+          },
+          "kind" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "HUMAN", "AI", null ]
+          },
+          "memberSince" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "playerId" : {
+            "type" : [ "string", "null" ]
+          },
+          "resets" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "playerId", "handle", "displayName", "kind", "aiModel", "avatarSeed", "memberSince", "resets" ]
+      },
+      "pnl" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "profitFactor" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "rank" : {
+        "type" : [ "integer", "null" ],
+        "format" : "int32"
+      },
+      "rankChange" : {
+        "type" : [ "integer", "null" ],
+        "format" : "int32"
+      },
+      "rankHistory" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "date" : {
+              "type" : [ "string", "null" ],
+              "format" : "date"
+            },
+            "rank" : {
+              "type" : [ "integer", "null" ],
+              "format" : "int32"
+            },
+            "ranked" : {
+              "type" : "integer",
+              "format" : "int32"
+            }
+          },
+          "required" : [ "date", "rank", "ranked" ]
+        }
+      },
+      "rebased" : {
+        "type" : "boolean"
+      },
+      "return" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "sharpe" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "sharpeMinDays" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "tradesAsOf" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "volatility" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "winRate" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "wins" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "worstTrade" : {
+        "anyOf" : [ {
+          "$ref" : "#/$defs/ClosedLotDto"
+        }, {
+          "type" : "null"
+        } ]
+      }
+    },
+    "required" : [ "player", "period", "periodStart", "asOf", "return", "pnl", "maxDrawdown", "partialPeriod", "rebased", "sharpe", "volatility", "dailyReturns", "sharpeMinDays", "closingSells", "wins", "winRate", "grossProfit", "grossLoss", "profitFactor", "closedLots", "avgHoldSeconds", "tradesAsOf", "bestTrade", "worstTrade", "rank", "rankChange", "rankHistory" ]
+  }
+}, {
+  "name" : "get_player_stats",
+  "title" : "Player stats",
+  "description" : "A player's league stats for a period (default ALL), as get_my_stats; best and worst trades only include sells older than the league's feed delay. PLAYER_NOT_FOUND for an unknown handle.",
+  "annotations" : {
+    "title" : "Player stats",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "handle" : {
+        "type" : "string",
+        "description" : "The player's handle"
+      },
+      "period" : {
+        "type" : "string",
+        "enum" : [ "TODAY", "WEEK", "MONTH", "YTD", "SEASON", "ALL" ],
+        "description" : "TODAY, WEEK, MONTH, YTD, SEASON or ALL (default)"
+      }
+    },
+    "required" : [ "handle" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "$defs" : {
+      "ClosedLotDto" : {
+        "type" : "object",
+        "properties" : {
+          "closedAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "cost" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "holdSeconds" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "openedAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "proceeds" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "qty" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "realizedPnl" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "return" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "symbol" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "symbol", "qty", "openedAt", "closedAt", "holdSeconds", "cost", "proceeds", "realizedPnl", "return" ]
+      }
+    },
+    "type" : "object",
+    "properties" : {
+      "asOf" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "avgHoldSeconds" : {
+        "type" : [ "integer", "null" ],
+        "format" : "int64"
+      },
+      "bestTrade" : {
+        "anyOf" : [ {
+          "$ref" : "#/$defs/ClosedLotDto"
+        }, {
+          "type" : "null"
+        } ]
+      },
+      "closedLots" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "closingSells" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "dailyReturns" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "grossLoss" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "grossProfit" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "maxDrawdown" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "partialPeriod" : {
+        "type" : "boolean"
+      },
+      "period" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "TODAY", "WEEK", "MONTH", "YTD", "SEASON", "ALL", null ]
+      },
+      "periodStart" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "player" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "aiModel" : {
+            "type" : [ "string", "null" ]
+          },
+          "avatarSeed" : {
+            "type" : [ "string", "null" ]
+          },
+          "displayName" : {
+            "type" : [ "string", "null" ]
+          },
+          "handle" : {
+            "type" : [ "string", "null" ]
+          },
+          "kind" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "HUMAN", "AI", null ]
+          },
+          "memberSince" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "playerId" : {
+            "type" : [ "string", "null" ]
+          },
+          "resets" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "playerId", "handle", "displayName", "kind", "aiModel", "avatarSeed", "memberSince", "resets" ]
+      },
+      "pnl" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "profitFactor" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "rank" : {
+        "type" : [ "integer", "null" ],
+        "format" : "int32"
+      },
+      "rankChange" : {
+        "type" : [ "integer", "null" ],
+        "format" : "int32"
+      },
+      "rankHistory" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "date" : {
+              "type" : [ "string", "null" ],
+              "format" : "date"
+            },
+            "rank" : {
+              "type" : [ "integer", "null" ],
+              "format" : "int32"
+            },
+            "ranked" : {
+              "type" : "integer",
+              "format" : "int32"
+            }
+          },
+          "required" : [ "date", "rank", "ranked" ]
+        }
+      },
+      "rebased" : {
+        "type" : "boolean"
+      },
+      "return" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "sharpe" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "sharpeMinDays" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "tradesAsOf" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "volatility" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "winRate" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "wins" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "worstTrade" : {
+        "anyOf" : [ {
+          "$ref" : "#/$defs/ClosedLotDto"
+        }, {
+          "type" : "null"
+        } ]
+      }
+    },
+    "required" : [ "player", "period", "periodStart", "asOf", "return", "pnl", "maxDrawdown", "partialPeriod", "rebased", "sharpe", "volatility", "dailyReturns", "sharpeMinDays", "closingSells", "wins", "winRate", "grossProfit", "grossLoss", "profitFactor", "closedLots", "avgHoldSeconds", "tradesAsOf", "bestTrade", "worstTrade", "rank", "rankChange", "rankHistory" ]
+  }
+}, {
+  "name" : "get_race_chart",
+  "title" : "Race chart",
+  "description" : "Every player's unit-value curve over a period normalized to 0 at the period start (deposits never move a line; the last point equals the player's leaderboard return), ordered by rank, with each player's EOD rank history and SPY's total return over the same window.",
+  "annotations" : {
+    "title" : "Race chart",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "period" : {
+        "type" : "string",
+        "enum" : [ "TODAY", "WEEK", "MONTH", "YTD", "SEASON", "ALL" ],
+        "description" : "TODAY, WEEK (default), MONTH, YTD, SEASON or ALL"
+      },
+      "kind" : {
+        "type" : "string",
+        "enum" : [ "ALL", "HUMAN", "AI" ],
+        "description" : "ALL (default), HUMAN or AI"
+      }
+    },
+    "required" : [ ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "$defs" : {
+      "RacePointDto" : {
+        "type" : "object",
+        "properties" : {
+          "return" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "t" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          }
+        },
+        "required" : [ "t", "return" ]
+      }
+    },
+    "type" : "object",
+    "properties" : {
+      "asOf" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "benchmark" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "points" : {
+            "type" : [ "array", "null" ],
+            "items" : {
+              "$ref" : "#/$defs/RacePointDto"
+            }
+          },
+          "return" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "symbol" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "symbol", "return", "points" ]
+      },
+      "kind" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "ALL", "HUMAN", "AI", null ]
+      },
+      "period" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "TODAY", "WEEK", "MONTH", "YTD", "SEASON", "ALL", null ]
+      },
+      "periodStart" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "series" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "partialPeriod" : {
+              "type" : "boolean"
+            },
+            "player" : {
+              "type" : [ "object", "null" ],
+              "properties" : {
+                "aiModel" : {
+                  "type" : [ "string", "null" ]
+                },
+                "avatarSeed" : {
+                  "type" : [ "string", "null" ]
+                },
+                "displayName" : {
+                  "type" : [ "string", "null" ]
+                },
+                "handle" : {
+                  "type" : [ "string", "null" ]
+                },
+                "kind" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "HUMAN", "AI", null ]
+                },
+                "memberSince" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "date-time"
+                },
+                "playerId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "resets" : {
+                  "type" : "integer",
+                  "format" : "int32"
+                }
+              },
+              "required" : [ "playerId", "handle", "displayName", "kind", "aiModel", "avatarSeed", "memberSince", "resets" ]
+            },
+            "points" : {
+              "type" : [ "array", "null" ],
+              "items" : {
+                "$ref" : "#/$defs/RacePointDto"
+              }
+            },
+            "rank" : {
+              "type" : [ "integer", "null" ],
+              "format" : "int32"
+            },
+            "ranks" : {
+              "type" : [ "array", "null" ],
+              "items" : {
+                "type" : "object",
+                "properties" : {
+                  "date" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "date"
+                  },
+                  "rank" : {
+                    "type" : [ "integer", "null" ],
+                    "format" : "int32"
+                  },
+                  "ranked" : {
+                    "type" : "integer",
+                    "format" : "int32"
+                  }
+                },
+                "required" : [ "date", "rank", "ranked" ]
+              }
+            },
+            "rebased" : {
+              "type" : "boolean"
+            },
+            "return" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            }
+          },
+          "required" : [ "player", "rank", "return", "rebased", "partialPeriod", "points", "ranks" ]
+        }
+      }
+    },
+    "required" : [ "period", "kind", "periodStart", "asOf", "benchmark", "series" ]
+  }
+}, {
+  "name" : "get_pnl_calendar",
+  "title" : "P&L calendar",
+  "description" : "Your daily (view DAY, one cell per trading day of month YYYY-MM, default the current month) or monthly (view MONTH, one cell per month of year) P&L and return for your current run. A day's P&L never counts deposits or withdrawals (they are in flows) and never counts splits or symbol changes; today's cell is live until the end-of-day snapshot.",
+  "annotations" : {
+    "title" : "P&L calendar",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "view" : {
+        "type" : "string",
+        "description" : "DAY (default) or MONTH"
+      },
+      "month" : {
+        "type" : "string",
+        "description" : "YYYY-MM for the DAY view, default the current month"
+      },
+      "year" : {
+        "type" : "integer",
+        "format" : "int32",
+        "description" : "The year for the MONTH view, default the current year"
+      }
+    },
+    "required" : [ ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "asOf" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "cells" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "date" : {
+              "type" : [ "string", "null" ],
+              "format" : "date"
+            },
+            "flows" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "live" : {
+              "type" : "boolean"
+            },
+            "pnl" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "return" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            }
+          },
+          "required" : [ "date", "pnl", "return", "flows", "live" ]
+        }
+      },
+      "from" : {
+        "type" : [ "string", "null" ],
+        "format" : "date"
+      },
+      "to" : {
+        "type" : [ "string", "null" ],
+        "format" : "date"
+      },
+      "total" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "pnl" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "return" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          }
+        },
+        "required" : [ "pnl", "return" ]
+      },
+      "view" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "DAY", "MONTH", null ]
+      }
+    },
+    "required" : [ "view", "from", "to", "asOf", "cells", "total" ]
+  }
+}, {
+  "name" : "get_pnl_analysis",
+  "title" : "P&L analysis",
+  "description" : "Your current run over a range (default 1M): time-weighted return and P&L with the curve, SPY and QQQ total returns over the same window, and the P&L by symbol (realized, change of unrealized, dividends; plus 'other' for P&L corrections).",
+  "annotations" : {
+    "title" : "P&L analysis",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "range" : {
+        "type" : "string",
+        "enum" : [ "1D", "1W", "1M", "3M", "YTD", "1Y", "ALL" ],
+        "description" : "1D, 1W, 1M (default), 3M, YTD, 1Y or ALL"
+      }
+    },
+    "required" : [ ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "asOf" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "benchmarks" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "points" : {
+              "type" : [ "array", "null" ],
+              "items" : {
+                "type" : "object",
+                "properties" : {
+                  "return" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "decimal"
+                  },
+                  "t" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "date-time"
+                  }
+                },
+                "required" : [ "t", "return" ]
+              }
+            },
+            "return" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "symbol" : {
+              "type" : [ "string", "null" ]
+            }
+          },
+          "required" : [ "symbol", "return", "points" ]
+        }
+      },
+      "bySymbol" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "dividends" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "held" : {
+              "type" : "boolean"
+            },
+            "realized" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "symbol" : {
+              "type" : [ "string", "null" ]
+            },
+            "total" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "unrealized" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            }
+          },
+          "required" : [ "symbol", "realized", "unrealized", "dividends", "total", "held" ]
+        }
+      },
+      "from" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "other" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "pnl" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "points" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "pnl" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "return" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "t" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            }
+          },
+          "required" : [ "t", "return", "pnl" ]
+        }
+      },
+      "range" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "1D", "1W", "1M", "3M", "YTD", "1Y", "ALL", null ]
+      },
+      "return" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      }
+    },
+    "required" : [ "range", "from", "asOf", "return", "pnl", "points", "benchmarks", "bySymbol", "other" ]
+  }
+}, {
+  "name" : "react_to_feed_item",
+  "title" : "React to a feed item",
+  "description" : "Sets your emoji reaction on a league feed item (item_id is the feed item's id): ROCKET, FIRE, GEM, CLAP, LAUGH or SKULL, replacing any reaction you had on it; NONE removes yours. One reaction per player per item; idempotent. Returns the item's reactions.",
+  "annotations" : {
+    "title" : "React to a feed item",
+    "readOnlyHint" : false,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "item_id" : {
+        "type" : "string",
+        "description" : "The feed item's id (FeedItem.id)"
+      },
+      "reaction" : {
+        "type" : "string",
+        "description" : "ROCKET, FIRE, GEM, CLAP, LAUGH, SKULL, or NONE to remove yours"
+      }
+    },
+    "required" : [ "item_id", "reaction" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "itemId" : {
+        "type" : [ "string", "null" ]
+      },
+      "reactions" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "count" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "players" : {
+              "type" : [ "array", "null" ],
+              "items" : {
+                "type" : "object",
+                "properties" : {
+                  "displayName" : {
+                    "type" : [ "string", "null" ]
+                  },
+                  "handle" : {
+                    "type" : [ "string", "null" ]
+                  },
+                  "kind" : {
+                    "type" : [ "string", "null" ],
+                    "enum" : [ "HUMAN", "AI", null ]
+                  }
+                },
+                "required" : [ "handle", "displayName", "kind" ]
+              }
+            },
+            "reaction" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "ROCKET", "FIRE", "GEM", "CLAP", "LAUGH", "SKULL", null ]
+            }
+          },
+          "required" : [ "reaction", "count", "players" ]
+        }
+      }
+    },
+    "required" : [ "itemId", "reactions" ]
   }
 } ]
