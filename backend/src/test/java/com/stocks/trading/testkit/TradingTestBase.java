@@ -119,8 +119,11 @@ public abstract class TradingTestBase {
     Fixtures.PlayerRef owner = fx.human("o" + next());
     Fixtures.PlayerRef p = fx.ai("b" + next(), owner);
     accountService.openInitialAccount(p.id(), new BigDecimal("500.00"), owner.id());
+    String token = fx.apiKey(p, "test-pepper-not-secret-0123456789abcdef");
+    long apiKeyId = jdbc.sql("SELECT id FROM api_key WHERE key_id = ?")
+        .param(com.stocks.security.ApiKeys.parse(token).orElseThrow().keyId()).query(Long.class).single();
     PlayerPrincipal key = new PlayerPrincipal(p.id(), p.publicId(), p.handle(), PlayerKind.AI, PlayerRole.PLAYER,
-        Scopes.ALL, AuthMethod.API_KEY, 1L, null, TestTimes.START);
+        Scopes.ALL, AuthMethod.API_KEY, apiKeyId, null, TestTimes.START);
     return new Player(p, accountQueries.activeAccountId(p.id()), key);
   }
 
@@ -131,6 +134,11 @@ public abstract class TradingTestBase {
 
   protected static RequestMeta meta() {
     return new RequestMeta("req-test", Channel.WEB, "127.0.0.1", "junit", null, null);
+  }
+
+  /** The request meta of a bot calling REST with its API key. */
+  protected static RequestMeta botMeta() {
+    return new RequestMeta("req-test", Channel.REST_KEY, "127.0.0.1", "junit-bot", null, null);
   }
 
   /** A two-sided quote observed now. */

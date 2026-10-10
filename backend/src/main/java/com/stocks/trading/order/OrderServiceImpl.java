@@ -111,6 +111,7 @@ public class OrderServiceImpl implements OrderService {
       AccountRow acc = activeAccount(who.playerId());
       Instant now = clock.now();
       bpBefore = context.balances(acc, Et.date(now)).buyingPower();
+      sessionNote = sessionNote(o, now);   // shown even when a later check fails
       OrderEvaluation.Evaluated ev = evaluation.evaluate(acc, who.kind(), o, now);
       sessionNote = SessionOrderMatrix.sessionNote(ev.acceptance());
       return new PreviewDto(true, List.of(), ev.result().warnings(), ev.result().estimate(),
@@ -206,6 +207,18 @@ public class OrderServiceImpl implements OrderService {
         OrderValidator.qtyOut(available), null, null, null, null, null, TimeInForce.DAY, false, rationale, null,
         Set.of());
     return place(who, req, meta);
+  }
+
+  private String sessionNote(NormalizedOrder o, Instant now) {
+    if (o.type() == null) {
+      return null;
+    }
+    try {
+      return SessionOrderMatrix.sessionNote(SessionOrderMatrix.accept(clock.calendar(), o.type(), o.extendedHours(),
+          o.timeInForce(), clock.session(now), now));
+    } catch (RuntimeException e) {
+      return null;
+    }
   }
 
   private AccountRow activeAccount(long playerId) {
