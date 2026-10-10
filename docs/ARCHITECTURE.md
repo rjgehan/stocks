@@ -2270,6 +2270,8 @@ These run in REGULAR only, for WORKING orders with `triggered=false` (`wait_reas
 
 **Halt.** `HaltEngineCmd` (an invariant failure, or the admin) rejects every command except `ResumeEngineCmd` and `CheckInvariantsCmd` with `ENGINE_HALTED`, and stops evaluations. Market data keeps flowing.
 
+**Failed bootstrap.** If steps 4–6 throw on `engine-main` (the database is unreachable at boot, for example), the engine is **HALTED** with the reason `Bootstrap failed: …` (so `/admin/system` turns red and orders are refused instead of reserving buying power that nothing would ever activate, fill or expire), the loop retries the bootstrap with backoff (1 s doubling to 60 s) and resumes on success, and `ResumeEngineCmd` bootstraps first when the engine never did. Until the first bootstrap, the engine is `STARTING` and refuses every command but the admin ones with `ENGINE_HALTED`.
+
 **Graceful shutdown** (`server.shutdown=graceful`):
 - Stop accepting commands.
 - Drain the queue for up to 10 s.
