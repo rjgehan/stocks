@@ -98,7 +98,7 @@ class SpaAndStaticFilesIT {
   @Test
   void missingFilesAndServerPathsNeverFallBack() throws Exception {
     for (String path : new String[] {"/assets/missing.js", "/missing.png", "/.well-known/openid-configuration",
-        "/oauth2/authorize", "/h2-console/x"}) {
+        "/oauth2/nothing-here", "/h2-console/x"}) {
       MockHttpServletResponse r = fetch(path);
       assertThat(r.getStatus()).as(path).isEqualTo(404);
       assertThat(r.getContentAsString()).as(path).doesNotContain("<div id=root>");
@@ -109,6 +109,10 @@ class SpaAndStaticFilesIT {
     assertThat(api.getHeader("Cache-Control")).isEqualTo("no-store");
     assertThat(fetch("/ws").getStatus()).as("/ws needs a session").isEqualTo(401);
     assertThat(fetch("/v3/api-docs").getStatus()).isEqualTo(401);
+    // Phase 2 OAuth (§17.9): /oauth2/authorize is the server's, never the SPA's (a bad request goes to /oauth/error)
+    MockHttpServletResponse authorize = fetch("/oauth2/authorize");
+    assertThat(authorize.getStatus()).isEqualTo(302);
+    assertThat(authorize.getHeader("Location")).startsWith("/oauth/error?error=invalid_request");
   }
 
   @Test
