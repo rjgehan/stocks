@@ -94,6 +94,26 @@ class FeeCalculatorTest {
         .isEqualByComparingTo("1.03");
   }
 
+  /** The §13 golden table as a file ({@code golden/fees/section-13.json}, WS3); the tests above pin each row. */
+  @Test
+  void theSection13TableMatchesItsGoldenFile() {
+    java.util.Map<String, Object> table = new java.util.LinkedHashMap<>();
+    table.put("sell1000At50On20261009", fees.estimate(Side.SELL, d("1000"), d("50000.00"), OCT_9).toDto());
+    table.put("sell5DollarsNotionalOn20261009", fees.estimate(Side.SELL, d("0.02198"), d("5.00"), OCT_9).toDto());
+    java.util.List<Object> partials = new java.util.ArrayList<>();
+    BigDecimal qty = BigDecimal.ZERO;
+    BigDecimal principal = BigDecimal.ZERO;
+    for (int k = 0; k < 10; k++) {
+      partials.add(fees.forExecution(Side.SELL, OCT_9, qty, principal, d("100"), d("5000.00")).toDto());
+      qty = qty.add(d("100"));
+      principal = principal.add(d("5000.00"));
+    }
+    table.put("tenPartialSellsOf100At50On20261009", partials);
+    table.put("sell100000At10On20270104", fees.estimate(Side.SELL, d("100000"), d("1000000.00"), JAN_4_2027).toDto());
+    table.put("buy4000At10On20261009", fees.estimate(Side.BUY, d("4000"), d("40000.00"), OCT_9).toDto());
+    com.stocks.testkit.GoldenFiles.assertMatches("fees", "section-13", table);
+  }
+
   /** Fee deltas sum to the rounded cumulative fee, whatever the split into partial fills (§26 property). */
   @Property(tries = 200)
   void deltasSumToTheRoundedCumulativeFee(@ForAll @IntRange(min = 1, max = 20) int fills,
