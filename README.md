@@ -168,8 +168,10 @@ Every push to `main` runs the full test suite, builds a `linux/amd64` + `linux/a
 **Watchtower** notices the new image and restarts the app; the compose file labels the app for Watchtower and
 keeps it away from the database. Database migrations run automatically on startup.
 
-Prefer health-checked deploys? An optional self-hosted GitHub Actions runner can do the deploy instead: it backs up
-the database first and **rolls back automatically** if the new version doesn't become healthy.
+The guide also documents an optional self-hosted GitHub Actions runner that backs up the database first and **rolls
+back automatically** if a new version doesn't become healthy. It is **only for a private repository or private
+fork**: a self-hosted runner gives root on the server to any workflow that reaches it, so this public repository
+deploys with Watchtower and never registers one.
 
 `docker-compose.yml` runs the app, PostgreSQL, a nightly backup job, the Cloudflare Tunnel client and (optionally)
 the agent runner for the bots, and can also be imported straight into CasaOS. No host port is published: the tunnel
@@ -192,7 +194,7 @@ Step-by-step guide: **[docs/deploy.md](docs/deploy.md)**. Operations (backups, r
 ## Contributing
 
 This is a personal project for a group of friends, but issues and ideas are welcome. Pull requests from outside
-contributors need approval before CI runs.
+contributors need approval before CI runs (the repository requires approval for all external contributors).
 
 ## Disclaimer
 

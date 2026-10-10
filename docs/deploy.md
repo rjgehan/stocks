@@ -12,7 +12,9 @@ Spec: ARCHITECTURE §24 (deployment) and §26 (CI). Day-2 operations: [runbook.m
 > app and agent-runner services carry `com.centurylinklabs.watchtower.enable: "true"`; the database and backup
 > services carry `"false"`, so they are never restarted by Watchtower. Short path: §1 → §4 (skip the
 > `gha-runner` user; use `--owner` with your own user) → §7 "without GitHub" or §7B → §8 → §11. The runner
-> (§5, §6) adds a pre-deploy dump and automatic rollback if you ever want them.
+> (§5, §6) adds a pre-deploy dump and automatic rollback, but **only on a private repository or private fork**:
+> `rjgehan/stocks` is public, and a self-hosted runner on a public repository is root on the server for any pull
+> request GitHub does not hold for approval. Never register one on the public repository.
 
 ```
  git push main ─► GitHub Actions (GitHub-hosted)                    your CasaOS server
@@ -72,7 +74,10 @@ git push -u origin main
 
 Then, in **Settings** of the repository:
 
-- **Actions → General → Fork pull request workflows**: leave "Run workflows from fork pull requests" **off**.
+- **Actions → General → Approval for running fork pull request workflows from contributors**: choose **"Require
+  approval for all external contributors"** (on a public repository GitHub otherwise holds only first-time
+  contributors). On a private repository the setting is "Fork pull request workflows": leave "Run workflows from
+  fork pull requests" **off**.
 - **Actions → General → Workflow permissions**: "Read repository contents" is enough. The workflows ask for
   `packages: write` (image push) and `packages: read` (deploy) themselves.
 - **Branches → Add rule for `main`** (recommended): require a pull request and the CI checks (`Backend (H2)`,
@@ -211,13 +216,15 @@ and adds another image to trust and keep updated; the service auto-updates and s
 
 **Security.** Treat the runner as root on the server:
 
-- It is a **repository-level** runner for this private repository only. Never register it on a public repository
-  or for a whole organization.
+- It is a **repository-level** runner for a **private** repository (or private fork) only. Never register it on a
+  public repository such as `rjgehan/stocks` (production there deploys with Watchtower) or for a whole
+  organization.
 - Only the `deploy` job of `release.yml` targets it, and only for pushes to `main` and manual runs. `ci.yml`,
   which runs pull requests, uses GitHub-hosted runners only. But a pull request from a branch of this repository
   runs *its own* copy of the workflow files, so anyone with write access could point a job at the runner: give
-  write access only to people you would give `sudo` on the server, keep fork pull request workflows off, and
-  protect `main`.
+  write access only to people you would give `sudo` on the server, keep fork pull request workflows off (private
+  repository) or "Require approval for all external contributors" (if the repository is ever made public, remove
+  the runner first), and protect `main`.
 - `gha-runner` has no `sudo`; it can use Docker and write `/DATA/AppData/stocks`, nothing else.
 - No inbound port or SSH key is involved: the runner keeps an outbound HTTPS long-poll to GitHub, so it works
   behind NAT and Cloudflare.
@@ -475,8 +482,8 @@ The league's two AI players trade through `stocks-agent-runner` (compose profile
 keys and the two LLM keys: no admin power, no database access. How it works, its logs and its costs:
 [agents.md §2.5](agents.md#25-the-leagues-agent-runner-phase-1-toolsagent-runner).
 
-1. **Create the bots** in the app (Admin → Players → New player, kind AI, handles `claude` and `chatgpt`, each with
-   an API key) and copy both keys.
+1. **Create the bots** in the app (Admin → Players → **Add player** → **AI bot**, handles `claude` and `chatgpt`,
+   "Issue an API key now" ticked → **Create bot**) and copy both keys.
 2. **Fill in `.env`** (`/DATA/AppData/stocks/.env`): `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `STOCKS_CLAUDE_KEY`,
    `STOCKS_CHATGPT_KEY`, `CLAUDE_MODEL`, `OPENAI_MODEL`; optionally `AGENT_DAILY_USD_CAP` (1.00 per bot per ET day),
    `AGENT_SCHEDULE_ET`, `AGENT_MAX_TOOL_CALLS`, `AGENT_MAX_RUN_SECONDS` and the `AGENT_PRICE_*` overrides. A bot with
@@ -487,7 +494,8 @@ keys and the two LLM keys: no admin power, no database access. How it works, its
    updated with `DEPLOY_PROFILES=agents` (pipeline, §6) or Watchtower (its label follows `agent-runner-latest`).
    After editing `.env`, run the same command again.
 5. **Test once**: `docker exec stocks-agent-runner node dist/main.js --once --bot claude` (real API calls; they count
-   toward the daily cap). `docker logs stocks-agent-runner` shows one summary line per run.
+   toward the daily cap). One run per bot at a time: during a scheduled run of the same bot (09:45, 12:30, 15:30 ET,
+   up to 5 minutes) it is skipped with `status=skipped_busy`. `docker logs stocks-agent-runner` shows one summary line per run.
 6. **Stop it**: `docker compose -p stocks --profile agents stop agent-runner` (orders already placed stay; open
    orders keep working in the app).
 

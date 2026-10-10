@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runBot } from '../src/runner.js';
-import { readSpend } from '../src/store.js';
+import { addSpend, readSpend } from '../src/store.js';
 import {
   anthropicServer,
   claudeReply,
@@ -482,5 +483,53 @@ describe('isolation', () => {
     expect(runLogs(dataDir, 'chatgpt')).toHaveLength(1);
     expect(existsSync(join(dataDir, 'claude', 'spend.json'))).toBe(true);
     expect(existsSync(join(dataDir, 'chatgpt', 'spend.json'))).toBe(true);
+  });
+});
+
+describe('one run per bot at a time', () => {
+  const opts = { trigger: 'schedule', slot: '09:45', requireTradingDay: true } as const;
+  const once = { trigger: 'once', slot: null, requireTradingDay: false } as const;
+
+  it('a second run of the same bot while one is in progress is skipped, so the daily cap and the spend hold', async () => {
+    // $0.42 per response under a $1.00 cap: two overlapping runs used to both pass the check and lose a spend
+    const usage = { input_tokens: 100_000, output_tokens: 1000 };
+    const llm = await claudeFake(() => claudeReply([text('first')], usage), () => claudeReply([text('third')], usage));
+    const config = testConfig({ dataDir, anthropicUrl: llm.url, extra: { AGENT_DAILY_USD_CAP: '1.00' } });
+    const deps = testDeps(config, fakeMcp({}).connect);
+    const [a, b] = await Promise.all([runBot(bot(config, 'claude'), deps, opts), runBot(bot(config, 'claude'), deps, once)]);
+    expect(a.status).toBe('completed');
+    expect(b.status).toBe('skipped_busy');
+    expect(b.message).toContain('another run of claude is in progress');
+    expect(llm.calls).toHaveLength(1);
+    expect(readSpend(join(dataDir, 'claude'), '2026-10-12')).toMatchObject({ pico: 420_000_000_000n, runs: 1 });
+    expect(existsSync(join(dataDir, 'claude', 'run.lock'))).toBe(false);
+
+    // released: the next run goes ahead and adds to the day's total
+    const c = await runBot(bot(config, 'claude'), deps, once);
+    expect(c.status).toBe('completed');
+    expect(readSpend(join(dataDir, 'claude'), '2026-10-12')).toMatchObject({ pico: 840_000_000_000n, runs: 2 });
+  });
+
+  it('respects a live lock and takes over a stale one', async () => {
+    const llm = await claudeFake(() => claudeReply([text('ok')]));
+    const config = testConfig({ dataDir, anthropicUrl: llm.url });
+    const deps = testDeps(config, fakeMcp({}).connect);
+    const lockPath = join(dataDir, 'claude', 'run.lock');
+    mkdirSync(join(dataDir, 'claude'), { recursive: true });
+    // this process holds it (e.g. the scheduled service, seen from a `docker exec … --once`)
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, host: hostname(), startedAt: '2026-10-12T13:44:00Z' }));
+    expect((await runBot(bot(config, 'claude'), deps, once)).status).toBe('skipped_busy');
+    expect(llm.calls).toHaveLength(0);
+    // older than the time cap plus a minute: a run that never finished
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, host: hostname(), startedAt: '2026-10-12T13:30:00Z' }));
+    expect((await runBot(bot(config, 'claude'), deps, once)).status).toBe('completed');
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('addSpend adds to what another writer recorded instead of overwriting it', () => {
+    const dir = join(dataDir, 'claude');
+    addSpend(dir, '2026-10-12', 300_000_000_000n, 1, new Date('2026-10-12T13:45:00Z'));
+    addSpend(dir, '2026-10-12', 300_000_000_000n, 1, new Date('2026-10-12T13:46:00Z'));
+    expect(readSpend(dir, '2026-10-12')).toMatchObject({ pico: 600_000_000_000n, runs: 2 });
   });
 });

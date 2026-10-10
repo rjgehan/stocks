@@ -10,7 +10,7 @@ import { type ConnectMcp, type McpConnection, runnerError, type ToolOutcome } fr
 import { formatUsd } from './money.js';
 import { addUsage, costOf, type TokenUsage, ZERO_USAGE } from './pricing.js';
 import { RunLog } from './runlog.js';
-import { botDir, readNotes, readSpend, saveNotes, type Spend, writeSpend } from './store.js';
+import { acquireRunLock, addSpend, botDir, readNotes, readSpend, saveNotes, type Spend } from './store.js';
 import { type Clock, etDate, etTime } from './time.js';
 import { functionTools, type JsonObject, SAVE_NOTES } from './tools.js';
 
@@ -24,7 +24,8 @@ export type RunStatus =
   | 'error'
   | 'aborted'
   | 'skipped_daily_cap'
-  | 'skipped_non_trading_day';
+  | 'skipped_non_trading_day'
+  | 'skipped_busy';
 
 export interface RunSummary {
   bot: string;
@@ -177,15 +178,8 @@ function abortStatus(shutdown: AbortSignal): RunStatus {
   return shutdown.aborted ? 'aborted' : 'time_cap';
 }
 
-/** Runs one bot once. Never throws: every outcome is a RunSummary, logged to stdout (and the run log once open). */
-export async function runBot(bot: BotConfig, deps: RunnerDeps, opts: RunOptions): Promise<RunSummary> {
-  const { config, logger, clock } = deps;
-  const sleep = deps.sleep ?? defaultSleep;
-  const started = clock.now();
-  const dateEt = etDate(started);
-  const dir = botDir(config.dataDir, bot.id);
-
-  const summary: RunSummary = {
+function newSummary(bot: BotConfig): RunSummary {
+  return {
     bot: bot.id,
     model: bot.model,
     status: 'error',
@@ -200,6 +194,48 @@ export async function runBot(bot: BotConfig, deps: RunnerDeps, opts: RunOptions)
     logPath: null,
     message: null,
   };
+}
+
+/**
+ * Runs one bot once. Never throws: every outcome is a RunSummary, logged to stdout (and the run log once open).
+ * Only one run of a bot happens at a time, across processes (`<bot>/run.lock`): a run that finds another in progress
+ * ends as `skipped_busy` without reading the spend or calling anything, so the daily cap holds.
+ */
+export async function runBot(bot: BotConfig, deps: RunnerDeps, opts: RunOptions): Promise<RunSummary> {
+  const started = deps.clock.now();
+  const dir = botDir(deps.config.dataDir, bot.id);
+  let lock: ReturnType<typeof acquireRunLock>;
+  try {
+    // a lock older than the time cap plus a minute was left by a run that never finished
+    lock = acquireRunLock(dir, started, (deps.config.maxRunSeconds + 60) * 1000);
+  } catch (e) {
+    const summary = newSummary(bot);
+    summary.message = `cannot create ${dir}/run.lock: ${errorMessage(e)}`;
+    return finish(summary, deps, opts, started, null);
+  }
+  if (!lock.acquired) {
+    const summary = newSummary(bot);
+    summary.status = 'skipped_busy';
+    summary.message = `another run of ${bot.id} is in progress (${lock.holder}); this one is skipped`;
+    try {
+      summary.day = readSpend(dir, etDate(started)).pico;
+    } catch {
+      // the day total is informational here
+    }
+    return finish(summary, deps, opts, started, null);
+  }
+  try {
+    return await runLocked(bot, deps, opts, started, dir);
+  } finally {
+    lock.release();
+  }
+}
+
+async function runLocked(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, started: Date, dir: string): Promise<RunSummary> {
+  const { config, logger, clock } = deps;
+  const sleep = deps.sleep ?? defaultSleep;
+  const dateEt = etDate(started);
+  const summary = newSummary(bot);
 
   let spend: Spend;
   try {
@@ -272,8 +308,7 @@ export async function runBot(bot: BotConfig, deps: RunnerDeps, opts: RunOptions)
       notes,
     });
 
-    spend = { ...spend, runs: spend.runs + 1 };
-    writeSpend(dir, spend, clock.now());
+    spend = addSpend(dir, dateEt, 0n, 1, clock.now());
     runLog.write('run_start', {
       bot: bot.id,
       vendor: bot.vendor,
@@ -363,9 +398,8 @@ export async function runBot(bot: BotConfig, deps: RunnerDeps, opts: RunOptions)
       const cost = costOf(turn.usage, bot.price);
       summary.usage = addUsage(summary.usage, turn.usage);
       summary.cost += cost;
-      spend = { ...spend, pico: spend.pico + cost };
+      spend = addSpend(dir, dateEt, cost, 0, clock.now());
       summary.day = spend.pico;
-      writeSpend(dir, spend, clock.now());
       if (turn.text) lastText = turn.text;
       runLog.write('llm_response', {
         turn: summary.turns,

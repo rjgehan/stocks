@@ -13,7 +13,7 @@
 
 | Who | How | Scopes |
 |---|---|---|
-| **League bots** (Claude, ChatGPT) | The admin creates an **AI player** with a key: Admin → Players → New player → kind AI (or `POST /api/v1/admin/players` with a key, §21.1). More keys: Admin → Players → *bot* → API keys. | all four: `market:read account:read trade league:read` |
+| **League bots** (Claude, ChatGPT) | The admin creates an **AI player** with a key: Admin → Players → **Add player** → **AI bot** → **Create bot** (or `POST /api/v1/admin/players` with a key, §21.1). More keys: Admin → Players → *bot* → API keys. | all four: `market:read account:read trade league:read` |
 | **Humans** (your own scripts, Claude Code on your laptop) | Settings → API keys (session + recent password check). | **read-only by default** (`market:read account:read league:read`); `trade` only if the admin turned on "API trading" for you. All your personal keys are revoked when you change your password. |
 
 - The key is shown **once**. Keep it out of git, chats and screenshots; put it in an environment variable
@@ -167,8 +167,8 @@ the run logs and exits.
 **Enable it** (once; the runner can be started before the keys exist: a bot without its keys or model is skipped
 with a log line):
 
-1. In the app, as admin: **Admin → Players → New player**, kind **AI**, handle `claude`, with an API key; copy the
-   `stk_…` key (shown once). Repeat for `chatgpt`. (Existing AI players: **Admin → Players → *bot* → API keys**.)
+1. In the app, as admin: **Admin → Players → Add player → AI bot**, handle `claude`, "Issue an API key now" ticked →
+   **Create bot**; copy the `stk_…` key (shown once). Repeat for `chatgpt`. (Existing AI players: **Admin → Players → *bot* → API keys**.)
 2. On the server, `sudo -u gha-runner nano /DATA/AppData/stocks/.env` (or your own user) and fill in:
 
    ```sh
@@ -191,7 +191,10 @@ with a log line):
    `bot skipped` lines naming any missing variable, and `next runs: …`.
 
 **Run once now** (to test after setting the keys; it costs real money, counts toward the daily cap and also runs on
-a non-trading day, where the bot sees the market closed and plans):
+a non-trading day, where the bot sees the market closed and plans). Only one run of a bot happens at a time, also
+across processes (`<bot>/run.lock`): a `--once` started while a scheduled run of the same bot is in progress (they
+start at 09:45, 12:30 and 15:30 ET and last up to `AGENT_MAX_RUN_SECONDS`) is skipped with `status=skipped_busy`, so
+start it outside those minutes:
 
 ```sh
 docker exec stocks-agent-runner node dist/main.js --once --bot claude    # or chatgpt, or all
@@ -200,8 +203,8 @@ docker exec stocks-agent-runner node dist/main.js --check                # confi
 docker compose -p stocks --profile agents run --rm agent-runner --once --bot chatgpt
 ```
 
-`--once` exits 0 when every requested bot ran (or stopped at a cap), 1 when a run failed and 2 when a requested bot
-is not configured. Locally, against a dev server (`make dev`; the dev seed's bot keys are in
+`--once` exits 0 when every requested bot ran (or stopped at a cap), 1 when a run failed or was skipped because a run
+of that bot was in progress, and 2 when a requested bot is not configured. Locally, against a dev server (`make dev`; the dev seed's bot keys are in
 `backend/.data/dev-keys.txt`):
 
 ```sh
@@ -218,11 +221,13 @@ The runner's tests never call a vendor: `npm test` uses local fake Messages and 
 - stdout (`docker logs stocks-agent-runner`), one line per run, e.g.
   `run bot=claude model=claude-opus-5-5 trigger=schedule@09:45 status=completed turns=9 tools=14 tool_errors=1 orders=2 tokens=in:5210,cache_read:96000,cache_write:12400,out:4100 cost=$0.183400 day=$0.183400/$1.00 secs=94 log=/data/claude/runs/20261012T134500Z.jsonl`.
   `status` is `completed`, `tool_cap`, `time_cap`, `daily_cap`, `max_tokens` (a response hit the output limit),
-  `refusal`, `error`, `aborted` (SIGTERM), `skipped_daily_cap` or `skipped_non_trading_day`.
+  `refusal`, `error`, `aborted` (SIGTERM), `skipped_daily_cap`, `skipped_non_trading_day` or `skipped_busy`
+  (another run of the same bot was in progress).
 - `/DATA/AppData/stocks/agent-data/<bot>/runs/<UTC time>.jsonl`, one file per run that reached the model:
   `run_start` (model, price source, prompt hashes, caps), `market_clock`, `llm_response` (tokens, cost, the
   model's text), `tool_call` (arguments, `isError`, the result `code`, duration), `llm_http` (retried 429/5xx) and
-  `run_end` (status, totals, the final summary). Orders and their rationales are also in the app.
+  `run_end` (status, totals, the final summary). Orders and their rationales are also in the app; the notes are
+  only in `notes.md`.
 - `<bot>/notes.md` is the bot's memory (read it, edit it, or delete it to reset); `<bot>/spend.json` is today's
   spend. Keys never appear in either log: configured secrets and anything shaped like a key are redacted.
 

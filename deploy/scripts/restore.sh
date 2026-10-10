@@ -5,7 +5,8 @@
 #
 # 1. takes a safety dump of the current database (backups/stocks-<date>-prerestore.dump)
 # 2. stops app (and agent-runner), drops and recreates the database, pg_restore --exit-on-error
-# 3. starts the stack again and waits for the app to be healthy
+# 3. starts the stack again (with the agents profile when the agent runner was running, or COMPOSE_PROFILES names
+#    it) and waits for the app to be healthy
 # The image is not changed. If the dump comes from an OLDER release than the running image, Flyway applies the
 # missing migrations at start; if it comes from a NEWER one, deploy that release's tag first.
 #
@@ -45,6 +46,8 @@ else
 fi
 
 echo "== stopping app and agent-runner"
+# a plain `up -d` ignores profile services: remember whether the bots ran, to start them again at the end
+runner_was_running="$(compose --profile agents ps -q --status running agent-runner 2> /dev/null || true)"
 compose stop app > /dev/null
 compose --profile agents stop agent-runner > /dev/null 2>&1 || true
 
@@ -59,7 +62,12 @@ compose exec -T db sh -c \
   < "$DUMP"
 
 echo "== starting the stack"
-compose up -d
+if [[ -n "$runner_was_running" || ",${COMPOSE_PROFILES:-}," == *",agents,"* ]]; then
+  compose --profile agents up -d
+  echo "   agent runner started again (profile agents)"
+else
+  compose up -d
+fi
 for _ in $(seq 1 84); do
   cid="$(compose ps -q app)"
   status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null || true)"

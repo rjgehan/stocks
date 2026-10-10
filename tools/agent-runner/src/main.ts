@@ -173,7 +173,7 @@ async function serve(
     const results: RunSummary[] = await Promise.all(
       bots.map((b) => runBot(b, deps, { trigger: 'once', slot: null, requireTradingDay: false })),
     );
-    if (results.some((r) => r.status === 'error')) return 1;
+    if (results.some((r) => r.status === 'error' || r.status === 'skipped_busy')) return 1;
     if (missing.length > 0 || bots.length === 0) return 2;
     return 0;
   }

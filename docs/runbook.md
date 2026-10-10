@@ -178,7 +178,8 @@ and the per-bot `AGENT_DAILY_USD_CAP`.
 dc --profile agents up -d agent-runner                               # start, or apply .env changes
 docker logs --tail 50 stocks-agent-runner                            # "bot enabled …", "next runs: …", one line per run
 docker exec stocks-agent-runner node dist/main.js --check            # configuration and prices (no secrets)
-docker exec stocks-agent-runner node dist/main.js --once --bot claude    # run now (real LLM cost; counts toward the cap)
+docker exec stocks-agent-runner node dist/main.js --once --bot claude    # run now (real LLM cost; counts toward the cap;
+                                                                     # skipped_busy if a scheduled run of it is in progress)
 ls /DATA/AppData/stocks/agent-data/claude/runs/                      # one JSONL log per run; spend.json = today's spend
 dc --profile agents stop agent-runner                                # pause both bots
 ```
@@ -189,7 +190,8 @@ dc --profile agents stop agent-runner                                # pause bot
   `bot skipped … missing …`: a key or model is empty in `.env`. `no price for CLAUDE_MODEL=…`: set
   `AGENT_PRICE_CLAUDE` (or `AGENT_PRICE_CHATGPT`).
 - **Permission denied on `/data`**: the image runs as uid 1000; run `sudo chown -R 1000:1000 /DATA/AppData/stocks/agent-data` once.
-- The bots' orders, rationales and notes are also visible in the app (order detail, player profile, the feed).
+- The bots' orders and rationales are also visible in the app (order detail, player profile, the feed). Their notes
+  are not: they live only in `/DATA/AppData/stocks/agent-data/<bot>/notes.md`.
 
 ## Backups
 
@@ -214,7 +216,9 @@ sudo bash /DATA/AppData/stocks/scripts/restore.sh /DATA/AppData/stocks/backups/s
 
 `restore.sh` asks you to type `RESTORE`, takes a `prerestore` safety dump, stops the app (and the agent runner),
 drops and recreates the `stocks` database, runs `pg_restore --exit-on-error`, starts the stack and waits for the
-app to be healthy. The image is not changed: restoring an **older** dump under a newer image is fine (Flyway
+app to be healthy. The agent runner is started again (`--profile agents`) when it was running before, or when
+`COMPOSE_PROFILES` contains `agents`; otherwise it stays stopped, so check `docker ps` for `stocks-agent-runner`
+after a restore and start it with `dc --profile agents up -d agent-runner` if the bots should trade. The image is not changed: restoring an **older** dump under a newer image is fine (Flyway
 applies the newer migrations at start); for a dump from a **newer** release, deploy that release's tag first.
 
 The manual equivalent (ARCHITECTURE §24.2):
@@ -241,8 +245,8 @@ more than 15 minutes old (`POST /api/v1/auth/reauth`).
   friend picks a handle (`a-z 0-9 _`, 2–32), a display name and a password of at least 10 characters; the account is
   funded with `league.defaultStartingCash` (Settings) and gets the "My List" watchlist. Signup is limited to 5 per
   hour per IP.
-- **Add a bot**: Admin → Players → Create, kind AI, model label (e.g. `Claude`). An all-scope API key is issued with
-  it unless "issue key" is off; copy it then (it is never shown again), with the ready-made Claude Code / Claude API /
+- **Add a bot**: Admin → Players → **Add player** → **AI bot**, model label (e.g. `Claude`) → **Create bot**. An
+  all-scope API key is issued with it unless "Issue an API key now" is unticked; copy it then (it is never shown again), with the ready-made Claude Code / Claude API /
   OpenAI Responses / curl snippets, into the agent runner's `STOCKS_CLAUDE_KEY` / `STOCKS_CHATGPT_KEY`. More keys:
   player detail → API keys. A bot is never an admin (database CHECK) and its key cannot reach `/api/v1/admin`.
 - **A bot or player misbehaves**: Freeze (kill switch). Its sessions end at once, its keys answer `PLAYER_FROZEN` on
