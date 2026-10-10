@@ -3527,7 +3527,7 @@ frontend/src/
 
 | Route | Search params | Desktop (≥ 1024) | Mobile (< 600) |
 |---|---|---|---|
-| `/login`, `/join/$code` | `redirect?` | Centered card | Full screen |
+| `/login`, `/join/$code` (alias `/signup?invite=<code>`) | `redirect?` | Centered card | Full screen |
 | `/` | | Redirect to `/stock/$last` (default SPY) | Redirect to `/watchlist` |
 | `/watchlist` | `list?` | The left panel is always visible; the center shows the last symbol | **Tab: Watchlist** |
 | `/markets` | `tab=MOVERS\|NEWS` | Index cards, movers tabs (Gainers / Losers / Most Active), news | **Tab: Markets** |
@@ -3580,7 +3580,7 @@ frontend/src/
 - **Markets**: index cards and movers tabs. News appears if the probe finds a source.
 - **League.**
   - Period tabs (Today, Week, Month, YTD, Season, All), Return/P&L toggle, kind filter (All · Humans · AI).
-  - Rows: medals for ranks 1–3, rank arrows, AI chip, return, P&L, net contributions (with a "+$X deposited" chip when it differs from starting cash), fills, symbols, top holding, sparkline. Unranked rows are greyed out ("3/5 trades"). My row is pinned at the bottom.
+  - Rows: medals for ranks 1–3, rank arrows, AI chip, return, P&L, net contributions (with a "+$X deposited" / "−$X withdrawn" chip for the period's net flows, `LeaderboardRow.flowsInPeriod`; the row carries no per-player starting cash to diff against), fills, symbols, top holding, sparkline. Unranked rows are greyed out ("3/5 trades"). My row is pinned at the bottom.
   - The **Arena** card compares the median human with the median AI.
   - `MetricInfoPopover` shows the exact formulas from §16.
   - A Feed sub-view.

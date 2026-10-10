@@ -108,7 +108,7 @@ function AdminPlayerPage() {
             {p.ownerHandle ? ` · run by @${p.ownerHandle}` : ''} · last seen {p.lastSeenAt ? formatDateTimeEt(p.lastSeenAt) : 'never'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full items-center justify-end gap-2 tablet:w-auto">
           <Link to="/admin/money" search={{ handle: p.handle ?? undefined }} className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-caption font-semibold text-white hover:bg-accent-hover">
             Deposit / withdraw
           </Link>

@@ -48,7 +48,8 @@ function MoneyPage() {
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID())
   const [result, setResult] = useState<TransferBatchResult | null>(null)
   const apply = useApplyTransfer()
-  const transfers = useTransfers()
+  const [transferFilter, setTransferFilter] = useState('')
+  const transfers = useTransfers(transferFilter ? { handle: transferFilter } : {})
 
   const amount = useMemo(() => {
     const d = parseUserDecimal(amountText)
@@ -270,7 +271,16 @@ function MoneyPage() {
         ) : null}
 
         <section className="rounded-lg border border-divider bg-bg-1" aria-label="Recent transfers">
-          <h2 className="px-4 pt-3 pb-1 text-section font-semibold">Recent transfers</h2>
+          <div className="flex flex-wrap items-end justify-between gap-2 px-4 pt-3 pb-1">
+            <h2 className="text-section font-semibold">Recent transfers</h2>
+            <SelectField
+              label="Filter transfers"
+              className="w-full tablet:w-60"
+              value={transferFilter}
+              onChange={(e) => setTransferFilter(e.target.value)}
+              options={[{ value: '', label: 'All players' }, ...(players.data ?? []).filter((p) => p.handle).map((p) => ({ value: p.handle!, label: `@${p.handle}` }))]}
+            />
+          </div>
           {transfers.isPending ? (
             <div className="px-4">
               <SkeletonRows rows={3} cols={4} />
