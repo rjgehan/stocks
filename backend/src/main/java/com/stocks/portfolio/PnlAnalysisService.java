@@ -38,14 +38,12 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.BiConsumer;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
@@ -223,15 +221,16 @@ public class PnlAnalysisService implements PnlAnalysisQueries {
   }
 
   BySymbol bySymbol(AccountRow run, Anchor anchor, End end, List<TransferRow> transfers) {
-    Instant a = anchor.at();
+    // an opening anchor precedes everything of its run, even what shares its instant (the run's first fill)
+    Instant a = anchor.opening() ? Instant.EPOCH : anchor.at();
     Instant b = end.at();
-    Map<String, String> renamedTo = renames(run.id(), a, b);
+    Renames renames = renames(run.id(), b);
     Map<String, Acc> acc = new TreeMap<>();
     if (!anchor.opening()) {
       eod.withHoldings(run, anchor.date()).ifPresent(s -> {
         for (HoldingRow h : s.holdings()) {
-          at(acc, current(h.symbol(), renamedTo)).mvA = at(acc, current(h.symbol(), renamedTo)).mvA
-              .add(h.marketValue());
+          Acc x = at(acc, renames.current(h.symbol(), a));
+          x.mvA = x.mvA.add(h.marketValue());
         }
       });
     }
@@ -239,54 +238,56 @@ public class PnlAnalysisService implements PnlAnalysisQueries {
       for (PositionRow p : repository.positions(run.id())) {
         Mark m = end.live().marks().get(p.symbol());
         BigDecimal mv = m != null ? Rounding.MARKET_VALUE.multiply(p.qty(), m.price()) : p.costBasis();
-        Acc x = at(acc, current(p.symbol(), renamedTo));
+        Acc x = at(acc, p.symbol());
         x.mvB = x.mvB.add(mv);
         x.held = true;
       }
     }
     jdbc.sql("""
-            SELECT symbol, SUM(net_amount) AS net,
-                   SUM(CASE WHEN side = 'SELL' AND realized_pnl IS NOT NULL THEN realized_pnl ELSE 0 END) AS sells
-              FROM execution WHERE account_id = ? AND executed_at > ? AND executed_at <= ? GROUP BY symbol""")
+            SELECT symbol, executed_at, net_amount,
+                   CASE WHEN side = 'SELL' AND realized_pnl IS NOT NULL THEN realized_pnl ELSE 0 END AS realized
+              FROM execution WHERE account_id = ? AND executed_at > ? AND executed_at <= ?""")
         .params(run.id(), Jdbc.ts(a), Jdbc.ts(b))
         .query(rs -> {
-          Acc x = at(acc, current(rs.getString("symbol"), renamedTo));
-          x.net = x.net.add(money(rs.getBigDecimal("net")));
-          x.sells = x.sells.add(money(rs.getBigDecimal("sells")));
+          Acc x = at(acc, renames.current(rs.getString("symbol"), Jdbc.instant(rs, "executed_at")));
+          x.net = x.net.add(money(rs.getBigDecimal("net_amount")));
+          x.sells = x.sells.add(money(rs.getBigDecimal("realized")));
         });
     jdbc.sql("""
-            SELECT d.symbol, SUM(l.amount) AS amount
+            SELECT d.symbol, d.accrued_at, l.amount
               FROM cash_ledger l JOIN dividend_entitlement d ON d.id = l.dividend_id
-             WHERE l.account_id = ? AND l.entry_type = 'DIVIDEND' AND l.posted_at > ? AND l.posted_at <= ?
-             GROUP BY d.symbol""")
+             WHERE l.account_id = ? AND l.entry_type = 'DIVIDEND' AND l.posted_at > ? AND l.posted_at <= ?""")
         .params(run.id(), Jdbc.ts(a), Jdbc.ts(b))
         .query(rs -> {
-          Acc x = at(acc, current(rs.getString("symbol"), renamedTo));
+          Acc x = at(acc, renames.current(rs.getString("symbol"), Jdbc.instant(rs, "accrued_at")));
           x.divPaid = x.divPaid.add(money(rs.getBigDecimal("amount")));
         });
-    receivables(run.id(), a).forEach((s, v) -> at(acc, current(s, renamedTo)).recvA =
-        at(acc, current(s, renamedTo)).recvA.add(v));
-    receivables(run.id(), b).forEach((s, v) -> at(acc, current(s, renamedTo)).recvB =
-        at(acc, current(s, renamedTo)).recvB.add(v));
+    receivables(run.id(), a, (symbol, amount) -> {
+      Acc x = at(acc, renames.current(symbol.symbol(), symbol.at()));
+      x.recvA = x.recvA.add(amount);
+    });
+    receivables(run.id(), b, (symbol, amount) -> {
+      Acc x = at(acc, renames.current(symbol.symbol(), symbol.at()));
+      x.recvB = x.recvB.add(amount);
+    });
     jdbc.sql("""
-            SELECT symbol, SUM(amount) AS amount FROM cash_ledger
-             WHERE account_id = ? AND entry_type = 'CASH_IN_LIEU' AND posted_at > ? AND posted_at <= ?
-             GROUP BY symbol""")
+            SELECT symbol, posted_at, amount FROM cash_ledger
+             WHERE account_id = ? AND entry_type = 'CASH_IN_LIEU' AND posted_at > ? AND posted_at <= ?""")
         .params(run.id(), Jdbc.ts(a), Jdbc.ts(b))
         .query(rs -> {
           String s = rs.getString("symbol");
           if (s != null) {
-            Acc x = at(acc, current(s, renamedTo));
+            Acc x = at(acc, renames.current(s, Jdbc.instant(rs, "posted_at")));
             x.cil = x.cil.add(money(rs.getBigDecimal("amount")));
           }
         });
     // corporate actions realize "cash received − cost relieved" (§14 cash in lieu); renames move cost unchanged
     jdbc.sql("""
-            SELECT symbol_after, SUM(cost_after - cost_before) AS delta FROM position_adjustment
-             WHERE account_id = ? AND effective_at > ? AND effective_at <= ? GROUP BY symbol_after""")
+            SELECT symbol_after, effective_at, cost_after - cost_before AS delta FROM position_adjustment
+             WHERE account_id = ? AND effective_at > ? AND effective_at <= ?""")
         .params(run.id(), Jdbc.ts(a), Jdbc.ts(b))
         .query(rs -> {
-          Acc x = at(acc, current(rs.getString("symbol_after"), renamedTo));
+          Acc x = at(acc, renames.current(rs.getString("symbol_after"), Jdbc.instant(rs, "effective_at")));
           x.caCost = x.caCost.add(money(rs.getBigDecimal("delta")));
         });
 
@@ -318,43 +319,53 @@ public class PnlAnalysisService implements PnlAnalysisQueries {
     return acc.computeIfAbsent(symbol, k -> new Acc());
   }
 
-  /** NAME_CHANGE adjustments in {@code (a, b]}: old symbol → new symbol (§16.4). */
-  private Map<String, String> renames(long accountId, Instant a, Instant b) {
-    Map<String, String> out = new HashMap<>();
-    jdbc.sql("""
-            SELECT symbol_before, symbol_after FROM position_adjustment
-             WHERE account_id = ? AND effective_at > ? AND effective_at <= ? AND symbol_before <> symbol_after
-             ORDER BY effective_at, id""")
-        .params(accountId, Jdbc.ts(a), Jdbc.ts(b))
-        .query(rs -> {
-          out.put(rs.getString("symbol_before"), rs.getString("symbol_after"));
-        });
-    return out;
-  }
+  /** One NAME_CHANGE of the account's position (§14): {@code before} became {@code after} at {@code at}. */
+  record Rename(String before, String after, Instant at) {}
 
-  /** The symbol's name at the end of the window. */
-  static String current(String symbol, Map<String, String> renamedTo) {
-    String s = symbol;
-    Set<String> seen = new HashSet<>();
-    for (int i = 0; i < MAX_RENAME_HOPS && renamedTo.containsKey(s) && seen.add(s); i++) {
-      s = renamedTo.get(s);
+  /**
+   * The account's renames up to the window's end, oldest first: a symbol seen at {@code t} (a holding, a fill, an
+   * entitlement's accrual) is reported under the name the renames after {@code t} gave it (§16.4), so a ticker that is
+   * later reused by another company stays apart.
+   */
+  record Renames(List<Rename> list) {
+
+    String current(String symbol, Instant t) {
+      String s = symbol;
+      int hops = 0;
+      for (Rename r : list) {
+        if (r.at().isAfter(t) && r.before().equals(s) && hops++ < MAX_RENAME_HOPS) {
+          s = r.after();
+        }
+      }
+      return s;
     }
-    return s;
   }
 
-  /** §16.1 point-in-time dividend receivable at {@code t}, per symbol. */
-  private Map<String, BigDecimal> receivables(long accountId, Instant t) {
-    Map<String, BigDecimal> out = new LinkedHashMap<>();
+  private Renames renames(long accountId, Instant b) {
+    return new Renames(jdbc.sql("""
+            SELECT DISTINCT symbol_before, symbol_after, effective_at FROM position_adjustment
+             WHERE account_id = ? AND effective_at <= ? AND symbol_before <> symbol_after
+             ORDER BY effective_at""")
+        .params(accountId, Jdbc.ts(b))
+        .query((rs, n) -> new Rename(rs.getString("symbol_before"), rs.getString("symbol_after"),
+            Jdbc.instant(rs, "effective_at")))
+        .list());
+  }
+
+  /** A dividend entitlement's symbol and accrual instant. */
+  record EntitlementSymbol(String symbol, Instant at) {}
+
+  /** §16.1 point-in-time dividend receivable at {@code t}, per entitlement. */
+  private void receivables(long accountId, Instant t, BiConsumer<EntitlementSymbol, BigDecimal> sink) {
     jdbc.sql("""
-            SELECT symbol, SUM(amount) AS amount FROM dividend_entitlement
+            SELECT symbol, accrued_at, amount FROM dividend_entitlement
              WHERE account_id = ? AND accrued_at <= ?
-               AND (paid_at IS NULL OR paid_at > ?) AND (voided_at IS NULL OR voided_at > ?)
-             GROUP BY symbol""")
+               AND (paid_at IS NULL OR paid_at > ?) AND (voided_at IS NULL OR voided_at > ?)""")
         .params(accountId, Jdbc.ts(t), Jdbc.ts(t), Jdbc.ts(t))
         .query(rs -> {
-          out.put(rs.getString("symbol"), money(rs.getBigDecimal("amount")));
+          sink.accept(new EntitlementSymbol(rs.getString("symbol"), Jdbc.instant(rs, "accrued_at")),
+              money(rs.getBigDecimal("amount")));
         });
-    return out;
   }
 
   // ------------------------------------------------------------------------------------------- calendar

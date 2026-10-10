@@ -1,0 +1,146 @@
+{
+  "section": "ARCHITECTURE \u00a716.8 closed_lots",
+  "description": "Three buys and two sells of one symbol with fees and a 2-for-1 split between them. FIFO relief by (opened_at, execution id): each slice costs cost_remaining x q / qty_remaining (HALF_EVEN to cents, a full relief takes the remainder) and gets net_amount x q / qty of the proceeds (the last slice takes the rest), so the slices of each sell add up to its realized_pnl. The split doubles each open lot's quantity and keeps its cost. Win rate and profit factor count closing sells (1 win of 2; 44.96 / 12.54); the hold time and best/worst trade count closed lots.",
+  "events": [
+    {
+      "op": "BUY",
+      "id": 1,
+      "at": "2026-10-05T14:00:00Z",
+      "symbol": "SIMA",
+      "qty": "10",
+      "price": "10.00",
+      "netAmount": "-100.01",
+      "realizedPnl": null
+    },
+    {
+      "op": "BUY",
+      "id": 2,
+      "at": "2026-10-06T14:00:00Z",
+      "symbol": "SIMA",
+      "qty": "10",
+      "price": "12.00",
+      "netAmount": "-120.02",
+      "realizedPnl": null
+    },
+    {
+      "op": "ADJUST",
+      "id": 1,
+      "at": "2026-10-07T07:45:00Z",
+      "lot": 1,
+      "symbolAfter": "SIMA",
+      "qtyAfter": "20",
+      "costAfter": "100.01"
+    },
+    {
+      "op": "ADJUST",
+      "id": 2,
+      "at": "2026-10-07T07:45:00Z",
+      "lot": 2,
+      "symbolAfter": "SIMA",
+      "qtyAfter": "20",
+      "costAfter": "120.02"
+    },
+    {
+      "op": "BUY",
+      "id": 3,
+      "at": "2026-10-07T15:00:00Z",
+      "symbol": "SIMA",
+      "qty": "10",
+      "price": "6.50",
+      "netAmount": "-65.01",
+      "realizedPnl": null
+    },
+    {
+      "op": "SELL",
+      "id": 4,
+      "at": "2026-10-08T14:00:00Z",
+      "symbol": "SIMA",
+      "qty": "25",
+      "price": "7.00",
+      "netAmount": "174.97",
+      "realizedPnl": "44.96"
+    },
+    {
+      "op": "SELL",
+      "id": 5,
+      "at": "2026-10-09T14:00:00Z",
+      "symbol": "SIMA",
+      "qty": "20",
+      "price": "5.50",
+      "netAmount": "109.98",
+      "realizedPnl": "-12.54"
+    }
+  ],
+  "expected": {
+    "lots": [
+      {
+        "buyExecutionId": 1,
+        "sellExecutionId": 4,
+        "qty": "20",
+        "openedAt": "2026-10-05T14:00:00Z",
+        "closedAt": "2026-10-08T14:00:00Z",
+        "holdSeconds": 259200,
+        "cost": "100.01",
+        "proceeds": "139.98",
+        "realizedPnl": "39.97",
+        "return": "0.3996600340"
+      },
+      {
+        "buyExecutionId": 2,
+        "sellExecutionId": 4,
+        "qty": "5",
+        "openedAt": "2026-10-06T14:00:00Z",
+        "closedAt": "2026-10-08T14:00:00Z",
+        "holdSeconds": 172800,
+        "cost": "30.00",
+        "proceeds": "34.99",
+        "realizedPnl": "4.99",
+        "return": "0.1663333333"
+      },
+      {
+        "buyExecutionId": 2,
+        "sellExecutionId": 5,
+        "qty": "15",
+        "openedAt": "2026-10-06T14:00:00Z",
+        "closedAt": "2026-10-09T14:00:00Z",
+        "holdSeconds": 259200,
+        "cost": "90.02",
+        "proceeds": "82.48",
+        "realizedPnl": "-7.54",
+        "return": "-0.0837591646"
+      },
+      {
+        "buyExecutionId": 3,
+        "sellExecutionId": 5,
+        "qty": "5",
+        "openedAt": "2026-10-07T15:00:00Z",
+        "closedAt": "2026-10-09T14:00:00Z",
+        "holdSeconds": 169200,
+        "cost": "32.50",
+        "proceeds": "27.50",
+        "realizedPnl": "-5.00",
+        "return": "-0.1538461538"
+      }
+    ],
+    "closingSells": 2,
+    "wins": 1,
+    "winRate": "0.5000000000",
+    "grossProfit": "44.96",
+    "grossLoss": "12.54",
+    "profitFactor": "3.5853",
+    "avgHoldSeconds": 215100,
+    "best": {
+      "buyExecutionId": 1,
+      "sellExecutionId": 4
+    },
+    "worst": {
+      "buyExecutionId": 2,
+      "sellExecutionId": 5
+    },
+    "worstBeforeFriday": {
+      "buyExecutionId": 2,
+      "sellExecutionId": 4,
+      "note": "best/worst as of 2026-10-08T23:59:59Z: only Thursday's sell is visible"
+    }
+  }
+}

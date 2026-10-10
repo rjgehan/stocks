@@ -3,6 +3,7 @@ package com.stocks.league;
 import com.stocks.common.id.PublicId;
 import com.stocks.config.JacksonConfig;
 import com.stocks.portfolio.PortfolioKit;
+import com.stocks.portfolio.TradeHistoryRepository;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +31,10 @@ public final class LeagueKit {
   public final FeedEventListener feed;
   public final FeedService feedService;
   public final LeaderboardSnapshotWriter snapshotWriter;
+  // Phase 2 (§16.8–16.11)
+  public final TradeHistoryRepository trades;
+  public final PlayerStatsService stats;
+  public final FeedReactionServiceImpl reactions;
 
   public LeagueKit() {
     this(new PortfolioKit());
@@ -47,6 +52,10 @@ public final class LeagueKit {
         new DirectExecutor());
     this.feedService = new FeedService(feedRepository, reactionRepository, kit.players, json, kit.time, messaging);
     this.snapshotWriter = new LeaderboardSnapshotWriter(computer, league, feed, kit.pnlCalendar, kit.time);
+    this.trades = new TradeHistoryRepository(kit.db.jdbc());
+    this.stats = new PlayerStatsService(leaderboard, league, trades, kit.repository, kit.profiles(leaderboard),
+        kit.players, kit.settings, kit.sampler, kit.benchmark, kit.pnlCalendar);
+    this.reactions = new FeedReactionServiceImpl(reactionRepository, feedService, kit.players, kit.time);
   }
 
   /** Runs every task on the calling thread (deterministic feed tests). */
