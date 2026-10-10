@@ -15,11 +15,14 @@ import com.stocks.common.error.ErrorCode;
 import com.stocks.common.jdbc.Jdbc;
 import com.stocks.contract.calendar.MarketCalendar;
 import com.stocks.contract.calendar.SessionChanged;
+import com.stocks.contract.jobs.CatchUpPolicy;
 import com.stocks.contract.jobs.JobOccurrence;
+import com.stocks.contract.jobs.ScheduledJob;
 import com.stocks.contract.trading.AdminOrderService;
 import com.stocks.contract.trading.EngineState;
 import com.stocks.contract.trading.InvariantResult;
 import com.stocks.contract.trading.dto.OrderDto;
+import com.stocks.trading.session.DailyTradingJobs;
 import com.stocks.trading.session.SessionTransitionJob;
 import com.stocks.trading.testkit.TradingTestBase;
 import java.math.BigDecimal;
@@ -42,6 +45,7 @@ class EngineAdminTest extends TradingTestBase {
   @Autowired SessionTransitionJob transitions;
   @Autowired MarketCalendar calendar;
   @Autowired ApplicationEvents events;
+  @Autowired List<ScheduledJob> jobs;
 
   @Test
   void theAdminCancelsAnyPlayersOrder() {
@@ -104,6 +108,32 @@ class EngineAdminTest extends TradingTestBase {
     assertThat(resumed.waitReason()).isEqualTo(WaitReason.LATENCY);
     assertThat(resumed.events()).extracting(e -> e.type()).contains(OrderEventType.PAUSED, OrderEventType.RESUMED);
     assertThat(resumed.status()).isEqualTo(OrderStatus.WORKING);
+  }
+
+  @Test
+  void theDailyJobsRunOnTheEtClockAndCatchUpLatestOnly() {
+    ScheduledJob maintenance = job(DailyTradingJobs.DAILY_MAINTENANCE);
+    ScheduledJob check = job(DailyTradingJobs.CHECK_INVARIANTS);
+    assertThat(maintenance.catchUp()).isEqualTo(CatchUpPolicy.LATEST_ONLY);
+    assertThat(check.catchUp()).isEqualTo(CatchUpPolicy.LATEST_ONLY);
+    assertThat(transitions.catchUp()).isEqualTo(CatchUpPolicy.ALL_MISSED);
+    assertThat(transitions.name()).isEqualTo(SessionTransitionJob.NAME);
+    assertThat(maintenance.occurrencesBetween(et("2026-10-09T00:00:00"), et("2026-10-11T00:00:00"), calendar))
+        .extracting(JobOccurrence::runKey, JobOccurrence::at)
+        .containsExactly(org.assertj.core.groups.Tuple.tuple("2026-10-09", et("2026-10-09T03:30:00")),
+            org.assertj.core.groups.Tuple.tuple("2026-10-10", et("2026-10-10T03:30:00")));
+    List<JobOccurrence> hourly = check.occurrencesBetween(et("2026-10-09T03:00:00"), et("2026-10-09T06:30:00"),
+        calendar);
+    assertThat(hourly).extracting(JobOccurrence::runKey).containsExactly("2026-10-09:04", "2026-10-09:05",
+        "2026-10-09:06");
+    maintenance.run("2026-10-09");
+    check.run("2026-10-09:05");
+    assertThat(engine.status().lastInvariants().ok()).isTrue();
+    assertThat(engine.status().state()).isEqualTo(EngineState.RUNNING);
+  }
+
+  private ScheduledJob job(String name) {
+    return jobs.stream().filter(j -> j.name().equals(name)).findFirst().orElseThrow();
   }
 
   @Test

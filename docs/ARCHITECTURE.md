@@ -1893,6 +1893,8 @@ What a frozen or disabled bot sees is fixed by the authentication outcome order 
 | `STOP_LIMIT` | REGULAR only | DAY, GTC | whole shares | Triggers like `STOP`, then becomes a limit order. |
 | `TRAILING_STOP` | REGULAR only, and **can only be entered in REGULAR** (Webull accepts trailing stops during market hours only; otherwise `SESSION_NOT_ALLOWED`) | **DAY only** [V] | whole shares | Exactly one of `trailAmount` ($) or `trailPercent` (0 < p < 100). |
 
+**Delivery staging (M1+, WS3).** The engine and validator ship MARKET and LIMIT first. Until `TriggerEvaluator` lands (M2), a `STOP`, `STOP_LIMIT` or `TRAILING_STOP` request is rejected synchronously with `400 VALIDATION_FAILED` on `type` (not persisted, D15), so no stop order can be accepted and then never trigger.
+
 **Fractional and notional rules** (D7):
 - The symbol must be `fractionable`.
 - The order must be `MARKET` with `DAY` and `extendedHours=false`.
@@ -2258,7 +2260,7 @@ for each fee row r applicable to (side, trade_date of this execution):
 |---|---|
 | Sell 1,000 shares at $50.00 on 2026-10-09 | SEC $1.03 · TAF $0.00 · CAT $0.003 → $0.00 · **total $1.03** |
 | Sell $5.00 notional of AAPL on 2026-10-09 | SEC $0.01 · CAT $0.00 · net $4.99 |
-| 10 partial sells of 100 shares at $50 in one order on 2026-10-09 | SEC charges 0.11, 0.10, 0.10, … summing to **$1.03**, not $1.10 |
+| 10 partial sells of 100 shares at $50 in one order on 2026-10-09 | SEC charges 0.11, 0.10, 0.10, 0.11, 0.10, 0.10, 0.11, 0.10, 0.10, 0.10 (cumulative CEIL_CENT of 0.103·k: 0.11, 0.21, 0.31, 0.42, …, 1.03) summing to **$1.03**, not $1.10 |
 | Sell 100,000 shares at $10 on 2027-01-04 | SEC $20.60 · TAF $19.50 → capped **$9.79** · CAT $0.30 |
 | Buy 4,000 shares on 2026-10-09 | CAT $0.012 → **$0.01** |
 
