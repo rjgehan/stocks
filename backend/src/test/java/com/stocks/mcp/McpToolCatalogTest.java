@@ -75,12 +75,15 @@ class McpToolCatalogTest {
         .containsEntry("mark_notifications_read", Scopes.ACCOUNT_READ)
         .containsEntry("get_leaderboard", Scopes.LEAGUE_READ).containsEntry("get_league_feed", Scopes.LEAGUE_READ)
         .containsEntry("place_order", Scopes.TRADE).containsEntry("update_watchlist", Scopes.TRADE)
-        .containsEntry("delete_watchlist", Scopes.TRADE);
+        .containsEntry("delete_watchlist", Scopes.TRADE)
+        .containsEntry("list_alerts", Scopes.ACCOUNT_READ).containsEntry("create_alert", Scopes.TRADE)
+        .containsEntry("delete_alert", Scopes.TRADE);
   }
 
   @Test
-  void theCatalogHasThe38ToolsOfSection20Point3AndNoAdminTool() {
-    assertThat(McpToolCatalog.ORDER).hasSize(38).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
-        .endsWith("mark_notifications_read").noneMatch(n -> n.contains("admin"));
+  void theCatalogHasThe41ToolsOfSection20Point3AndNoAdminTool() {
+    assertThat(McpToolCatalog.ORDER).hasSize(41).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
+        .endsWith("mark_notifications_read", "list_alerts", "create_alert", "delete_alert")
+        .noneMatch(n -> n.contains("admin"));
   }
 }

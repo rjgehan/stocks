@@ -217,6 +217,10 @@ public class SecurityConfig {
             // §18.2 league:read
             .requestMatchers("/api/v1/leaderboard", "/api/v1/players", "/api/v1/players/**", "/api/v1/feed")
                 .access(RouteAuthorization.scope(Scopes.LEAGUE_READ))
+            // Phase 2 price alerts (§18.2, §19.1): read with account:read, every write with trade
+            .requestMatchers(HttpMethod.GET, "/api/v1/alerts", "/api/v1/alerts/**")
+                .access(RouteAuthorization.scope(Scopes.ACCOUNT_READ))
+            .requestMatchers("/api/v1/alerts", "/api/v1/alerts/**").access(RouteAuthorization.scope(Scopes.TRADE))
             // everything else on this chain (incl. /mcp, /v3/**, Swagger UI, /api/v1/test/**): any player.
             // Each MCP tool's scope is checked per call by McpToolHandler (McpToolCatalog.SCOPES, §20.3).
             .anyRequest().authenticated());

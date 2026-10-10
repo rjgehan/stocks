@@ -9,6 +9,7 @@ import com.stocks.common.time.TimeSource;
 import com.stocks.common.web.Cursor;
 import com.stocks.common.web.Page;
 import com.stocks.common.web.Text;
+import com.stocks.contract.realtime.NotificationCreated;
 import com.stocks.contract.realtime.dto.NotificationDto;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -20,6 +21,8 @@ import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.type.TypeReference;
@@ -30,8 +33,9 @@ import tools.jackson.databind.json.JsonMapper;
  * {@code mark_notifications_read}). The <b>only writer</b> of {@code notification} (§27.2). Every notification is
  * keyed by {@code (player_id, source_ref)} ({@code EXEC:<exe>}, {@code XFER:<xfr>}, {@code ORD:<ord>:<event seq>},
  * {@code VIO:<vio>}, … as §8.1 lists), so a redelivered event never notifies twice; a new row is pushed to the
- * player's {@code /user/queue/notifications} right after it is written. Read rows older than 90 days are deleted by
- * WS1's housekeeping job (§25).
+ * player's {@code /user/queue/notifications} right after it is written, and announced as {@link NotificationCreated}
+ * (Phase 2: Web Push, §19.2; listeners only enqueue). Read rows older than 90 days are deleted by WS1's housekeeping
+ * job (§25).
  */
 @Service
 public class NotificationService {
@@ -52,14 +56,22 @@ public class NotificationService {
   private final TimeSource time;
   private final JsonMapper jsonMapper;
   private final UserPush push;
+  private final ApplicationEventPublisher events;
 
   public NotificationService(JdbcClient jdbc, PublicId publicId, TimeSource time, JsonMapper jsonMapper,
                              UserPush push) {
+    this(jdbc, publicId, time, jsonMapper, push, e -> { });
+  }
+
+  @Autowired
+  public NotificationService(JdbcClient jdbc, PublicId publicId, TimeSource time, JsonMapper jsonMapper,
+                             UserPush push, ApplicationEventPublisher events) {
     this.jdbc = jdbc;
     this.publicId = publicId;
     this.time = time;
     this.jsonMapper = jsonMapper;
     this.push = push;
+    this.events = events;
   }
 
   /**
@@ -99,6 +111,11 @@ public class NotificationService {
     NotificationDto dto = new NotificationDto(id, kind, cleanTitle, cleanBody, parse(payloadJson),
         now.truncatedTo(java.time.temporal.ChronoUnit.MICROS), null);
     push.toPlayer(playerId, StompDestinations.NOTIFICATIONS_QUEUE, dto);
+    try {
+      events.publishEvent(new NotificationCreated(playerId, dto));   // Web Push (§19.2): listeners only enqueue
+    } catch (RuntimeException e) {
+      log.warn("NotificationCreated listener failed for {}: {}", id, e.toString());
+    }
     return Optional.of(dto);
   }
 

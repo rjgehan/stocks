@@ -39,7 +39,9 @@ public final class McpToolCatalog {
       "get_player_profile", "get_player_history", "get_player_trades", "get_league_feed", "get_watchlists",
       // write tools
       "place_order", "replace_order", "cancel_order", "cancel_all_orders", "close_position", "update_watchlist",
-      "delete_watchlist", "mark_notifications_read");
+      "delete_watchlist", "mark_notifications_read",
+      // Phase 2 price alerts (§20.3 #39-41)
+      "list_alerts", "create_alert", "delete_alert");
 
   /** {@link #SCOPES} value of a tool any authenticated caller may use ({@code whoami}). */
   public static final String NO_SCOPE = "";
@@ -59,7 +61,7 @@ public final class McpToolCatalog {
     }
     for (String t : List.of("get_account", "get_positions", "get_orders", "get_order", "get_executions",
         "get_activity", "get_violations", "get_runs", "get_portfolio_history", "get_notifications", "preview_order",
-        "get_watchlists", "mark_notifications_read")) {
+        "get_watchlists", "mark_notifications_read", "list_alerts")) {
       m.put(t, Scopes.ACCOUNT_READ);
     }
     for (String t : List.of("get_leaderboard", "list_players", "get_player_profile", "get_player_history",
@@ -67,7 +69,7 @@ public final class McpToolCatalog {
       m.put(t, Scopes.LEAGUE_READ);
     }
     for (String t : List.of("place_order", "replace_order", "cancel_order", "cancel_all_orders", "close_position",
-        "update_watchlist", "delete_watchlist")) {
+        "update_watchlist", "delete_watchlist", "create_alert", "delete_alert")) {
       m.put(t, Scopes.TRADE);
     }
     if (!m.keySet().equals(new HashSet<>(ORDER))) {

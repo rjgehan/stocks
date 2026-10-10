@@ -37,12 +37,20 @@
       "name": "news"
     },
     {
+      "description": "Web Push notifications on the caller's devices",
+      "name": "push"
+    },
+    {
       "description": "The authenticated player",
       "name": "me"
     },
     {
       "description": "The caller's account (the active run)",
       "name": "account"
+    },
+    {
+      "description": "The caller's price alerts",
+      "name": "alerts"
     },
     {
       "description": "Symbols, asset detail and logos (§18.2)",
@@ -2124,6 +2132,273 @@
         ]
       }
     },
+    "/api/v1/alerts": {
+      "get": {
+        "description": "ACTIVE, PAUSED, TRIGGERED, EXPIRED in that order, newest first within each; optionally of one status and/or symbol.",
+        "operationId": "listAlerts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "PAUSED",
+                "TRIGGERED",
+                "EXPIRED"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "symbol",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Alert"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "The caller's price alerts",
+        "tags": [
+          "alerts"
+        ]
+      },
+      "post": {
+        "description": "201 with the new alert; 200 with the existing one when an identical ACTIVE or PAUSED alert exists (symbol, condition, threshold, repeat). A price threshold is a price; a change threshold is a fraction like Quote.changePct (\"0.05\" = +5%). At most 50 active or paused alerts (TOO_MANY_ALERTS).",
+        "operationId": "createAlert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAlertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Create a price alert",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/{alertId}": {
+      "delete": {
+        "operationId": "deleteAlert",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Delete a price alert",
+        "tags": [
+          "alerts"
+        ]
+      },
+      "put": {
+        "description": "Replaces condition, threshold, repeat, expiry and note, and re-arms it; a TRIGGERED or EXPIRED alert becomes ACTIVE again, a PAUSED one stays PAUSED.",
+        "operationId": "updateAlert",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAlertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Edit a price alert",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/{alertId}/pause": {
+      "post": {
+        "description": "A paused alert is kept but never fires.",
+        "operationId": "pauseAlert",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Pause a price alert",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/{alertId}/resume": {
+      "post": {
+        "description": "Re-arms it.",
+        "operationId": "resumeAlert",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Resume a paused price alert",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
     "/api/v1/assets/search": {
       "get": {
         "description": "Ranked: exact symbol, symbol prefix, name word prefix, substring. Up to 20 results.",
@@ -3211,6 +3486,264 @@
         "summary": "Change my password",
         "tags": [
           "me"
+        ]
+      }
+    },
+    "/api/v1/me/push": {
+      "get": {
+        "description": "Whether Web Push works on this server, the VAPID public key to subscribe with, the category preferences and the caller's devices (current = this session's).",
+        "operationId": "getPushSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Push settings",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/v1/me/push/preferences": {
+      "patch": {
+        "description": "Partial: null members are unchanged. Categories: fills (fills, cancellations, expiries), alerts (price alerts), money (admin deposits, withdrawals, adjustments), account (violations, restrictions, corporate actions, resets), league (a new weekly leader).",
+        "operationId": "updatePushPreferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePushPreferencesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushPreferences"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Change push preferences",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/v1/me/push/subscriptions": {
+      "post": {
+        "description": "The browser's PushSubscription (endpoint and keys, base64url). A subscription belongs to one player: registering it from another player's session moves it. At most 10 devices per player (the oldest is dropped).",
+        "operationId": "createPushSubscription",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushDevice"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Register this browser for push",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/v1/me/push/subscriptions/{deviceId}": {
+      "delete": {
+        "operationId": "deletePushSubscription",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deviceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Remove one of the caller's push devices",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/v1/me/push/sync": {
+      "post": {
+        "description": "registered=false: the server does not know this subscription for the caller (removed at sign-out, or the device changed hands); the SPA then unsubscribes the browser. Re-binds the registration to the current session.",
+        "operationId": "syncPushSubscription",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushEndpointRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSync"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Check this browser's push registration",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/v1/me/push/test": {
+      "post": {
+        "description": "To every device of the caller; waits up to 15 s for the push services. One call per 10 seconds.",
+        "operationId": "testPush",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushTestResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Send a test notification",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/v1/me/push/unsubscribe": {
+      "post": {
+        "operationId": "unsubscribePush",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushEndpointRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Turn push off on this browser",
+        "tags": [
+          "push"
         ]
       }
     },
@@ -5171,6 +5704,123 @@
           "reason"
         ]
       },
+      "Alert": {
+        "type": "object",
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "condition": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PRICE_GTE",
+              "PRICE_LTE",
+              "CHANGE_PCT_GTE",
+              "CHANGE_PCT_LTE",
+              null
+            ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastTriggerPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "lastTriggeredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repeat": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACTIVE",
+              "PAUSED",
+              "TRIGGERED",
+              "EXPIRED",
+              null
+            ]
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "threshold": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "triggerCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "armed",
+          "condition",
+          "createdAt",
+          "expiresAt",
+          "id",
+          "lastTriggerPrice",
+          "lastTriggeredAt",
+          "note",
+          "repeat",
+          "status",
+          "symbol",
+          "threshold",
+          "triggerCount",
+          "updatedAt"
+        ]
+      },
       "AllTargetRequest": {
         "allOf": [
           {
@@ -6494,6 +7144,62 @@
           "status",
           "symbol",
           "type"
+        ]
+      },
+      "CreateAlertRequest": {
+        "type": "object",
+        "properties": {
+          "condition": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PRICE_GTE",
+              "PRICE_LTE",
+              "CHANGE_PCT_GTE",
+              "CHANGE_PCT_LTE",
+              null
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repeat": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "threshold": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "condition",
+          "symbol",
+          "threshold"
         ]
       },
       "CreateApiKeyRequest": {
@@ -8292,6 +8998,7 @@
               "CORPORATE_ACTION",
               "ACCOUNT_RESET",
               "SYSTEM",
+              "PRICE_ALERT",
               null
             ]
           },
@@ -10141,6 +10848,223 @@
           "symbol",
           "untrusted",
           "viaApi"
+        ]
+      },
+      "PushDevice": {
+        "type": "object",
+        "properties": {
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastFailureAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastSuccessAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "pushService": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "createdAt",
+          "current",
+          "id",
+          "label",
+          "lastFailureAt",
+          "lastSuccessAt",
+          "pushService"
+        ]
+      },
+      "PushEndpointRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "endpoint"
+        ]
+      },
+      "PushPreferences": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "boolean"
+          },
+          "alerts": {
+            "type": "boolean"
+          },
+          "fills": {
+            "type": "boolean"
+          },
+          "league": {
+            "type": "boolean"
+          },
+          "money": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "account",
+          "alerts",
+          "fills",
+          "league",
+          "money"
+        ]
+      },
+      "PushSettings": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "devices": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PushDevice"
+            }
+          },
+          "preferences": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PushPreferences"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vapidPublicKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "available",
+          "devices",
+          "preferences",
+          "vapidPublicKey"
+        ]
+      },
+      "PushSubscriptionRequest": {
+        "type": "object",
+        "properties": {
+          "auth": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "p256dh": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "auth",
+          "endpoint",
+          "p256dh"
+        ]
+      },
+      "PushSync": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PushDevice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "registered": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "device",
+          "registered"
+        ]
+      },
+      "PushTestResult": {
+        "type": "object",
+        "properties": {
+          "delivered": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "devices": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "removed": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "delivered",
+          "devices",
+          "failed",
+          "removed"
         ]
       },
       "Quote": {
@@ -12784,6 +13708,54 @@
           "rationale"
         ]
       },
+      "UpdateAlertRequest": {
+        "type": "object",
+        "properties": {
+          "condition": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PRICE_GTE",
+              "PRICE_LTE",
+              "CHANGE_PCT_GTE",
+              "CHANGE_PCT_LTE",
+              null
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repeat": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "threshold": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "condition",
+          "threshold"
+        ]
+      },
       "UpdateMeRequest": {
         "type": "object",
         "properties": {
@@ -12914,6 +13886,41 @@
               "GREEN_UP",
               "RED_UP",
               null
+            ]
+          }
+        }
+      },
+      "UpdatePushPreferencesRequest": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "alerts": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "fills": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "league": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "money": {
+            "type": [
+              "boolean",
+              "null"
             ]
           }
         }
