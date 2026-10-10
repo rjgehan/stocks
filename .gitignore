@@ -48,6 +48,3 @@ test-results/
 # Server-side deploy state (lives in /DATA/AppData/stocks, never in the repo)
 .deploy-state
 docker-compose.yml.bak
-
-# Claude Code local state and agent worktrees
-.claude/

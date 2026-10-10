@@ -1,2 +1,3 @@
 com.stocks.config.CommonAutoConfiguration
 com.stocks.config.stubs.StubsAutoConfiguration
+com.stocks.marketdata.config.MarketDataClockAutoConfiguration
