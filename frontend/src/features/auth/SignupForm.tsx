@@ -6,17 +6,17 @@ import { isApiError } from '@/lib/api/problem'
 import { Button } from '@/components/ui/Button'
 import { TextField } from '@/components/ui/Field'
 import { AuthCard } from './AuthCard'
+import { HANDLE_HINT, HANDLE_RE, displayNameError } from './rules'
 
-const HANDLE_RE = /^[a-z0-9_]{2,32}$/
 const utf8Bytes = (s: string) => new TextEncoder().encode(s).length
 
-/** Client-side checks mirror the server's (§8 handle pattern, §17.3 password 10 chars / 72 bytes); the server decides. */
+/** Client-side checks mirror the server's (§8 handle and display-name patterns, §17.3 password 10 chars / 72 bytes); the server decides. */
 export function validateSignup(v: { handle: string; displayName: string; password: string; confirm: string; inviteCode: string }) {
   const errors: Partial<Record<'handle' | 'displayName' | 'password' | 'confirm' | 'inviteCode', string>> = {}
   if (!v.inviteCode.trim()) errors.inviteCode = 'Paste the code from your invite link.'
-  if (!HANDLE_RE.test(v.handle)) errors.handle = '2–32 characters: lowercase letters, digits or _.'
-  if (!v.displayName.trim()) errors.displayName = 'How should others see you?'
-  else if (v.displayName.trim().length > 40) errors.displayName = 'At most 40 characters.'
+  if (!HANDLE_RE.test(v.handle)) errors.handle = HANDLE_HINT
+  const nameError = displayNameError(v.displayName)
+  if (nameError) errors.displayName = nameError
   if (v.password.length < 10) errors.password = 'At least 10 characters.'
   else if (utf8Bytes(v.password) > 72) errors.password = 'At most 72 bytes.'
   if (v.confirm !== v.password) errors.confirm = 'The passwords do not match.'

@@ -10,8 +10,8 @@ import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Checkbox, TextField } from '@/components/ui/Field'
 import { Segmented } from '@/components/ui/Segmented'
+import { AI_MODEL_MAX, HANDLE_HINT, HANDLE_RE, displayNameError } from '@/features/auth/rules'
 
-const HANDLE_RE = /^[a-z0-9_]{2,32}$/
 
 /**
  * Create a human or an AI player (§21.1 `POST /admin/players`, R): the server creates the player, the funded account,
@@ -33,8 +33,9 @@ export function CreatePlayerDialog({ open, onClose, onCreated }: { open: boolean
   const defaultCash = settings.data?.['league.defaultStartingCash'] ?? '500.00'
 
   const local: Record<string, string> = {}
-  if (!HANDLE_RE.test(handle)) local.handle = '2–32 lowercase letters, digits or _.'
-  if (!displayName.trim()) local.displayName = 'Required.'
+  if (!HANDLE_RE.test(handle)) local.handle = HANDLE_HINT
+  const nameError = displayNameError(displayName)
+  if (nameError) local.displayName = nameError
   if (kind === 'HUMAN' && password.length < 10) local.password = 'At least 10 characters (share it with them privately).'
   if (startingCash && (!isDecimal(startingCash) || lt(startingCash, '1.00'))) local.startingCash = 'At least $1.00.'
   const server = create.error && isApiError(create.error) ? create.error : null
@@ -112,7 +113,7 @@ export function CreatePlayerDialog({ open, onClose, onCreated }: { open: boolean
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3">
-              <TextField label="Model label" value={aiModel} onChange={(e) => setAiModel(e.target.value)} maxLength={40} placeholder="Claude" hint="Shown as “AI · Claude”." />
+              <TextField label="Model label" value={aiModel} onChange={(e) => setAiModel(e.target.value)} maxLength={AI_MODEL_MAX} placeholder="Claude" hint="Shown as “AI · Claude”." />
               <TextField label="Owner" prefix="@" value={owner} onChange={(e) => setOwner(e.target.value.toLowerCase())} placeholder={me?.handle ?? 'you'} hint="Who runs this bot." />
             </div>
             <Checkbox checked={issueKey} onChange={setIssueKey}>

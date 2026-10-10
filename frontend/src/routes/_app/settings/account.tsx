@@ -7,6 +7,7 @@ import { API_MOCK } from '@/lib/api/client'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { TextField } from '@/components/ui/Field'
+import { displayNameError } from '@/features/auth/rules'
 import { SettingsHeader } from '@/features/settings/SettingsHeader'
 import { toast } from '@/features/notifications/toastStore'
 
@@ -28,6 +29,7 @@ function AccountSettings() {
   const [resetOpen, setResetOpen] = useState(false)
   const [resetKey, setResetKey] = useState(() => crypto.randomUUID())
   const name = displayName ?? me?.displayName ?? ''
+  const nameError = displayName !== null ? displayNameError(name) : null
   const pwError = next && next.length < 10 ? 'At least 10 characters.' : confirm && confirm !== next ? 'The passwords do not match.' : null
   const pwServer = changePassword.error ? describeError(changePassword.error) : null
 
@@ -48,8 +50,15 @@ function AccountSettings() {
         }}
       >
         <h2 className="text-section font-semibold">Profile</h2>
-        <TextField label="Display name" value={name} onChange={(e) => setDisplayName(e.target.value)} maxLength={40} hint={me?.handle ? `Your handle is @${me.handle}.` : undefined} />
-        <Button type="submit" disabled={!name.trim() || name === me?.displayName || rename.isPending}>
+        <TextField
+          label="Display name"
+          value={name}
+          onChange={(e) => setDisplayName(e.target.value)}
+          maxLength={40}
+          error={nameError}
+          hint={me?.handle ? `Your handle is @${me.handle}.` : undefined}
+        />
+        <Button type="submit" disabled={Boolean(nameError) || !name.trim() || name === me?.displayName || rename.isPending}>
           Save name
         </Button>
       </form>
