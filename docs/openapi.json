@@ -1,0 +1,499 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "description": "Multiplayer paper-trading league. Decimals are strings; every response field is present (null when unused); errors are RFC 9457 problems with a stable `code`. Authenticate with `Authorization: Bearer stk_…` (bots, scripts) or the browser session cookie plus the X-XSRF-TOKEN header.",
+    "title": "stocks API",
+    "version": "v1"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same origin"
+    }
+  ],
+  "security": [
+    {
+      "apiKey": []
+    },
+    {
+      "session": []
+    }
+  ],
+  "tags": [
+    {
+      "description": "Browser session login (§17.3)",
+      "name": "auth"
+    },
+    {
+      "description": "The authenticated player",
+      "name": "me"
+    }
+  ],
+  "paths": {
+    "/api/v1/auth/csrf": {
+      "get": {
+        "description": "Sets the XSRF-TOKEN cookie. Send its raw value as X-XSRF-TOKEN on every unsafe request.",
+        "operationId": "getCsrf",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "security": [],
+        "summary": "Issue the XSRF-TOKEN cookie",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "Humans only. Starts a session (stocks_sid cookie), rotates XSRF-TOKEN and returns Me. Errors: BAD_CREDENTIALS, LOGIN_LOCKED, PLAYER_DISABLED.",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "security": [],
+        "summary": "Log in with handle and password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "Session only. Invalidates the session and rotates XSRF-TOKEN.",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "End the session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "description": "Session or API key. authMethod and scopes describe this request's credentials.",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "The authenticated player",
+        "tags": [
+          "me"
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "handle",
+          "password"
+        ]
+      },
+      "Me": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "aiModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authMethod": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "SESSION",
+              "API_KEY",
+              "OAUTH",
+              null
+            ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "HUMAN",
+              "AI",
+              null
+            ]
+          },
+          "playerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "preferences": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Preferences"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PLAYER",
+              "ADMIN",
+              null
+            ]
+          },
+          "runNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACTIVE",
+              "DISABLED",
+              "FROZEN",
+              null
+            ]
+          }
+        },
+        "required": [
+          "accountId",
+          "aiModel",
+          "authMethod",
+          "createdAt",
+          "displayName",
+          "handle",
+          "kind",
+          "playerId",
+          "preferences",
+          "role",
+          "runNo",
+          "scopes",
+          "status"
+        ]
+      },
+      "Preferences": {
+        "type": "object",
+        "properties": {
+          "confirmOrders": {
+            "type": "boolean"
+          },
+          "defaultOrderType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "LIMIT",
+              "MARKET",
+              null
+            ]
+          },
+          "defaultQtyMode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "SHARES",
+              "AMOUNT",
+              null
+            ]
+          },
+          "defaultTimeInForce": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "GTC",
+              null
+            ]
+          },
+          "theme": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DARK",
+              "LIGHT",
+              "SYSTEM",
+              null
+            ]
+          },
+          "upDown": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "GREEN_UP",
+              "RED_UP",
+              null
+            ]
+          }
+        },
+        "required": [
+          "confirmOrders",
+          "defaultOrderType",
+          "defaultQtyMode",
+          "defaultTimeInForce",
+          "theme",
+          "upDown"
+        ]
+      },
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fields": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ProblemField"
+            }
+          },
+          "hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retryAfterS": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "detail",
+          "fields",
+          "hint",
+          "requestId",
+          "retryAfterS",
+          "status",
+          "title",
+          "type"
+        ]
+      },
+      "ProblemField": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "field",
+          "message"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "apiKey": {
+        "bearerFormat": "stk_<keyId>_<secret>",
+        "description": "API key issued by the admin (bots) or from Settings (humans, read-only by default).",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "session": {
+        "description": "Browser session from POST /api/v1/auth/login (__Host-stocks_sid in production); unsafe methods also need X-XSRF-TOKEN.",
+        "in": "cookie",
+        "name": "stocks_sid",
+        "type": "apiKey"
+      }
+    }
+  }
+}

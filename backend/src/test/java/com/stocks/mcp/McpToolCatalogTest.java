@@ -1,0 +1,71 @@
+package com.stocks.mcp;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.stocks.config.JacksonConfig;
+import io.modelcontextprotocol.common.McpTransportContext;
+import io.modelcontextprotocol.server.McpStatelessServerFeatures.SyncToolSpecification;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.springframework.ai.mcp.annotation.McpTool;
+import tools.jackson.databind.json.JsonMapper;
+
+/** §20.3: the tool list follows the catalog order, rejects unknown and duplicate names, and has all 38 names. */
+class McpToolCatalogTest {
+
+  static final JsonMapper MAPPER = JacksonConfig.newMapper();
+
+  public record Out(String value) {}
+
+  /** Declared (and alphabetically named) in the opposite order of §20.3. */
+  public static class Reversed {
+    @McpTool(name = "place_order", generateOutputSchema = true)
+    public Out a(McpTransportContext ctx) {
+      return new Out("a");
+    }
+
+    @McpTool(name = "get_rules", generateOutputSchema = true)
+    public Out b(McpTransportContext ctx) {
+      return new Out("b");
+    }
+  }
+
+  public static class First {
+    @McpTool(name = "whoami", generateOutputSchema = true)
+    public Out z(McpTransportContext ctx) {
+      return new Out("z");
+    }
+  }
+
+  public static class Unknown {
+    @McpTool(name = "transfer_cash", generateOutputSchema = true)
+    public Out x(McpTransportContext ctx) {
+      return new Out("x");
+    }
+  }
+
+  @Test
+  void toolsAreListedInCatalogOrderWhateverTheBeanOrder() {
+    List<SyncToolSpecification> specs = McpToolCatalog.specifications(List.of(new Reversed(), new First()), MAPPER);
+    assertThat(specs).extracting(s -> s.tool().name()).containsExactly("whoami", "get_rules", "place_order");
+  }
+
+  @Test
+  void aToolOutsideTheCatalogFailsTheBoot() {
+    assertThatThrownBy(() -> McpToolCatalog.specifications(List.of(new Unknown()), MAPPER))
+        .isInstanceOf(IllegalStateException.class).hasMessageContaining("transfer_cash");
+  }
+
+  @Test
+  void duplicateNamesFailTheBoot() {
+    assertThatThrownBy(() -> McpToolCatalog.specifications(List.of(new First(), new First()), MAPPER))
+        .isInstanceOf(IllegalStateException.class).hasMessageContaining("Duplicate");
+  }
+
+  @Test
+  void theCatalogHasThe38ToolsOfSection20Point3AndNoAdminTool() {
+    assertThat(McpToolCatalog.ORDER).hasSize(38).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
+        .endsWith("mark_notifications_read").noneMatch(n -> n.contains("admin"));
+  }
+}

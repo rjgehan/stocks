@@ -25,3 +25,26 @@ coverage/
 .idea/
 .vscode/
 *.log
+
+# ---- stocks monorepo (ARCHITECTURE §3) ----
+# Backend: Maven output, dev H2 data + dev keys, SPA copied in by `make jar`
+backend/target/
+backend/.data/
+backend/src/main/resources/static/
+# The dev profile writes .data/ (H2 files, dev-keys.txt) under the working directory, wherever the jar runs
+.data/
+*.mv.db
+*.trace.db
+# Frontend
+frontend/dist/
+frontend/node_modules/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+*.tsbuildinfo
+# Local runs of the backup service / Playwright
+backups/
+test-results/
+# Server-side deploy state (lives in /DATA/AppData/stocks, never in the repo)
+.deploy-state
+docker-compose.yml.bak

@@ -1,0 +1,14 @@
+# =====================================================================================================================
+# Profile `e2e` (always together with `test`; §23.2): Playwright against the built jar and SPA (`make e2e`, CI job
+# `e2e`). In-memory H2 from the test profile, so every run starts empty. The prod fail-fast refuses this profile.
+# =====================================================================================================================
+stocks:
+  jobs.enabled: true                        # leaderboard recompute, feed publisher (§23.2)
+  bootstrap:
+    # The Playwright login (frontend/e2e: E2E_USER / E2E_PASSWORD; `make e2e` passes these values).
+    admin-handle: ${E2E_USER:e2e_admin}
+    admin-password: ${E2E_PASSWORD:e2e-admin-password}
+  marketdata:
+    # SIM anchored at a Friday in RTH, then advancing with the wall clock (eligible_at passes, orders fill); clock
+    # jumps go through POST /api/v1/test/clock (§18.5). Inert until WS2 wires the SIM clock modes.
+    sim: { clock: offset, anchor: 2026-10-09T14:00:00Z, always-open: true }

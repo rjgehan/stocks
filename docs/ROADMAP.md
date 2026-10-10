@@ -15,16 +15,18 @@
 
 ## Phase 0: Scaffold and contracts (Day 0–2)
 
-- [ ] [WS1] Maven Wrapper 3.9.11, `pom.xml` on Boot 4.1.1 with every Phase 1 dependency pinned (§2.1), including `micrometer-registry-prometheus` and zonky `embedded-postgres` 2.2.2 with binaries 18.6.0. Upgrade the local JDK to Temurin 21.0.12+.
-- [ ] [WS6] Vite 8 React 19 TypeScript 6.0 app with every Phase 1 dependency pinned (§2.2), **the `openapi-typescript` → `$typescript` override, and the committed `package-lock.json`**; Tailwind 4 with design tokens (§22.8); `index.html` with `viewport-fit=cover`, manifest and icons (§22.3)
-- [ ] [WS1] `.gitignore` additions, `.dockerignore`, `.editorconfig`, `.env.example`, `Makefile` (`dev`, `test`, `test-pg`, `e2e`, `openapi`, `jar`, `image`)
-- [ ] [WS1] Flyway `V1__init.sql` plus vendor extras **verbatim** from §8, green on H2 **and on embedded PostgreSQL 18.6** (`make test-pg`, no Docker). The original V1 was verified on PG 18.6 on 2026-10-09 (§28 #19); this run re-verifies the v1.1 additions.
-- [ ] [WS1] `common/**`: enums, `ErrorCode` (incl. `NOT_IMPLEMENTED`, `INTERNAL_ERROR`), `PublicId` (ULID), `TimeSource`/`AdjustableTimeSource`, **`Jdbc` (no raw `Instant` on JDBC)**, `Money`/`Rounding`, events, problem details, Jackson (decimals as strings)
-- [ ] [WS1] Contract interfaces and records from §5.3 in `com.stocks.contract.*`, every DTO from §18.3 as a `…Dto` record, the job SPI (`ScheduledJob`, `PeriodicTask`), and stub beans through `StubsAutoConfiguration` (`NoopMarketDataService` as the market-data default)
-- [ ] [WS1] Security skeleton with dev login; SPA fallback; ArchUnit rules (§5.2, including the cycle and JDBC rules); test kit (`MutableTimeSource`, `ScriptedMarketData`, fixtures, `EmbeddedPgContextInitializer`); `JobScheduler` skeleton
+- [x] [WS1] Maven Wrapper 3.9.11, `pom.xml` on Boot 4.1.1 with every Phase 1 dependency pinned (§2.1), including `micrometer-registry-prometheus` and zonky `embedded-postgres` 2.2.2 with binaries 18.6.0. Upgrade the local JDK to Temurin 21.0.12+ (still open: the build is verified on the owner's local Oracle JDK 21.0.1; CI uses the latest Temurin 21).
+- [x] [WS6] Vite 8 React 19 TypeScript 6.0 app with every Phase 1 dependency pinned (§2.2), **the `openapi-typescript` → `$typescript` override, and the committed `package-lock.json`**; Tailwind 4 with design tokens (§22.8); `index.html` with `viewport-fit=cover`, manifest and icons (§22.3)
+- [x] [WS1] `.gitignore` additions, `.dockerignore`, `.editorconfig`, `.env.example`, `Makefile` (`dev`, `test`, `test-pg`, `e2e`, `openapi`, `jar`, `image`, `compose-check`)
+- [x] [WS1] Flyway `V1__init.sql` plus vendor extras **verbatim** from §8, green on H2 **and on embedded PostgreSQL 18.6** (`make test-pg`, no Docker). The original V1 was verified on PG 18.6 on 2026-10-09 (§28 #19); this run re-verifies the v1.1 additions.
+- [x] [WS1] `common/**`: enums, `ErrorCode` (incl. `NOT_IMPLEMENTED`, `INTERNAL_ERROR`), `PublicId` (ULID), `TimeSource`/`AdjustableTimeSource`, **`Jdbc` (no raw `Instant` on JDBC)**, `Money`/`Rounding`, events, problem details, Jackson (decimals as strings)
+- [x] [WS1] Contract interfaces and records from §5.3 in `com.stocks.contract.*`, every DTO from §18.3 as a `…Dto` record, the job SPI (`ScheduledJob`, `PeriodicTask`), and stub beans through `StubsAutoConfiguration` (`NoopMarketDataService` as the market-data default)
+- [x] [WS1] Security skeleton with dev login; SPA fallback; ArchUnit rules (§5.2, including the cycle and JDBC rules); test kit (`MutableTimeSource`, `ScriptedMarketData`, fixtures, `EmbeddedPgContextInitializer`); `JobScheduler` skeleton
 - [ ] [WS3] `DirectEngineExecutor` in WS3 test sources (week 1, with the engine)
-- [ ] [WS1] CI: backend on H2, backend on embedded PG, frontend, OpenAPI drift and assertions (no `type: number`), image build
-- [ ] [WS5] **Spike:** Spring AI 2.0.1 STATELESS MCP `whoami` through the overridden transport's `contextExtractor`, with Boot's `JsonMapper` as `mcpServerJsonMapper` (§20.1, §28 #13 and #20)
+- [x] [WS1] CI (`ci.yml`, GitHub-hosted): backend on H2, backend on embedded PG, frontend, OpenAPI drift and assertions (no `type: number`, response properties required), e2e (once specs exist), compose/CasaOS checks + shellcheck + actionlint, multi-arch image build without push (§26). `OpenApiExportTest` drives `make openapi` (§26 step 4). Every job's commands pass locally (the image job needs Docker); the first GitHub run is still pending.
+- [x] [WS1] Release (`release.yml`, §24.7): CI → multi-arch image (`linux/amd64`, `linux/arm64`) pushed to GHCR (`latest`, `sha-<7>`, semver) with SBOM and provenance → deploy job on the owner's self-hosted CasaOS runner (`[self-hosted, casaos]`, gated by `DEPLOY_ENABLED`), health-gated with automatic rollback; manual deploy/rollback of any tag through `workflow_dispatch`
+- [x] [WS1] Self-hosting kit: production `Dockerfile`, CasaOS-importable `docker-compose.yml` (`x-casaos` metadata, `/DATA/AppData/stocks` bind mounts), `deploy/scripts/{init-host,deploy,restore}.sh`, `deploy/backup/pg_backup.sh`, `deploy/cloudflared/config.example.yml`, `docs/deploy.md`, `docs/runbook.md`
+- [x] [WS5] **Spike:** Spring AI 2.0.1 STATELESS MCP `whoami` through the overridden transport's `contextExtractor`, with Boot's `JsonMapper` as `mcpServerJsonMapper` (§20.1, §28 #13 and #20)
 - [ ] [all] Every workstream reviews and signs off the contracts PR
 
 ---
@@ -47,7 +49,7 @@
 - [ ] `SingleInstanceGuard` (PG advisory lock or H2 lease with dead-PID takeover; throws instead of exiting; disabled in tests), `JobScheduler` (job SPI, registry), `JobRunGuard`, `CatchUpRunner` (catch-up policies), `StartupGate`
 - [ ] `TestClockController` (`@Profile("test")`, prod fail-fast) for e2e
 - [ ] Security headers, cache headers, SPA fallback, forwarded headers (§24.3)
-- [ ] Production `Dockerfile`, `.dockerignore`, `docker-compose.yml` (app, db, backup, `agent-runner` under profile `agents`), `pg_backup.sh`, `docs/deploy.md` (Cloudflare ingress: Bot Fight Mode off or Pro skip rule, AI Crawl Control allows Agents, Access + MFA on admin paths), `docs/runbook.md` (incl. "delete `backend/.data/` after the V1 squash")
+- [ ] First real deploy to the owner's CasaOS server through `release.yml` (docs/deploy.md: GHCR access, runner as a systemd service, `/DATA/AppData/stocks/.env`, `DEPLOY_ENABLED`), the Cloudflare Tunnel route to `stocks-app:8080` with WebSockets, a deliberate failed deploy that rolls back, and the runbook kept current as Phase 1 features land (engine halt, invariants, provider 406, restore; "delete `backend/.data/` after the V1 squash")
 - [ ] OpenAPI rules (§18): BigDecimal as decimal strings, required + nullable record components, wire-value enums, `Dto` suffix stripped
 - [ ] `AdminSecurityIT`: every admin route rejects anonymous callers, bot keys, the admin's own key and non-admin sessions
 
@@ -133,7 +135,7 @@
 - [ ] **M1 Trade on SIM (week 2):** MARKET (shares and notional) and LIMIT orders end to end, ledger and positions, account page, ticket with preview, live order events. **Friends can trade on SIM.**
 - [ ] **M2 Live and bots (week 3):** all 5 order types, fees, T+1, GFV; Alpaca live data; charts; MCP tools with API keys; agent runner trading both bots on SIM; admin players, keys and transfers
 - [ ] **M3 League (week 4):** EOD snapshots, TWR and P&L leaderboard, profiles, feed, corporate actions, Finnhub, Markets, Settings
-- [ ] **M4 Ship (week 5):** hardening, e2e green on three viewports, no Day-0 stubs left, deployed behind the owner's Cloudflare Tunnel with the §24.5 settings verified from a cloud VM, agent runner live
+- [ ] **M4 Ship (week 5):** hardening, e2e green on three viewports, no Day-0 stubs left, deployed to the owner's CasaOS server by `release.yml` (self-hosted runner, health-gated rollback) behind the owner's Cloudflare Tunnel with the §24.5 settings verified from a cloud VM, agent runner live (`DEPLOY_PROFILES=agents`)
 
 ### Phase 1 exit criteria
 
@@ -142,7 +144,7 @@
 - [ ] An admin **deposit to ALL** shows up in each player's activity with its memo and **does not change anyone's TWR**, including an account below $1. The leaderboard ranks by TWR and by net-contribution P&L, and a reset does not erase a period's loss.
 - [ ] Invariants I1–I9 are green every night. No retroactive fills after a restart.
 - [ ] A bot can never reach an admin endpoint (`AdminSecurityIT` green).
-- [ ] Backups run nightly and a restore has been rehearsed once.
+- [ ] Backups run nightly (and before every deploy), are copied off the server, and a restore (`deploy/scripts/restore.sh`) has been rehearsed once.
 
 ---
 
@@ -229,4 +231,5 @@
 - [ ] Separate Alpaca accounts for dev and prod (avoid 406)
 - [ ] Cloudflare: WebSockets on; cache bypass rules (incl. `/swagger-ui/*`); Bot Fight Mode **off** for the zone (Free plan cannot skip it per path) or Pro Super Bot Fight Mode with a skip rule; AI Crawl Control allows the Agent category; no WAF challenges on `/api`, `/mcp`, `/.well-known` or `/oauth2`; Cloudflare Access with MFA on `/admin*` and `/api/v1/admin/*` only
 - [ ] From a cloud VM: `/mcp` returns 401 JSON (not a challenge page); one live Claude API MCP-connector call and one OpenAI Responses MCP call run `whoami`
+- [ ] CasaOS deploy path (docs/deploy.md): GHCR package pullable by the deploy job (or public / server logged in with a `read:packages` PAT); runner `casaos` online as a systemd service under an unprivileged `docker`-group user; fork PR workflows disabled and `main` protected; `DEPLOY_ENABLED=true`; one push-to-main deploy, one forced-failure rollback and one `workflow_dispatch` rollback to an older `sha-…` tag observed; cloudflared reaches `http://stocks-app:8080` (or `localhost:8080`) and `/ws` upgrades through the tunnel
 - [ ] claude.ai "Request headers" connector setting available on the owner's account (optional Phase 1 route)

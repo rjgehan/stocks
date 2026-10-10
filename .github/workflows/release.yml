@@ -1,0 +1,226 @@
+# Release and deploy (ARCHITECTURE §24.7, docs/deploy.md).
+#
+#   push to main       → CI (ci.yml) → multi-arch image to GHCR (latest + sha-<7>) → deploy to the CasaOS server
+#   push of a v* tag   → CI → image (X.Y.Z, X.Y, sha-<7>); no deploy (dispatch one if you want it)
+#   workflow_dispatch  → tag empty: CI → image (sha-<7>) → deploy; tag set: deploy/roll back to that existing tag
+#
+# The deploy job runs on the owner's self-hosted runner [self-hosted, casaos] and only when the repository
+# variable DEPLOY_ENABLED is 'true'. It never runs for pull requests (this workflow has no pull_request trigger).
+# Repository variables: DEPLOY_ENABLED, DEPLOY_DIR (default /DATA/AppData/stocks), DEPLOY_SYNC_COMPOSE (true),
+# DEPLOY_PROFILES (e.g. agents), DEPLOY_HEALTH_TIMEOUT (420), DEPLOY_PUBLIC_URL (optional smoke test).
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing image tag to deploy or roll back to (sha-1a2b3c4, 1.2.3). Empty = test, build and deploy this ref.
+        type: string
+        default: ''
+      deploy:
+        description: Deploy to the CasaOS server (also needs the repository variable DEPLOY_ENABLED=true)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  meta:
+    name: Resolve image and tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.vars.outputs.image }}
+      short_sha: ${{ steps.vars.outputs.short_sha }}
+      build: ${{ steps.vars.outputs.build }}
+      deploy_tag: ${{ steps.vars.outputs.deploy_tag }}
+    steps:
+      - id: vars
+        env:
+          OWNER: ${{ github.repository_owner }}
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          owner="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          short_sha="${GITHUB_SHA::7}"
+          if [ "$EVENT" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
+            if ! [[ "$INPUT_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$ ]] || [ "$INPUT_TAG" = "rollback" ]; then
+              echo "::error::invalid image tag '$INPUT_TAG'"
+              exit 1
+            fi
+            build=false
+            deploy_tag="$INPUT_TAG"
+          else
+            build=true
+            deploy_tag="sha-${short_sha}"
+          fi
+          {
+            echo "image=ghcr.io/${owner}/stocks"
+            echo "short_sha=${short_sha}"
+            echo "build=${build}"
+            echo "deploy_tag=${deploy_tag}"
+          } >> "$GITHUB_OUTPUT"
+          echo "image ghcr.io/${owner}/stocks, build=${build}, deploy tag ${deploy_tag}"
+
+  ci:
+    name: CI
+    needs: meta
+    if: needs.meta.outputs.build == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      skip-image: true
+    permissions:
+      contents: read
+
+  image:
+    name: Build and push image
+    needs: [meta, ci]
+    if: needs.meta.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: docker-meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ needs.meta.outputs.image }}
+          tags: |
+            type=raw,value=sha-${{ needs.meta.outputs.short_sha }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=stocks
+            org.opencontainers.image.description=stocks paper-trading league (Spring Boot API + React SPA)
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.docker-meta.outputs.tags }}
+          labels: ${{ steps.docker-meta.outputs.labels }}
+          annotations: ${{ steps.docker-meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=stocks
+          cache-to: type=gha,scope=stocks,mode=max
+      - name: Agent runner present?
+        id: agent
+        run: |
+          if [ -f tools/agent-runner/Dockerfile ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - id: agent-meta
+        if: steps.agent.outputs.present == 'true'
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ needs.meta.outputs.image }}-agent-runner
+          tags: |
+            type=raw,value=sha-${{ needs.meta.outputs.short_sha }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=stocks-agent-runner
+            org.opencontainers.image.description=stocks agent runner (Claude and ChatGPT league bots)
+      - name: Build and push agent-runner image
+        if: steps.agent.outputs.present == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: tools/agent-runner
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.agent-meta.outputs.tags }}
+          labels: ${{ steps.agent-meta.outputs.labels }}
+          annotations: ${{ steps.agent-meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=agent-runner
+          cache-to: type=gha,scope=agent-runner,mode=max
+      - name: Summary
+        env:
+          TAGS: ${{ steps.docker-meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### Image pushed"
+            echo ""
+            echo "Digest: \`${DIGEST}\`"
+            echo ""
+            while IFS= read -r t; do if [ -n "$t" ]; then echo "- \`$t\`"; fi; done <<< "$TAGS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy to CasaOS
+    needs: [meta, image]
+    if: >-
+      !cancelled() && vars.DEPLOY_ENABLED == 'true' &&
+      (needs.image.result == 'success' || (needs.image.result == 'skipped' && needs.meta.outputs.build == 'false')) &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_dispatch' && inputs.deploy))
+    runs-on: [self-hosted, casaos]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    concurrency:
+      group: deploy-casaos
+      cancel-in-progress: false
+    env:
+      STOCKS_IMAGE: ${{ needs.meta.outputs.image }}
+      DEPLOY_TAG: ${{ needs.meta.outputs.deploy_tag }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/DATA/AppData/stocks' }}
+      DEPLOY_SYNC_COMPOSE: ${{ vars.DEPLOY_SYNC_COMPOSE || 'true' }}
+      DEPLOY_HEALTH_TIMEOUT: ${{ vars.DEPLOY_HEALTH_TIMEOUT || '420' }}
+      COMPOSE_PROFILES: ${{ vars.DEPLOY_PROFILES }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: deploy
+      - name: Use a job-scoped Docker config
+        # Keeps the short-lived GITHUB_TOKEN login out of the runner user's ~/.docker/config.json.
+        run: |
+          mkdir -p "$RUNNER_TEMP/docker-config"
+          if [ -d "$HOME/.docker/cli-plugins" ]; then
+            ln -sfn "$HOME/.docker/cli-plugins" "$RUNNER_TEMP/docker-config/cli-plugins"
+          fi
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/docker-config" >> "$GITHUB_ENV"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Deploy ${{ needs.meta.outputs.deploy_tag }}
+        run: bash deploy/scripts/deploy.sh --tag "$DEPLOY_TAG" --sync-from "$GITHUB_WORKSPACE"
+      - name: Public URL smoke test
+        if: success() && vars.DEPLOY_PUBLIC_URL != ''
+        continue-on-error: true
+        env:
+          PUBLIC_URL: ${{ vars.DEPLOY_PUBLIC_URL }}
+        run: |
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "${PUBLIC_URL%/}/" || true)"
+          if [ "$code" = "200" ]; then
+            echo "${PUBLIC_URL} answers 200"
+          else
+            echo "::warning::${PUBLIC_URL} answered '${code}' (the app is healthy locally; check the Cloudflare Tunnel)"
+            exit 1
+          fi

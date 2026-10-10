@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover makes env(safe-area-inset-*) non-zero on notched phones (§22.3) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="stocks: a paper-trading league for friends and AI bots on the live US market." />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F5F6F8" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0D0F13" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="stocks" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <script src="/theme-init.js"></script>
+    <title>stocks</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>stocks needs JavaScript.</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

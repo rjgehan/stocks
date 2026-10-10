@@ -1,0 +1,4 @@
+# WS1 test kit (§26): under -Ppg-it every Spring test context gets its own database on the JVM's embedded
+# PostgreSQL 18.6 (classes annotated @H2Only or named *H2IT stay on H2).
+org.springframework.test.context.ContextCustomizerFactory=\
+com.stocks.testkit.EmbeddedPgContextCustomizerFactory

@@ -1,0 +1,35 @@
+# Build context for the root Dockerfile (ARCHITECTURE §3, §24.1). The Dockerfile only copies frontend/ and
+# backend/, so everything else here just keeps the context small and secret-free.
+
+# Host-built artifacts. Without these lines `COPY frontend/ ./` on a Mac would copy darwin-arm64 node_modules
+# (rolldown and oxlint native bindings) over the Linux `npm ci` output.
+**/node_modules
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+frontend/blob-report
+frontend/coverage
+**/*.tsbuildinfo
+backend/target
+backend/.data
+backend/src/main/resources/static
+backups/
+test-results/
+
+# Secrets and local env files (frontend/.env.mock holds no secrets and may stay).
+.env
+.env.*
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Not needed to build the image.
+.git
+.github
+.idea
+.vscode
+**/.DS_Store
+**/*.log
+deploy/
+docs/
+tools/

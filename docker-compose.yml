@@ -1,0 +1,309 @@
+# stocks: PRODUCTION stack (ARCHITECTURE §24.2; how to run it: docs/deploy.md).
+#
+# One file, two consumers:
+#   A. plain Docker Compose: `docker compose -p stocks up -d` in a directory that also holds `.env`
+#      (copied from .env.example). This is what the GitHub Actions deploy job runs on the CasaOS host.
+#   B. CasaOS "App Store → Custom Install → Import". CasaOS reads the `x-casaos` blocks; Docker Compose ignores
+#      every `x-` key.
+#
+# Rules that keep this file importable by CasaOS (checked in CI by .github/scripts/check-compose.sh):
+#   - images only (ghcr.io/<owner>/stocks, built by .github/workflows/release.yml); never `build:`;
+#   - no `env_file:` and no relative host paths: host data lives under /DATA/AppData/stocks/;
+#   - no literal dollar signs except variable references: CasaOS re-serializes the file and interpolates it again;
+#   - every variable referenced here is also set in .env.example: CasaOS Import drops `:-default` fallbacks, so
+#     the `.env` next to the compose file must define every value;
+#   - optional services sit behind profiles (`agents`); CasaOS Import leaves them out.
+#
+# Host layout (deploy/scripts/init-host.sh creates it; each deploy refreshes docker-compose.yml and the script):
+#   /DATA/AppData/stocks/{.env, docker-compose.yml, pgdata/, backups/, scripts/pg_backup.sh, agent-data/}
+
+name: stocks
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:18.6-alpine
+    container_name: stocks-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stocks
+      POSTGRES_USER: stocks
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes:
+      - type: bind
+        source: /DATA/AppData/stocks/pgdata
+        target: /var/lib/postgresql # PG 18 image layout (PGDATA=/var/lib/postgresql/18/docker)
+        bind:
+          create_host_path: true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stocks -d stocks"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    stop_grace_period: 60s
+    networks: [backend]
+    logging: *logging
+    x-casaos:
+      envs:
+        - container: POSTGRES_PASSWORD
+          description:
+            en_us: Database password. Must equal DB_PASSWORD of the app and PGPASSWORD of the backup service.
+            en_US: Database password. Must equal DB_PASSWORD of the app and PGPASSWORD of the backup service.
+      volumes:
+        - container: /var/lib/postgresql
+          description:
+            en_us: PostgreSQL 18 data directory.
+            en_US: PostgreSQL 18 data directory.
+
+  app:
+    image: ${STOCKS_IMAGE:?set STOCKS_IMAGE in .env, e.g. ghcr.io/OWNER/stocks}:${STOCKS_TAG:-latest}
+    container_name: stocks-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      TZ: UTC
+      DB_URL: jdbc:postgresql://db:5432/stocks
+      DB_USER: stocks
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?set APP_PUBLIC_URL in .env, e.g. https://stocks.example.com}
+      API_KEY_PEPPER: ${API_KEY_PEPPER:?set API_KEY_PEPPER in .env}
+      ENGINE_SEED: ${ENGINE_SEED:?set ENGINE_SEED in .env}
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      STARTING_CASH_DEFAULT: ${STARTING_CASH_DEFAULT:-500.00}
+      MARKETDATA_PROFILE: ${MARKETDATA_PROFILE:-hybrid}
+      ALPACA_KEY_ID: ${ALPACA_KEY_ID:-}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
+      ALPACA_FEED: ${ALPACA_FEED:-iex}
+      FINNHUB_TOKEN: ${FINNHUB_TOKEN:-}
+      # Never pass this empty (an empty value would trust no proxy). Same networks as the §24.3 default.
+      TRUSTED_PROXIES: '${TRUSTED_PROXIES:-127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|0:0:0:0:0:0:0:1|::1}'
+      JDK_JAVA_OPTIONS: ${JDK_JAVA_OPTIONS:-}
+    ports:
+      # Only the tunnel needs this. 127.0.0.1 = reachable from the host only (host-network cloudflared);
+      # cloudflared on the stocks-edge network uses http://stocks-app:8080 and needs no published port at all.
+      # Actuator (8081) is never published.
+      - target: 8080
+        published: "${STOCKS_PORT:-8080}"
+        host_ip: ${STOCKS_BIND_IP:-127.0.0.1}
+        protocol: tcp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/actuator/health/readiness"]
+      interval: 15s
+      timeout: 3s
+      start_period: 90s
+      retries: 5
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2g # the JVM heap is 75% of this (JAVA_TOOL_OPTIONS in the image)
+    networks: [backend, edge]
+    logging: *logging
+    x-casaos:
+      envs:
+        - container: APP_PUBLIC_URL
+          description:
+            en_us: Public https URL behind your Cloudflare Tunnel, e.g. https://stocks.example.com
+            en_US: Public https URL behind your Cloudflare Tunnel, e.g. https://stocks.example.com
+        - container: DB_PASSWORD
+          description:
+            en_us: Database password (same value as POSTGRES_PASSWORD of the db service).
+            en_US: Database password (same value as POSTGRES_PASSWORD of the db service).
+        - container: API_KEY_PEPPER
+          description:
+            en_us: "Secret, at least 32 random bytes in base64 (openssl rand -base64 48). Never change it: all API keys depend on it."
+            en_US: "Secret, at least 32 random bytes in base64 (openssl rand -base64 48). Never change it: all API keys depend on it."
+        - container: ENGINE_SEED
+          description:
+            en_us: Secret seed for the simulated order latency (openssl rand -hex 32).
+            en_US: Secret seed for the simulated order latency (openssl rand -hex 32).
+        - container: ADMIN_BOOTSTRAP_USERNAME
+          description:
+            en_us: First boot only. Creates the human admin if none exists; clear it afterwards.
+            en_US: First boot only. Creates the human admin if none exists; clear it afterwards.
+        - container: ADMIN_BOOTSTRAP_PASSWORD
+          description:
+            en_us: First boot only (10+ characters). Clear it after the admin exists.
+            en_US: First boot only (10+ characters). Clear it after the admin exists.
+        - container: STARTING_CASH_DEFAULT
+          description:
+            en_us: Starting cash per player (seeds the league setting once; the admin UI wins afterwards).
+            en_US: Starting cash per player (seeds the league setting once; the admin UI wins afterwards).
+        - container: MARKETDATA_PROFILE
+          description:
+            en_us: hybrid (Alpaca Basic + Finnhub, free) or alpaca-sip (paid SIP plan).
+            en_US: hybrid (Alpaca Basic + Finnhub, free) or alpaca-sip (paid SIP plan).
+        - container: ALPACA_KEY_ID
+          description:
+            en_us: Alpaca PAPER account key id (use a different Alpaca account than dev).
+            en_US: Alpaca PAPER account key id (use a different Alpaca account than dev).
+        - container: ALPACA_SECRET_KEY
+          description:
+            en_us: Alpaca PAPER account secret key.
+            en_US: Alpaca PAPER account secret key.
+        - container: ALPACA_FEED
+          description:
+            en_us: iex (free) or sip (after the paid upgrade).
+            en_US: iex (free) or sip (after the paid upgrade).
+        - container: FINNHUB_TOKEN
+          description:
+            en_us: Finnhub free API key (recommended).
+            en_US: Finnhub free API key (recommended).
+        - container: TRUSTED_PROXIES
+          description:
+            en_us: Regex of proxy IPs whose forwarded headers are trusted (Tomcat internal-proxies). Keep the default unless cloudflared runs elsewhere.
+            en_US: Regex of proxy IPs whose forwarded headers are trusted (Tomcat internal-proxies). Keep the default unless cloudflared runs elsewhere.
+        - container: JDK_JAVA_OPTIONS
+          description:
+            en_us: Extra JVM flags, applied after the image defaults. Usually empty.
+            en_US: Extra JVM flags, applied after the image defaults. Usually empty.
+      ports:
+        - container: "8080"
+          description:
+            en_us: HTTP and WebSocket. Point the Cloudflare Tunnel here.
+            en_US: HTTP and WebSocket. Point the Cloudflare Tunnel here.
+
+  backup:
+    image: postgres:18.6-alpine
+    container_name: stocks-backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/opt/stocks/pg_backup.sh", "--daemon"]
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: stocks
+      PGDATABASE: stocks
+      PGPASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_TIME_UTC: ${BACKUP_TIME_UTC:-05:00}
+    volumes:
+      - type: bind
+        source: /DATA/AppData/stocks/backups
+        target: /backups
+        bind:
+          create_host_path: true
+      - type: bind # deploy/backup/pg_backup.sh, copied here by the deploy job or init-host.sh
+        source: /DATA/AppData/stocks/scripts
+        target: /opt/stocks
+        read_only: true
+    healthcheck: # unhealthy when no backup succeeded in the last 25 hours
+      test: ["CMD-SHELL", "find /backups/.last-success -mmin -1500 | grep -q ."]
+      interval: 5m
+      timeout: 10s
+      start_period: 15m
+      retries: 1
+    networks: [backend]
+    logging: *logging
+    x-casaos:
+      envs:
+        - container: PGPASSWORD
+          description:
+            en_us: Database password (same value as DB_PASSWORD).
+            en_US: Database password (same value as DB_PASSWORD).
+        - container: KEEP_DAYS
+          description:
+            en_us: Delete dumps older than this many days.
+            en_US: Delete dumps older than this many days.
+        - container: BACKUP_TIME_UTC
+          description:
+            en_us: Daily backup time, HH:MM in UTC.
+            en_US: Daily backup time, HH:MM in UTC.
+      volumes:
+        - container: /backups
+          description:
+            en_us: Nightly and pre-deploy pg_dump files (stocks-YYYY-MM-DD.dump).
+            en_US: Nightly and pre-deploy pg_dump files (stocks-YYYY-MM-DD.dump).
+        - container: /opt/stocks
+          description:
+            en_us: Holds pg_backup.sh from the repository (deploy/backup/).
+            en_US: Holds pg_backup.sh from the repository (deploy/backup/).
+
+  agent-runner: # Phase 1 bots (§20.5). Start with: docker compose -p stocks --profile agents up -d
+    profiles: [agents]
+    image: ${STOCKS_IMAGE:?set STOCKS_IMAGE in .env, e.g. ghcr.io/OWNER/stocks}-agent-runner:${STOCKS_TAG:-latest}
+    container_name: stocks-agent-runner
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      STOCKS_MCP_URL: http://app:8080/mcp
+      TZ: America/New_York
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      STOCKS_CLAUDE_KEY: ${STOCKS_CLAUDE_KEY:-}
+      STOCKS_CHATGPT_KEY: ${STOCKS_CHATGPT_KEY:-}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      AGENT_SCHEDULE_ET: ${AGENT_SCHEDULE_ET:-09:45,12:30,15:30}
+      AGENT_DAILY_USD_CAP: ${AGENT_DAILY_USD_CAP:-1.00}
+      AGENT_MAX_TOOL_CALLS: ${AGENT_MAX_TOOL_CALLS:-40}
+      AGENT_MAX_RUN_SECONDS: ${AGENT_MAX_RUN_SECONDS:-300}
+      # TODO(WS5): map the AGENT_PRICE_* keys here once tools/agent-runner defines them (and add them to .env.example).
+    volumes:
+      - type: bind
+        source: /DATA/AppData/stocks/agent-data
+        target: /data
+        bind:
+          create_host_path: true
+    networks: [edge] # reaches app:8080 and the LLM APIs; never the database
+    logging: *logging
+
+networks:
+  backend:
+    name: stocks-backend
+    internal: true # the database has no internet access
+  edge:
+    name: stocks-edge # app egress (Alpaca, Finnhub); a cloudflared container may join it and use http://stocks-app:8080
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: app
+  author: stocks
+  developer: stocks
+  category: Finance
+  icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjExMiIgZmlsbD0iIzE1MTgxRSIvPgogIDxwb2x5Z29uIHBvaW50cz0iMTEyLDM0MCAyMDAsMjY4IDI2MiwzMDYgNDAwLDE3MCA0MDAsMzkyIDExMiwzOTIiIGZpbGw9IiMyMkM5OEEiIGZpbGwtb3BhY2l0eT0iMC4xNiIvPgogIDxwb2x5bGluZSBwb2ludHM9IjExMiwzNDAgMjAwLDI2OCAyNjIsMzA2IDQwMCwxNzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzIyQzk4QSIgc3Ryb2tlLXdpZHRoPSI0MCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPGNpcmNsZSBjeD0iNDAwIiBjeT0iMTcwIiByPSIzNCIgZmlsbD0iIzIyQzk4QSIvPgo8L3N2Zz4K
+  thumbnail: ""
+  screenshot_link: []
+  index: /
+  port_map: "8080"
+  scheme: http
+  title:
+    en_us: Stocks
+    en_US: Stocks
+  tagline:
+    en_us: Paper-trading league for friends and AI bots
+    en_US: Paper-trading league for friends and AI bots
+  description:
+    en_us: >-
+      Friends and Claude/ChatGPT bots trade fake money against the live US market (Webull-style UI, 500 USD starting
+      cash, deposit-aware leaderboard). Spring Boot + React in one container, PostgreSQL 18, nightly backups.
+      Reach it through your Cloudflare Tunnel hostname (APP_PUBLIC_URL), not the LAN port.
+    en_US: >-
+      Friends and Claude/ChatGPT bots trade fake money against the live US market (Webull-style UI, 500 USD starting
+      cash, deposit-aware leaderboard). Spring Boot + React in one container, PostgreSQL 18, nightly backups.
+      Reach it through your Cloudflare Tunnel hostname (APP_PUBLIC_URL), not the LAN port.
+  tips:
+    before_install:
+      en_us: >-
+        Before importing, run deploy/scripts/init-host.sh with --casaos-link on the server. It creates
+        /DATA/AppData/stocks (with .env and scripts/pg_backup.sh) and links that .env into
+        /var/lib/casaos/apps/stocks/. Fill in .env first; every key must be set. Guide: docs/deploy.md.
+      en_US: >-
+        Before importing, run deploy/scripts/init-host.sh with --casaos-link on the server. It creates
+        /DATA/AppData/stocks (with .env and scripts/pg_backup.sh) and links that .env into
+        /var/lib/casaos/apps/stocks/. Fill in .env first; every key must be set. Guide: docs/deploy.md.

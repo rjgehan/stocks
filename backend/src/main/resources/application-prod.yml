@@ -1,0 +1,37 @@
+# =====================================================================================================================
+# Profile `prod` (§23.2, §24.3): PostgreSQL 18.6 behind the owner's Cloudflare Tunnel. Every secret and host-specific
+# value comes from the environment (.env.example, §23.3); no default here may be a usable secret. The boot-time
+# fail-fast checks of §23.2 (public URL https, pepper ≥ 32 bytes, ENGINE_SEED, market-data profile, no test profiles)
+# are WS1 code, not YAML.
+# =====================================================================================================================
+spring:
+  datasource:
+    url: ${DB_URL}                          # set by compose: jdbc:postgresql://db:5432/stocks
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  flyway.out-of-order: false
+
+server:
+  forward-headers-strategy: native                    # Tomcat RemoteIpValve
+  tomcat.remoteip:
+    remote-ip-header: cf-connecting-ip                # real client IP, only honored from internal proxies
+    protocol-header: x-forwarded-proto                # "https" from the tunnel → request.isSecure() = true
+    # Peers whose forwarded headers are trusted (TRUSTED_PROXIES). Tomcat 11 takes either a regex (below) or a
+    # comma-separated CIDR list (any value containing '/'), e.g. TRUSTED_PROXIES=172.18.0.0/16 for a cloudflared
+    # container on another Docker network. Default: loopback + private ranges 10/8, 172.16/12, 192.168/16.
+    internal-proxies: ${TRUSTED_PROXIES:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}|0:0:0:0:0:0:0:1|::1}
+  servlet.session.cookie: { name: __Host-stocks_sid, secure: true, http-only: true, same-site: lax, path: / }
+logging.structured.format.console: ecs
+
+stocks:
+  public-url: ${APP_PUBLIC_URL}
+  jobs.enabled: true
+  single-instance.enabled: true
+  bootstrap:
+    seed-demo: false
+  security:
+    api-key-pepper: ${API_KEY_PEPPER}
+  engine:
+    seed: ${ENGINE_SEED}
+  marketdata:
+    profile: ${MARKETDATA_PROFILE}          # hybrid (free tier) or alpaca-sip (paid); SIM refused unless overridden

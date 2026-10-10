@@ -1,0 +1,248 @@
+# CI (ARCHITECTURE §26). GitHub-hosted runners only: never add the self-hosted `casaos` runner here, because
+# pull requests run this file from the PR's own branch.
+#
+# Pushes to main and v* tags are tested by release.yml, which calls this workflow (workflow_call) before it
+# pushes and deploys an image; that is why `push` here ignores main and tags.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+    tags-ignore: ['**']
+  workflow_call:
+    inputs:
+      skip-image:
+        description: Skip the image build job (release.yml builds and pushes the image itself)
+        type: boolean
+        default: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Distinct from release.yml's group, so the called workflow never waits on its caller.
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  JAVA_VERSION: '21'
+  NODE_VERSION: '22'
+
+jobs:
+  backend:
+    name: Backend (H2)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: ./mvnw -B verify
+        working-directory: backend
+        run: ./mvnw -B verify
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-h2-reports
+          path: |
+            backend/target/surefire-reports/
+            backend/target/site/jacoco/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  backend-pg:
+    name: Backend (embedded PostgreSQL 18.6)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: ./mvnw -B verify -Ppg-it
+        working-directory: backend
+        run: ./mvnw -B verify -Ppg-it
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-pg-reports
+          path: backend/target/surefire-reports/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  contract:
+    name: OpenAPI contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+      - name: make openapi
+        run: make openapi
+      - name: Generated files are committed and up to date
+        run: |
+          files=(docs/openapi.json frontend/src/lib/api/schema.d.ts)
+          git --no-pager diff --exit-code --stat -- "${files[@]}" || {
+            git --no-pager diff -- "${files[@]}" | head -n 300
+            echo "::error::docs/openapi.json or schema.d.ts is stale. Run 'make openapi' and commit both files."
+            exit 1
+          }
+          if [ -n "$(git status --porcelain -- "${files[@]}")" ]; then
+            git status --short -- "${files[@]}"
+            echo "::error::docs/openapi.json or schema.d.ts is not committed. Run 'make openapi' and commit both files."
+            exit 1
+          fi
+      - name: OpenAPI assertions (no type number, response properties required)
+        run: node .github/scripts/openapi-assert.mjs docs/openapi.json
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Any Playwright specs yet?
+        id: specs
+        run: |
+          if [ -d frontend/e2e ] && find frontend/e2e -name '*.spec.ts' -not -path '*/node_modules/*' | grep -q .; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No frontend/e2e/*.spec.ts yet; skipping e2e."
+          fi
+      - uses: actions/setup-java@v6
+        if: steps.specs.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - uses: actions/setup-node@v7
+        if: steps.specs.outputs.present == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci and Playwright browsers
+        if: steps.specs.outputs.present == 'true'
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: make e2e
+        if: steps.specs.outputs.present == 'true'
+        run: make e2e
+      - name: Upload Playwright report
+        if: failure() && steps.specs.outputs.present == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+            backend/target/e2e-backend.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  compose:
+    name: Compose, scripts and workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+    steps:
+      - uses: actions/checkout@v7
+      - name: docker-compose.yml and .env.example (Compose + CasaOS rules)
+        run: bash .github/scripts/check-compose.sh docker-compose.yml .env.example
+      - name: shellcheck
+        run: |
+          command -v shellcheck > /dev/null || { sudo apt-get update -q && sudo apt-get install -y -q shellcheck; }
+          shellcheck -x deploy/scripts/*.sh .github/scripts/*.sh
+          shellcheck -s sh deploy/backup/pg_backup.sh
+      - name: actionlint
+        run: |
+          base="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "$base/$tarball"
+          curl -fsSL "$base/actionlint_${ACTIONLINT_VERSION}_checksums.txt" | grep " $tarball\$" | sha256sum -c -
+          tar -xzf "$tarball" actionlint
+          ./actionlint -color
+
+  image:
+    name: Docker image (linux/amd64 + linux/arm64, no push)
+    if: ${{ !inputs.skip-image }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4
+      - name: Build stocks image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: stocks:ci
+          cache-from: type=gha,scope=stocks
+          cache-to: type=gha,scope=stocks,mode=max
+      - name: Agent runner present?
+        id: agent
+        run: |
+          if [ -f tools/agent-runner/Dockerfile ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Build agent-runner image
+        if: steps.agent.outputs.present == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: tools/agent-runner
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: stocks-agent-runner:ci
+          cache-from: type=gha,scope=agent-runner
+          cache-to: type=gha,scope=agent-runner,mode=max

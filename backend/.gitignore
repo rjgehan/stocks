@@ -1,0 +1,6 @@
+# Backend build output and local data (§3). The root .gitignore covers the rest of the repo.
+target/
+.data/
+src/main/resources/static/
+*.log
+.jqwik-database

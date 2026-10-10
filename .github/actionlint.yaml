@@ -1,0 +1,5 @@
+# actionlint configuration (run by the CI `compose` job).
+self-hosted-runner:
+  # The owner's CasaOS server runner used by the deploy job in release.yml (docs/deploy.md).
+  labels:
+    - casaos

@@ -135,16 +135,18 @@ These pins come from the agents-stack research and were checked against Maven Ce
 | springdoc-openapi | **3.1.1** | `springdoc-openapi-starter-webmvc-ui` (OpenAPI 3.1) |
 | Bucket4j | **8.21.0** | `com.bucket4j:bucket4j_jdk17-core` |
 | mcp-security | **0.1.14** | **Phase 2 only.** Artifacts `mcp-server-security-spring-boot` and `mcp-authorization-server-spring-boot`. |
-| ArchUnit (`archunit-junit5`) | pin at scaffold | test |
-| jqwik | pin at scaffold | test (property-based) |
-| `io.zonky.test:embedded-postgres` | **2.2.2** | test. Docker-free PostgreSQL for `-Ppg-it` (§26). Import `io.zonky.test.postgres:embedded-postgres-binaries-bom` **18.6.0** so the binaries are PG 18.6 (verified on macOS arm64 on 2026-10-09; linux-amd64 for CI). |
+| ArchUnit (`archunit-junit5`) | **1.5.1** (pinned at scaffold, 2026-10-09) | test |
+| jqwik | **1.10.1** (pinned at scaffold, 2026-10-09; runs on the JUnit 6.0.3 platform) | test (property-based) |
+| JaCoCo (`jacoco-maven-plugin`) | **0.8.15** (pinned at scaffold) | build plugin; the §26 coverage gate runs in `verify` |
+| JSON-schema validator (§20.2) | `com.networknt:json-schema-validator` **3.0.0**, transitive | Already a **compile** dependency of MCP Java SDK 2.0.0 (`mcp-json-jackson3`), which uses it at runtime. **Do not declare it in `pom.xml`**: a test-scoped declaration strips it from the runtime classpath and the MCP server fails at boot. |
+| `io.zonky.test:embedded-postgres` | **2.2.2** | test. Docker-free PostgreSQL for `-Ppg-it` (§26). Import `io.zonky.test.postgres:embedded-postgres-binaries-bom` **18.6.0** so the binaries are PG 18.6 (verified on macOS arm64 on 2026-10-09; linux-amd64 for CI). `embedded-postgres` brings the linux-amd64, darwin-amd64, windows-amd64 and alpine binaries; `pom.xml` adds `darwin-arm64v8` and `linux-arm64v8`. |
 
 **Boot 4 starters** (module names changed in Boot 4):
 - `spring-boot-starter-webmvc`, `-websocket`, `-security`, `-validation`, `-actuator`, `-cache`, `-jdbc`, `-flyway`, `-restclient`
-- `spring-boot-starter-session-jdbc` **[VERIFY exact Boot 4 artifact name]**
+- `spring-boot-starter-session-jdbc` (verified: the Boot 4.1.1 artifact name, §28 #14)
 - `flyway-database-postgresql`, `org.postgresql:postgresql`, `com.h2database:h2`, `spring-boot-h2console` (dev only), `com.github.ben-manes.caffeine:caffeine`
 - `io.micrometer:micrometer-registry-prometheus` (Boot-managed), so the `prometheus` actuator endpoint in §23.1 exists
-- Test: `spring-boot-starter-webmvc-test`, `io.zonky.test:embedded-postgres` (above). Testcontainers is not used in Phase 1.
+- Test: `spring-boot-starter-webmvc-test`, `spring-boot-starter-security-test` (`@WithMockUser`, `user()` for MockMvc), `io.zonky.test:embedded-postgres` (above). Testcontainers is not used in Phase 1.
 
 **No JPA and no Lombok.** Use Java records for DTOs and value types.
 
@@ -166,7 +168,11 @@ These pins come from the agents-stack research and were checked against Maven Ce
 | openapi-fetch | **0.17.0** |
 | zustand | **5.0.15** |
 | vitest | **5.0.3** (dev) |
-| @testing-library/react, @testing-library/user-event | pin at scaffold (dev) |
+| @testing-library/react | **16.3.3** (dev; pinned at scaffold 2026-10-09) |
+| @testing-library/user-event | **14.6.7** (dev; pinned at scaffold 2026-10-09) |
+| @testing-library/dom | **10.4.2** (dev; required peer of @testing-library/react 16; pinned at scaffold) |
+| jsdom | **30.1.1** (dev; the Vitest DOM environment; pinned at scaffold) |
+| @types/node | **22.20.4** (dev; types for `vite.config.ts`, `playwright.config.ts` and `e2e/`; pinned at scaffold) |
 | @playwright/test | **1.64.0** (dev) |
 | oxlint | **1.87.0** (dev) |
 | vite-plugin-pwa | **1.3.0** (Phase 2) |
@@ -196,8 +202,9 @@ The full pin set above then resolves cleanly (verified). **Commit the `package-l
 ```
 stocks/
 ├── README.md
-├── .gitignore                       # add: backend/target/, backend/.data/, backend/src/main/resources/static/,
-│                                    #      frontend/dist/, frontend/node_modules/, backups/, test-results/
+├── .gitignore                       # add: backend/target/, backend/.data/ (and .data/, *.mv.db anywhere),
+│                                    #      backend/src/main/resources/static/, frontend/dist/,
+│                                    #      frontend/node_modules/, backups/, test-results/
 ├── .editorconfig
 ├── .dockerignore                    # **/node_modules, frontend/dist, backend/target, backend/.data, backups/,
 │                                    # test-results/, .env, .git  (stops host darwin-arm64 node_modules
@@ -218,7 +225,7 @@ stocks/
 │       ├── main/java/com/stocks/…   # §5
 │       ├── main/resources/
 │       │   ├── application.yml, application-dev.yml, application-devpg.yml,
-│       │   │   application-test.yml, application-prod.yml
+│       │   │   application-test.yml, application-e2e.yml, application-prod.yml
 │       │   ├── db/migration/common/V1__init.sql                 # §8.1 (portable)
 │       │   ├── db/migration/postgresql/V1_0_1__pg_extras.sql    # §8.2
 │       │   ├── db/migration/h2/V1_0_1__h2_extras.sql            # §8.3
@@ -304,17 +311,20 @@ com.stocks
 │   ├── time/        TimeSource, SystemTimeSource, OffsetTimeSource (SIM offset clock), MutableTimeSource,
 │   │                AdjustableTimeSource, Et (zone helpers)
 │   ├── jdbc/        Jdbc (Instant ⇄ OffsetDateTime binding and reading, §8 JDBC typing rules)
-│   ├── id/          PublicId (prefix + ULID), Ulid
-│   ├── error/       ErrorCode, ApiException, Warning, ProblemDetailsAdvice (RFC 9457)
+│   ├── id/          PublicId (prefix + ULID; a bean: publicId.next(Prefix)), Prefix (§6.1 table), Ulid
+│   ├── error/       ErrorCode, ApiException, Problem + ProblemField (the §6.5 body), Warning, WarningCode,
+│   │                ProblemDetailsAdvice (RFC 9457)
 │   ├── web/         Cursor, Page<T>, RequestIds (X-Request-Id filter, §6.6), Text (clip/strip helpers)
-│   ├── events/      OrderChanged, ExecutionCreated, AccountChanged, CashTransferPosted, SessionChanged,
-│   │                PlayerStatusChanged, ViolationIssued, CorporateActionApplied  (§5.3)
-│   └── domain/      all enums in §7
+│   ├── events/      OrderChanged, ExecutionCreated, AccountChanged, CashTransferPosted,
+│   │                PlayerStatusChanged, ViolationIssued, CorporateActionApplied  (§5.3; SessionChanged is in
+│   │                contract.calendar because it carries SessionState, rule 8)
+│   └── domain/      all enums in §7, WireEnum (the §6.3 wire-value enums implement it)
 ├── contract/                                           [owner per sub-package; CONTRACT]  §5.3 interfaces and records
-│   ├── security/    PlayerPrincipal, RequestMeta, CurrentPlayer, RateLimitService, RateLimitStatus      [WS1]
+│   ├── security/    PlayerPrincipal, RequestMeta, CurrentPlayer, RateLimitService, RateLimitStatus, Scopes [WS1]
 │   ├── identity/    SettingsService, PlayerQueries                                                       [WS1]
 │   ├── jobs/        ScheduledJob, JobOccurrence, CatchUpPolicy, PeriodicTask                            [WS1]
-│   ├── calendar/    MarketCalendar, CalendarAdmin, TradingDay, SessionState, SessionTransition            [WS2]
+│   ├── calendar/    MarketCalendar, CalendarAdmin, TradingDay, SessionState, SessionTransition,
+│   │                CalendarOverride, SessionChanged (event)                                             [WS2]
 │   ├── marketdata/  MarketDataService, MarketUpdateListener, DailyMarkService, SplitAdjustments, QuoteView,
 │   │                ExecQuote, Print, Mark, MarketDataStatus, LeaseHandle, BarRequest, BarSeries …        [WS2]
 │   │   └── model/   Quote, Trade, Bar, Snapshot, Asset, Fundamentals, NewsItem, CorporateActionData, Movers,
@@ -323,26 +333,34 @@ com.stocks
 │   │                CashTransferService, EngineControl, CorporateActionQueries, CorporateActionService …   [WS3]
 │   ├── portfolio/   ValuationService, PerformanceQueries, LeaderboardService, UnitMath, Valuation …       [WS4]
 │   ├── watchlist/   WatchlistService                                                                     [WS4]
-│   └── <producer>/dto/  every §18.3 DTO as a Java record (naming rule in §18.3)                           [producer]
+│   └── <producer>/dto/  every §18.3 DTO as a Java record (naming rule and package table in §18.3): identity.dto,
+│                        admin.dto [WS1]; calendar.dto, marketdata.dto [WS2]; trading.dto [WS3];
+│                        portfolio.dto, watchlist.dto [WS4]; realtime.dto, rules.dto [WS5]                [producer]
 ├── config/                                             [WS1]  StocksProperties (@ConfigurationProperties "stocks": only
 │                                                              public-url, security, ratelimit, bootstrap, jobs, single-instance),
-│                                                              JacksonConfig, WebConfig (SPA fallback, cache headers),
-│                                                              OpenApiConfig (§18), SingleInstanceGuard (§12.9)
-│   └── stubs/       StubsAutoConfiguration, NoopMarketDataService, Not-implemented stubs (§27.1)
+│                                                              JacksonConfig, WebConfig (enum converters, SPA fallback, cache headers),
+│                                                              CommonAutoConfiguration (default SystemTimeSource, backs off),
+│                                                              OpenApiConfig (§18), SingleInstanceGuard (§12.9),
+│                                                              ProdSafetyCheck (§23.2 prod fail-fast)
+│   └── stubs/       StubsAutoConfiguration, NoopMarketDataService, NotImplementedStub (JDK-proxy factory),
+│                    ContractStub (marker every Day-0 stub implements) (§27.1)
 ├── jobs/                                               [WS1]  JobScheduler (discovers ScheduledJob/PeriodicTask beans),
 │                                                              JobRunGuard (job_run idempotency), CatchUpRunner, StartupGate
 ├── security/                                           [WS1]  SecurityConfig, ApiKeyAuthenticationProvider, BearerTokenFilter,
 │                                                              AdminSessionOnlyFilter, RecentAuthInterceptor, ClientIp,
-│                                                              RateLimitServiceImpl, RateLimitFilter (read buckets only, §17.5)
+│                                                              RateLimitServiceImpl, RateLimitFilter (read buckets only, §17.5),
+│                                                              ApiKeys (format, HMAC), PlayerAuthenticationToken, RouteAuthorization,
+│                                                              SecurityErrors, ProblemWriter, SessionLogin, RequestMetas
 ├── identity/                                           [WS1]  PlayerService, PlayerQueriesImpl, ApiKeyService, InviteService,
 │                                                              SettingsServiceImpl (app_setting), BootstrapAdminRunner, DemoSeeder,
+│                                                              LoginService, MeService, AccountProvisioner (first account via WS3/WS4),
 │                                                              web/{AuthController, MeController, MyApiKeyController}
 ├── admin/                                              [WS1]  AdminPlayerService, web/{AdminPlayerController,
 │                                                              AdminMoneyController, AdminKeyController, AdminSettingsController,
 │                                                              AdminInviteController, AdminAuditController, AdminSystemController,
 │                                                              AdminCalendarController, AdminCorporateActionController,
 │                                                              AdminOrderController}
-├── audit/                                              [WS1]  AuditService, AuditQueries
+├── audit/                                              [WS1]  AuditService, AuditEntry, AuditCategory, AuditOutcome, AuditQueries
 ├── devtools/                                           [WS1]  TestClockController (@Profile("test") only, §18.5)
 ├── calendar/                                           [WS2]  DbMarketCalendar, AlwaysOpenCalendar (in-memory only), CalendarAdminImpl,
 │                                                              BundledCalendarLoader, CalendarSyncJob, NyseCalendarGenerator (test/tool)
@@ -388,13 +406,18 @@ com.stocks
 │                                                              QuoteFanout (a MarketUpdateListener), UserEventPublisher,
 │                                                              NotificationService (sole notification writer), web/NotificationController
 ├── rules/                                              [WS5]  RulesService, web/RulesController
-└── mcp/                                                [WS5]  McpConfig (JsonMapper, transport + contextExtractor, schema post-processor),
-                                                               McpClientNames, McpErrors, Untrusted,
-                                                               tools/{AccountIdentityTools, MarketTools, AccountTools,
-                                                                      OrderTools, LeagueTools, WatchlistTools, NotificationTools}
+└── mcp/                                                [WS5]  McpConfig (JsonMapper, transport + contextExtractor, tool list),
+                                                               McpToolCatalog (§20.3 order), McpToolHandler (Boot mapper),
+                                                               McpOutputSchemas (schema post-processor), McpClientNames,
+                                                               McpErrors, Untrusted,
+                                                               tools/{McpToolSet (marker), AccountIdentityTools + WhoamiDto,
+                                                                      MarketTools, AccountTools, OrderTools, LeagueTools,
+                                                                      WatchlistTools, NotificationTools}
 ```
 
 Engine scenario tests use `DirectEngineExecutor` (WS3 test sources, `src/test/java/com/stocks/trading/engine/testkit/`), which runs commands on the calling thread.
+
+Dependency direction inside WS1 (rule 7): `identity → security → config`, `identity → audit`, `devtools → jobs → config`; `security` never depends on `identity` (the key provider reads `api_key ⨝ player` by SQL, and `identity.ApiKeyService` uses `security.ApiKeys` to issue keys), and `config` depends only on `common` and `contract`.
 
 ### 5.2 Architecture rules (ArchUnit, run in `./mvnw verify`)
 
@@ -402,11 +425,13 @@ Engine scenario tests use `DirectEngineExecutor` (WS3 test sources, `src/test/ja
 2. `..web..`, `com.stocks.mcp..`, `com.stocks.realtime..` and `com.stocks.admin..` must not depend on `..engine..` (other than `EngineCommand` records submitted through services) or on any `*Writer`. They use the `com.stocks.contract..` interfaces.
 3. `com.stocks.mcp..` must not depend on `com.stocks.admin..`.
 4. No field, parameter or return type of `double`, `float`, `Double` or `Float` in `com.stocks.trading..`, `com.stocks.portfolio..`, `com.stocks.league..`, `com.stocks.contract..` or `com.stocks.common.money..`.
-5. Outside `com.stocks.common.time`, these calls are forbidden: `Instant.now()`, `LocalDate.now()`, `LocalDateTime.now()`, `ZonedDateTime.now()`, `System.currentTimeMillis()`, `ZoneId.systemDefault()`, `new java.util.Date()`.
+5. Outside `com.stocks.common.time`, these calls are forbidden: `Instant.now()`, `LocalDate.now()`, `LocalDateTime.now()`, `ZonedDateTime.now()`, `System.currentTimeMillis()`, `ZoneId.systemDefault()`, `new java.util.Date()`; also `OffsetDateTime.now()`, `LocalTime.now()`, the `now(ZoneId)` overloads and `Clock.systemUTC()`/`systemDefaultZone()`, which read the same system clock. (`System.nanoTime()` stays allowed: it measures durations, e.g. `PeriodicTask` intervals.)
 6. `new BigDecimal(double)` and `BigDecimal.valueOf(double)` are forbidden everywhere.
 7. `slices().matching("com.stocks.(*)..").should().beFreeOfCycles()`. This passes because every cross-feature call goes through `com.stocks.contract..` (rule 8), and market-data fan-out goes through `List<MarketUpdateListener>` (the engine and `QuoteFanout` both implement it), so `marketdata` never depends on `realtime` or `trading`.
-8. `com.stocks.common..` depends on no other `com.stocks` package. `com.stocks.contract..` depends only on `com.stocks.common..` (plus Spring Security and MCP SDK types for `CurrentPlayer`).
-9. `java.sql.ResultSet.getObject(…, Class)`, `ResultSet.getTimestamp(…)` and `java.sql.Timestamp` may be used only in `com.stocks.common.jdbc..` (§8 JDBC typing rules).
+8. `com.stocks.common..` depends on no other `com.stocks` package. `com.stocks.contract..` depends only on `com.stocks.common..` and other `com.stocks.contract..` packages (plus the JDK; annotation and API types: Jackson annotations, Jakarta Validation constraints, swagger `@Schema`; Spring Security core and the MCP SDK's `McpTransportContext` for `CurrentPlayer`). Enforced for the contract packages by `ContractArchitectureTest`.
+9. `java.sql.ResultSet.getObject(…, Class)`, `ResultSet.getTimestamp(…)` and `java.sql.Timestamp` may be used only in `com.stocks.common.jdbc..` (§8 JDBC typing rules). Binding a raw `Instant` cannot be seen statically (`JdbcClient.param(Object)`); review and the `-Ppg-it` suite catch it.
+
+The rules live in `src/test/java/com/stocks/arch/` (`ArchitectureRules`, checked on `src/main` by `ArchitectureTest`; `ArchitectureRulesSelfTest` proves rules 4, 5, 6 and 9 fire on deliberate violations). Rule 2's "`*Writer`" means the engine writers (classes named `*Writer` under `com.stocks.trading..`). `ArchitectureTest` also enforces §25 (no `@Scheduled` anywhere) and §8 (`trading_day` appears in `src/main` only under `com.stocks.calendar`). Rules that name packages that do not exist yet pass vacuously.
 
 ### 5.3 Cross-workstream Java contracts (CONTRACT)
 
@@ -432,7 +457,9 @@ public final class Jdbc {
 // ===== com.stocks.contract.security [WS1] =====
 public record PlayerPrincipal(long playerId, String playerPublicId, String handle, PlayerKind kind, PlayerRole role,
                               Set<String> scopes, AuthMethod authMethod, Long apiKeyId, String oauthClientId,
-                              Instant authenticatedAt) {}
+                              Instant authenticatedAt) implements Serializable {   // Spring Session JDBC serializes it
+  public boolean hasScope(String scope);  public boolean isAdmin();  public boolean isAi();   // scopes: immutable copy
+}
 public record RequestMeta(String requestId, Channel channel, String ip, String userAgent,
                           String mcpClient, String mcpTool) {
   public RequestMeta {                                        // client-controlled strings are bounded here, once (§6.6)
@@ -440,8 +467,19 @@ public record RequestMeta(String requestId, Channel channel, String ip, String u
   }                                                           // common.web.Text.clip: strip control chars, then truncate
 }
 public final class CurrentPlayer {                           // reads SecurityContextHolder or McpTransportContext
-  public static PlayerPrincipal require();                   // throws ApiException(UNAUTHENTICATED)
+  public static final String PRINCIPAL_KEY = "stocks.principal", REQUEST_META_KEY = "stocks.requestMeta";
+  public static PlayerPrincipal require();                   // SecurityContextHolder; throws ApiException(UNAUTHENTICATED)
   public static Optional<PlayerPrincipal> current();
+  // MCP: a STATELESS tool may run off the servlet thread, so tools pass their ctx (context entry first, then SCH)
+  public static PlayerPrincipal require(McpTransportContext ctx);
+  public static Optional<PlayerPrincipal> current(McpTransportContext ctx);
+  public static Optional<RequestMeta> requestMeta(McpTransportContext ctx);
+  public static McpTransportContext mcpContext(PlayerPrincipal p, RequestMeta m);   // for McpConfig's contextExtractor
+}
+public final class Scopes {                                  // §7.1 API scopes
+  public static final String MARKET_READ = "market:read", ACCOUNT_READ = "account:read", TRADE = "trade",
+                             LEAGUE_READ = "league:read";
+  public static final Set<String> ALL /* admin-issued bot keys */, READ_ONLY /* personal-key default */;
 }
 public record RateLimitStatus(int readsRemaining, int writesRemainingMinute, int writesRemainingDay, Instant resetAt) {}
 public interface RateLimitService {
@@ -567,9 +605,12 @@ public record BarSeries(String symbol, Timeframe timeframe, AdjustmentMode adjus
                         Instant tailFrom /* first IEX-tail bar, null if all SIP */, String source) {}
 
 // ===== com.stocks.contract.trading [WS3] =====
+// The two order requests are also §18.3 wire types, so they live in com.stocks.contract.trading.dto with the others.
+// extendedHours is a Boolean (null = false): Jackson 3 rejects a request that omits a primitive record component
+// (FAIL_ON_NULL_FOR_PRIMITIVES is on by default), and bots omit optional members. extendedHoursOrDefault() unwraps it.
 public record PlaceOrderRequest(String clientOrderId, String symbol, Side side, OrderType type,
     BigDecimal qty, BigDecimal notional, BigDecimal limitPrice, BigDecimal stopPrice,
-    BigDecimal trailAmount, BigDecimal trailPercent, TimeInForce timeInForce, boolean extendedHours,
+    BigDecimal trailAmount, BigDecimal trailPercent, TimeInForce timeInForce, Boolean extendedHours,
     String rationale, Boolean shareNote, Set<String> acknowledge) {}
 public record ReplaceOrderRequest(String clientOrderId, BigDecimal qty, BigDecimal limitPrice, BigDecimal stopPrice,
     BigDecimal trailAmount, BigDecimal trailPercent, TimeInForce timeInForce, Boolean extendedHours, String rationale) {}
@@ -696,11 +737,13 @@ public record ExecutionCreated(long accountId, long playerId, String executionId
 public record AccountChanged(long accountId, long playerId, String reason, Instant at) {}
 public record CashTransferPosted(long accountId, long playerId, String transferId, String batchId, TransferType type,
                                  BigDecimal amount, String memo, Instant at) {}
-public record SessionChanged(SessionState state) {}
 public record PlayerStatusChanged(long playerId, PlayerStatus status, Instant at) {}
 public record ViolationIssued(long accountId, long playerId, String violationId, ViolationType type,
                               AccountRestriction restrictionAfter, Instant at) {}
 public record CorporateActionApplied(String actionId, String symbol, CorporateActionType type, Instant at) {}
+
+// com.stocks.contract.calendar [WS2]: it carries SessionState, and common may not depend on contract (§5.2 rule 8)
+public record SessionChanged(SessionState state) {}
 ```
 
 ---
@@ -710,7 +753,7 @@ public record CorporateActionApplied(String actionId, String symbol, CorporateAc
 ### 6.1 Identifiers
 
 - Every table has an internal `id BIGINT GENERATED BY DEFAULT AS IDENTITY`, which is never exposed outside the backend.
-- Externally visible rows have `public_id VARCHAR(32)` = `<prefix>_<ULID>`, where the ULID is 26 Crockford base32 characters. `PublicId.next(Prefix)` generates them from `TimeSource`.
+- Externally visible rows have `public_id VARCHAR(32)` = `<prefix>_<ULID>`, where the ULID is 26 Crockford base32 characters. The `PublicId` bean generates them from `TimeSource` (`publicId.next(Prefix.ORDER)`); ids from one instance are strictly increasing (monotonic ULID). `Prefix` also has `REQUEST` (`req`) for generated `X-Request-Id` values (§6.6).
 
 | Prefix | Entity | Prefix | Entity |
 |---|---|---|---|
@@ -768,6 +811,7 @@ public record CorporateActionApplied(String actionId, String symbol, CorporateAc
 
 - `TimeSource` is the only source of "now". The JVM runs with `-Duser.timezone=UTC`.
 - ET conversion happens in `calendar` and in `common.time.Et` only.
+- `TimeSource` implementations return instants truncated to **microseconds**, the precision of `TIMESTAMP WITH TIME ZONE` on both databases, and `Jdbc.ts` truncates too, so an instant read back equals the one written.
 - Instants are stored as `TIMESTAMP WITH TIME ZONE`, in UTC. **JDBC never sees a `java.time.Instant`**: bind `Jdbc.ts(instant)` (an `OffsetDateTime` at UTC) and read with `Jdbc.instant(rs, col)` (§8 JDBC typing rules). pgjdbc 42.7.13 rejects both directions for `Instant`, while H2 accepts them, so the mistake would only show in production.
 
 ### 6.5 Errors (RFC 9457 `application/problem+json`)
@@ -787,6 +831,7 @@ public record CorporateActionApplied(String actionId, String symbol, CorporateAc
 ```
 
 - `code` comes from `ErrorCode` (§7.2) and is **stable**: clients and bots switch on it.
+- Every member is always present (`hint`, `retryAfterS` null when unused; `fields` `[]`). `INTERNAL_ERROR` has `detail: null`. Spring MVC errors without a code of their own keep their HTTP status (405 with `Allow`, 406, 415) and use `VALIDATION_FAILED`; 404 uses `NOT_FOUND`.
 - A 429 response also sets the `Retry-After` header.
 - Warnings are not errors. They appear in successful responses as `warnings: [{code, message}]`.
 
@@ -860,7 +905,7 @@ enum NotificationKind { FILL, PARTIAL_FILL, ORDER_CANCELLED, ORDER_EXPIRED, DEPO
                         GFV_ISSUED, RESTRICTION_CHANGED, CORPORATE_ACTION, ACCOUNT_RESET, SYSTEM }
 ```
 
-**API scopes** are space-separated strings: `market:read`, `account:read`, `trade`, `league:read`. There is no admin scope.
+**API scopes** are space-separated strings: `market:read`, `account:read`, `trade`, `league:read` (constants in `com.stocks.contract.security.Scopes`). There is no admin scope.
 
 ### 7.2 Error codes (CONTRACT)
 
@@ -920,7 +965,7 @@ enum NotificationKind { FILL, PARTIAL_FILL, ORDER_CANCELLED, ORDER_EXPIRED, DEPO
 **Verification status.**
 - 2026-10-09, H2: §8.1 plus §8.3 applied to H2 2.4.240 (`MODE=PostgreSQL`) with a smoke data set. The CHECKs reject an AI admin, a fractional GTC order and negative cash.
 - 2026-10-09, PostgreSQL: §8.1 plus §8.2 applied cleanly to PostgreSQL 18.6 (embedded, zonky binaries 18.6.0, macOS arm64). The append-only triggers and the one-active-account index behave as intended (§28 #19 closed). The same run found the two PG-only JDBC failures that the rules above now prevent.
-- The tables and columns added in v1.1 (`account_event`, `position_adjustment`, `price_adjustment`, `source_ref`, unit scale 18, …) are re-verified by the first `-Ppg-it` run of the scaffold; every later schema change is verified the same way in CI.
+- The tables and columns added in v1.1 (`account_event`, `position_adjustment`, `price_adjustment`, `source_ref`, unit scale 18, …) were re-verified on 2026-10-09 by the scaffold (`ApplicationH2IT` on H2 2.4.240, `PostgresSchemaIT` with `-Ppg-it` on embedded PG 18.6): V1 + V1_0_1 apply, the CHECKs, the 8 append-only triggers and `ux_account_one_active` behave, and the cast-everything `MERGE` with null parameters works on both. Every later schema change is verified the same way in CI.
 
 **Migrations after V1.** Until the first production deploy, V1 is the baseline. WS1 owns `V1__init.sql` and the vendor `V1_0_1` files. Each workstream adds its own `V1_<ws>_<nn>__<desc>.sql` (for example `V1_3_01__order_index.sql`) under `db/migration/**`, reviewed by WS1, so parallel branches never collide. Dev and test set `spring.flyway.out-of-order=true` (§23.2). **Merge the files into a clean V1 just before the first production deploy.** The squash changes V1's checksum, so every existing dev H2 database fails `flyway validate` afterwards: **delete `backend/.data/` after the squash** (README and `docs/runbook.md` say so; the dev seed is idempotent, so a fresh database costs nothing). After that, use normal `V2…` numbering.
 
@@ -2158,7 +2203,7 @@ These run in REGULAR only, for WORKING orders with `triggered=false` (`wait_reas
 **Boot order** (`EngineBootstrap` plus `StartupGate`):
 1. `SingleInstanceGuard` (enabled by `stocks.single-instance.enabled`, default **true**; the `test` profile sets it **false**, and only the Recovery IT turns it back on):
    - PG: `SELECT pg_try_advisory_lock(727474)` on a dedicated connection held for the life of the app. The lock dies with the connection, so a crashed instance never blocks a restart.
-   - H2: a lease row `app_setting['engine.lease'] = <instanceId>|<host>|<pid>|<heartbeat>`, renewed every 10 s. Startup is refused if another instance renewed it within the last 30 s, **unless** the lease names this host and its PID no longer exists (`ProcessHandle.of(pid).isEmpty()`), which is a kill -9 or IDE hard stop: then the lease is taken over. Graceful shutdown deletes the lease row. (The dev URL uses `AUTO_SERVER=TRUE`, so H2's file lock alone would not stop a second process.)
+   - H2: a lease row `app_setting['engine.lease'] = <instanceId>|<host>|<pid>|<heartbeat>`, renewed every 10 s. Startup is refused if another instance renewed it within the last 30 s, **unless** the lease names this host and its PID no longer exists (`ProcessHandle.of(pid).isEmpty()`), which is a kill -9 or IDE hard stop: then the lease is taken over. Graceful shutdown deletes the lease row. (The dev URL uses `AUTO_SERVER=TRUE`, so H2's file lock alone would not stop a second process.) Lease times are **wall-clock** (`SystemTimeSource`), not the app's `TimeSource`, so a SIM offset clock never makes a live lease look stale; the lease key `engine.lease` is not a §23.4 setting (`SettingsService.all()` must skip `engine.*`). PG advisory locks are per database, so test contexts (one database each) never collide; the heartbeat re-acquires the lock if its connection dies.
    - On failure the guard **throws** `SingleInstanceException` from a `SmartInitializingSingleton`, so context startup fails. It never calls `System.exit`: in production Boot then exits non-zero, and in Surefire only that test context fails, not the JVM.
 2. Load the calendar (bundled CSV first, then try Alpaca).
 3. Assets: SIM loads immediately; Alpaca uses the DB copy and syncs if the copy is empty.
@@ -2699,27 +2744,34 @@ excessVsBenchmark(a,b) = TWR(a,b) − (B_b / B_a − 1)      (live B_b uses SPY'
 | # | Matcher | Authentication | Notes |
 |---|---|---|---|
 | 1 | `/api/v1/admin/**` | **Session cookie only**, `hasRole('ADMIN')`, CSRF | `AdminSessionOnlyFilter` returns **403 `ADMIN_REQUIRES_SESSION`** for any request carrying an `Authorization` header, even the admin's own key. `@RecentAuth(15m)` guards cash transfers, resets, freeze, key issuance, role changes and the break-glass live view; when stale it returns 403 `RECENT_AUTH_REQUIRED` and the UI prompts for `POST /api/v1/auth/reauth`. In production, Cloudflare Access with MFA additionally fronts `/admin*` and `/api/v1/admin/*` (§24.5). |
-| 2 | `/api/**`, `/mcp`, `/v3/api-docs/**`, `/api/docs`, `/swagger-ui/**` | `Authorization: Bearer stk_…` → `ApiKeyAuthenticationProvider` (stateless, no CSRF, cookies ignored). Otherwise a session cookie plus CSRF. | `/mcp` with no credentials returns **401** with `WWW-Authenticate: Bearer realm="stocks"` (Phase 2 adds `resource_metadata="…"`). Public in this chain: only `POST /api/v1/auth/login`, `POST /api/v1/auth/signup`, `GET /api/v1/auth/csrf`. springdoc serves Swagger UI by redirecting `/api/docs` to `/swagger-ui/index.html` with assets under `/swagger-ui/**`, which is why that path is in this chain and not in the public chain 4. |
+| 2 | `/api/**`, `/mcp`, `/v3/api-docs/**` (Swagger UI lives under `/api`: `/api/docs` → `/api/swagger-ui/index.html`) | `Authorization: Bearer stk_…` → `ApiKeyAuthenticationProvider` (stateless, no CSRF, cookies ignored). Otherwise a session cookie plus CSRF. | Every 401 in this chain (including `/mcp` with no credentials) carries `WWW-Authenticate: Bearer realm="stocks"` (Phase 2 adds `resource_metadata="…"`). Public in this chain: only `POST /api/v1/auth/login`, `POST /api/v1/auth/signup`, `GET /api/v1/auth/csrf`. springdoc derives the UI root from `springdoc.swagger-ui.path=/api/docs`, so the UI and its assets are under `/api/swagger-ui/**` (verified with springdoc 3.1.1), inside this chain. |
 | 3 | `/ws` | Session cookie at the handshake. CSRF uses **the same `CookieCsrfTokenRepository.withHttpOnlyFalse()`** as chain 2, and the SPA sends the raw `XSRF-TOKEN` cookie value as `X-XSRF-TOKEN` in the STOMP `CONNECT` headers. | WS5 publishes a bean named `csrfChannelInterceptor` that compares the **unmasked** token, replacing the default `XorCsrfChannelInterceptor` (which expects a masked token and would reject the raw cookie value). A WebSocket IT connects with the raw cookie token and expects success, and without it expects an ERROR frame. Allowed origins: `stocks.public-url` (plus `http://localhost:5173` in dev). |
 | 4 | everything else | none | Static SPA, `index.html` fallback. The SPA shell holds no data. `/h2-console` is dev only. |
 
-Phase 2 adds chain 0 (`/oauth2/**`, `/.well-known/**`, the Authorization Server) and a JWT branch in chain 2 (`aud = ${public-url}/mcp`).
+Phase 2 adds a chain before chain 1 (`/oauth2/**`, `/.well-known/**`, the Authorization Server) and a JWT branch in chain 2 (`aud = ${public-url}/mcp`).
+
+**Implementation notes** (`security.SecurityConfig`, Phase 0; all chains answer 401/403 with the §6.5 problem body):
+- **Chain order in code:** actuator (management port 8081, `EndpointRequest.toAnyEndpoint()`; the exposed endpoints are open there because the port is never published or tunneled, and the management server has no Spring Session, so no player could authenticate on it anyway), 1 admin, the dev-only `/h2-console/**` chain (`spring.h2.console.enabled`; no CSRF/CSP, frames same-origin), 2 api, 3 ws, 4 web.
+- **Per-route rules in chain 2** (`RouteAuthorization`), so feature controllers need no security code: `market:read` for `/market/**`, `/assets/**`, `/quotes`, `/snapshots/**`, `/bars/**`, `/news`, `/rules`; `account:read` for GET `/account/**`, `/orders/**`, `/watchlists/**`, `POST /orders/preview` and `/me/notifications/**`; `trade` for `POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close` and watchlist writes; `league:read` for `/leaderboard`, `/players/**`, `/feed`; session only for `/me/**` (except `GET /me` and notifications), `/auth/logout`, `/auth/reauth` and `POST /account/reset` (also `trade`). Everything else in the chain (`/mcp`, `/v3/api-docs`, Swagger UI, `/api/v1/test/**`, new routes) needs any authenticated player. A key without the scope gets 403 `FORBIDDEN_SCOPE`; a key on a session-only route 403 `FORBIDDEN`. A session holds all four scopes.
+- **CSRF failures of anonymous callers** on non-public routes answer 401 `UNAUTHENTICATED` (a bot that forgot its key is not told about CSRF); sessions and the public login/signup routes get 403 `CSRF_INVALID`.
+- **Authorities** (`PlayerAuthenticationToken`): `ROLE_PLAYER`; `ROLE_ADMIN` only for a HUMAN ADMIN **on a session** (an API key never has it, even the admin's own: layer 3 of §17.4 twice over); `AUTH_SESSION`/`AUTH_API_KEY`; `SCOPE_<scope>`. `getName()` is the player's public id, which Spring Session JDBC stores in `PRINCIPAL_NAME`, so a player's sessions can be found and deleted (§17.3, §10.5). Authorize admin work with the chain, never with `PlayerPrincipal.isAdmin()` (it reports the role for display, e.g. in `Me`).
+- Headers: `Cache-Control: no-store` on chains 1–3 (instead of Spring Security's default), none from chain 4 (`WebConfig` sets them). Header values that Spring Security's `StrictHttpFirewall` rejects lazily (control characters) answer 400 `VALIDATION_FAILED` (`FirewallRejectionAdvice`); `RequestMetas` drops such a `User-Agent` instead of failing.
 
 ### 17.2 API keys
 
 - **Format.** `stk_<keyId>_<secret>`. `keyId` is 12 characters of lowercase base32 (`[a-z2-7]`). `secret` is 43 characters of base64url (32 random bytes from `SecureRandom`). Parsing is by fixed position: the 4-character prefix `stk_`, then 12 characters, then `_`, then the rest. Do not split on `_`.
-- **Storage.** `secret_hmac` = hex HMAC-SHA256(`API_KEY_PEPPER`, secret), compared in constant time. The plaintext is shown **once** at creation.
-- **Cache.** Caffeine `keyId → (secret_hmac, playerId, scopes, expiresAt, revokedAt)` for 60 s. Revoking evicts the entry immediately. `last_used_at` and `last_used_ip` are written asynchronously at most once per minute.
+- **Storage.** `secret_hmac` = hex HMAC-SHA256(`API_KEY_PEPPER`, secret), compared in constant time; the HMAC key is the UTF-8 bytes of the `API_KEY_PEPPER` string (`security.ApiKeys`). The plaintext is shown **once** at creation. With no pepper configured, no key can be issued or verified (the dev profile has a non-secret default; prod fails fast, §23.2).
+- **Cache.** Caffeine `keyId → (secret_hmac, playerId, scopes, expiresAt, revokedAt)` for 60 s. Revoking evicts the entry immediately. `last_used_at` and `last_used_ip` are written asynchronously at most once per minute. (Phase 0 skeleton: one indexed `api_key ⨝ player` lookup per request, no cache and no `last_used_*` writer yet.)
 - **Scopes.** Any subset of `market:read account:read trade league:read`. A bot key issued by the admin gets all four. **There is no admin scope.**
 - **Personal keys (humans).** Created from `/settings/api-keys` with a session and **`@RecentAuth`**. They are **read-only by default** (`market:read account:read league:read`); the `trade` scope is allowed only when the admin has set `player.api_trading_allowed` (`PATCH /admin/players/{handle}`), otherwise `FORBIDDEN_SCOPE`. All of a human's personal keys are **revoked on a password change** and on an admin password reset. Public trades placed through any key are labeled "via API", and leaderboard rows flag `apiTrader` (§16.5).
 - **Player status.** Checked on every request after the key itself (outcome order in §7.2): a valid key belonging to a FROZEN or DISABLED player gets 403 `PLAYER_FROZEN` or `PLAYER_DISABLED`. The status comes from a cache that `AdminPlayerService` evicts synchronously (before it publishes `PlayerStatusChanged`), so a freeze takes effect on the very next request.
 
 ### 17.3 Humans
 
-- **Login.** JSON `POST /api/v1/auth/login {handle, password}` creates the session and rotates the session id. Passwords use `DelegatingPasswordEncoder` (bcrypt, cost 12). Minimum 10 characters, otherwise `WEAK_PASSWORD`.
-- **Lockout.** 10 consecutive failures lock the account for 15 minutes (`LOGIN_LOCKED`). Separately, login is limited to 10 attempts per minute per IP.
+- **Login.** JSON `POST /api/v1/auth/login {handle, password}` creates the session and rotates the session id. It needs the CSRF header like every unsafe request, and its response sets a fresh `XSRF-TOKEN` cookie (logout too), so the SPA's next request already has the rotated token. Passwords use `DelegatingPasswordEncoder` (bcrypt, cost 12; `stocks.security.password-hash-cost`, which the `test` profile lowers to 4). Minimum 10 characters and at most 72 UTF-8 bytes (bcrypt's limit), otherwise `WEAK_PASSWORD`. Handles are matched lower-cased. An unknown handle, an AI player and a wrong password all answer `BAD_CREDENTIALS` with the same bcrypt cost; `PLAYER_DISABLED` is reported only after a correct password; a FROZEN human may log in. Every outcome writes an `AUTH` audit row (`LOGIN`, `LOGIN_FAIL`, `LOGOUT`).
+- **Lockout.** 10 consecutive failures lock the account for 15 minutes (`LOGIN_LOCKED`, with `retryAfterS`/`Retry-After`; the 10th failure already answers `LOGIN_LOCKED`). Separately, login is limited to 10 attempts per minute per IP (Phase 1, with the rate limiter).
 - **Sessions.** Spring Session JDBC, so sessions survive restarts. Timeout 14 days.
-- **Cookie.** `__Host-stocks_sid`: Secure, HttpOnly, SameSite=Lax, Path=/. In dev it is `stocks_sid` without Secure.
+- **Cookie.** `__Host-stocks_sid`: Secure, HttpOnly, SameSite=Lax, Path=/. In dev it is `stocks_sid` without Secure. Spring Session's `CookieSerializer` is built explicitly from `server.servlet.session.cookie.*` (`SecurityConfig`), so MockMvc tests see the same cookie as the real server.
 - **CSRF.** `CookieCsrfTokenRepository.withHttpOnlyFalse()` (cookie `XSRF-TOKEN`) with header `X-XSRF-TOKEN` on unsafe methods, using `csrf.spa()`.
 - **Signup.** Invite-only: `POST /auth/signup {inviteCode, handle, displayName, password}` creates the HUMAN player, calls `AccountService.openInitialAccount` with the default starting cash, and calls `WatchlistService.seedDefault` ("My List" with 5 popular tickers).
 - **Password change.** `POST /me/password` and the admin's `POST /admin/players/{handle}/password` rotate the session id, delete the player's other sessions and revoke the player's personal API keys.
@@ -2808,16 +2860,18 @@ Secrets are never logged. Reads are not audited in Phase 1 (structured logs inst
 
 ## 18. REST API (CONTRACT)
 
-- **Base path** `/api/v1`. OpenAPI 3.1 is served at `/v3/api-docs` and Swagger UI at `/api/docs`, which redirects to `/swagger-ui/index.html` (all authenticated, chain 2). `docs/openapi.json` is committed, and CI fails if it drifts.
+- **Base path** `/api/v1`. OpenAPI 3.1 is served at `/v3/api-docs` and Swagger UI at `/api/docs`, which redirects to `/api/swagger-ui/index.html` (all authenticated, chain 2). `docs/openapi.json` is committed, and CI fails if it drifts. It documents `/api/v1/**` only (`springdoc.paths-to-match`), with `info.version = "v1"` and a same-origin server `/`, so it does not change with the build version or the generating host.
 - **Errors common to every authenticated endpoint:** 401 `UNAUTHENTICATED`, `INVALID_API_KEY`, `API_KEY_REVOKED`, `API_KEY_EXPIRED`; 403 `FORBIDDEN_SCOPE`, `PLAYER_FROZEN`, `PLAYER_DISABLED`, `CSRF_INVALID`; 429 `RATE_LIMITED`; 500 `INTERNAL_ERROR`; 503 `ENGINE_*` on write endpoints.
 - **Enum inputs** are case-insensitive. Outputs are always UPPER_SNAKE, except the wire-value enums of §6.3 (`HistoryRange`, `ChartRange`, `Timeframe`).
 
 **OpenAPI generation rules** (`OpenApiConfig`, WS1). springdoc 3.1.1 introspects models through swagger-core's own Jackson 2 configuration, so the Jackson 3 customizer of §6.3 does not reach it. Without these rules `docs/openapi.json` (and the generated `schema.d.ts` that WS6 codes against) would contradict §18.3:
 1. `SpringDocUtils.getConfig().replaceWithSchema(BigDecimal.class, new StringSchema().format("decimal"))`, so every `Dec` is `type: string, format: decimal`.
-2. A `ModelConverter` (or `PropertyCustomizer`) for records. **Response DTOs:** every component is `required`, and every non-primitive component is also nullable (`type: [T, "null"]`), so openapi-typescript emits `field: string | null`, exactly the §18.3 shape ("null fields are always present"). **Request DTOs** (`…Request`): nullable, and required only when annotated `@NotNull`/`@NotBlank`, so optional inputs stay `field?: T | null`.
+2. A `ModelConverter` (or `PropertyCustomizer`) for records. **Response DTOs:** every component is `required`, and every non-primitive component is also nullable (`type: [T, "null"]`), so openapi-typescript emits `field: string | null`, exactly the §18.3 shape ("null fields are always present"). **Request DTOs** (`…Request`, including the parts of a request such as `SingleTargetRequest`): nullable, and required only when annotated `@NotNull`/`@NotBlank` or `@Schema(requiredMode = REQUIRED)`, so optional inputs stay `field?: T | null`. The order requests (`PlaceOrderRequest`, `ReplaceOrderRequest`, `ClosePositionRequest`) use `@Schema` rather than Bean Validation, because a missing `clientOrderId` is the domain error `CLIENT_ORDER_ID_INVALID` (422, §11.2 check 5), not a 400, and preview accepts a request without one.
 3. Wire-value enums publish their wire values (`"1D"`, `"1Min"`), not constant names.
 4. Schema names drop the Java `Dto` suffix, so `openapi.json` uses the §18.3 names (`Quote`, `Order`, …).
-5. CI asserts on `docs/openapi.json` that **no property anywhere has `type: number`** (the API has no floating-point fields; integers are `integer`), and that every response property is in `required`.
+5. CI asserts on `docs/openapi.json` that **no property anywhere has `type: number`** (the API has no floating-point fields; integers are `integer`), and that every response property is in `required`. `OpenApiRulesIT` asserts rules 1–5 on every `./mvnw verify`.
+
+Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core `ModelConverter` bean (records under `com.stocks`, `WireEnum`s); a nested object becomes `anyOf: [{$ref}, {type: "null"}]` and a nullable enum lists `null` in `enum`, which openapi-typescript 7.13 turns into `T | null` (checked). Rule 4 runs in an `OpenApiCustomizer` that renames the components and rewrites every `$ref` (a collision fails the generation). Every operation also gets a `default` response with the §6.5 `Problem` (`application/problem+json`). `make openapi` runs `OpenApiExportTest` (§26).
 
 ### 18.1 Auth, me and rules
 
@@ -2828,7 +2882,7 @@ Secrets are never logged. Reads are not audited in Phase 1 (structured logs inst
 | `POST /auth/logout` | session | → 204 | |
 | `POST /auth/reauth` | session | `{password}` → 204 (refreshes `authenticatedAt`) | `BAD_CREDENTIALS` |
 | `POST /auth/signup` | public | `{inviteCode, handle, displayName, password}` → 201 `Me` | `INVITE_INVALID`, `HANDLE_TAKEN`, `WEAK_PASSWORD`, `VALIDATION_FAILED` |
-| `GET /me` | any | → `Me` | |
+| `GET /me` | any | → `Me` (`accountId` null and `runNo` 0 until the player has an ACTIVE account: WS1 reads `account(public_id, run_no)` directly, read-only) | |
 | `PATCH /me` | session | `{displayName?, preferences?: Partial<Preferences>}` → `Me` | `VALIDATION_FAILED` |
 | `POST /me/password` | session | `{currentPassword, newPassword}` → 204 (other sessions deleted, personal API keys revoked, §17.3) | `BAD_CREDENTIALS`, `WEAK_PASSWORD` |
 | `GET /me/api-keys` | session | → `ApiKeyInfo[]` | |
@@ -2888,7 +2942,26 @@ Secrets are never logged. Reads are not audited in Phase 1 (structured logs inst
 
 **Java naming rule** (CONTRACT). Every type `T` below is a Java record named **`TDto`** in `com.stocks.contract.<producer>.dto`, created on Day 0 (for example `Quote` → `QuoteDto`, `Order` → `OrderDto`, `Preview` → `PreviewDto`, `TradingDay` → `TradingDayDto`). Types whose names already end in `Request` or `Response` keep their name (`PlaceOrderRequest`, `PlaceOrderResponse`, `CashTransferRequest`). Internal records with the same simple name (`contract.marketdata.model.Quote`, `contract.calendar.TradingDay`, …) never go on the wire. OpenAPI strips the `Dto` suffix (§18), so the generated TypeScript uses exactly the names below.
 
-**One mapper per DTO**, owned by the producer and reused by every channel (REST, STOMP, MCP), so the same `Quote` never has two shapes:
+**Java mapping details** (CONTRACT, fixed on Day 0; `ContractDtoJsonTest` and `ContractGoldenJsonTest` enforce them):
+
+| Package (`com.stocks.contract.…`) | Types |
+|---|---|
+| `identity.dto` (WS1) | `MeDto`, `PreferencesDto`, `ApiKeyInfoDto`, `ApiKeyCreatedDto` (+ `ApiKeySnippetsDto`), `PlayerSummaryDto`; requests `LoginRequest`, `ReauthRequest`, `SignupRequest`, `UpdateMeRequest` (+ `UpdatePreferencesRequest` = `Partial<Preferences>`), `ChangePasswordRequest`, `CreateApiKeyRequest` (also the admin key body) |
+| `admin.dto` (WS1) | §21.1 `AdminPlayerDto`, `CreatePlayerRequest`, `CreatePlayerResponse`, `AdminPlayerDetailDto` (+ `EodHoldingDto`), `AdminPlayerLiveViewDto`, `SettingsDto`, `UpdateSettingsRequest` (= `Partial<Settings>`), `AuditRowDto`, `SystemStatusDto`, `InviteCreatedDto`, `InviteDto`; inline admin bodies `LiveViewRequest`, `UpdatePlayerRequest`, `FreezePlayerRequest`, `SetPasswordRequest`, `AdminResetRequest`, `CreateInviteRequest`, `RunJobRequest`, `HaltEngineRequest`, `CreateCalendarOverrideRequest`, `ResolveCorporateActionRequest` |
+| `calendar.dto` (WS2) | `CalendarOverrideDto` |
+| `marketdata.dto` (WS2) | `ClockDto`, `TradingDayDto`, `AssetSummaryDto`, `AssetDto`, `FundamentalsDto`, `ExtendedLineDto`, `QuoteDto`, `BarDto`, `SnapshotDto`, `BarsDto`, `MoversDto`, `NewsItemDto`; `QuotesDto` (`{quotes}`), `NewsListDto` (`{items}`); §19 `TickDto` |
+| `trading.dto` (WS3) | `FeesDto`, `PlaceOrderRequest`, `ReplaceOrderRequest`, `OrderDto`, `ExecutionDto` (+ `RefQuoteDto`), `OrderEventDto`, `EstimateDto`, `PlaceOrderResponse`, `PreviewDto`, `AccountDto`, `PositionDto`, `ActivityDto`, `ActivityDetailDto` (sealed: `SplitDetailDto`, `NameChangeDetailDto`, `GfvDetailDto`, `ResetDetailDto`, `RestrictionDetailDto`, `AdminViewDetailDto`), `ViolationDto`, `ViolationsDto` (`GET /account/violations`), `RunDto`, `CancelledOrdersDto` (`{cancelled}`), `ClosePositionRequest`, `ResetAccountRequest`; §21.1 `CorporateActionDto`, `CashTransferRequest` (+ sealed `TransferTargetRequest`: `SingleTargetRequest`, `AllTargetRequest`), `CashTransferPreviewDto`, `TransferBatchResultDto`, `TransferRowDto` |
+| `portfolio.dto` (WS4) | `PortfolioHistoryDto`, `LeaderboardRowDto`, `LeaderboardDto`, `PublicTradeDto`, `PlayerProfileDto`, `PublicHistoryDto`, `FeedItemDto` |
+| `watchlist.dto` (WS4) | `WatchlistDto`; requests `CreateWatchlistRequest`, `UpdateWatchlistRequest`, `AddWatchlistSymbolRequest` |
+| `realtime.dto` (WS5) | `NotificationDto`, `MarkNotificationsReadRequest`; §19 `MarketSessionDto`, `LeaderboardUpdateDto`, `OrderUpdateDto`, `AdminAlertDto` |
+| `rules.dto` (WS5) | `RulesDto` |
+
+- **Intersections** (`Asset = AssetSummary & …`, `Snapshot = Quote & …`, `AdminPlayer = PlayerSummary & …`) are flattened into one record; the base type's members come first, in order.
+- **Anonymous object types** are nested records with globally unique simple names ending in `Dto` (`AccountDto.AccountCashDto`, `ClockDto.ClockFeedDto`, `NewsItemDto.UntrustedNewsDto`, …), so OpenAPI schema names never collide.
+- **String-literal unions** that are not §7.1 enums become nested enums (`PreferencesDto.Theme`, `ClockDto.FeedStatus`, `AssetDto.AssetStatus`, `ResetDetailDto.ResetSide`, `FeedItemDto.FeedItemKind`, `AdminAlertDto.Level`, `RulesDto.FeeAppliesTo`/`FeeBasis`) or top-level ones (`ActorKind` for `Activity.by`, `CorporateActionOrigin`). Single-value literals (`type: "CASH"`, `settlement: "T+1"`, `shortSelling: false`) use the §7.1 enum or a plain `String`/`boolean`; `SystemStatus.db` is a `String` (`"postgresql"`/`"h2"`). Members typed `string` that hold a wire-value enum (`PortfolioHistory.range`, `Bars.timeframe`, `Bars.adjustment`) use the enum (`HistoryRange`, `Timeframe`, `AdjustmentMode`).
+- **Tagged unions** are sealed interfaces with `@JsonTypeInfo(use = NAME, property = "type" | "scope")`.
+- **`return`** is a Java keyword: those components are named `ret` with `@JsonProperty("return")`. `Settings` keys and `PlayerProfile.stats` keys (`"TODAY"`, …) use `@JsonProperty` too.
+- **`?` on a response member** (`Order.executions?`, `Order.events?`, `FeedItem.payload.*?`) means "may be null": under §6.3 the member is always present, as `null` when it does not apply. `object` members are `Map<String, Object>`; ISO-8601 duration members are `String`., owned by the producer and reused by every channel (REST, STOMP, MCP), so the same `Quote` never has two shapes:
 
 | Mapper (owner) | Source → DTO | Derived and renamed fields |
 |---|---|---|
@@ -3006,7 +3079,7 @@ type Order = { orderId: string; clientOrderId: string; accountId: string; symbol
   fees: Dec; reservedCash: Dec; reservedQty: Dec; sessionDate: DateEt; receivedAt: Ts; acceptedAt: Ts; eligibleAt: Ts;
   activatedAt: Ts|null; triggeredAt: Ts|null; expiresAt: Ts; doneAt: Ts|null; replacesOrderId: string|null;
   replacedByOrderId: string|null; channel: Channel; rationale: string|null;
-  executions?: Execution[]; events?: OrderEvent[] };
+  executions: Execution[]|null; events: OrderEvent[]|null /* filled only by the detail endpoints; null elsewhere */ };
 type Estimate = { price: Dec|null; qty: Dec|null; principal: Dec|null; fees: Fees; hold: Dec;
   quoteAsOf: Ts|null; quoteQuality: DataQuality };
 type PlaceOrderResponse = { order: Order; estimate: Estimate; buyingPowerBefore: Dec; buyingPowerAfter: Dec;
@@ -3086,20 +3159,21 @@ Content-Type: application/json
     "receivedAt": "2026-10-09T14:31:02.120Z", "acceptedAt": "2026-10-09T14:31:02.126Z",
     "eligibleAt": "2026-10-09T14:31:02.729Z", "activatedAt": null, "triggeredAt": null,
     "expiresAt": "2026-10-09T20:00:00.000Z", "doneAt": null, "replacesOrderId": null, "replacedByOrderId": null,
-    "channel": "REST_KEY", "rationale": "Momentum after guidance raise; …" },
+    "channel": "REST_KEY", "rationale": "Momentum after guidance raise; …",
+    "executions": null, "events": null },
   "estimate": { "price": "131.2000", "qty": "0.95274", "principal": "125.00",
     "fees": { "sec": "0.00", "taf": "0.00", "cat": "0.00", "total": "0.00" }, "hold": "125.00",
     "quoteAsOf": "2026-10-09T14:31:01.904Z", "quoteQuality": "REALTIME_SINGLE_VENUE" },
   "buyingPowerBefore": "500.00", "buyingPowerAfter": "375.00", "warnings": [], "replayed": false }
 ```
 
-The example token is well-formed but not a real key: `keyId` `i6hqouwcme6b` is 12 characters of `[a-z2-7]`, and the secret is 43 base64url characters. Tests and docs that need a token copy this one.
+This response is the golden sample in `ContractGoldenJsonTest` (exact members, order and decimal scales). The example token is well-formed but not a real key: `keyId` `i6hqouwcme6b` is 12 characters of `[a-z2-7]`, and the secret is 43 base64url characters. Tests and docs that need a token copy this one.
 
 ### 18.5 Test-only endpoints (profile `test` only)
 
 | Method and path | Auth | Request → response | Notes |
 |---|---|---|---|
-| `POST /api/v1/test/clock` | session or key (any player) | `{advance: "PT16M"}` (ISO-8601 duration, > 0, ≤ P7D) → `{now: Ts}` | `TestClockController` (WS1, `com.stocks.devtools`, `@Profile("test")`). Calls `AdjustableTimeSource.advance` (the SIM offset clock in e2e, `MutableTimeSource` in ITs), then wakes the engine sweep and `JobScheduler`. Used by the Playwright helper `advanceClock()` (WS6, `frontend/e2e/support/clock.ts`). |
+| `POST /api/v1/test/clock` | session or key (any player) | `{advance: "PT16M"}` (ISO-8601 duration, > 0, ≤ P7D) → `{now: Ts}` | `TestClockController` (WS1, `com.stocks.devtools`, `@Profile("test")`). Calls `AdjustableTimeSource.advance` (the SIM offset clock in e2e, `MutableTimeSource` in ITs), then wakes `JobScheduler`; the engine's 250 ms sweep picks the new time up by itself. A non-adjustable time source (the wall clock) answers 501 `NOT_IMPLEMENTED`. Used by the Playwright helper `advanceClock()` (WS6, `frontend/e2e/support/clock.ts`). |
 
 The controller is absent from production by construction (`@Profile("test")`), and the prod fail-fast (§23.2) refuses to start if the `test` or `e2e` profile is active together with `prod`, or if a `TestClockController` bean exists. It is annotated `@Hidden`, so it never appears in `docs/openapi.json` even though `make openapi` boots the test profile, and the MCP coverage test (§26) excludes it.
 
@@ -3121,15 +3195,17 @@ The controller is absent from production by construction (`@Profile("test")`), a
 | Destination | Payload | Cadence |
 |---|---|---|
 | `/topic/quote.{SYM}` | `Quote` (§18.3) | Coalesced per symbol, ≤ 4/s |
-| `/topic/tick.{SYM}` | `{symbol, last, change, changePct, extended: {price, changePct}\|null, asOf, quality}` | ≤ 1/s |
+| `/topic/tick.{SYM}` | `TickDto` `{symbol, last, change, changePct, extended: {price, changePct}\|null, asOf, quality}` | ≤ 1/s |
 | `/topic/bars.{SYM}.1Min` | `Bar` (the forming minute bar; the suffix is the `Timeframe` wire value) | ≤ 1/s |
-| `/topic/market.session` | `{session, tradingDate, endsAt, nextSession, nextSessionAt, earlyClose}` | On change and every 60 s |
-| `/topic/leaderboard` | `{asOf}`. Clients refetch `GET /leaderboard`, which is cached for 5 s. | ≤ every 5 s when anything changed |
+| `/topic/market.session` | `MarketSessionDto` `{session, tradingDate, endsAt, nextSession, nextSessionAt, earlyClose}` | On change and every 60 s |
+| `/topic/leaderboard` | `LeaderboardUpdateDto` `{asOf}`. Clients refetch `GET /leaderboard`, which is cached for 5 s. | ≤ every 5 s when anything changed |
 | `/topic/feed` | `FeedItem` | When it becomes visible (a 5 s `PeriodicTask` over `visible_at`; off when `stocks.jobs.enabled=false`) |
-| `/user/queue/orders` | `{event: OrderEventType, order: Order, execution: Execution\|null}` | After commit |
+| `/user/queue/orders` | `OrderUpdateDto` `{event: OrderEventType, order: Order, execution: Execution\|null}` | After commit |
 | `/user/queue/account` | `Account` | After fills and transfers, plus ≤ 1 per 5 s while marks move during sessions |
 | `/user/queue/notifications` | `Notification` | After commit |
-| `/user/queue/admin` | `{level: "INFO"\|"WARN"\|"ERROR", title, body, at}` | Admin only |
+| `/user/queue/admin` | `AdminAlertDto` `{level: "INFO"\|"WARN"\|"ERROR", title, body, at}` | Admin only |
+
+The named payload records are Java records in `com.stocks.contract.realtime.dto` (`TickDto` in `contract.marketdata.dto`, produced by `QuoteDtoMapper`); see the §18.3 package table.
 
 **Client resync.** On reconnect, or when `document.visibilityState` returns to visible, the client invalidates `['account']`, `['positions']`, `['orders','OPEN']` and `['leaderboard']` and resubscribes. Missed messages are therefore harmless, and there is no durable outbox.
 
@@ -3143,8 +3219,8 @@ The controller is absent from production by construction (`@Profile("test")`), a
 
 **Starter and config.**
 - Starter `spring-ai-starter-mcp-server-webmvc` (BOM 2.0.1).
-- `spring.ai.mcp.server`: `name=stocks`, `version=${stocks.version}`, `protocol=STATELESS`, `type=SYNC`, `streamable-http.mcp-endpoint=/mcp` (the default, set explicitly). These are the real Spring AI 2.0.1 property names (§28 #13).
-- `instructions` are loaded from `classpath:mcp/instructions.md`, which says:
+- `spring.ai.mcp.server`: `name=stocks`, `version=${stocks.version}`, `protocol=STATELESS`, `type=SYNC`, `streamable-http.mcp-endpoint=/mcp` (the default, set explicitly). These are the real Spring AI 2.0.1 property names (§28 #13, verified by the Day-1 spike). Also set (verified in the 2.0.1 sources): `capabilities: {tool: true, resource: false, prompt: false, completion: false}` (tools only, so `initialize` advertises nothing else), `annotation-scanner.enabled: false` and `tool-callback-converter: false` (`McpConfig` builds the tool list itself, see **Tool results** below; the scanner's spec factory would otherwise register every tool a second time).
+- `instructions` are loaded from `classpath:mcp/instructions.md` (Spring AI only has the string property `spring.ai.mcp.server.instructions`, so it stays unset and a `BeanPostProcessor` in `McpConfig` copies the file into `McpServerProperties` after binding; an explicitly set property wins). The file says:
   1. Call `get_rules` once per session.
   2. Always send a unique `client_order_id` and a `rationale`.
   3. Prices and amounts are decimal strings.
@@ -3152,31 +3228,38 @@ The controller is absent from production by construction (`@Profile("test")`), a
   5. On `RATE_LIMITED`, wait `retry_after_s`. After `ENGINE_TIMEOUT`, retry with the **same** `client_order_id`.
   6. Use `preview_order` before large or unusual orders.
 
-**JSON: one mapper for every channel.** Spring AI's stateless transport takes `@Qualifier("mcpServerJsonMapper") JsonMapper`, and `McpServerJsonMapperAutoConfiguration` builds that bean as a fresh `JsonMapper.builder()` with its own settings, not Boot's. Left alone, MCP output would ignore §6.3 (decimals as plain strings, nulls included). `McpConfig` (WS5) therefore defines `@Bean("mcpServerJsonMapper")` returning **Boot's customized `JsonMapper`**, so the auto-configured one backs off. [VERIFY in the Day-1 spike that it is `@ConditionalOnMissingBean`; if not, exclude `McpServerJsonMapperAutoConfiguration` and keep our bean.]
+**JSON: one mapper for every channel.** Spring AI's stateless transport takes `@Qualifier("mcpServerJsonMapper") JsonMapper`, and `McpServerJsonMapperAutoConfiguration` builds that bean as a fresh `JsonMapper.builder()` with its own settings, not Boot's (`NON_NULL` inclusion, Jackson's number defaults). Left alone, MCP output would ignore §6.3 (decimals as plain strings, nulls included). `McpConfig` (WS5) therefore defines `@Bean(name = "mcpServerJsonMapper", defaultCandidate = false)` returning **Boot's customized `JsonMapper`** (the same instance, injected), so the auto-configured one backs off. **Verified (Day-1 spike, §28 #20):** `McpServerJsonMapperAutoConfiguration` is `@ConditionalOnMissingBean(name = "mcpServerJsonMapper")` at class level and backs off. `defaultCandidate = false` (Spring AI uses it too) is required: Boot's `jacksonJsonMapper` is `@ConditionalOnMissingBean(JsonMapper)`, and Boot 4's bean conditions skip non-default candidates, so Boot's mapper is still created and stays the only autowire candidate for `JsonMapper`.
 
-**Output schemas.** `generateOutputSchema=true` derives schemas from Java types, which would advertise `BigDecimal` as `number` while `structuredContent` carries strings; clients that validate results against `outputSchema` would then reject them. `McpConfig` post-processes every tool's output schema with the OpenAPI rules of §18: `BigDecimal` → `{type: "string", format: "decimal"}`, every response component required, non-primitives nullable.
+**Tool results (verified in the 2.0.1 sources; resolved by `McpToolHandler`).** The mapper override covers only the JSON-RPC envelope. Spring AI's `@McpTool` method callback (`SyncStatelessMcpToolMethodCallback`) serializes a tool's return value with Spring AI's private `JacksonUtils` mapper (a `BigDecimal` becomes a JSON number), and in structured mode it returns `structuredContent` without a text block. `McpConfig` therefore switches Spring AI's annotation scanner off and builds the tool specifications itself (`McpToolCatalog`), from every bean implementing the marker `com.stocks.mcp.tools.McpToolSet`:
+- name, title, description and the four hints come from `@McpTool`; the input schema from Spring AI's `McpJsonSchemaGenerator.generateForMethodInput`; the output schema from `McpJsonSchemaGenerator.generateFromType(returnType)`, post-processed (below);
+- the call handler is `McpToolHandler`: it binds `McpTransportContext` and `@McpToolParam` arguments (converted with Boot's mapper, so a decimal may arrive as a string or a number), invokes the method, writes the result **once** with Boot's mapper and returns that JSON as a text block plus `structuredContent` (the same JSON parsed back), and maps errors (§20.2).
 
-**Identity (transport `contextExtractor`).** The auto-configured `WebMvcStatelessServerTransport` never sets a `contextExtractor`, and that is the only hook for passing the caller into a stateless tool. `McpConfig` therefore overrides the `WebMvcStatelessServerTransport` bean (it is `@ConditionalOnMissingBean`), built with `.jsonMapper(bootMapper).messageEndpoint("/mcp").contextExtractor(req -> …)`. The extractor runs on the servlet request (already authenticated by the bearer filter in chain 2) and puts two entries into `McpTransportContext`: the `PlayerPrincipal` from `SecurityContextHolder`, and a `RequestMeta` (channel `MCP_KEY`, or `MCP_OAUTH` in Phase 2; request id, IP, user agent, MCP client name). `CurrentPlayer.require()` reads them from there. This resolves §28 #13; the Day-1 spike test (`whoami` returns the key's player) proves it.
+**Output schemas.** `generateOutputSchema=true` derives schemas from Java types, which would advertise `BigDecimal` as `number` while `structuredContent` carries strings; clients that validate results against `outputSchema` would then reject them. **So does our own server:** MCP SDK 2.0.0's `McpStatelessAsyncServer` validates every `structuredContent` against the tool's `outputSchema` and turns a mismatch into an `isError=true` result (verified), so this post-processing is mandatory. `McpConfig` post-processes every tool's output schema (`McpOutputSchemas`, walking the generated schema together with the Java type) with the OpenAPI rules of §18: `BigDecimal` → `{type: "string", format: "decimal"}`, every record component required, non-primitives nullable (`type: [T, "null"]`; a `$ref` becomes `anyOf: [{$ref}, {type: "null"}]`; a nullable enum lists `null`). Enum values are what Boot's mapper writes (wire values such as `"1D"`; victools' single-value `const` becomes `enum`). `@JsonSubTypes` members (`ActivityDetail`) are published as an open `object` until Phase 1 models them as `oneOf`. Map values stay open. The boot fails if any `"type": "number"` remains. `McpOutputSchemasTest` checks the post-processed schema of **every §18.3 response DTO** against full and all-null samples with the SDK's own validator.
 
-**MCP client name.** STATELESS mode has no session, and `clientInfo` arrives only on `initialize`, so later `tools/call` requests do not carry it. `McpClientNames` (WS5) fills `RequestMeta.mcpClient` in this order: the `X-Stocks-Client` request header (documented in `docs/agents.md`); otherwise the `clientInfo.name/version` of the last `initialize` seen for that `apiKeyId` (Caffeine, 24 h); otherwise the `User-Agent`. It is clipped to 120 characters. The `initialize` call itself writes an `AUTH`/`MCP_INITIALIZE` audit row with the full `clientInfo`.
+**Identity (transport `contextExtractor`).** The auto-configured `WebMvcStatelessServerTransport` never sets a `contextExtractor`, and that is the only hook for passing the caller into a stateless tool. `McpConfig` therefore overrides the `WebMvcStatelessServerTransport` bean (it is `@ConditionalOnMissingBean`; the auto-configured router function then serves ours), built with `.jsonMapper(new JacksonMcpJsonMapper(bootMapper)).messageEndpoint(${spring.ai.mcp.server.streamable-http.mcp-endpoint}).contextExtractor(req -> …).securityValidator(…)` (Origin, below). The extractor runs on the servlet request (already authenticated by the bearer filter in chain 2) and puts two entries into `McpTransportContext`: the `PlayerPrincipal` from `SecurityContextHolder`, and a `RequestMeta` (built by `security.RequestMetas`: channel `MCP_KEY` for a key, `MCP_OAUTH` in Phase 2, `WEB` for a browser session; request id, IP, user agent; plus the MCP client name), under the keys `CurrentPlayer.PRINCIPAL_KEY` and `REQUEST_META_KEY` (`CurrentPlayer.mcpContext(principal, meta)` builds it). `McpToolHandler` hands each tool a copy whose `RequestMeta.mcpTool` is the tool's name. Tools read them with `CurrentPlayer.require(ctx)` and `CurrentPlayer.requestMeta(ctx)`. Note: with `type=SYNC` in a servlet environment Spring AI sets `immediateExecution(true)`, so tools currently run on the servlet thread and `SecurityContextHolder` would happen to work too; tools must still use `ctx` (ASYNC or any offloading would break the thread-local). **Resolved and verified (§28 #13):** `McpServerIT` drives the real server on a random port with the MCP Java SDK client (`initialize`, `tools/list`, `tools/call whoami` with `Authorization: Bearer stk_…`): `whoami` returns the key's player, and a test-only probe tool reads the principal, channel `MCP_KEY`, `mcpClient`, `mcpTool`, request id and IP straight from the context; without a key `/mcp` answers 401 with `WWW-Authenticate`.
+
+**MCP client name.** STATELESS mode has no session, and `clientInfo` arrives only on `initialize`, so later `tools/call` requests do not carry it. `McpClientNames` (WS5) fills `RequestMeta.mcpClient` in this order: the `X-Stocks-Client` request header (documented in `docs/agents.md`); otherwise the `clientInfo.name/version` of the last `initialize` seen for that `apiKeyId` (Caffeine, 24 h); otherwise the `User-Agent`. It is clipped to 120 characters. The `initialize` call itself writes an `AUTH`/`MCP_INITIALIZE` audit row with the full `clientInfo`. (Phase 0 implements the header and `User-Agent` steps; the `initialize` cache and its audit row are Phase 1. The extractor cannot read the JSON-RPC body, which the transport consumes later, so capturing `clientInfo` needs a wrapper around the server's `McpStatelessServerHandler` or a body-caching filter.)
 
 **Tool conventions.**
-- Tools are `@McpTool` methods in `com.stocks.mcp.tools`.
-- In STATELESS mode a tool may only take `McpTransportContext` and `@McpToolParam` parameters. Each tool takes `McpTransportContext ctx` first.
+- Tools are public `@McpTool` methods in `com.stocks.mcp.tools`, on beans that implement the marker `McpToolSet`, with `generateOutputSchema = true` (the boot fails otherwise: every tool returns `structuredContent`).
+- In STATELESS mode a tool may only take `McpTransportContext` and `@McpToolParam` parameters (the boot fails otherwise). Each tool takes `McpTransportContext ctx` first.
+- **Input property names are the Java parameter names** (Spring AI 2.0.1's input-schema generator and our binder both use `Parameter.getName()`; the Boot parent compiles with `-parameters`). snake_case inputs (§20.2) therefore need snake_case parameter names, e.g. `@McpToolParam String client_order_id`.
 - Tools call the same contract services and the same DTO mappers as REST (§18.3).
-- Tools are registered in the **fixed order** of §20.3.
+- Tools are registered in the **fixed order** of §20.3 (`McpToolCatalog.ORDER`); a tool name outside the catalog, or a duplicate, fails the boot.
 
-**Origin.** `Origin` is validated when present, against `stocks.public-url` only. Requests without `Origin` are allowed, since server-to-server calls send none.
+**Origin.** `Origin` is validated when present, against `stocks.public-url` only. Requests without `Origin` are allowed, since server-to-server calls send none. Implemented with the MCP SDK's `DefaultServerTransportSecurityValidator` (allowed origin = `scheme://host[:port]` of `stocks.public-url`, no Host check); a mismatch answers 403 with the transport's plain-text body (not the §6.5 problem). A browser-based MCP client served from another origin (for example an inspector UI connecting directly from the browser) is refused this way; server-side clients send no `Origin`.
+
+**Transport facts (verified, SDK 2.0.0).** `POST /mcp` needs `Accept` with **both** `application/json` and `text/event-stream` (otherwise 400), so raw `curl` recipes must send `-H 'Accept: application/json, text/event-stream'`; responses are plain `application/json` (no SSE, no `Mcp-Session-Id`). `GET /mcp` answers 405 and notifications 202. The negotiated protocol version is `2025-11-25`. The stateless server registers no notification handlers, so every client's `notifications/initialized` logs a harmless WARN from `DefaultMcpStatelessServerHandler` (§28 #26). A syntactically invalid `Accept` header makes the transport throw `InvalidMediaTypeException` before any check, which `ProblemDetailsAdvice` currently answers with 500 `INTERNAL_ERROR` (§28 #26).
 
 **Rate limits.** Every call counts against the player's read or write bucket (§17.5); `place_order`, `replace_order`, `cancel_*` and `close_position` go through `OrderGate` like REST. Write tools are audited with `mcp_tool` and the client name.
 
 ### 20.2 Conventions
 
-- **Inputs** are snake_case. **Outputs** are the REST DTOs of §18.3 (camelCase), returned as `structuredContent` plus a JSON text block, both produced by Boot's `JsonMapper`. Bars are compact (`columns` plus `rows`).
+- **Inputs** are snake_case. **Outputs** are the REST DTOs of §18.3 (camelCase), returned as `structuredContent` plus a JSON text block, both produced by Boot's `JsonMapper` (`McpToolHandler`, §20.1). Bars are compact (`columns` plus `rows`). Decimal inputs keep Spring AI's generated input schema for now (`BigDecimal` → `number`); Phase 1 widens them to `["string", "number"]` when the order tools land.
 - **Hints.** Every tool sets all four hints explicitly, with `openWorldHint=false`. Read tools set `readOnlyHint=true, destructiveHint=false, idempotentHint=true`; without this, ChatGPT treats them as writes needing confirmation.
-- **Errors.** Errors come back as `isError=true` with text JSON `{code, message, hint, fields, retry_after_s}`, using the same `ErrorCode` values as REST.
+- **Errors.** Errors come back as `isError=true` with text JSON `{code, message, hint, fields, retry_after_s}` (every member present; `fields` items are `{field, code, message}`), using the same `ErrorCode` values as REST (`McpErrors`). An argument that is missing or does not convert is `VALIDATION_FAILED` with the field; an unexpected exception is `INTERNAL_ERROR` without details (logged with the request id).
 - **Untrusted text.** Other players' text and news arrive in `untrusted` objects (§17.8).
-- **Contract test** (WS5, `golden/mcp`): for every read tool on SIM, `structuredContent` decimals are JSON strings, null fields are present, and `structuredContent` validates against the tool's advertised `outputSchema` (a JSON-schema validator, test scope, pin at scaffold); no output schema contains `"type": "number"`.
+- **Contract test** (WS5, `golden/mcp`): for every read tool on SIM, `structuredContent` decimals are JSON strings, null fields are present, and `structuredContent` validates against the tool's advertised `outputSchema`; no output schema contains `"type": "number"`. The validator is the MCP SDK's own (`McpJsonDefaults.getSchemaValidator()`, networknt `json-schema-validator` 3.0.0, already a compile dependency of `mcp-json-jackson3`, §2.1), i.e. the one the server runs on every result.
 
 ### 20.3 Tool catalog
 
@@ -3186,7 +3269,7 @@ Read tools (RO): `readOnlyHint=true, destructiveHint=false, idempotentHint=true,
 
 | # | Tool | Input schema | Output |
 |---|---|---|---|
-| 1 | `whoami` | `{}` | `{me: Me, account: Account, rateLimits: {readsRemaining, writesRemainingMinute, writesRemainingDay}}` (from `RateLimitService.remaining`) |
+| 1 | `whoami` | `{}` | `{me: Me, account: Account, rateLimits: {readsRemaining, writesRemainingMinute, writesRemainingDay}}` (from `RateLimitService.remaining`). Java: `mcp.tools.WhoamiDto`. `account` is null until the player has an ACTIVE account (like `Me.accountId`); until WS1/WS3 replace the Day-0 stubs, `account` and `rateLimits` are null instead of a 501 |
 | 2 | `get_rules` | `{}` | `Rules` |
 | 3 | `get_market_clock` | `{}` | `Clock` |
 | 4 | `get_calendar` | `{start: date, end: date}` (≤ 400 days) | `TradingDay[]` |
@@ -3418,8 +3501,10 @@ frontend/src/
     settings/   AppearanceSettings, TradingDefaults, MyApiKeys, ResetAccount (type "RESET")
     notifications/ NotificationBell, ToastHost
   lib/
-    api/        schema.d.ts (generated from docs/openapi.json), client.ts (openapi-fetch + CSRF + problem mapping),
-                queryKeys.ts, hooks/*.ts, mock/ (VITE_API_MOCK=1 in-memory fake, §22.9)
+    api/        schema.d.ts (generated from docs/openapi.json; never edited), planned.d.ts (hand-written §18.3
+                shapes for endpoints whose controllers have not landed), contract.ts (merges both: the generated
+                operation or schema always wins), types.ts (aliases), client.ts (openapi-fetch + CSRF + problem
+                mapping), queryKeys.ts, hooks/*.ts, mock/ (VITE_API_MOCK=1 in-memory fake, §22.9)
     realtime/   stomp.ts (singleton, reconnect, resubscribe, CSRF header), quoteStore.ts (zustand map),
                 useQuote(symbol, "quote"|"tick") (ref-counted), useUserEvents(), useSessionTopic()
     format/     decimal.ts (string-decimal compare/add for display only), money.ts, number.ts, time.ts (ET)
@@ -3577,7 +3662,7 @@ body { background: var(--bg-0); color: var(--text-1); font-family: var(--font-sa
 
 ### 22.9 Parallel-development mock mode
 
-`VITE_API_MOCK=1` switches `lib/api/client.ts` to `lib/api/mock/`. This is an in-memory fake that implements the §18 DTOs, built from the §18.4 example data, with a fake ticking quote stream. It needs no extra dependencies. WS6 can therefore build every screen before the backend endpoints exist. CI runs the e2e suite against the **real** backend (profiles `test,e2e`: SIM with a wall-advancing clock anchored on a Friday in RTH, always-open, plus the test clock endpoint of §18.5).
+`VITE_API_MOCK=1` switches `lib/api/client.ts` to `lib/api/mock/`. This is an in-memory fake that implements the §18 DTOs, built from the §18.4 example data, with a fake ticking quote stream. It needs no extra dependencies. WS6 can therefore build every screen before the backend endpoints exist. Until a controller lands, its types come from `lib/api/planned.d.ts`; `contract.ts` merges them under the generated `schema.d.ts` per path, HTTP method and schema name, so `make openapi` can regenerate `schema.d.ts` at any time without breaking the build, and a planned entry is deleted once the backend publishes it. Generated response types are stricter than the planned ones about `null` (§18 rule 2: every non-primitive response field is `T | null`), so moving a screen onto a generated type means handling `null`. CI runs the e2e suite against the **real** backend (profiles `test,e2e`: SIM with a wall-advancing clock anchored on a Friday in RTH, always-open, plus the test clock endpoint of §18.5), signed in as the `e2e` profile's bootstrap admin (§23.2).
 
 ---
 
@@ -3596,15 +3681,20 @@ spring:
     password: ${DB_PASSWORD:}
     hikari.maximum-pool-size: 20
   flyway.locations: classpath:db/migration/common,classpath:db/migration/{vendor}
+  web.resources.add-mappings: false         # WebConfig maps /assets/** (immutable) and /** (SPA fallback), §24.3
   session:
     jdbc.initialize-schema: never           # tables come from Flyway (§8.2/8.3)
     timeout: 14d
-  ai.mcp.server:                            # Spring AI 2.0.1 property names (§20.1)
+  ai.mcp.server:                            # Spring AI 2.0.1 property names (§20.1; verified by the Day-1 spike, §28 #13)
     name: stocks
     version: ${stocks.version}
     protocol: STATELESS
     type: SYNC
     streamable-http.mcp-endpoint: /mcp
+    # instructions: unset, so McpConfig loads classpath:mcp/instructions.md
+    capabilities: { tool: true, resource: false, prompt: false, completion: false }   # tools only (§20.3)
+    annotation-scanner.enabled: false       # McpConfig builds the tool list itself (Boot JsonMapper, §20.3 order)
+    tool-callback-converter: false          # no Spring AI ToolCallback beans (§28 #25)
 server:
   port: 8080
   shutdown: graceful
@@ -3615,12 +3705,18 @@ management:
   endpoint.health.probes.enabled: true
 springdoc:
   api-docs.path: /v3/api-docs
-  swagger-ui.path: /api/docs                # redirects to /swagger-ui/index.html; assets under /swagger-ui/** (§24.4)
+  swagger-ui.path: /api/docs                # redirects to /api/swagger-ui/index.html; UI assets under /api/swagger-ui/** (§24.4)
+  paths-to-match: /api/v1/**                # the REST API only (not /mcp, actuator or test endpoints)
+  default-produces-media-type: application/json
+  default-consumes-media-type: application/json
+  writer-with-order-by-keys: true           # stable docs/openapi.json (CI diffs it)
 
 stocks:
   version: '@project.version@'
   public-url: ${APP_PUBLIC_URL:http://localhost:5173}
-  jobs.enabled: true                        # every ScheduledJob and PeriodicTask (§25); not the engine, market data or STOMP
+  jobs:
+    enabled: true                           # every ScheduledJob and PeriodicTask (§25); not the engine, market data or STOMP
+    catch-up-window: 7d                     # CatchUpRunner look-back at boot (§25)
   single-instance.enabled: true             # §12.9; false in the test profile
   bootstrap:
     admin-handle: ${ADMIN_BOOTSTRAP_USERNAME:}
@@ -3633,6 +3729,7 @@ stocks:
     login-lockout: 15m
     recent-auth: 15m
     extra-ws-origins: []                    # dev adds http://localhost:5173
+    password-hash-cost: 12                  # bcrypt cost (§17.3); the test profile lowers it for speed
   ratelimit:
     key-reads-per-min: 120
     key-reads-burst: 30
@@ -3715,11 +3812,11 @@ stocks:
 
 | Profile | Differences |
 |---|---|
-| `dev` (default) | H2 file `backend/.data/stocks-dev`, SIM, `spring.flyway.out-of-order: true`, `bootstrap.seed-demo=true`. Admin **`admin` / `admin-dev-123`** (meets the 10-character rule of §17.3; seeded through the normal `PlayerService` validation). Demo players: alice and bob (password `password123!`), claude and chatgpt (AI). The admin password and the bot keys are written to `backend/.data/dev-keys.txt` (keys printed once). The seed is idempotent (creates only what is missing), so deleting `backend/.data/` (required after the V1 squash, §8) costs nothing. `/h2-console` on. `extra-ws-origins=[http://localhost:5173]`. With `MARKETDATA_PROFILE=hybrid` and keys in `.env` it uses live data; **use a separate Alpaca account from prod** (406). |
+| `dev` (default) | H2 file `backend/.data/stocks-dev`, SIM, `spring.flyway.out-of-order: true`, `bootstrap.seed-demo=true`. Admin **`admin` / `admin-dev-123`** (meets the 10-character rule of §17.3; seeded through the normal `PlayerService` validation). Demo players: alice and bob (password `password123!`), claude and chatgpt (AI). The admin password and the bot keys are written to `backend/.data/dev-keys.txt` (keys printed once). The seed is idempotent (creates only what is missing), so deleting `backend/.data/` (required after the V1 squash, §8) costs nothing. `/h2-console` on. `extra-ws-origins=[http://localhost:5173]`. A non-secret dev default for `API_KEY_PEPPER`, so the demo bot keys work. `spring.datasource.hikari.max-lifetime: 0` (the H2 2.4.240 CHECK-constraint bug, §28 #24). With `MARKETDATA_PROFILE=hybrid` and keys in `.env` it uses live data; **use a separate Alpaca account from prod** (406). |
 | `devpg` | Adds `DB_URL=jdbc:postgresql://localhost:5432/stocks` (`docker-compose.dev.yml`) |
-| `test` | `jdbc:h2:mem:stocks-${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1`: **a unique database per Spring test context**, because the context cache keeps several contexts alive in one JVM and they must not share engines, schedulers or data. `spring.flyway.out-of-order: true`. SIM with `clock=fixed` and a `MutableTimeSource` bean. `stocks.jobs.enabled=false` (tests run jobs explicitly through `JobScheduler.runNow`). `stocks.single-instance.enabled=false` (only the Recovery IT enables it). `TestClockController` active (§18.5). |
-| `pgit` (with `test`; activated by `-Ppg-it`) | Same as `test`, but the datasource is an embedded PostgreSQL 18.6 (zonky). One server per JVM; `EmbeddedPgContextInitializer` (WS1 testkit) creates a fresh database per Spring context (`CREATE DATABASE stocks_<uuid>`). No Docker. |
-| `e2e` (with `test`) | For Playwright against the real backend and the built SPA: SIM with `clock=offset` and `anchor=2026-10-09T14:00:00Z` (a Friday in RTH, then advancing with the wall clock, so `eligible_at` passes and orders fill), `always-open=true`, `stocks.jobs.enabled=true` (leaderboard recompute, feed publisher). Clock jumps (the 15-minute feed delay) go through `POST /api/v1/test/clock`. |
+| `test` | `jdbc:h2:mem:stocks-${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1`: **a unique database per Spring test context**, because the context cache keeps several contexts alive in one JVM and they must not share engines, schedulers or data. `spring.flyway.out-of-order: true`. SIM with `clock=fixed` and a `MutableTimeSource` bean. `stocks.jobs.enabled=false` (tests run jobs explicitly through `JobScheduler.runNow`). `stocks.single-instance.enabled=false` (only the Recovery IT enables it). `TestClockController` active (§18.5). bcrypt cost 4 (`stocks.security.password-hash-cost`), a dummy API-key pepper, `spring.datasource.hikari.max-lifetime: 0` (§28 #24). Until WS2 wires the SIM clock modes, the default `TimeSource` is still the wall clock: a test that needs the fixed clock imports the test kit's `TestClockConfig` (a `MutableTimeSource` at 2026-10-09T14:00Z). |
+| `pgit` (with `test`; activated by `-Ppg-it`) | `-Ppg-it` passes `-Dspring.profiles.include=pgit` and `-Dstocks.test.pg=true` to Surefire (PostgreSQL-only tests use `@EnabledIfSystemProperty(named = "stocks.test.pg", matches = "true")`). Same as `test`, but the datasource is an embedded PostgreSQL 18.6 (zonky). One server per JVM; `EmbeddedPgContextInitializer` (WS1 testkit) creates a fresh database per Spring context (`CREATE DATABASE stocks_<uuid>`). No Docker. |
+| `e2e` (with `test`; `application-e2e.yml`) | For Playwright against the real backend and the built SPA: SIM with `clock=offset` and `anchor=2026-10-09T14:00:00Z` (a Friday in RTH, then advancing with the wall clock, so `eligible_at` passes and orders fill), `always-open=true`, `stocks.jobs.enabled=true` (leaderboard recompute, feed publisher). Clock jumps (the 15-minute feed delay) go through `POST /api/v1/test/clock`. Bootstrap admin `e2e_admin` / `e2e-admin-password` (overridable with `E2E_USER`/`E2E_PASSWORD`), which `make e2e` passes to Playwright so the suite signs in. |
 | `prod` | PostgreSQL. `server.forward-headers-strategy=native` (§24.3). Cookie `__Host-stocks_sid` with `secure: true`. ECS structured logs. **Fail-fast** at boot if: `APP_PUBLIC_URL` is missing or not https; `API_KEY_PEPPER` is under 32 bytes; `ENGINE_SEED` is missing; the profile is `simulated` without the override; `hybrid` is set without Alpaca keys; there is no admin and no bootstrap variables; the `test`, `e2e` or `pgit` profile is also active; or a `TestClockController` bean exists. |
 
 ### 23.3 Environment variables (`.env.example`)
@@ -3737,9 +3834,11 @@ stocks:
 | `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY` | hybrid | Alpaca **paper** account keys (Basic data plan) |
 | `ALPACA_FEED` | no | `iex` (default) or `sip` |
 | `FINNHUB_TOKEN` | recommended | Finnhub free key |
-| `TRUSTED_PROXIES` | no | Regex override for Tomcat `internal-proxies` |
-| `STOCKS_IMAGE`, `STOCKS_PORT` | no | compose overrides |
-| `JAVA_TOOL_OPTIONS` | no | JVM flags |
+| `TRUSTED_PROXIES` | no | Peers whose forwarded headers are trusted (Tomcat `internal-proxies`): a regex (the default: loopback + 10/8, 172.16/12, 192.168/16) **or a comma-separated CIDR list** (any value containing `/`, Tomcat 11), e.g. `172.18.0.0/16` for a cloudflared container on another Docker network. A CIDR list also avoids the Compose `}` problem of §24.3. |
+| `STOCKS_IMAGE`, `STOCKS_TAG` | compose | Image repository without tag (`ghcr.io/<owner>/stocks`, lowercase) and the tag to run; every deploy rewrites `STOCKS_TAG` (§24.7) |
+| `STOCKS_BIND_IP`, `STOCKS_PORT` | no | Published host address and port of the app (`127.0.0.1`, `8080`; §24.2) |
+| `BACKUP_KEEP_DAYS`, `BACKUP_TIME_UTC` | no | Backup service: retention (`14`) and daily dump time (`05:00` UTC) (§24.2) |
+| `JDK_JAVA_OPTIONS` | no | Extra JVM flags, applied after the image's `JAVA_TOOL_OPTIONS` baseline (§24.1); usually empty |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | agent-runner (Phase 1) | LLM provider keys, read only by the `agent-runner` service (§20.5) |
 | `STOCKS_CLAUDE_KEY`, `STOCKS_CHATGPT_KEY` | agent-runner | The two bots' `stk_…` keys (issued by the admin) |
 | `CLAUDE_MODEL`, `OPENAI_MODEL`, `AGENT_SCHEDULE_ET`, `AGENT_DAILY_USD_CAP`, `AGENT_MAX_TOOL_CALLS`, `AGENT_MAX_RUN_SECONDS`, `AGENT_PRICE_*` | agent-runner | §20.5 defaults: `09:45,12:30,15:30`, `1.00`, `40`, `300` |
@@ -3768,109 +3867,151 @@ stocks:
 
 ```dockerfile
 # syntax=docker/dockerfile:1.7
-FROM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci                                            # the lockfile carries the §2.2 TypeScript override
-COPY frontend/ ./                                     # .dockerignore keeps host node_modules out
-RUN npm run build                                     # → dist/
+# The lockfile carries the §2.2 TypeScript override; `npm ci` fails if it drifts from package.json.
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
 
-FROM eclipse-temurin:21-jdk AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS build
 WORKDIR /src/backend
 COPY backend/.mvn .mvn
 COPY backend/mvnw backend/pom.xml ./
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q dependency:go-offline
+RUN --mount=type=cache,target=/root/.m2 chmod +x mvnw && ./mvnw -B -q dependency:go-offline
 COPY backend/src src
+# Never ship whatever a local `make jar` left in static/: the SPA always comes from the web stage.
+RUN rm -rf src/main/resources/static
 COPY --from=web /src/frontend/dist src/main/resources/static
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -DskipTests package \
  && java -Djarmode=tools -jar target/stocks.jar extract --layers --launcher --destination target/extracted
 
 FROM eclipse-temurin:21-jre
+LABEL org.opencontainers.image.title="stocks" \
+      org.opencontainers.image.description="Multiplayer paper-trading league (Spring Boot API + React SPA, one origin)"
+# curl only serves the HEALTHCHECK; the base image's security updates come with each rebuild.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
- && groupadd -r stocks && useradd -r -g stocks -u 10001 stocks
+ && groupadd -r -g 10001 stocks && useradd -r -g stocks -u 10001 -M -d /app -s /usr/sbin/nologin stocks
 WORKDIR /app
+# Least-changing layers first, so a code-only release re-pushes only the small application layer.
 COPY --from=build /src/backend/target/extracted/dependencies/ ./
 COPY --from=build /src/backend/target/extracted/spring-boot-loader/ ./
 COPY --from=build /src/backend/target/extracted/snapshot-dependencies/ ./
 COPY --from=build /src/backend/target/extracted/application/ ./
-USER stocks
+USER 10001:10001
+# 8080: HTTP + WebSocket (the only port behind the tunnel). 8081: actuator, never published or tunneled.
 EXPOSE 8080 8081
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Duser.timezone=UTC"
+# JAVA_TOOL_OPTIONS is the baseline; add flags at runtime with JDK_JAVA_OPTIONS (docker-compose.yml), which the
+# java launcher applies after it, so they win without having to repeat the baseline.
+ENV SPRING_PROFILES_ACTIVE=prod \
+    JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Duser.timezone=UTC"
+# Shell form on purpose: `|| exit 1` maps every curl failure to Docker's "unhealthy" status.
+# hadolint ignore=DL3025
 HEALTHCHECK --interval=15s --timeout=3s --start-period=90s --retries=5 \
   CMD curl -fsS http://127.0.0.1:8081/actuator/health/readiness || exit 1
 ENTRYPOINT ["java","org.springframework.boot.loader.launch.JarLauncher"]
 ```
 
-Build multi-arch with `docker buildx build --platform linux/amd64,linux/arm64 -t <registry>/stocks:<ver> .`, or run `docker compose build` directly on the server. The root `.dockerignore` (§3) is required: without it, `COPY frontend/ ./` on a Mac copies darwin-arm64 `node_modules` (rolldown and oxlint native bindings) over the Linux `npm ci` output, and the build context also ships `backend/target`, `backend/.data` and `backups/`.
+- **Multi-arch.** `release.yml` (§24.7) builds `linux/amd64,linux/arm64` with buildx and pushes `ghcr.io/<owner>/stocks`. Because the `web` and `build` stages run on `$BUILDPLATFORM`, npm and Maven never run under QEMU; only the small runtime stage does. `make image` builds the host platform and loads it locally.
+- **JVM flags.** `JAVA_TOOL_OPTIONS` is the baseline. Extra flags go in `JDK_JAVA_OPTIONS` (compose passes it through), which the `java` launcher applies after the baseline, so they win without repeating it.
+- **`.dockerignore` is required** (§3): without it, `COPY frontend/ ./` on a Mac copies darwin-arm64 `node_modules` (rolldown and oxlint native bindings) over the Linux `npm ci` output, and the context also ships `backend/target`, `backend/.data`, `backups/` and `.env`.
 
-### 24.2 `docker-compose.yml` (production)
+### 24.2 `docker-compose.yml` (production: plain Compose and CasaOS Import)
+
+The owner self-hosts on a **CasaOS** server that already runs Cloudflare Tunnels. One compose file serves two consumers: plain `docker compose -p stocks up -d` with a `.env` next to it (what the deploy job of §24.7 runs), and CasaOS "App Store → Custom Install → Import". CasaOS reads the `x-casaos` blocks (top level: `main: app`, `port_map: "8080"`, `title`, `icon`, `category`, `architectures: [amd64, arm64]`, `tips`; per service: `envs`/`ports`/`volumes` descriptions); Compose ignores every `x-` key. Abridged (the file in the repository is authoritative for the metadata):
 
 ```yaml
 name: stocks
 services:
   db:
     image: postgres:18.6-alpine
+    container_name: stocks-db
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: stocks
-      POSTGRES_USER: stocks
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-    volumes: [ "pgdata:/var/lib/postgresql" ]          # PG 18 image layout
+    environment: { POSTGRES_DB: stocks, POSTGRES_USER: stocks, POSTGRES_PASSWORD: "${DB_PASSWORD:?…}" }
+    volumes:   # long syntax: type bind, bind.create_host_path: true
+      - { type: bind, source: /DATA/AppData/stocks/pgdata, target: /var/lib/postgresql }   # PG 18 image layout
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U stocks -d stocks"], interval: 5s, timeout: 3s, retries: 30 }
+    stop_grace_period: 60s
     networks: [ backend ]
 
   app:
-    image: ${STOCKS_IMAGE:-stocks:latest}
-    build: .
+    image: ${STOCKS_IMAGE:?…}:${STOCKS_TAG:-latest}     # ghcr.io/<owner>/stocks; never `build:`
+    container_name: stocks-app
     restart: unless-stopped
     depends_on: { db: { condition: service_healthy } }
-    env_file: .env
-    environment:
+    environment:                                     # explicit list; no env_file (least privilege, CasaOS-safe)
       SPRING_PROFILES_ACTIVE: prod
+      TZ: UTC
       DB_URL: jdbc:postgresql://db:5432/stocks
       DB_USER: stocks
-    ports: [ "127.0.0.1:${STOCKS_PORT:-8080}:8080" ]  # host cloudflared → http://localhost:8080 ; 8081 not published
+      DB_PASSWORD: ${DB_PASSWORD:?…}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:?…}
+      API_KEY_PEPPER: ${API_KEY_PEPPER:?…}
+      ENGINE_SEED: ${ENGINE_SEED:?…}
+      # ADMIN_BOOTSTRAP_USERNAME/PASSWORD, STARTING_CASH_DEFAULT (500.00), MARKETDATA_PROFILE (hybrid),
+      # ALPACA_KEY_ID, ALPACA_SECRET_KEY, ALPACA_FEED (iex), FINNHUB_TOKEN, JDK_JAVA_OPTIONS: ${VAR:-default}
+      TRUSTED_PROXIES: '${TRUSTED_PROXIES:-<the §24.3 default, written with \d+>}'   # never passed empty
+    ports:
+      - { target: 8080, published: "${STOCKS_PORT:-8080}", host_ip: "${STOCKS_BIND_IP:-127.0.0.1}" }  # 8081 never
+    healthcheck: { test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/actuator/health/readiness"],
+                   interval: 15s, timeout: 3s, start_period: 90s, retries: 5 }
     stop_grace_period: 30s
+    deploy: { resources: { limits: { memory: 2g } } }   # heap = 75% of this
     networks: [ backend, edge ]
-
-  agent-runner:                                    # Phase 1 bots (§20.5); start with: docker compose --profile agents up -d
-    profiles: [ agents ]
-    build: ./tools/agent-runner
-    restart: unless-stopped
-    depends_on: { app: { condition: service_healthy } }
-    env_file: .env                                 # ANTHROPIC_API_KEY, OPENAI_API_KEY, STOCKS_*_KEY, AGENT_*
-    environment: { STOCKS_MCP_URL: "http://app:8080/mcp", TZ: "America/New_York" }
-    volumes: [ "agent-data:/data" ]
-    networks: [ edge ]                             # reaches app:8080 and the LLM APIs; never the db
 
   backup:
     image: postgres:18.6-alpine
+    container_name: stocks-backup
     restart: unless-stopped
     depends_on: { db: { condition: service_healthy } }
-    environment: { PGPASSWORD: "${DB_PASSWORD}", KEEP_DAYS: "14" }
-    volumes: [ "./backups:/backups", "./deploy/backup/pg_backup.sh:/pg_backup.sh:ro" ]
-    entrypoint: [ "/bin/sh", "-c", "while true; do /pg_backup.sh; sleep 86400; done" ]
+    entrypoint: [ "/bin/sh", "/opt/stocks/pg_backup.sh", "--daemon" ]
+    environment: { PGHOST: db, PGUSER: stocks, PGDATABASE: stocks, PGPASSWORD: "${DB_PASSWORD:?…}",
+                   KEEP_DAYS: "${BACKUP_KEEP_DAYS:-14}", BACKUP_TIME_UTC: "${BACKUP_TIME_UTC:-05:00}" }
+    volumes:
+      - { type: bind, source: /DATA/AppData/stocks/backups, target: /backups }
+      - { type: bind, source: /DATA/AppData/stocks/scripts, target: /opt/stocks, read_only: true }
+    healthcheck: { test: ["CMD-SHELL", "find /backups/.last-success -mmin -1500 | grep -q ."], interval: 5m }
     networks: [ backend ]
 
-volumes: { pgdata: {}, agent-data: {} }
+  agent-runner:                                    # Phase 1 bots (§20.5): docker compose --profile agents up -d
+    profiles: [ agents ]
+    image: ${STOCKS_IMAGE:?…}-agent-runner:${STOCKS_TAG:-latest}   # built by release.yml from tools/agent-runner
+    container_name: stocks-agent-runner
+    restart: unless-stopped
+    depends_on: { app: { condition: service_healthy } }
+    environment: { STOCKS_MCP_URL: "http://app:8080/mcp", TZ: "America/New_York" }   # + the §20.5 keys, explicitly
+    volumes: [ { type: bind, source: /DATA/AppData/stocks/agent-data, target: /data } ]
+    networks: [ edge ]                             # reaches app:8080 and the LLM APIs; never the db
+
 networks:
-  backend: { internal: true }     # db has no internet access
-  edge: {}                        # app egress to Alpaca/Finnhub; join cloudflared here if it runs in Docker
+  backend: { name: stocks-backend, internal: true }   # db has no internet access
+  edge: { name: stocks-edge }                         # app egress; a cloudflared container may join it
+# every service: logging json-file, max-size 10m, max-file 5
 ```
 
-`deploy/backup/pg_backup.sh`:
+**Rules that keep it importable by CasaOS** (CasaOS Import interpolates the file, replaces every unresolved variable with a literal `$VAR`, re-serializes it into `/var/lib/casaos/apps/stocks/docker-compose.yml` and reads `.env` from that directory when it starts the app; enforced in CI by `.github/scripts/check-compose.sh`, `make compose-check`):
+- images only, never `build:`; no `env_file:` (it is resolved at import time, from a temporary directory);
+- no relative host paths: all host data lives under `/DATA/AppData/stocks/` (the CasaOS AppData convention);
+- no literal `$` anywhere except variable references (a re-serialized `$$` would be interpolated again);
+- every referenced variable is set in `.env.example`: Import drops `:-default` fallbacks, so `.env` must define every value;
+- optional services sit behind profiles: Import leaves them out.
 
-```sh
-#!/bin/sh
-set -eu
-f="/backups/stocks-$(date +%F).dump"
-pg_dump -h db -U stocks -Fc stocks > "$f.tmp" && mv "$f.tmp" "$f"
-find /backups -name 'stocks-*.dump' -mtime +"${KEEP_DAYS:-14}" -delete
+**Host layout** (`deploy/scripts/init-host.sh` creates it, generates the secrets in `.env` and hands the directory to the runner user):
+
+```
+/DATA/AppData/stocks/  .env (600) · docker-compose.yml (synced by each deploy) · .deploy-state
+                       scripts/pg_backup.sh (synced) · pgdata/ · backups/ · agent-data/
 ```
 
-**Restore** (`docs/runbook.md`): `docker compose stop app && docker compose exec -T db pg_restore -U stocks -d stocks --clean < backups/stocks-YYYY-MM-DD.dump && docker compose start app`.
+**Environment.** `.env.example` documents every key of §23.3 plus the compose-only keys `STOCKS_IMAGE` (lowercase repository without tag), `STOCKS_TAG` (rewritten by every deploy), `STOCKS_BIND_IP` (default `127.0.0.1`), `STOCKS_PORT` (8080), `BACKUP_KEEP_DAYS`, `BACKUP_TIME_UTC` and `JDK_JAVA_OPTIONS`. Optional variables are never passed empty when Spring has a non-empty default (an empty `TRUSTED_PROXIES` would trust no proxy).
 
-**Upgrade:** `git pull && docker compose build app && docker compose up -d app`. Flyway migrates on start, and the advisory lock prevents overlap.
+**`deploy/backup/pg_backup.sh`** (mounted read-only at `/opt/stocks`; busybox `sh`): `pg_backup.sh [LABEL]` writes `/backups/stocks-YYYY-MM-DD[-LABEL].dump` (`pg_dump -Fc` through a `.tmp` file), records `/backups/.last-success` and deletes dumps older than `KEEP_DAYS`; `pg_backup.sh --daemon` runs one at start when today's dump is missing, then daily at `BACKUP_TIME_UTC` (05:00 UTC, after the 20:20 ET snapshots). Every deploy adds a `predeploy-<tag>` dump.
+
+**Restore** (`docs/runbook.md`): `deploy/scripts/restore.sh backups/stocks-YYYY-MM-DD.dump` takes a `prerestore` dump, stops `app`, drops and recreates the database, runs `pg_restore --no-owner --exit-on-error` and starts the stack again.
+
+**Upgrade:** merge to `main`; `release.yml` builds, pushes and deploys with a health-gated rollback (§24.7). Flyway migrates on start, and the advisory lock prevents overlap.
 
 ### 24.3 Proxy, cookies and headers (`application-prod.yml`)
 
@@ -3885,7 +4026,7 @@ server:
 logging.structured.format.console: ecs
 ```
 
-- The host port binds to `127.0.0.1`, so only local `cloudflared` can reach the app. Docker port publishing makes the peer the bridge gateway (172.x), which the default internal-proxies regex covers.
+- The host port binds to `127.0.0.1` by default (`STOCKS_BIND_IP`, §24.2), so only a host-network `cloudflared` can reach it; a `cloudflared` container joined to the `stocks-edge` network uses `http://stocks-app:8080` and needs no published port. Either way the peer is loopback, a Docker bridge address (172.x) or the cloudflared container's address, all covered by the default internal-proxies regex. Compose passes `TRUSTED_PROXIES` with an equivalent default (`\d+` instead of `\d{1,3}`, because a `}` cannot appear inside a Compose `${…:-…}` default) and never empty. **CIDR lists work too:** Tomcat 11's `RemoteIpValve` treats a value containing `/` as a comma-separated CIDR list (`NetMaskSet`), e.g. `TRUSTED_PROXIES=127.0.0.0/8, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16` (verified by `ForwardedHeadersIT` with both forms; an untrusted peer's headers are ignored).
 - `ClientIp.resolve()` uses `request.getRemoteAddr()` after the valve. It feeds rate limiting, audit and `last_used_ip`.
 
 **Security headers** (Spring Security):
@@ -3905,9 +4046,11 @@ HSTS is sent when `isSecure()` is true, and is also set at Cloudflare.
 |---|---|
 | `/assets/**` (Vite-hashed) | `public, max-age=31536000, immutable` |
 | `index.html` | `no-cache` |
-| `/api/**`, `/mcp` | `no-store` |
+| `/api/**`, `/mcp` | `no-store` (set by the security chains) |
 
-**SPA fallback.** A GET for a path with no file extension that is not under `/api`, `/ws`, `/mcp`, `/v3`, `/swagger-ui`, `/oauth2`, `/.well-known` or `/h2-console` is forwarded to `/index.html`.
+`WebConfig` registers the static handlers itself (`spring.web.resources.add-mappings=false`): `/assets/**` immutable, and `/**` with `no-cache` for everything else served from the static locations (`index.html`, the manifest, icons).
+
+**SPA fallback.** A GET for a path with no file extension that is not under `/api`, `/ws`, `/mcp`, `/v3`, `/swagger-ui`, `/oauth2`, `/.well-known` or `/h2-console` and matches no file is answered with `/index.html` (a resource-resolver fallback; `/` itself is Boot's welcome-page forward). Everything else that does not exist is a 404 problem.
 
 ### 24.4 Single-origin path map
 
@@ -3915,23 +4058,26 @@ HSTS is sent when `isSecure()` is true, and is also set at Cloudflare.
 |---|---|
 | `/`, `/assets/*`, SPA routes | static files from the jar (`classpath:/static`) |
 | `/api/v1/**`, `/api/v1/admin/**` | REST |
-| `/api/docs` → `/swagger-ui/index.html`, `/swagger-ui/**`, `/v3/api-docs` | Swagger UI (springdoc redirects `/api/docs`; assets under `/swagger-ui/**`) and OpenAPI, all authenticated in chain 2 |
+| `/api/docs` → `/api/swagger-ui/index.html`, `/api/swagger-ui/**`, `/v3/api-docs` | Swagger UI (springdoc redirects `/api/docs` and serves the UI under `/api/swagger-ui/**`) and OpenAPI, all authenticated in chain 2 |
 | `/ws` | STOMP over WebSocket |
 | `/mcp` | MCP Streamable HTTP (stateless) |
 | `/oauth2/**`, `/.well-known/**` | Phase 2 OAuth |
-| `:8081/actuator/**` | health and metrics, **not tunneled** |
+| `:8081/actuator/**` | health, info, metrics, prometheus: **not published or tunneled**, so open on that port |
 
 ### 24.5 Cloudflare Tunnel ingress (owner-managed; documented in `docs/deploy.md`)
 
 ```yaml
-# deploy/cloudflared/config.example.yml
+# deploy/cloudflared/config.example.yml (locally managed tunnel; a token tunnel sets the same URL as a "Public hostname")
 ingress:
   - hostname: stocks.example.com
-    service: http://localhost:8080          # or http://app:8080 if cloudflared joins the compose "edge" network
+    service: http://stocks-app:8080         # cloudflared container joined to the `stocks-edge` network (CasaOS default)
+    # service: http://localhost:8080        # cloudflared on the host network / as a system service
+    # service: http://<server-lan-ip>:8080  # cloudflared container on another network (STOCKS_BIND_IP=0.0.0.0)
     originRequest: { connectTimeout: 10s, keepAliveTimeout: 90s }
   - service: http_status:404
 ```
 
+- **Where cloudflared runs** (the owner's existing tunnel, often the CasaOS cloudflared app): joined to `stocks-edge` (`docker network connect stocks-edge <cloudflared>`, or `networks: [stocks-edge]` as an external network in its compose) → `http://stocks-app:8080`; host network → `http://localhost:8080`; otherwise `STOCKS_BIND_IP=0.0.0.0` and `http://<server-lan-ip>:8080`.
 - **One hostname, one port** carries HTTP and WebSocket. The zone setting "WebSockets" must be on (it is by default).
 - Use a **named tunnel with a stable hostname**, never Quick Tunnels: the Phase 2 OAuth issuer is bound to the hostname, and Quick Tunnels do not support SSE.
 - Cache rules: **bypass** `/api/*`, `/ws`, `/mcp`, `/v3/*`, `/swagger-ui/*`, `/oauth2/*`, `/.well-known/*`. **Cache** `/assets/*`. Turn Rocket Loader off.
@@ -3949,11 +4095,43 @@ ingress:
 - Other targets:
   - `make test`: `./mvnw verify` and `npm test`
   - `make test-pg`: `./mvnw verify -Ppg-it` (embedded PostgreSQL 18.6; **no Docker**)
-  - `make e2e`: Playwright
-  - `make openapi`: boots the test profile, writes `docs/openapi.json`, and runs `openapi-typescript` into `frontend/src/lib/api/schema.d.ts`
-  - `make jar`: Vite build, copy into `backend/src/main/resources/static`, then `./mvnw package`
-  - `make image`
+  - `make e2e`: `make jar`, start the jar with profiles `test,e2e` on :8080, wait for readiness (:8081), run Playwright with `E2E_BASE_URL=http://localhost:8080` and the `e2e` profile's admin as `E2E_USER`/`E2E_PASSWORD`, stop the jar (`cd frontend && npm run e2e` alone runs against mock mode). It refuses to start when either port is already taken; `make e2e E2E_PORT=18080 E2E_MANAGEMENT_PORT=18081` uses others
+  - `make openapi`: boots the test profile through the backend's `OpenApiExportTest` (§26 CI step 4; `com.stocks.config.OpenApiExportTest`), writes `docs/openapi.json`, and runs `openapi-typescript` into `frontend/src/lib/api/schema.d.ts`. The generated file only covers the controllers that exist; the SPA's hand-written `planned.d.ts` covers the rest until they land (§22.9).
+  - `make jar`: Vite build, copy into `backend/src/main/resources/static`, then `./mvnw -DskipTests package` (tests are `make test`)
+  - `make image`: `docker buildx build --load` for the host platform (`PLATFORMS=linux/amd64,linux/arm64 PUSH=1 IMAGE=… TAG=…` for a multi-arch push)
+  - `make compose-check`: the §24.2 compose and CasaOS checks (no Docker daemon needed)
 - Docker is **not** needed for dev.
+
+### 24.7 CI/CD and self-hosting (GitHub Actions → GHCR → CasaOS)
+
+The repository lives on GitHub (private). GitHub-hosted runners test and build; a **self-hosted runner on the owner's CasaOS server** deploys. Nothing connects into the server: the runner long-polls GitHub over outbound HTTPS, so it works behind NAT and Cloudflare, with no SSH. Step-by-step setup: `docs/deploy.md`.
+
+| Workflow | Trigger | Does |
+|---|---|---|
+| `ci.yml` | `pull_request`; `push` to branches other than `main`; `workflow_call` (from `release.yml`); manual | The §26 CI jobs on `ubuntu-24.04`. Never the self-hosted runner (PRs run their own copy of this file). |
+| `release.yml` | `push` to `main`; `push` of `v*` tags; `workflow_dispatch` (inputs `tag`, `deploy`) | `meta` (lowercase image name, tags) → `ci` (calls `ci.yml`, image job skipped) → `image` (buildx + QEMU, `linux/amd64,linux/arm64`, push to GHCR, `packages: write`, SBOM + `provenance: mode=max`, GHA cache) → `deploy` |
+
+Actions are pinned to their current major versions: `actions/checkout@v7`, `actions/setup-java@v6`, `actions/setup-node@v7`, `actions/upload-artifact@v7`, `docker/setup-qemu-action@v4`, `docker/setup-buildx-action@v4`, `docker/login-action@v4`, `docker/metadata-action@v6`, `docker/build-push-action@v7` (all Node 24; the self-hosted runner must be ≥ 2.327.1 and auto-updates).
+
+**Image tags** (`ghcr.io/<owner lowercased>/stocks`, plus `…/stocks-agent-runner` once `tools/agent-runner/Dockerfile` exists): `sha-<7 hex>` always; `latest` on the default branch; `X.Y.Z` and `X.Y` for a `vX.Y.Z` tag. Deploys always use the immutable `sha-…` (or version) tag, never `latest`.
+
+**Deploy job** (`runs-on: [self-hosted, casaos]`, `permissions: { contents: read, packages: read }`, `concurrency: deploy-casaos` without cancellation):
+- Runs only when the repository variable `DEPLOY_ENABLED == 'true'` and the event is a push to `main` or a `workflow_dispatch` with `deploy: true`; never for pull requests or tag pushes. With the `tag` input set, it skips CI and the build and deploys or rolls back to that existing tag.
+- Logs in to GHCR with the job's own `GITHUB_TOKEN` in a job-scoped `DOCKER_CONFIG`, sparse-checks out `docker-compose.yml` and `deploy/`, and runs `deploy/scripts/deploy.sh --tag <tag> --sync-from $GITHUB_WORKSPACE`:
+  1. preflight (`.env` present and writable, tag format, `docker compose config`);
+  2. copy `docker-compose.yml` into `DEPLOY_DIR` (keeping `.bak`; skipped when `DEPLOY_SYNC_COMPOSE=false`) and `pg_backup.sh` into `/DATA/AppData/stocks/scripts/`;
+  3. tag the running image `<image>:rollback`, pull the new tag (and the agent-runner image when the `agents` profile is on);
+  4. pre-deploy `pg_dump` when the database is running (failure aborts with nothing changed);
+  5. write `STOCKS_IMAGE` and `STOCKS_TAG` into `.env`, `docker compose -p stocks up -d`, then wait up to `DEPLOY_HEALTH_TIMEOUT` (420 s) for the `app` healthcheck (Spring readiness on 8081); unhealthy, exited, restarting or timed out = failure;
+  6. on failure: print the app log, restore the previous compose file, `up -d app` on `<image>:rollback`, wait for health, record the previous immutable tag in `.env`, exit 1; if the rollback is not healthy either, exit 2 (runbook "Failed deploy");
+  7. on success: write `.deploy-state`, keep the three newest older `sha-…`/version images and remove the rest.
+- Optional `DEPLOY_PUBLIC_URL` smoke test through the tunnel (warning only).
+- Repository variables: `DEPLOY_ENABLED`, `DEPLOY_DIR` (default `/DATA/AppData/stocks`), `DEPLOY_SYNC_COMPOSE` (`true`), `DEPLOY_PROFILES` (e.g. `agents`), `DEPLOY_HEALTH_TIMEOUT` (`420`), `DEPLOY_PUBLIC_URL`. No repository secrets: runtime secrets live only in the server's `.env`.
+- Rollback restores the image, never the schema: Flyway is forward-only. The pre-deploy dump is the way back from an incompatible migration.
+
+**Runner security.** The runner is the official binary as a systemd service, registered to this repository only, running as an unprivileged user in the `docker` group (root-equivalent, so write access to the repository = control of the server). Fork pull request workflows stay disabled, `main` is protected, and only `release.yml`'s deploy job targets the `casaos` label (`.github/actionlint.yaml` declares it).
+
+**Without a runner.** `docs/deploy.md` documents the zero-runner alternative: a Watchtower container (the maintained fork; `containrrr/watchtower` was archived in December 2025) polling `latest` for `stocks-app` only, with no health-gated rollback and no pre-deploy dump.
 
 ---
 
@@ -3964,6 +4142,7 @@ ingress:
 - **`JobScheduler`** discovers the beans, arms the next occurrence of each, wraps every run in `JobRunGuard` (`job_run(job_name, run_key)`: RUNNING → DONE or FAILED, never twice), and exposes the registry (next occurrence, last `run_key`, status) to `/admin/system` and to `POST /admin/system/jobs/{jobName}/run`.
 - **`CatchUpRunner`** runs at boot **before** `StartupGate` opens the engine queue. It asks every job for `occurrencesBetween(lastDoneOrBootWindow, now)`, merges them **in time order** across jobs, and replays them per each job's `CatchUpPolicy`: `ALL_MISSED` (every missed occurrence), `LATEST_ONLY` (only the most recent), `NONE` (skip). The look-back window is 7 days. Orders never fill for time the app was down (§9.4).
 - Fixed-rate loops with no `job_run` row are **`PeriodicTask`** beans, run by the same `JobScheduler`.
+- **Implementation (Phase 0, `com.stocks.jobs`).** `JobScheduler` validates names at startup (UPPER_SNAKE, ≤ 40 characters, unique across jobs and tasks) and runs a platform thread that checks about once a second against `TimeSource` (`wake()` re-checks at once; `POST /api/v1/test/clock` calls it; `replan()` after a calendar override). Due occurrences run on virtual threads, one at a time per job; when a clock jump makes several due at once, the job's policy picks them (`ALL_MISSED`: all in order; `LATEST_ONLY` and `NONE`: the latest). `PeriodicTask` intervals are wall time (`System.nanoTime`), never overlapping; `sessionsOnly()` tasks wait while the calendar says CLOSED or is still a stub. `runNow(name, runKeyOrNull)` runs synchronously whether or not jobs are enabled (null = the latest past occurrence in the catch-up window). `JobRunGuard`: a `DONE` occurrence never runs again; a `FAILED` one is retried by catch-up or "Run now"; a `RUNNING` row this process is not running was left by a crash (single instance, §12.9) and is taken over; every claim is a conditional INSERT/UPDATE. `CatchUpRunner` looks back `stocks.jobs.catch-up-window` (7 days) and skips occurrences already `DONE`. `StartupGate` is a `SmartLifecycle` (phase 0: after every singleton, before the web server accepts requests): catch-up, then the gate opens (`whenOpen()`: WS3's engine opens its queue), then the scheduler is armed from the catch-up instant, so no occurrence falls between the two.
 - **`stocks.jobs.enabled=false`** (the `test` profile) disables **every `ScheduledJob` and `PeriodicTask`, and `CatchUpRunner`**: session transitions, EOD, corporate actions, syncs, the leaderboard recompute, the feed visibility publisher, the intraday sampler and movers refresh. It does **not** disable the engine loop and its 250 ms sweep, market-data streams, pollers and refreshers (governed by the market-data profile), STOMP fan-out, the single-instance heartbeat or the API-key `last_used` writer. Tests call `JobScheduler.runNow(name, runKey)` or the component directly.
 
 | ET time | Job | Kind | Owner | Through engine? | `run_key` | Catch-up |
@@ -3995,12 +4174,13 @@ ingress:
 ## 26. Testing strategy
 
 **Shared test infrastructure.** WS1 creates `src/test/java/com/stocks/testkit` on Day 0; anyone may extend it:
-- `MutableTimeSource` (an `AdjustableTimeSource`).
+- `MutableTimeSource` (an `AdjustableTimeSource`; the class lives in main code, `common.time`, because the `test` profile wires it as a bean; the test kit only supplies it).
 - `ScriptedMarketData`: a `MarketDataService` test double that emits exact quotes and prints at exact instants. It lives in test sources only; the main-code boot default is `NoopMarketDataService` (§27.1).
 - `Fixtures`: create a player, account, deposit or position in one line.
 - `GoldenFiles`: JSON under `test/resources/golden/<area>/` (owners in §27.2).
 - `InvariantAssertions`: run after every engine test.
-- `EmbeddedPgContextInitializer`: one embedded PostgreSQL 18.6 per JVM, a fresh database per Spring context (`pgit` profile).
+- `EmbeddedPgContextInitializer`: one embedded PostgreSQL 18.6 per JVM (`EmbeddedPg`), a fresh database per Spring context (`pgit` profile). Under `-Ppg-it` it is applied to **every** Spring test context by `EmbeddedPgContextCustomizerFactory` (registered in `src/test/resources/META-INF/spring.factories`), except classes annotated `@H2Only` or named `*H2IT` (e.g. `ApplicationH2IT`, which pins H2 on purpose); a test's own `@DynamicPropertySource` datasource still wins.
+- Also in `testkit` (Phase 0): `TestTimes` (the §0 dates), `TestClockConfig` (`@Import` it for a `MutableTimeSource` bean), `TestDb` (a fresh migrated H2 or PG database without Spring, for repository and guard tests; `TestDb.fresh()` follows `-Ppg-it`), `TestProperties` (`StocksProperties` bound like the app), `WebSession` (a cookie-keeping MockMvc client that echoes `XSRF-TOKEN` like the SPA), `TestPrincipals` (MockMvc authentication as a `PlayerPrincipal`). `Fixtures` covers players, API keys, accounts, deposits and positions with rows that satisfy I1–I5 and I9. `ScriptedMarketData` plays quotes, prints, closes and halts against the injected clock (anti-look-ahead `executableQuote`, drain-once prints). `InvariantAssertions` is not written yet: it should reuse WS3's `InvariantChecker` queries when they land.
 
 WS3 owns **`DirectEngineExecutor`** (`src/test/java/com/stocks/trading/engine/testkit/`): engine commands run synchronously on the calling thread. It needs engine internals, so it lands with the engine (week 1), not on Day 0.
 
@@ -4012,7 +4192,7 @@ WS3 owns **`DirectEngineExecutor`** (`src/test/java/com/stocks/trading/engine/te
 | Recovery | Restart mid-session: state is identical; a missed `RTH_CLOSE` expires DAY orders with no retroactive fills; catch-up of a missed EOD after a split reconstructs pre-split holdings from `position_adjustment`; with the guard **explicitly enabled**, a second instance cannot take the advisory lock or a live H2 lease, and a lease left by a dead PID on the same host is taken over | `@SpringBootTest` (`stocks.single-instance.enabled=true`) |
 | Concurrency | 50 virtual threads send the same `clientOrderId` and get exactly one order (a mix of 201 and 200, one write token charged); 50 threads send the same `Idempotency-Key` on a cash transfer and get exactly one batch; the same for a reset (one new run, one RESET event); a retry after a simulated `ENGINE_TIMEOUT` replays; 200 mixed operations on one account keep invariants and never deadlock | `@SpringBootTest` |
 | Persistence | Flyway V1 applies on H2 (always) and on PostgreSQL 18.6 (`-Ppg-it`: embedded zonky PG, no Docker, run locally and in CI). PG append-only triggers reject UPDATE/DELETE. The CHECK constraints in §8 reject bad rows (admin AI, cash < 0, fractional GTC…). **Every repository method that issues a MERGE or binds a nullable or temporal parameter runs on both databases**, including null values for every nullable MERGE column. | JdbcClient tests |
-| Web and security | `AdminSecurityIT` (§17.4); CSRF required on session POSTs; a bearer request ignores cookies; scope matrix (personal key without `trade`); rate limit returns 429 with headers; key revocation is effective immediately; frozen bot gets `PLAYER_FROZEN`; forwarded headers are honored only from trusted proxies; problem-details shape (`INTERNAL_ERROR` hides details); **oversized `X-Request-Id`, `User-Agent` and MCP client headers** are replaced or truncated and the audit row is still written; **STOMP CONNECT with the raw `XSRF-TOKEN`** succeeds and without it fails; `/swagger-ui/index.html` requires authentication | MockMvc (`spring-boot-starter-webmvc-test`), WebSocket client |
+| Web and security | `AdminSecurityIT` (§17.4); CSRF required on session POSTs; a bearer request ignores cookies; scope matrix (personal key without `trade`); rate limit returns 429 with headers; key revocation is effective immediately; frozen bot gets `PLAYER_FROZEN`; forwarded headers are honored only from trusted proxies; problem-details shape (`INTERNAL_ERROR` hides details); **oversized `X-Request-Id`, `User-Agent` and MCP client headers** are replaced or truncated and the audit row is still written; **STOMP CONNECT with the raw `XSRF-TOKEN`** succeeds and without it fails; `/api/swagger-ui/index.html` requires authentication | MockMvc (`spring-boot-starter-webmvc-test`), WebSocket client |
 | Contract | `docs/openapi.json` snapshot diff in CI; **no `type: number` anywhere and every response property required** (§18); wire-value enums published as `"1D"`/`"1Min"`; DTO JSON serialization (decimals as strings, nulls present); STOMP payload samples | |
 | MCP | MCP Java SDK client against `RANDOM_PORT`: `tools/list` snapshot (names, **order**, all four hints, schemas); `whoami` identity propagation through the `contextExtractor` (**Day 1**); the MCP JSON contract test of §20.2 (decimal strings, nulls present, `structuredContent` validates against `outputSchema`); the **tool-coverage test** of §20.3; `place_order` replay returns `replayed=true`; `RATIONALE_REQUIRED` for AI; `RATE_LIMITED` shape; `untrusted` wrapping; `mcpClient` resolved from `X-Stocks-Client`; no admin tools | spring-ai MCP client, Inspector 2.10.1 (manual) |
 | Market data adapters | Alpaca and Finnhub JSON and stream fixtures; the budget manager never exceeds 30 and applies hysteresis and priority eviction; 405/406 handling; bar stitching (SIP + IEX tail); synthetic quote; `SplitGuard` with raw vs split bar fixtures; optional live test against Alpaca `v2/test` (`FAKEPACA`) with `-Plive` | MockRestServiceServer, fixtures |
@@ -4021,13 +4201,14 @@ WS3 owns **`DirectEngineExecutor`** (`src/test/java/com/stocks/trading/engine/te
 | Frontend unit | `lib/format` (decimal strings, signs, abbreviations); ticket validation states; `quoteStore` ref-counting; leaderboard row rendering (unranked, deposit chip, hidden equity, rebased) | Vitest + Testing Library |
 | E2E | Backend profiles `test,e2e` (SIM with a wall-advancing clock anchored at 2026-10-09T14:00Z, always-open, jobs on) with the built SPA. Viewports **390×844**, **768×1024** and **1440×900**. Scenarios: login → search AAPL → buy $10 notional → fill toast → position and activity appear → sell → GFV warning and ack. Admin: create an AI player plus key; deposit $100 to ALL; the memo appears in activity; leaderboard return unchanged. A bot key places an order via REST; `advanceClock("PT16M")` (§18.5); it appears in the feed. | Playwright 1.64 |
 
-**CI** (`.github/workflows/ci.yml`, GitHub-hosted):
-1. `backend`: `./mvnw -B verify`, which covers H2, ArchUnit and JaCoCo (gate: `com.stocks.trading..` and `com.stocks.portfolio..` ≥ 80% line coverage).
+**CI** (`.github/workflows/ci.yml`, GitHub-hosted `ubuntu-24.04`; on pull requests and pushes to branches other than `main`; `release.yml` calls it for `main` and `v*` tags before pushing an image, §24.7). Maven and npm caches come from `setup-java` / `setup-node`:
+1. `backend`: `./mvnw -B verify`, which covers H2, ArchUnit and JaCoCo (gate: `com.stocks.trading..` and `com.stocks.portfolio..` ≥ 80% line coverage). Surefire runs `*Test`, `*Tests` and `*IT` classes as one suite (no Failsafe split).
 2. `backend-pg`: `./mvnw -B verify -Ppg-it` (embedded PostgreSQL 18.6; no Docker needed).
-3. `frontend`: `npm ci && npm run lint && npm test && npm run build` (uses the committed lockfile with the §2.2 override).
-4. `contract`: `make openapi`, then `git diff --exit-code docs/openapi.json frontend/src/lib/api/schema.d.ts`, then the OpenAPI assertions (no `type: number`, response properties required).
-5. `e2e`: Playwright.
-6. `image`: `docker buildx build` (push only on tag); builds `tools/agent-runner` too.
+3. `frontend`: `npm ci`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` (uses the committed lockfile with the §2.2 override).
+4. `contract`: `make openapi`, then the drift check (`git diff --exit-code` plus `git status --porcelain` on `docs/openapi.json` and `frontend/src/lib/api/schema.d.ts`, so a missing or uncommitted file fails too), then `node .github/scripts/openapi-assert.mjs docs/openapi.json` (no `type: number` anywhere; every property of every schema reachable from a response is `required`). **`make openapi` contract (WS1):** it runs `./mvnw -B -q test -Dtest=OpenApiExportTest -Dstocks.openapi.output=<abs path>`; the backend test `OpenApiExportTest` boots the `test` profile, GETs `/v3/api-docs` as an authenticated user (MockMvc) and writes the body to that path, and is skipped when the property is absent. The Makefile pretty-prints it into `docs/openapi.json` and runs `npm run gen:api`.
+5. `e2e`: `make e2e` (builds the jar, starts it with profiles `test,e2e`, runs Playwright against it with `E2E_BASE_URL`, signed in as the `e2e` profile's admin) after `npx playwright install --with-deps chromium`; skipped while `frontend/e2e` has no `*.spec.ts`.
+6. `compose`: `.github/scripts/check-compose.sh` (Compose validity with and without the `agents` profile, and the CasaOS rules of §24.2), `shellcheck` on `deploy/**` and `.github/scripts`, and `actionlint` 1.7.12 (checksum-verified download).
+7. `image`: `docker buildx build --platform linux/amd64,linux/arm64`, **never pushed** from CI (pushing is `release.yml`'s job); builds `tools/agent-runner` too once it has a `Dockerfile`.
 
 ---
 
@@ -4044,7 +4225,7 @@ WS3 owns **`DirectEngineExecutor`** (`src/test/java/com/stocks/trading/engine/te
 4. **Contracts.**
    - Every interface and record in §5.3, under `com.stocks.contract.<feature>`, including the job SPI (`ScheduledJob`, `PeriodicTask`).
    - **Every DTO in §18.3 as a Java record** named per the §18.3 rule (`TDto`) in `com.stocks.contract.<producer>.dto`, plus the admin DTOs of §21.1.
-   - **Stub beans** so the app boots before features land. They are registered by `StubsAutoConfiguration` (`config/stubs`), listed in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Auto-configuration is processed after all user beans, so each stub's `@ConditionalOnMissingBean` reliably backs off when the real bean exists; in ordinary component-scanned configuration that condition is order-dependent and could yield two beans or the wrong one. Stubs throw `ApiException(NOT_IMPLEMENTED)` (501). The market-data default is the main-code `NoopMarketDataService` (every quote `quality=NONE`); `ScriptedMarketData` stays in test sources. **Each workstream deletes its stubs in the PR that lands the real bean**; at M4 `StubsAutoConfiguration` is empty and removed.
+   - **Stub beans** so the app boots before features land. They are registered by `StubsAutoConfiguration` (`config/stubs`), listed in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Auto-configuration is processed after all user beans, so each stub's `@ConditionalOnMissingBean` reliably backs off when the real bean exists; in ordinary component-scanned configuration that condition is order-dependent and could yield two beans or the wrong one. Stubs throw `ApiException(NOT_IMPLEMENTED)` (501). The market-data default is the main-code `NoopMarketDataService` (every quote `quality=NONE`); `ScriptedMarketData` stays in test sources. **Each workstream deletes its stubs in the PR that lands the real bean**; at M4 `StubsAutoConfiguration` is empty and removed. Every stub implements the marker `ContractStub` (owner `WS1`–`WS4`), so a test can list the contracts that are still stubbed. The contract tests (`src/test/java/com/stocks/contract/`) keep the list of contract service interfaces (`ContractServices.ALL`): the full context must hold exactly one bean of each (real or stub), every remaining stub must throw 501, and a new contract service interface fails the build until it is listed and stubbed. Deleting a stub needs no test change.
 5. **Security skeleton.** Dev login, so the SPA can authenticate.
 6. **Jobs.** `JobScheduler`, `JobRunGuard`, `CatchUpRunner` and `StartupGate` skeletons, so WS2–WS4 implement `ScheduledJob` from day 1.
 7. **Test kit and ArchUnit** (§26). `DirectEngineExecutor` is WS3's (week 1).
@@ -4118,14 +4299,17 @@ WS3 owns **`DirectEngineExecutor`** (`src/test/java/com/stocks/trading/engine/te
 | 10 | Finnhub stream symbol cap; extended-hours prints | 50; yes | Startup probe |
 | 11 | Condition-code tables for eligible prints (Alpaca SIP letters vs Finnhub numeric) | conservative exclusions | Adapter fixture tests |
 | 12 | Settlement on Good Friday | Alpaca `settlement_date` wins | Calendar sync |
-| 13 | Spring AI 2.0.1 STATELESS: principal propagation and endpoint property names | **Resolved in spec** (§20.1): override `WebMvcStatelessServerTransport` with a `contextExtractor`; properties `spring.ai.mcp.server.protocol` and `spring.ai.mcp.server.streamable-http.mcp-endpoint` | The Day-1 spike test confirms it (WS5) |
-| 14 | Boot 4 Spring Session JDBC starter artifact name | `spring-boot-starter-session-jdbc` | Scaffold (WS1) |
+| 13 | Spring AI 2.0.1 STATELESS: principal propagation and endpoint property names | **Verified 2026-10-09** (Day-1 spike, `McpServerIT`): overriding `WebMvcStatelessServerTransport` (`@ConditionalOnMissingBean`) with a `contextExtractor` carries the principal and `RequestMeta` into tools; properties `spring.ai.mcp.server.protocol`, `.type`, `.streamable-http.mcp-endpoint`, `.capabilities.*`, `.annotation-scanner.enabled`, `.tool-callback-converter`, `.instructions` exist as named. Also found: the `@McpTool` callback ignores `mcpServerJsonMapper` (#25) | Closed |
+| 14 | Boot 4 Spring Session JDBC starter artifact name | **Resolved: `spring-boot-starter-session-jdbc`** (exists in Boot 4.1.1) | Closed at scaffold |
 | 15 | Spring Authorization Server sends RFC 9207 `iss` | — | Phase 2 |
 | 16 | ChatGPT plan eligibility for write-capable custom MCP | — | Phase 2, in the owner's account |
 | 17 | Data licensing (no redistribution) | private, login-only, non-commercial, source label | Owner's responsibility; not legal advice |
 | 18 | Overnight session (Webull 24/5) and the Dec 6, 2026 SIP 23×5 | not supported | Phase 3, only if a data feed covers it |
-| 19 | V1 schema on PostgreSQL 18.6 | **Verified 2026-10-09** (embedded PG 18.6): V1 + V1_0_1 apply cleanly; triggers and the one-active-account index behave. The v1.1 additions are re-verified by the first `-Ppg-it` run. | Closed |
-| 20 | Spring AI's `mcpServerJsonMapper` is `@ConditionalOnMissingBean` | assume yes; else exclude `McpServerJsonMapperAutoConfiguration` | Day-1 spike (WS5) |
+| 19 | V1 schema on PostgreSQL 18.6 | **Verified 2026-10-09** (embedded PG 18.6): V1 + V1_0_1 apply cleanly; triggers and the one-active-account index behave. The v1.1 additions were re-verified by the scaffold's `-Ppg-it` run (2026-10-09). | Closed |
+| 20 | Spring AI's `mcpServerJsonMapper` is `@ConditionalOnMissingBean` | **Verified: yes**, `@ConditionalOnMissingBean(name = "mcpServerJsonMapper")` on the class; our bean must be `defaultCandidate = false` so Boot's `jacksonJsonMapper` is still created (§20.1). `McpServerIT` asserts that the bean is Boot's instance | Closed |
 | 21 | When Alpaca rewrites `adjustment=split` daily bars around an ex-date (drives `SplitGuard` timing) | check at 04:01 and 09:20 ET | Fixture capture on the next real split (WS2) |
 | 22 | claude.ai custom connector "Request headers" (beta) on the owner's account | optional Phase 1 route | Owner tries it at M4 |
 | 23 | Custom GPT Actions retirement (reported for Dec 11, 2026) | not built either way | — |
+| 24 | **H2 2.4.240 regression**: a CHECK constraint becomes "invalid" (`23514 Check constraint invalid`) once the connection that created it closes, until the database is reopened (reproduced on 2026-10-09 with plain JDBC, mem and file databases, with or without `MODE=PostgreSQL`; 2.3.232 is fine) | dev and test set `spring.datasource.hikari.max-lifetime: 0`, so Flyway's pooled connection is never retired; `TestDb` uses a Hikari pool too. A fresh dev DB would otherwise break every CHECK-ed insert 30 minutes after first boot. | Drop the workaround when Boot manages a fixed H2 (report upstream); never pin H2 ourselves (§2.1) |
+| 25 | Spring AI 2.0.1 `@McpTool` results bypass `mcpServerJsonMapper` (private `JacksonUtils` mapper: decimals as numbers; structured mode has no text block), and the SDK server validates `structuredContent` against `outputSchema` | **Resolved** (§20.1 Tool results): annotation scanner off; `McpToolCatalog` + `McpToolHandler` (Boot mapper) + `McpOutputSchemas` | Re-check on every Spring AI upgrade; drop our handler if Spring AI lets the callback use `mcpServerJsonMapper` |
+| 26 | MCP transport cosmetics: (a) SDK 2.0.0's stateless server has no notification handlers, so each `notifications/initialized` logs WARN "Missing handler for notification type"; (b) a malformed `Accept` on `POST /mcp` throws `InvalidMediaTypeException` inside Spring AI's transport → 500 | (a) harmless (202); (b) only broken clients | (a) optional `logging.level.io.modelcontextprotocol.server.DefaultMcpStatelessServerHandler: ERROR`; (b) `ProblemDetailsAdvice` maps `InvalidMediaTypeException` → 400 `VALIDATION_FAILED` (both WS1-owned) |

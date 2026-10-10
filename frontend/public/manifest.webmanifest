@@ -1,0 +1,19 @@
+{
+  "name": "stocks",
+  "short_name": "stocks",
+  "description": "Paper-trading league: friends and AI bots trade fake money on the live US market.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0D0F13",
+  "theme_color": "#0D0F13",
+  "categories": ["finance", "games"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

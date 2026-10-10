@@ -1,0 +1,139 @@
+# =====================================================================================================================
+# stocks: defaults for every profile (docs/ARCHITECTURE.md §23.1). Profile files override (§23.2).
+# Key ownership (§27.3 rule 3): stocks.{public-url,security,ratelimit,bootstrap,jobs,single-instance} WS1
+# (config.StocksProperties) · stocks.marketdata WS2 · stocks.engine, stocks.rules WS3 · stocks.performance WS4 ·
+# spring.ai.mcp WS5. Structure changes go through WS1.
+# =====================================================================================================================
+spring:
+  application.name: stocks
+  profiles.default: dev
+  threads.virtual.enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:h2:file:./.data/stocks-dev;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;AUTO_SERVER=TRUE}
+    username: ${DB_USER:sa}
+    password: ${DB_PASSWORD:}
+    hikari.maximum-pool-size: 20
+  flyway.locations: classpath:db/migration/common,classpath:db/migration/{vendor}
+  web.resources.add-mappings: false        # WebConfig maps /assets/** (immutable) and /** (SPA fallback), §24.3
+  session:
+    jdbc.initialize-schema: never           # tables come from Flyway (§8.2/8.3)
+    timeout: 14d
+  ai.mcp.server:                            # Spring AI 2.0.1 property names (§20.1; verified by the Day-1 spike, §28 #13)
+    name: stocks
+    version: ${stocks.version}
+    protocol: STATELESS
+    type: SYNC
+    streamable-http.mcp-endpoint: /mcp
+    # instructions: unset, so McpConfig loads classpath:mcp/instructions.md
+    capabilities: { tool: true, resource: false, prompt: false, completion: false }   # tools only (§20.3)
+    annotation-scanner.enabled: false       # McpConfig builds the tool list itself (Boot JsonMapper, §20.3 order)
+    tool-callback-converter: false          # no Spring AI ToolCallback beans; tools are @McpTool methods only
+server:
+  port: 8080
+  shutdown: graceful
+  servlet.session.cookie: { name: stocks_sid, http-only: true, same-site: lax, secure: false }
+management:
+  server.port: 8081                         # never routed through the tunnel
+  endpoints.web.exposure.include: health,info,metrics,prometheus
+  endpoint.health.probes.enabled: true
+springdoc:
+  api-docs.path: /v3/api-docs
+  swagger-ui.path: /api/docs                # redirects to /api/swagger-ui/index.html; UI assets under /api/swagger-ui/** (§24.4)
+  paths-to-match: /api/v1/**                # the REST API only (not /mcp, actuator or test endpoints)
+  default-produces-media-type: application/json
+  default-consumes-media-type: application/json
+  writer-with-order-by-keys: true           # stable docs/openapi.json (CI diffs it)
+
+stocks:
+  version: '@project.version@'
+  public-url: ${APP_PUBLIC_URL:http://localhost:5173}
+  jobs:
+    enabled: true                           # every ScheduledJob and PeriodicTask (§25); not the engine, market data or STOMP
+    catch-up-window: 7d                     # CatchUpRunner look-back at boot (§25)
+  single-instance.enabled: true             # §12.9; false in the test profile
+  bootstrap:
+    admin-handle: ${ADMIN_BOOTSTRAP_USERNAME:}
+    admin-password: ${ADMIN_BOOTSTRAP_PASSWORD:}
+    default-starting-cash: ${STARTING_CASH_DEFAULT:500.00}   # seeds app_setting once; admin UI wins afterwards
+    seed-demo: false
+  security:
+    api-key-pepper: ${API_KEY_PEPPER:}
+    login-max-failures: 10
+    login-lockout: 15m
+    recent-auth: 15m
+    extra-ws-origins: []                    # dev adds http://localhost:5173
+    password-hash-cost: 12                  # bcrypt cost (§17.3); the test profile lowers it for speed
+  ratelimit:
+    key-reads-per-min: 120
+    key-reads-burst: 30
+    web-reads-per-min: 600
+    heavy-reads-per-min-key: 30
+    heavy-reads-per-min-web: 120
+    writes-per-min: 20
+    writes-per-day: 300
+    login-per-min-ip: 10
+    signup-per-hour-ip: 5
+    anon-per-min-ip: 300
+  engine:
+    seed: ${ENGINE_SEED:dev-seed-change-me}
+    queue-capacity: 10000
+    submit-timeout: 5s
+    sweep-interval: 250ms
+    latency-base: 250ms
+    latency-jitter-min: 100ms
+    latency-jitter-max: 500ms
+  rules:
+    gtc-days: 60
+    max-open-orders: 50
+    max-order-qty: 200000
+    market-collar-pct: 5
+    hold-pct-regular: 102
+    hold-pct-queued: 115
+    fat-finger-warn-pct: 5
+    price-too-far-pct: 50
+    tier-spread-bps: { MEGA: 2, MID: 10, SMALL: 50 }        # synthetic full spread (§12.3)
+    iex-max-spread-bps: { MEGA: 10, MID: 40, SMALL: 150 }   # rank-2 IEX qualification limit
+    iex-clamp: { print-max-age: 2s, half-spreads: 3 }
+    freshness:
+      regular-confirmed: 15s
+      ext-confirmed: 120s
+      regular-exchange-age: 5m
+      ext-exchange-age: 15m
+      consolidated-print-regular: 10s
+      consolidated-print-ext: 60s
+    fractional: { min-buy-notional: 1.00, min-sell-notional: 0.01, min-qty: 0.00001, allow-limit: false }
+    gfv: { requires-ack: true, settled-cash-only-at: 3, liquidation-only-at: 4, restriction-days: 90 }
+    pdt.enforced: false
+    ext-hours.require-real-quotes: false
+    fill.resting-requires-print: false
+  marketdata:
+    profile: ${MARKETDATA_PROFILE:simulated}
+    allow-simulated-in-prod: false
+    pinned: [ SPY ]
+    routes: { }                             # §15.4 (defaults per profile in code)
+    poll: { hot: 2s, warm: 10s, universe: 60s }
+    alpaca:
+      key-id: ${ALPACA_KEY_ID:}
+      secret-key: ${ALPACA_SECRET_KEY:}
+      feed: ${ALPACA_FEED:iex}              # iex → sip after the $99 upgrade
+      data-url: https://data.alpaca.markets
+      trading-url: https://paper-api.alpaca.markets
+      stream-url: wss://stream.data.alpaca.markets/v2/${ALPACA_FEED:iex}
+      max-stream-symbols: 30
+      rest-per-minute: 180
+      snapshot-batch: 100
+    finnhub:
+      token: ${FINNHUB_TOKEN:}
+      base-url: https://finnhub.io/api/v1
+      ws-url: wss://ws.finnhub.io
+      max-stream-symbols: 50
+      rest-per-minute: 55
+    sim: { seed: 42, clock: wall, offset: P0D, anchor: null, speed: 1.0, always-open: false, scenarios: [] }
+                                            # clock=offset with an anchor: the offset is computed at boot so now = anchor
+  performance:
+    low-equity-warning: 1.00                # admin preview warning only; flows are always applied (§16.2)
+    eod-delay: 20m
+    intraday-sample-interval: 5m
+    intraday-retention-days: 14
+    benchmark-symbol: SPY
+    leaderboard-refresh: 5s

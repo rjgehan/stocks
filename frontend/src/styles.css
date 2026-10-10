@@ -1,0 +1,129 @@
+@import "tailwindcss";
+@import "./lib/theme/tokens.css";
+
+/*
+ * Breakpoints (§22.3): phone < 600 · tablet 600–1023 · desktop 1024–1439 · wide ≥ 1440.
+ * Tailwind's defaults are replaced so `tablet:`, `desktop:` and `wide:` match the spec exactly.
+ */
+@theme {
+  --breakpoint-*: initial;
+  --breakpoint-tablet: 600px;
+  --breakpoint-desktop: 1024px;
+  --breakpoint-wide: 1440px;
+
+  /* Type scale (§22.8) */
+  --text-hero: 28px;
+  --text-hero--line-height: 34px;
+  --text-hero-phone: 32px;
+  --text-hero-phone--line-height: 38px;
+  --text-section: 15px;
+  --text-section--line-height: 20px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-table: 13px;
+  --text-table--line-height: 18px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-micro: 11px;
+  --text-micro--line-height: 14px;
+
+  --animate-flash-up: flash-up 400ms ease-out;
+  --animate-flash-down: flash-down 400ms ease-out;
+  --animate-sheet-up: sheet-up 200ms ease-out;
+  --animate-sheet-left: sheet-left 200ms ease-out;
+  --animate-fade-in: fade-in 200ms ease-out;
+  --animate-toast-in: toast-in 200ms ease-out;
+}
+
+/*
+ * Semantic colours map straight onto the §22.8 CSS variables (inline = utilities reference the
+ * variables, so theme and red-up switches apply without re-rendering). --radius-* and --font-sans
+ * are defined with the same names by tokens.css, which is unlayered and therefore wins over
+ * Tailwind's layered defaults.
+ */
+@theme inline {
+  --color-bg-0: var(--bg-0);
+  --color-bg-1: var(--bg-1);
+  --color-bg-2: var(--bg-2);
+  --color-bg-3: var(--bg-3);
+  --color-border: var(--border);
+  --color-divider: var(--divider);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-text-inverse: var(--text-inverse);
+  --color-up: var(--up);
+  --color-up-bg: var(--up-bg);
+  --color-up-strong: var(--up-strong);
+  --color-down: var(--down);
+  --color-down-bg: var(--down-bg);
+  --color-down-strong: var(--down-strong);
+  --color-flat: var(--flat);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-bg: var(--accent-bg);
+  --color-warn: var(--warn);
+  --color-session-ext: var(--session-ext);
+  --color-session-overnight: var(--session-overnight);
+  --color-session-closed: var(--session-closed);
+  --color-ai: var(--ai);
+  --color-ai-bg: var(--ai-bg);
+  --color-human: var(--human);
+  --color-gold: var(--gold);
+  --color-silver: var(--silver);
+  --color-bronze: var(--bronze);
+}
+
+@keyframes flash-up { from { background-color: var(--up-bg); } to { background-color: transparent; } }
+@keyframes flash-down { from { background-color: var(--down-bg); } to { background-color: transparent; } }
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes sheet-left { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html, body, #root { height: 100%; }
+  body {
+    margin: 0;
+    font-size: 14px;
+    line-height: 20px;
+    /* §22.7: every number uses tabular figures */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior-y: none;
+  }
+  button, [role="button"] { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  ::selection { background: var(--accent-bg); }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+}
+
+@layer utilities {
+  /* Safe areas (only non-zero with viewport-fit=cover, §22.3) */
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  .pl-safe { padding-left: env(safe-area-inset-left); }
+  .pr-safe { padding-right: env(safe-area-inset-right); }
+  .h-tabbar { height: calc(56px + env(safe-area-inset-bottom)); }
+  .scrollbar-thin { scrollbar-width: thin; scrollbar-color: var(--bg-3) transparent; }
+  .scrollbar-none { scrollbar-width: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+}
+
+/* §22.8: all motion is disabled under prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

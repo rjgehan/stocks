@@ -1,0 +1,30 @@
+# =====================================================================================================================
+# Profile `test` (§23.2): every Spring test context gets its OWN in-memory H2 database (the context cache keeps several
+# contexts alive in one JVM; they must not share engines, schedulers or data). With -Ppg-it the `pgit` profile is added
+# and the test kit's EmbeddedPgContextInitializer (§26) points the context at embedded PostgreSQL 18.6 instead.
+# `make openapi` also boots this profile.
+# =====================================================================================================================
+spring:
+  datasource:
+    url: jdbc:h2:mem:stocks-${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ''
+  flyway.out-of-order: true
+  # H2 2.4.240 bug: CHECK constraints become "invalid" once the connection that created them closes (until the
+  # database is reopened; 2.3.232 is fine). Never retire pooled connections, so Flyway's stays open (§28 #24).
+  datasource.hikari.max-lifetime: 0
+
+stocks:
+  jobs.enabled: false                       # tests run jobs explicitly through JobScheduler.runNow
+  single-instance.enabled: false            # only the Recovery IT enables it
+  security:
+    api-key-pepper: test-pepper-not-secret-0123456789abcdef
+    password-hash-cost: 4                   # bcrypt's minimum: keeps login tests fast (prod uses 12)
+  engine:
+    seed: test-seed
+  marketdata:
+    profile: simulated
+    sim: { clock: fixed }                   # a MutableTimeSource bean (§23.2)
+
+logging.level:
+  org.springframework.boot.autoconfigure: WARN

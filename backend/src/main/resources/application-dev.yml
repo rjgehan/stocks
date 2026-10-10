@@ -1,0 +1,26 @@
+# =====================================================================================================================
+# Profile `dev` (default; §23.2): H2 file DB at backend/.data/stocks-dev (run from backend/), SIM market data,
+# idempotent demo seed, H2 console. Delete backend/.data/ after the V1 squash (§8).
+# =====================================================================================================================
+spring:
+  flyway.out-of-order: true                 # per-workstream V1_<ws>_<nn> migrations land in any order (§8)
+  # H2 2.4.240 bug: CHECK constraints become "invalid" once the connection that created them closes (until the
+  # database is reopened). Never retire pooled connections, so Flyway's stays open on a fresh dev DB (§28 #24).
+  datasource.hikari.max-lifetime: 0
+  h2.console:
+    enabled: true
+    path: /h2-console
+
+stocks:
+  bootstrap:
+    # Dev admin `admin` / `admin-dev-123` (meets the 10-character rule of §17.3). The demo seed (alice, bob, claude,
+    # chatgpt) creates only what is missing and writes the bot keys to backend/.data/dev-keys.txt.
+    admin-handle: ${ADMIN_BOOTSTRAP_USERNAME:admin}
+    admin-password: ${ADMIN_BOOTSTRAP_PASSWORD:admin-dev-123}
+    seed-demo: true
+  security:
+    extra-ws-origins: [ http://localhost:5173 ]
+    # Dev-only default so the demo bot keys work out of the box; never a production value (prod requires its own).
+    api-key-pepper: ${API_KEY_PEPPER:dev-pepper-not-secret-change-me-0123456789}
+  marketdata:
+    profile: ${MARKETDATA_PROFILE:simulated}   # `hybrid` with keys in .env uses live data (separate Alpaca account!)

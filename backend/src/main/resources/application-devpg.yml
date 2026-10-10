@@ -1,0 +1,9 @@
+# =====================================================================================================================
+# Profile `devpg` (§23.2): use with `dev` against the local Postgres of docker-compose.dev.yml.
+#   ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev,devpg
+# =====================================================================================================================
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/stocks}
+    username: ${DB_USER:stocks}
+    password: ${DB_PASSWORD:stocks}

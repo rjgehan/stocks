@@ -1,0 +1,9 @@
+# frontend-local ignores (the repo root .gitignore also applies)
+node_modules/
+dist/
+test-results/
+playwright-report/
+blob-report/
+*.tsbuildinfo
+# the root .gitignore ignores `.env.*`; the mock-mode env file holds no secrets and is committed
+!.env.mock
