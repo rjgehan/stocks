@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -26,6 +27,7 @@ public class RedirectUris {
   private final List<String> prefixes = new ArrayList<>();
   private final boolean loopback;
 
+  @Autowired
   public RedirectUris(OAuthProperties properties) {
     this(properties.redirectAllowlist(), properties.allowLoopbackRedirects());
   }

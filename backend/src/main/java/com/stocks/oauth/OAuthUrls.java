@@ -3,6 +3,7 @@ package com.stocks.oauth;
 import com.stocks.config.StocksProperties;
 import java.net.URI;
 import java.util.Locale;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -28,6 +29,7 @@ public class OAuthUrls {
 
   private final String issuer;
 
+  @Autowired
   public OAuthUrls(StocksProperties properties) {
     this(properties.publicUrl());
   }

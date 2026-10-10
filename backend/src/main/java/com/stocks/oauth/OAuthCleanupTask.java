@@ -32,7 +32,7 @@ public class OAuthCleanupTask implements PeriodicTask {
 
   @Override
   public String name() {
-    return "oauth-cleanup";
+    return "OAUTH_CLEANUP";
   }
 
   @Override
