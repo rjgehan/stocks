@@ -33,8 +33,13 @@ test('deposit to all players with a memo', async ({ page }) => {
   await dialog.getByLabel('Type 100.00 to confirm').fill('100.00')
   await confirm.click()
 
-  await expect(toastWith(page, `Deposited $100.00 · ${applying} applied`)).toBeVisible()
-  await expect(page.getByRole('region', { name: 'Result' })).toContainText(`${applying} applied`)
+  // Against the shared e2e backend another worker may sign a friend up between the preview and the apply, so the
+  // batch applies to at least the previewed accounts.
+  const applied = /Deposited \$100\.00 · (\d+) applied/
+  await expect(toastWith(page, applied)).toBeVisible()
+  const count = Number(applied.exec((await toastWith(page, applied).textContent()) ?? '')?.[1] ?? 0)
+  expect(count).toBeGreaterThanOrEqual(applying)
+  await expect(page.getByRole('region', { name: 'Result' })).toContainText(`${count} applied`)
   await expect(page.getByRole('region', { name: 'Recent transfers' }).getByText(memo).first()).toBeVisible()
 
   // The admin is also a player: the deposit and its memo show in their own activity, marked "By admin".
