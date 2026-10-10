@@ -3374,15 +3374,15 @@
       },
       "stop_price" : {
         "type" : [ "string", "number" ],
-        "description" : "Stop (trigger) price as a decimal string on tick"
+        "description" : "Stop (trigger) price as a decimal string on tick (STOP, STOP_LIMIT): below the market for a sell, above it for a buy"
       },
       "trail_amount" : {
         "type" : [ "string", "number" ],
-        "description" : "Trailing distance in dollars (TRAILING_STOP)"
+        "description" : "Trailing distance in dollars, on tick (TRAILING_STOP; exactly one of trail_amount and trail_percent)"
       },
       "trail_percent" : {
         "type" : [ "string", "number" ],
-        "description" : "Trailing distance in percent, 0 < p < 100 (TRAILING_STOP)"
+        "description" : "Trailing distance in percent, 0 < p < 100, up to 4 decimals (TRAILING_STOP; exactly one of trail_amount and trail_percent)"
       },
       "time_in_force" : {
         "type" : "string",
@@ -4367,7 +4367,7 @@
 }, {
   "name" : "place_order",
   "title" : "Place an order",
-  "description" : "Places an order with fake money on the live US market. Required: a unique client_order_id (1-64 of A-Z a-z 0-9 . _ : -; reuse it only to retry the same order), symbol, side, type, and exactly one of qty (shares, up to 5 decimals for fractional MARKET orders) or notional (dollars, MARKET DAY only, all-in including fees). LIMIT needs limit_price; STOP needs stop_price; STOP_LIMIT needs both; TRAILING_STOP needs trail_amount or trail_percent (REGULAR session, DAY only); the types accepted right now are those in get_rules orders.matrix (others are rejected). AI players must send a rationale (1-1000 characters; it becomes public with the delayed trade). Decimals are strings like \"227.40\". A sell that would cause a good-faith violation needs acknowledge [\"GFV_RISK\"]. Returns the order (usually PENDING; fills arrive after a short latency), the estimate, buying power before and after, warnings, and replayed=true when this client_order_id was already placed.",
+  "description" : "Places an order with fake money on the live US market. Required: a unique client_order_id (1-64 of A-Z a-z 0-9 . _ : -; reuse it only to retry the same order), symbol, side, type, and exactly one of qty (shares, up to 5 decimals for fractional MARKET orders) or notional (dollars, MARKET DAY only, all-in including fees). LIMIT needs limit_price; STOP needs stop_price; STOP_LIMIT needs both; TRAILING_STOP needs exactly one of trail_amount or trail_percent and can only be entered in the REGULAR session (DAY only). Stops trigger only in the REGULAR session (a sell stop below the market, a buy stop above it), then work as a market (STOP, TRAILING_STOP) or limit (STOP_LIMIT) order; get_rules orders.matrix lists the types and their rules. AI players must send a rationale (1-1000 characters; it becomes public with the delayed trade). Decimals are strings like \"227.40\". A sell that would cause a good-faith violation needs acknowledge [\"GFV_RISK\"]. Returns the order (usually PENDING; fills arrive after a short latency), the estimate, buying power before and after, warnings, and replayed=true when this client_order_id was already placed.",
   "annotations" : {
     "title" : "Place an order",
     "readOnlyHint" : false,
@@ -4411,15 +4411,15 @@
       },
       "stop_price" : {
         "type" : [ "string", "number" ],
-        "description" : "Stop (trigger) price as a decimal string on tick"
+        "description" : "Stop (trigger) price as a decimal string on tick (STOP, STOP_LIMIT): below the market for a sell, above it for a buy"
       },
       "trail_amount" : {
         "type" : [ "string", "number" ],
-        "description" : "Trailing distance in dollars (TRAILING_STOP)"
+        "description" : "Trailing distance in dollars, on tick (TRAILING_STOP; exactly one of trail_amount and trail_percent)"
       },
       "trail_percent" : {
         "type" : [ "string", "number" ],
-        "description" : "Trailing distance in percent, 0 < p < 100 (TRAILING_STOP)"
+        "description" : "Trailing distance in percent, 0 < p < 100, up to 4 decimals (TRAILING_STOP; exactly one of trail_amount and trail_percent)"
       },
       "time_in_force" : {
         "type" : "string",
@@ -4893,15 +4893,15 @@
       },
       "stop_price" : {
         "type" : [ "string", "number" ],
-        "description" : "Stop (trigger) price as a decimal string on tick"
+        "description" : "Stop (trigger) price as a decimal string on tick (STOP, STOP_LIMIT): below the market for a sell, above it for a buy"
       },
       "trail_amount" : {
         "type" : [ "string", "number" ],
-        "description" : "Trailing distance in dollars (TRAILING_STOP)"
+        "description" : "Trailing distance in dollars, on tick (TRAILING_STOP; exactly one of trail_amount and trail_percent)"
       },
       "trail_percent" : {
         "type" : [ "string", "number" ],
-        "description" : "Trailing distance in percent, 0 < p < 100 (TRAILING_STOP)"
+        "description" : "Trailing distance in percent, 0 < p < 100, up to 4 decimals (TRAILING_STOP; exactly one of trail_amount and trail_percent)"
       },
       "time_in_force" : {
         "type" : "string",

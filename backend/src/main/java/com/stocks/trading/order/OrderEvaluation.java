@@ -53,6 +53,15 @@ public class OrderEvaluation {
 
   /** Throws the first failing check as an {@code ApiException}. */
   public Evaluated evaluate(AccountRow acc, PlayerKind kind, NormalizedOrder o, Instant now) {
+    return evaluate(acc, kind, o, now, false);
+  }
+
+  /**
+   * As {@link #evaluate(AccountRow, PlayerKind, NormalizedOrder, Instant)}; a {@code preview} does not require an AI
+   * player's rationale (§20.3 {@code preview_order}: "{@code client_order_id} and {@code rationale} optional"), whose
+   * length is still checked.
+   */
+  public Evaluated evaluate(AccountRow acc, PlayerKind kind, NormalizedOrder o, Instant now, boolean preview) {
     OrderValidator.requireShape(o);
     SessionState session = clock.session(now);
     SessionOrderMatrix.Acceptance acceptance;
@@ -78,8 +87,9 @@ public class OrderEvaluation {
       BigDecimal sellQty = o.qty() != null ? o.qty() : holds.sellReservedQty(o, available, market.reference());
       gfvRisk = gfv.predict(acc.id(), o.symbol(), sellQty, snapshot.reservedSellQty(), expiry.sessionDate());
     }
-    var result = validator.validate(new OrderValidator.Input(o, kind, settings.botsRequireRationale(), market,
-        snapshot, acceptance, expiry.sessionDate(), gfvRisk, Money.ZERO, now, sessionRejection));
+    boolean requireRationale = !preview && settings.botsRequireRationale();
+    var result = validator.validate(new OrderValidator.Input(o, kind, requireRationale, market, snapshot, acceptance,
+        expiry.sessionDate(), gfvRisk, Money.ZERO, now, sessionRejection));
     return new Evaluated(acceptance, expiry, result, market);
   }
 }

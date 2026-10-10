@@ -112,7 +112,7 @@ public class OrderServiceImpl implements OrderService {
       Instant now = clock.now();
       bpBefore = context.balances(acc, Et.date(now)).buyingPower();
       sessionNote = sessionNote(o, now);   // shown even when a later check fails
-      OrderEvaluation.Evaluated ev = evaluation.evaluate(acc, who.kind(), o, now);
+      OrderEvaluation.Evaluated ev = evaluation.evaluate(acc, who.kind(), o, now, true);
       sessionNote = SessionOrderMatrix.sessionNote(ev.acceptance(), now);
       return new PreviewDto(true, List.of(), ev.result().warnings(), ev.result().estimate(),
           ev.result().buyingPowerBefore(), ev.result().buyingPowerAfter(), sessionNote);

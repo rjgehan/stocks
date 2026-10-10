@@ -192,6 +192,10 @@ class StopOrderValidationTest extends TradingTestBase {
     expect(ErrorCode.RATIONALE_REQUIRED, "rationale", () -> orders.place(bot.principal(), new PlaceOrderRequest(cid(),
         s, Side.BUY, OrderType.STOP, BigDecimal.ONE, null, null, new BigDecimal("105.00"), null, null,
         TimeInForce.DAY, false, null, null, Set.of()), botMeta()));
+    PreviewDto preview = orders.preview(bot.principal(), new PlaceOrderRequest(null, s, Side.BUY, OrderType.STOP,
+        BigDecimal.ONE, null, null, new BigDecimal("105.00"), null, null, TimeInForce.DAY, false, null, null,
+        Set.of()));
+    assertThat(preview.valid()).as("a preview needs no rationale (§20.3 preview_order)").isTrue();
     PlaceOrderResponse ok = orders.place(bot.principal(), new PlaceOrderRequest(cid(), s, Side.BUY,
         OrderType.STOP_LIMIT, BigDecimal.ONE, null, new BigDecimal("105.50"), new BigDecimal("105.00"), null, null,
         TimeInForce.GTC, false, "Breakout entry above resistance.", null, Set.of()), botMeta());

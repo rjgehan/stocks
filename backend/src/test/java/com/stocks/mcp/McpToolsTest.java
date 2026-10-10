@@ -134,6 +134,43 @@ class McpToolsTest {
   }
 
   @Test
+  void stopAndTrailingFieldsReachTheOrderService() {
+    when(h.orderService.place(any(), any(), any())).thenReturn(response(false));
+    h.call("place_order", Map.of("client_order_id", "c-s1", "symbol", "aapl", "side", "SELL", "type", "STOP_LIMIT",
+        "qty", "3", "stop_price", "220.50", "limit_price", "220.00", "time_in_force", "GTC", "rationale", "Protect."));
+    h.call("place_order", Map.of("client_order_id", "c-s2", "symbol", "AAPL", "side", "SELL", "type",
+        "TRAILING_STOP", "qty", "3", "trail_percent", new BigDecimal("2.5"), "rationale", "Trail the gain."));
+    ArgumentCaptor<PlaceOrderRequest> request = ArgumentCaptor.forClass(PlaceOrderRequest.class);
+    verify(h.orderService, org.mockito.Mockito.times(2)).place(any(), request.capture(), any());
+    PlaceOrderRequest stop = request.getAllValues().get(0);
+    assertThat(stop.type()).isEqualTo(OrderType.STOP_LIMIT);
+    assertThat(stop.stopPrice()).isEqualTo(new BigDecimal("220.50"));
+    assertThat(stop.limitPrice()).isEqualTo(new BigDecimal("220.00"));
+    assertThat(stop.timeInForce()).isEqualTo(TimeInForce.GTC);
+    PlaceOrderRequest trail = request.getAllValues().get(1);
+    assertThat(trail.type()).isEqualTo(OrderType.TRAILING_STOP);
+    assertThat(trail.trailPercent()).isEqualTo(new BigDecimal("2.5"));
+    assertThat(trail.trailAmount()).isNull();
+    assertThat(trail.stopPrice()).isNull();
+
+    when(h.orderService.preview(any(), any())).thenReturn(new com.stocks.contract.trading.dto.PreviewDto(true,
+        List.of(), List.of(), null, new BigDecimal("500.00"), null, null));
+    h.call("preview_order", Map.of("symbol", "AAPL", "side", "BUY", "type", "STOP", "qty", "1", "stop_price",
+        "240.00"));
+    ArgumentCaptor<PlaceOrderRequest> preview = ArgumentCaptor.forClass(PlaceOrderRequest.class);
+    verify(h.orderService).preview(any(), preview.capture());
+    assertThat(preview.getValue().stopPrice()).isEqualTo(new BigDecimal("240.00"));
+
+    when(h.orderService.replace(any(), anyString(), any(), any())).thenReturn(response(false));
+    h.call("replace_order", Map.of("order_id", "ord_1", "client_order_id", "c-s3", "trail_amount", "1.25"));
+    ArgumentCaptor<com.stocks.contract.trading.dto.ReplaceOrderRequest> replace =
+        ArgumentCaptor.forClass(com.stocks.contract.trading.dto.ReplaceOrderRequest.class);
+    verify(h.orderService).replace(any(), eq("ord_1"), replace.capture(), any());
+    assertThat(replace.getValue().trailAmount()).isEqualTo(new BigDecimal("1.25"));
+    assertThat(replace.getValue().trailPercent()).isNull();
+  }
+
+  @Test
   void orderRejectionsKeepTheirCodeHintAndFields() {
     when(h.orderService.place(any(), any(), any())).thenThrow(
         ApiException.of(ErrorCode.RATIONALE_REQUIRED, "AI players must explain each order.")
