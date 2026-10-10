@@ -163,3 +163,22 @@ describe('stop tickets (§11.1, §12.7)', () => {
     expect(stopExplanation({ side: 'BUY', type: 'LIMIT', symbol: 'AAPL', limitPrice: '1' })).toBeNull()
   })
 })
+
+describe('order labels for stops', async () => {
+  const { eventDetailLine, orderPriceLabel, statusLine } = await import('@/features/account/orderLabels')
+  it('prints each type with its defining prices', () => {
+    expect(orderPriceLabel({ type: 'STOP', stopPrice: '230.0000', limitPrice: null, trailAmount: null, trailPercent: null })).toBe('230.00')
+    expect(orderPriceLabel({ type: 'STOP_LIMIT', stopPrice: '230.00', limitPrice: '231.00', trailAmount: null, trailPercent: null })).toBe('230.00 / 231.00')
+    expect(orderPriceLabel({ type: 'TRAILING_STOP', stopPrice: '221.70', limitPrice: null, trailAmount: null, trailPercent: '2.5' })).toBe('2.5% trail')
+    expect(orderPriceLabel({ type: 'TRAILING_STOP', stopPrice: null, limitPrice: null, trailAmount: '1.50', trailPercent: null })).toBe('$1.50 trail')
+    expect(orderPriceLabel({ type: 'MARKET', stopPrice: null, limitPrice: null, trailAmount: null, trailPercent: null })).toBe('')
+  })
+
+  it('explains TRIGGERED and TRAIL_UPDATED events and the triggered status', () => {
+    expect(eventDetailLine({ seq: 3, type: 'TRIGGERED', statusAfter: 'WORKING', at: null, detail: { price: '230.0500', basis: 'PRINT', stopPrice: '230.00' } })).toBe('at 230.05 · on the last trade · stop 230.00')
+    expect(eventDetailLine({ seq: 4, type: 'TRAIL_UPDATED', statusAfter: 'WORKING', at: null, detail: { watermark: '235.10', stopPrice: '229.22' } })).toBe('Stop moved to 229.22 (watermark 235.10)')
+    expect(eventDetailLine({ seq: 5, type: 'CANCELLED', statusAfter: 'CANCELLED', at: null, detail: { reason: 'CORPORATE_ACTION' } })).toBe('corporate action')
+    expect(statusLine({ status: 'WORKING', waitReason: 'NOT_TRIGGERED', triggered: false } as never)).toBe('Working · waiting for the stop price')
+    expect(statusLine({ status: 'WORKING', waitReason: 'LIMIT_NOT_REACHED', triggered: true } as never)).toBe('Working · triggered, waiting for your price')
+  })
+})

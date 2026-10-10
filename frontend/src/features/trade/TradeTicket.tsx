@@ -281,7 +281,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
       </div>
 
       <div className="space-y-3 px-4 pb-4">
-        {!tradable ? <p className="rounded-sm bg-warn/10 p-2 text-caption text-warn">{symbol} cannot be traded right now.</p> : null}
+        {!tradable ? <p className="rounded-sm bg-warn/10 p-2 text-caption text-warn">{symbol} cannot be traded right now (halted, inactive, or a corporate action under review).</p> : null}
         <Segmented
           label="Side"
           block
