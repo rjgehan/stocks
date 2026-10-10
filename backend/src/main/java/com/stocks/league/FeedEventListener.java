@@ -42,7 +42,8 @@ import tools.jackson.databind.json.JsonMapper;
  *       (AI, or a human's shared note), clipped to 280 characters inside {@code untrusted};</li>
  *   <li>{@code CashTransferPosted} → {@code DEPOSIT} for deposits and withdrawals when
  *       {@code social.showDepositsInFeed} ({@code XFER:<xfr>}, visible at once; deposits are public, charter item 2);
- *       the INITIAL of a player's first run → {@code JOINED} ({@code JOIN:<ply>});</li>
+ *       the INITIAL of a player's first run → {@code JOINED} ({@code JOIN:<ply>}), from that event or from
+ *       {@code AccountChanged(reason=OPENED)};</li>
  *   <li>{@code AccountChanged(reason=RESET)} → {@code RESET} ({@code RESET:<new run's acc>});</li>
  *   <li>the EOD writer → {@code NEW_LEADER} ({@code LEADER:<date>}).</li>
  * </ul>
@@ -97,8 +98,11 @@ public class FeedEventListener {
 
   @EventListener
   public void on(AccountChanged e) {
-    if (e.reason() != null && e.reason().toUpperCase(Locale.ROOT).startsWith("RESET")) {
+    String reason = e.reason() == null ? "" : e.reason().toUpperCase(Locale.ROOT);
+    if (reason.startsWith("RESET")) {
       async(() -> recordReset(e.playerId(), e.at()));
+    } else if (reason.startsWith("OPEN")) {
+      async(() -> recordOpening(e.accountId()));      // WS3 publishes no CashTransferPosted for an INITIAL
     }
   }
 
@@ -206,6 +210,15 @@ public class FeedEventListener {
         memo == null ? null : new UntrustedFeedTextDto(null, memo));
     return feed.insertIfAbsent(publicIds.next(Prefix.FEED_EVENT), t.playerId(), t.accountId(), FeedItemKind.DEPOSIT,
         null, json.writeValueAsString(payload), "XFER:" + t.publicId(), t.effectiveAt(), t.effectiveAt());
+  }
+
+  /** JOINED for an account's opening (its INITIAL transfer; only run 1 yields a row); true if a row was written. */
+  public boolean recordOpening(long accountId) {
+    return jdbc.sql("""
+            SELECT public_id FROM cash_transfer
+             WHERE account_id = ? AND transfer_type = 'INITIAL' AND status = 'APPLIED' ORDER BY id LIMIT 1""")
+        .param(accountId).query(String.class).optional()
+        .map(this::recordTransfer).orElse(false);
   }
 
   /** RESET, keyed by the player's new ACTIVE run (both runs' events map to the same row). */

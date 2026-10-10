@@ -157,6 +157,17 @@ class FeedTest {
   }
 
   @Test
+  void theOpenedEventAlsoYieldsJoinedOnceAndOnlyForTheFirstRun() {
+    lk.feed.on(new AccountChanged(acc.id(), alice.id(), "OPENED", MON_10));     // WS3: no CashTransferPosted
+    lk.feed.on(new AccountChanged(acc.id(), alice.id(), "OPENED", MON_10));
+    assertThat(lk.feed.recordTransfer(transferId("INITIAL"))).isFalse();      // same JOIN:<ply> row
+    AccountRef run2 = data.reset(acc, "500.00");
+    lk.feed.on(new AccountChanged(run2.id(), alice.id(), "OPENED", MON_10));    // a reset's run is not a JOIN
+    assertThat(lk.feed.recordOpening(-1L)).isFalse();
+    assertThat(visible()).extracting(FeedItemDto::kind).containsExactly(FeedItemKind.JOINED);
+  }
+
+  @Test
   void depositsStayOutOfTheFeedWhenTheSettingSaysSo() {
     SettingsService noDeposits = (SettingsService) Proxy.newProxyInstance(SettingsService.class.getClassLoader(),
         new Class<?>[] {SettingsService.class}, (p, m, a) -> {
