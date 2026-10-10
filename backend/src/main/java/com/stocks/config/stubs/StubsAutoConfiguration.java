@@ -9,9 +9,6 @@ import com.stocks.contract.identity.SettingsService;
 import com.stocks.contract.marketdata.DailyMarkService;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.SplitAdjustments;
-import com.stocks.contract.portfolio.LeaderboardService;
-import com.stocks.contract.portfolio.PerformanceQueries;
-import com.stocks.contract.portfolio.ValuationService;
 import com.stocks.contract.security.RateLimitService;
 import com.stocks.contract.trading.AccountQueries;
 import com.stocks.contract.trading.AccountService;
@@ -22,7 +19,6 @@ import com.stocks.contract.trading.CorporateActionService;
 import com.stocks.contract.trading.EngineControl;
 import com.stocks.contract.trading.OrderQueries;
 import com.stocks.contract.trading.OrderService;
-import com.stocks.contract.watchlist.WatchlistService;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -148,31 +144,5 @@ public class StubsAutoConfiguration {
   @ConditionalOnMissingBean
   CorporateActionService corporateActionServiceStub() {
     return NotImplementedStub.of(CorporateActionService.class, "WS3");
-  }
-
-  // ===== WS4 =====
-
-  @Bean
-  @ConditionalOnMissingBean
-  ValuationService valuationServiceStub() {
-    return NotImplementedStub.of(ValuationService.class, "WS4");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  LeaderboardService leaderboardServiceStub() {
-    return NotImplementedStub.of(LeaderboardService.class, "WS4");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  PerformanceQueries performanceQueriesStub() {
-    return NotImplementedStub.of(PerformanceQueries.class, "WS4");
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  WatchlistService watchlistServiceStub() {
-    return NotImplementedStub.of(WatchlistService.class, "WS4");
   }
 }
