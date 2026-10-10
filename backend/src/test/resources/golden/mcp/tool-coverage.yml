@@ -13,6 +13,7 @@ tools:
   /api/v1/bars/{symbol}: get_bars
   /api/v1/news: get_news
   /api/v1/account: get_account
+  /api/v1/account/balances: get_account
   /api/v1/account/positions: get_positions
   /api/v1/account/activities: get_activity
   /api/v1/account/executions: get_executions

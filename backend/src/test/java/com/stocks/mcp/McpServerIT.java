@@ -174,12 +174,12 @@ class McpServerIT {
 
         @Override
         public void consumeWrite(long playerId) {
-          throw new UnsupportedOperationException();
+          // free: WS3's real OrderService charges a write token on every order tool call
         }
 
         @Override
         public void refundWrite(long playerId) {
-          throw new UnsupportedOperationException();
+          // free, see consumeWrite
         }
       };
     }
@@ -483,7 +483,8 @@ class McpServerIT {
       assertThat(quotes.isError()).as(String.valueOf(quotes.content())).isFalse();
       JsonNode q = jsonMapper.valueToTree(quotes.structuredContent()).get("quotes");
       assertThat(q.get(1).get("symbol").asString()).isEqualTo("SPY");
-      assertThat(q.get(0).get("quality").asString()).as("Day-0 market data knows nothing").isEqualTo("NONE");
+      assertThat(q.get(0).get("quality").asString()).as("the test profile runs WS2's SIM provider")
+          .isEqualTo("SIMULATED");
 
       CallToolResult order = client.callTool(new CallToolRequest("place_order", Map.of("client_order_id", "c-1",
           "symbol", "AAPL", "side", "BUY", "type", "MARKET", "notional", "10.00", "rationale", "test")));
@@ -498,12 +499,12 @@ class McpServerIT {
       assertThat(notifications.isError()).as(String.valueOf(notifications.content())).isFalse();
       assertThat(jsonMapper.valueToTree(notifications.structuredContent()).get("items").isArray()).isTrue();
 
-      // OrderService is still WS3's Day-0 stub on this branch: a clean NOT_IMPLEMENTED, never a crash
+      // WS3's real OrderService behind the tool: a $10 notional buy during the regular session is accepted
       CallToolResult order = client.callTool(new CallToolRequest("place_order", Map.of("client_order_id", "c-2",
           "symbol", "AAPL", "side", "BUY", "type", "MARKET", "notional", 10, "rationale", "test")));
-      assertThat(order.isError()).isTrue();
-      assertThat(jsonMapper.readTree(((TextContent) order.content().get(0)).text()).get("code").asString())
-          .isIn("NOT_IMPLEMENTED", "ACCOUNT_NOT_FOUND");
+      assertThat(order.isError()).as(String.valueOf(order.content())).isFalse();
+      JsonNode placed = jsonMapper.valueToTree(order.structuredContent());
+      assertThat(placed.toString()).contains("ord_");
     }
   }
 
@@ -517,8 +518,11 @@ class McpServerIT {
       assertThat(((TextContent) r.content().get(0)).text()).contains("input validation failed");
       CallToolResult ok = client.callTool(new CallToolRequest("get_bars", Map.of("symbol", "AAPL",
           "timeframe", "1Min")));
-      assertThat(ok.isError()).isTrue();   // passes the schema; the Day-0 market data has no such symbol
-      assertThat(jsonMapper.readTree(((TextContent) ok.content().get(0)).text()).get("code").asString())
+      assertThat(ok.isError()).as(String.valueOf(ok.content())).isFalse();   // passes the schema; SIM has AAPL
+      CallToolResult unknown = client.callTool(new CallToolRequest("get_bars", Map.of("symbol", "ZZZZQ",
+          "timeframe", "1Min")));
+      assertThat(unknown.isError()).isTrue();
+      assertThat(jsonMapper.readTree(((TextContent) unknown.content().get(0)).text()).get("code").asString())
           .isEqualTo("SYMBOL_NOT_FOUND");
     }
   }

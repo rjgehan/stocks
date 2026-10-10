@@ -1,7 +1,7 @@
 import { type InfiniteData, type QueryClient, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '../client'
 import { type OrdersFilter, queryKeys } from '../queryKeys'
-import type { HistoryRange, Order, PlaceOrderRequest } from '../types'
+import type { ActivityType, HistoryRange, Order, PlaceOrderRequest } from '../types'
 import { usePollWhenOffline } from '../../realtime/status'
 
 /** `GET /account`. Pushed on `/user/queue/account` (§19); polls every 10 s while the socket is down. */
@@ -116,7 +116,8 @@ export function useClosePosition() {
 }
 
 export interface ActivityFilter {
-  types?: string
+  /** Sent as repeated `types=` parameters (Spring binds them to the `List<ActivityType>`). */
+  types?: ActivityType[]
 }
 
 /** `GET /account/activities` (newest first, cursor-paged). */
@@ -127,7 +128,7 @@ export function useActivities(filter: ActivityFilter = {}, pageSize = 30) {
     queryFn: ({ pageParam }) =>
       unwrap(
         api.GET('/api/v1/account/activities', {
-          params: { query: { ...(filter.types ? { types: filter.types } : {}), ...(pageParam ? { cursor: pageParam } : {}), limit: pageSize } },
+          params: { query: { ...(filter.types?.length ? { types: filter.types } : {}), ...(pageParam ? { cursor: pageParam } : {}), limit: pageSize } },
         }),
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,

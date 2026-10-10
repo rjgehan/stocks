@@ -2936,6 +2936,7 @@ Writers (Phase 1): AUTH, KEY, ADMIN and MONEY rows and admin resets (`ACCOUNT/AC
 2. A `ModelConverter` (or `PropertyCustomizer`) for records. **Response DTOs:** every component is `required`, and every non-primitive component is also nullable (`type: [T, "null"]`), so openapi-typescript emits `field: string | null`, exactly the §18.3 shape ("null fields are always present"). **Request DTOs** (`…Request`, including the parts of a request such as `SingleTargetRequest`): nullable, and required only when annotated `@NotNull`/`@NotBlank` or `@Schema(requiredMode = REQUIRED)`, so optional inputs stay `field?: T | null`. The order requests (`PlaceOrderRequest`, `ReplaceOrderRequest`, `ClosePositionRequest`) use `@Schema` rather than Bean Validation, because a missing `clientOrderId` is the domain error `CLIENT_ORDER_ID_INVALID` (422, §11.2 check 5), not a 400, and preview accepts a request without one.
 3. Wire-value enums publish their wire values (`"1D"`, `"1Min"`), not constant names.
 4. Schema names drop the Java `Dto` suffix, so `openapi.json` uses the §18.3 names (`Quote`, `Order`, …).
+   Polymorphic DTOs (`@JsonTypeInfo(use = NAME)` + `@JsonSubTypes`: `ActivityDetail`, `TransferTargetRequest`) publish a `discriminator.mapping` from the Jackson names (`"RESET"`, `"ALL"`), so generated clients use the wire values rather than the schema names (`"ResetDetail"`).
 5. CI asserts on `docs/openapi.json` that **no property anywhere has `type: number`** (the API has no floating-point fields; integers are `integer`), and that every response property is in `required`. `OpenApiRulesIT` asserts rules 1–5 on every `./mvnw verify`.
 
 Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core `ModelConverter` bean (records under `com.stocks`, `WireEnum`s); a nested object becomes `anyOf: [{$ref}, {type: "null"}]` and a nullable enum lists `null` in `enum`, which openapi-typescript 7.13 turns into `T | null` (checked). Rule 4 runs in an `OpenApiCustomizer` that renames the components and rewrites every `$ref` (a collision fails the generation). Every operation also gets a `default` response with the §6.5 `Problem` (`application/problem+json`). `make openapi` runs `OpenApiExportTest` (§26).
@@ -2975,6 +2976,7 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `GET /bars/{symbol}?range=1D…ALL` **or** `?timeframe&start&end&limit≤1000`; also `adjustment=RAW\|SPLIT\|ALL` (default SPLIT) and `extendedHours` (default true). Neither range nor timeframe → `range=1D`; a timeframe with a range overrides the range's default; range together with start → `VALIDATION_FAILED`; a limit keeps the most recent bars | market:read | → `Bars` | `SYMBOL_NOT_FOUND`, `VALIDATION_FAILED` |
 | `GET /news?symbols&limit≤20&before` | market:read | → `{items: NewsItem[]}` (empty if no source) | |
 | `GET /account` | account:read | → `Account` | |
+| `GET /account/balances` | account:read | → `Balances` (§10.2: settled/unsettled cash, holds, buying power, withdrawable; ledger and open orders only, no marks). The same numbers are in `Account`, so MCP maps it to `get_account`. | |
 | `GET /account/positions` | account:read | → `Position[]` | |
 | `GET /account/positions/{symbol}` | account:read | → `Position` | `NOT_FOUND` |
 | `POST /account/positions/{symbol}/close` | trade | `{clientOrderId, rationale?}` → `PlaceOrderResponse` (201, or 200 on replay) | as `POST /orders` |
@@ -3752,6 +3754,7 @@ spring:
   application.name: stocks
   profiles.default: dev
   threads.virtual.enabled: true
+  task.execution.mode: force                # keep Boot's applicationTaskExecutor although STOMP defines executors
   datasource:
     url: ${DB_URL:jdbc:h2:file:./.data/stocks-dev;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;AUTO_SERVER=TRUE}
     username: ${DB_USER:sa}

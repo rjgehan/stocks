@@ -50,7 +50,7 @@ import org.springframework.stereotype.Service;
 /**
  * Account reads (§18.2): the live {@code Account} (§18.3, run-relative totals per §16.3), balances (§10.2),
  * positions, merged activities, violations and runs. Read-only, committed state plus live marks; day P&L comes
- * from WS4's {@code PerformanceQueries} (the same anchors as the leaderboard) or, until that lands, {@link DayPnl}.
+ * from WS4's {@code PerformanceQueries} (the same anchors as the leaderboard).
  */
 @Service
 public class AccountQueriesImpl implements AccountQueries {
@@ -98,7 +98,7 @@ public class AccountQueriesImpl implements AccountQueries {
     BigDecimal uOpen = accounts.openingUnitValue(accountId).orElse(BigDecimal.ONE);
     BigDecimal totalPnl = equity.subtract(acc.netContributions());
     BigDecimal totalReturn = DayPnl.ratio(u, uOpen);
-    DayPnl.Account day = accountDayPnl(acc, equity, u, uOpen, v, now);
+    DayPnl.Account day = accountDayPnl(acc);
     int active = accounts.activeViolations(accountId, now);
     AccountDto.AccountGfvDto gfv = new AccountDto.AccountGfvDto(active,
         accounts.nextViolationExpiry(accountId, now).orElse(null), rules.gfv().settledCashOnlyAt(),
@@ -112,27 +112,9 @@ public class AccountQueriesImpl implements AccountQueries {
         v.marks().isEmpty() ? DataQuality.REALTIME_CONSOLIDATED : v.marksQuality(), now);
   }
 
-  private DayPnl.Account accountDayPnl(AccountRow acc, BigDecimal equity, BigDecimal u, BigDecimal uOpen,
-                                      Valuation v, Instant now) {
-    try {
-      AccountPnl p = performance.accountPnl(acc.id());
-      return new DayPnl.Account(p.dayPnl(), p.dayReturn());
-    } catch (ApiException e) {
-      if (e.code() != ErrorCode.NOT_IMPLEMENTED) {
-        throw e;
-      }
-      return dayPnl.account(acc, equity, u, uOpen, localPositionPnl(acc, v, now), now);
-    }
-  }
-
-  private Map<String, PositionDayPnl> localPositionPnl(AccountRow acc, Valuation v, Instant now) {
-    Map<String, BigDecimal> marks = new HashMap<>();
-    v.marks().forEach((s, m) -> {
-      if (m.price() != null) {
-        marks.put(s, m.price());
-      }
-    });
-    return dayPnl.positions(acc.id(), accounts.positions(acc.id()), marks, now);
+  private DayPnl.Account accountDayPnl(AccountRow acc) {
+    AccountPnl p = performance.accountPnl(acc.id());
+    return new DayPnl.Account(p.dayPnl(), p.dayReturn());
   }
 
   @Override
@@ -145,7 +127,6 @@ public class AccountQueriesImpl implements AccountQueries {
   @Override
   public List<PositionDto> positions(long accountId) {
     AccountRow acc = row(accountId);
-    Instant now = time.now();
     List<PositionRow> held = accounts.positions(accountId);
     Map<String, Mark> marks = new HashMap<>();
     Map<String, BigDecimal> prices = new HashMap<>();
@@ -158,7 +139,7 @@ public class AccountQueriesImpl implements AccountQueries {
       lmv = lmv.add(Rounding.MARKET_VALUE.multiply(p.qty(), price));
     }
     BigDecimal equity = acc.cashBalance().add(lmv).add(accounts.dividendsReceivable(accountId));
-    Map<String, PositionDayPnl> day = positionDayPnl(accountId, held, prices, now);
+    Map<String, PositionDayPnl> day = positionDayPnl(accountId);
     return held.stream().map(p -> {
       Mark m = marks.get(p.symbol());
       BigDecimal price = prices.get(p.symbol());
@@ -179,16 +160,8 @@ public class AccountQueriesImpl implements AccountQueries {
     }).toList();
   }
 
-  private Map<String, PositionDayPnl> positionDayPnl(long accountId, List<PositionRow> held,
-                                                     Map<String, BigDecimal> prices, Instant now) {
-    try {
-      return performance.positionDayPnl(accountId);
-    } catch (ApiException e) {
-      if (e.code() != ErrorCode.NOT_IMPLEMENTED) {
-        throw e;
-      }
-      return dayPnl.positions(accountId, held, prices, now);
-    }
+  private Map<String, PositionDayPnl> positionDayPnl(long accountId) {
+    return performance.positionDayPnl(accountId);
   }
 
   private static BigDecimal avgCost(PositionRow p) {

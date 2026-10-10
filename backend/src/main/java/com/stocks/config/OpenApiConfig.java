@@ -1,6 +1,8 @@
 package com.stocks.config;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.stocks.common.domain.WireEnum;
 import com.stocks.common.error.Problem;
 import io.swagger.v3.core.converter.AnnotatedType;
@@ -142,7 +144,7 @@ public class OpenApiConfig {
         return null;
       }
       Schema<?> result = chain.next().resolve(type, context, chain);
-      if (result != null && raw != null && raw.isRecord() && raw.getName().startsWith("com.stocks.")) {
+      if (result != null && raw != null && raw.getName().startsWith("com.stocks.")) {
         Schema<?> model = result;
         if (result.get$ref() != null && result.get$ref().startsWith(SCHEMAS)) {
           Schema<?> defined = context.getDefinedModels().get(result.get$ref().substring(SCHEMAS.length()));
@@ -150,7 +152,10 @@ public class OpenApiConfig {
             model = defined;
           }
         }
-        applyRecordRules(raw, model);
+        if (raw.isRecord()) {
+          applyRecordRules(raw, model);
+        }
+        addDiscriminatorMapping(raw, model);
       }
       return result;
     }
@@ -163,6 +168,25 @@ public class OpenApiConfig {
         return type == null ? null : Json.mapper().constructType(type).getRawClass();
       } catch (RuntimeException e) {
         return null;
+      }
+    }
+  }
+
+  /**
+   * Polymorphic DTOs ({@code @JsonTypeInfo(use = NAME)} + {@code @JsonSubTypes}, e.g. {@code ActivityDetailDto},
+   * {@code TransferTargetRequest}): swagger-core writes the discriminator without a mapping, so generators would use
+   * the schema name ({@code "ResetDetail"}) as the discriminator value. Publish the Jackson names ({@code "RESET"}).
+   * Rule 4's rename rewrites the mapped {@code $ref}s. Idempotent.
+   */
+  static void addDiscriminatorMapping(Class<?> type, Schema<?> model) {
+    JsonTypeInfo info = type.getAnnotation(JsonTypeInfo.class);
+    JsonSubTypes subTypes = type.getAnnotation(JsonSubTypes.class);
+    if (info == null || subTypes == null || info.use() != JsonTypeInfo.Id.NAME || model.getDiscriminator() == null) {
+      return;
+    }
+    for (JsonSubTypes.Type t : subTypes.value()) {
+      if (!t.name().isEmpty()) {
+        model.getDiscriminator().mapping(t.name(), SCHEMAS + t.value().getSimpleName());
       }
     }
   }

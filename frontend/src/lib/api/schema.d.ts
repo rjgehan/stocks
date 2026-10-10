@@ -4,6 +4,786 @@
  */
 
 export interface paths {
+    "/api/v1/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The account, valued live
+         * @description Equity, cash (settled / unsettled), buying power, run-relative P&L and return, day P&L, GFV status.
+         */
+        get: operations["account"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/activities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Account activity
+         * @description Ledger rows (fills, transfers, dividends) merged with account events (splits, GFVs, resets, restrictions, admin views), newest first.
+         */
+        get: operations["activities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/balances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cash balances (§10.2)
+         * @description From the ledger and open orders only (no marks): settled and unsettled cash, holds, buying power and withdrawable cash as of today (ET).
+         */
+        get: operations["balances"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Executions (fills)
+         * @description Newest first.
+         */
+        get: operations["executions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Equity curve of the active run
+         * @description Points from the range's anchor (the run's EOD, or its opening) through EOD snapshots (1D: 5-minute samples) to a live point. pnl = P&L since the anchor; return = time-weighted (unit value), so deposits never move it.
+         */
+        get: operations["getAccountHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/positions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Open positions */
+        get: operations["positions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/positions/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One position */
+        get: operations["position"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/positions/{symbol}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close a position
+         * @description A MARKET SELL of the full available quantity; validated and idempotent like POST /orders (201, or 200 on replay).
+         */
+        post: operations["close"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset your own account
+         * @description Only when league.allowSelfReset is on. Requires Idempotency-Key and {"confirm": "RESET"}. Closes the run and opens a new one at the same unit value.
+         */
+        post: operations["reset_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every run (resets open a new one) */
+        get: operations["runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/violations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Good-faith violations
+         * @description The restriction and the active / expired GFVs.
+         */
+        get: operations["violations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/api-keys/{keyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an API key
+         * @description Immediate (the key cache is evicted); the bot then gets API_KEY_REVOKED. Errors: NOT_FOUND.
+         */
+        delete: operations["revoke_2"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit rows
+         * @description category: AUTH, ORDER, MONEY, ADMIN, KEY, ACCOUNT or SYSTEM; action e.g. LOGIN_FAIL; actor a player handle; from/to ISO-8601 instants. Paged with cursor/limit (default 50, max 200).
+         */
+        get: operations["list_9"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/calendar/overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Calendar overrides
+         * @description from/to are ET dates (default: today to a year ahead; at most 400 days).
+         */
+        get: operations["list_6"];
+        put?: never;
+        /**
+         * Close the market or shorten a session on a date
+         * @description Recent password check. closed=true closes the day; otherwise rthCloseAt/postCloseAt shorten it. reason 1-200 characters. Errors: VALIDATION_FAILED.
+         */
+        post: operations["create_3"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/calendar/overrides/{date}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a calendar override
+         * @description Recent password check. Errors: NOT_FOUND.
+         */
+        delete: operations["delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/cash-transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cash transfers
+         * @description Newest first; filter by player handle, batch id and time.
+         */
+        get: operations["list_5"];
+        put?: never;
+        /**
+         * Apply a cash transfer to one player or to ALL
+         * @description Recent password check and an Idempotency-Key (reuse it to retry; a replay answers the stored result with Idempotent-Replay: true). type DEPOSIT or WITHDRAWAL with a positive amount, or ADJUSTMENT (signed; treatAs CONTRIBUTION or PNL_CORRECTION); memo 1-200 characters. 201 with per-account results; 422 with the results when allOrNothing and an account was skipped. Errors: INSUFFICIENT_WITHDRAWABLE, MARKS_DEGRADED (set acceptDegradedMarks to override), IDEMPOTENCY_KEY_CONFLICT.
+         */
+        post: operations["apply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/cash-transfers/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview a cash transfer (no writes)
+         * @description Per affected account: cash, withdrawable, equity before, unit value, worst mark quality, whether it would apply and warnings (ACCOUNT_EQUITY_TOO_LOW, MARKS_DEGRADED). Errors: VALIDATION_FAILED, PLAYER_NOT_FOUND.
+         */
+        post: operations["preview_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/corporate-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Corporate actions
+         * @description Newest first; filter by status (NEEDS_ADMIN for the ones to resolve).
+         */
+        get: operations["list_8"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/corporate-actions/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply or skip a corporate action
+         * @description Recent password check. Phase 1 applies forward and reverse splits only, with confirmed oldRate/newRate. note 1-200 characters. Errors: CORPORATE_ACTION_NOT_RESOLVABLE, VALIDATION_FAILED.
+         */
+        post: operations["resolve"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/engine/halt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Halt the trading engine
+         * @description Recent password check. Every engine command then answers ENGINE_HALTED until resumed.
+         */
+        post: operations["halt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/engine/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume the trading engine
+         * @description Recent password check. Runs the invariant check first and resumes only if it passes.
+         */
+        post: operations["resume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Invite links
+         * @description Newest first, used-up, expired and revoked ones included.
+         */
+        get: operations["list_4"];
+        put?: never;
+        /**
+         * Create an invite link
+         * @description maxUses 1-50, expiresInHours 1-720. Returns the code and the link <public-url>/join/<code> once (only a hash is stored). Errors: VALIDATION_FAILED.
+         */
+        post: operations["create_2"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/invites/{inviteId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an invite link
+         * @description Immediate. Errors: NOT_FOUND.
+         */
+        delete: operations["revoke_1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/orders/{orderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Cancel any player's open order
+         * @description Recent password check. Errors: ORDER_NOT_FOUND, ORDER_NOT_CANCELLABLE.
+         */
+        delete: operations["cancel_1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every player
+         * @description Sorted by handle, valued live (equity, P&L, return), with open orders, live keys, restriction and last seen.
+         */
+        get: operations["list_2"];
+        put?: never;
+        /**
+         * Create a human or AI player
+         * @description Recent password check. Opens the funded CASH account (startingCash, default the league's) and the default watchlist. HUMAN: password required. AI: aiModel required, ownerHandle defaults to you, never an admin, and an all-scope key is issued unless issueKey is false (token shown once). Errors: HANDLE_TAKEN, VALIDATION_FAILED, WEAK_PASSWORD.
+         */
+        post: operations["create_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One player
+         * @description Runs, balances, end-of-day holdings, transfers, API keys and recent audit rows. Never live positions or orders (break-glass only). Errors: PLAYER_NOT_FOUND.
+         */
+        get: operations["detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a player
+         * @description Recent password check. Null members stay unchanged. status ACTIVE or DISABLED (disabling ends sessions and freezes the account; FROZEN goes through /freeze); role ADMIN only for a human (ends the player's sessions); apiTradingAllowed false removes 'trade' from their personal keys. You cannot disable or demote yourself. Errors: PLAYER_NOT_FOUND, FORBIDDEN, VALIDATION_FAILED.
+         */
+        patch: operations["update"];
+        trace?: never;
+    };
+    "/api/v1/admin/players/{handle}/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's API keys
+         * @description Newest first, revoked ones included. Never a secret.
+         */
+        get: operations["list_3"];
+        put?: never;
+        /**
+         * Issue an API key for a player
+         * @description Recent password check. scopes default to all four for an AI player (the read scopes, plus 'trade' if allowed, for a human); expiresInDays 1-365 or omitted. The token and the Claude Code, Claude API, OpenAI Responses and curl snippets are shown once. Errors: PLAYER_NOT_FOUND, VALIDATION_FAILED, FORBIDDEN_SCOPE.
+         */
+        post: operations["issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players/{handle}/freeze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Freeze a player (kill switch)
+         * @description Recent password check. Status FROZEN at once (sessions ended, caches evicted, keys revoked only with revokeKeys), then the engine cancels open orders and restricts the account. A frozen bot gets PLAYER_FROZEN. reason: 1-80 characters. Errors: FORBIDDEN (yourself), VALIDATION_FAILED (a DISABLED player).
+         */
+        post: operations["freeze"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players/{handle}/live-view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Break glass: the player's live positions and open orders
+         * @description Recent password check. Writes an audit row and an ADMIN_VIEW entry the player sees in their activity before showing anything. reason: 5-200 characters. Errors: PLAYER_NOT_FOUND, ACCOUNT_NOT_FOUND.
+         */
+        post: operations["liveView"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players/{handle}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a human's password
+         * @description Recent password check. Ends their sessions and revokes their API keys. Errors: WEAK_PASSWORD, VALIDATION_FAILED (AI players have no password).
+         */
+        post: operations["setPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players/{handle}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset a player's account (new run)
+         * @description Recent password check and an Idempotency-Key (1-80 of A-Z a-z 0-9 . _ : -; reuse it to retry). Closes the run at its live value and opens run n+1 at the final unit value, so a reset never erases a loss. startingCash defaults to the league's; memo 1-200 characters. A replay answers the stored result with Idempotent-Replay: true. Errors: IDEMPOTENCY_KEY_CONFLICT, PLAYER_NOT_FOUND, VALIDATION_FAILED.
+         */
+        post: operations["reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players/{handle}/unfreeze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unfreeze a player
+         * @description Recent password check. Status ACTIVE; keys that were not revoked work again; the account's restriction becomes NONE or the recomputed GFV restriction. Errors: FORBIDDEN (yourself), VALIDATION_FAILED (a DISABLED player: re-enable it with PATCH status ACTIVE).
+         */
+        post: operations["unfreeze"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** League settings */
+        get: operations["get"];
+        /**
+         * Change league settings
+         * @description Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D). Errors: SETTING_INVALID.
+         */
+        put: operations["put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change league settings (same as PUT)
+         * @description Partial update; see PUT.
+         */
+        patch: operations["patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System status
+         * @description Version, start time, database, engine state and queue, last invariant check, market-data providers (stream usage, REST budget, probe), stale symbols, corporate-action holds, scheduled jobs (last run key and status) and corporate actions waiting for the admin.
+         */
+        get: operations["system"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/system/jobs/{jobName}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a scheduled job now
+         * @description Recent password check. Starts one occurrence (runKey, default the latest past occurrence) in the background through the job_run guard; an occurrence already DONE does not run again. Watch the result in GET /admin/system. Errors: NOT_FOUND, VALIDATION_FAILED.
+         */
+        post: operations["runJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search symbols
+         * @description Ranked: exact symbol, symbol prefix, name word prefix, substring. Up to 20 results.
+         */
+        get: operations["search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Asset detail
+         * @description Tradability, fractionability, liquidity tier, 52-week range and fundamentals. Errors: SYMBOL_NOT_FOUND.
+         */
+        get: operations["asset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{symbol}/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Company logo
+         * @description A PNG (a generated placeholder when no logo is available). Cached for a year by the browser.
+         */
+        get: operations["logo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/csrf": {
         parameters: {
             query?: never;
@@ -35,7 +815,7 @@ export interface paths {
         put?: never;
         /**
          * Log in with handle and password
-         * @description Humans only. Starts a session (stocks_sid cookie), rotates XSRF-TOKEN and returns Me. Errors: BAD_CREDENTIALS, LOGIN_LOCKED, PLAYER_DISABLED.
+         * @description Humans only. Starts a session (stocks_sid cookie), rotates XSRF-TOKEN and returns Me. Errors: BAD_CREDENTIALS, LOGIN_LOCKED, PLAYER_DISABLED. Limited to 10 attempts per minute per IP.
          */
         post: operations["login"];
         delete?: never;
@@ -64,6 +844,186 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/reauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm the password again
+         * @description Session only. Refreshes the session's authenticatedAt, which @RecentAuth actions (cash transfers, resets, freeze, key issuance, role changes, break-glass view) require to be at most 15 minutes old (RECENT_AUTH_REQUIRED otherwise). Errors: BAD_CREDENTIALS, LOGIN_LOCKED.
+         */
+        post: operations["reauth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join the league with an invite
+         * @description Invite-only. Creates a HUMAN player (handle ^[a-z0-9_]{2,32}$, lower-cased; display name 2-40; password at least 10 characters), opens the CASH account with the league's starting cash and the "My List" watchlist, logs the new player in (session cookie, rotated XSRF-TOKEN) and returns Me. Errors: INVITE_INVALID, HANDLE_TAKEN, WEAK_PASSWORD, VALIDATION_FAILED. Limited to 5 per hour per IP.
+         */
+        post: operations["signup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bars/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bars for a chart range or an explicit window
+         * @description Either range (1D 5D 1M 3M 6M YTD 1Y 5Y ALL, with its default timeframe: 1Min 5Min 30Min 1Day 1Day 1Day 1Day 1Week 1Month) or timeframe with start/end/limit (≤ 1000, the most recent bars). Live data stitches SIP history older than 16 minutes with an IEX tail (tailFrom = the first tail bar, whose volume is partial). Default adjustment SPLIT; extendedHours default true. When neither range nor timeframe is given, range=1D. Errors: SYMBOL_NOT_FOUND, VALIDATION_FAILED.
+         */
+        get: operations["bars"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The league feed
+         * @description Fills (after the 15-minute delay), closed positions, deposits, resets, new leaders and new players; newest first. Player text is inside `untrusted`.
+         */
+        get: operations["getFeed"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The deposit-aware leaderboard
+         * @description RETURN ranks by time-weighted return from unit values (admin deposits never move it; a reset never erases a loss); PNL by net-contribution P&L (equity − net deposits), which favours larger accounts. Ties: P&L, then first opening. Rows that miss the minimum fills/symbols follow unranked. `me` is the caller's row. Recomputed every 5 s.
+         */
+        get: operations["getLeaderboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/market/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trading days in a date range
+         * @description Only trading days are listed (holidays and weekends are absent). Defaults: from = today (ET), to = from + 30 days; at most 400 days. Errors: VALIDATION_FAILED.
+         */
+        get: operations["calendar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/market/clock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The market clock
+         * @description Session now (CLOSED/PRE/REGULAR/POST, America/New_York), the next session and regular open and close, upcoming holidays and early closes, and the data feed's profile, quality and health.
+         */
+        get: operations["clock"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/market/indices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Index ETF quotes
+         * @description Quotes for SPY, QQQ, DIA and IWM.
+         */
+        get: operations["indices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/market/movers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Top movers
+         * @description GAINERS, LOSERS or ACTIVES (most active by volume), up to 50. changePct is a fraction (0.0123 = +1.23%).
+         */
+        get: operations["movers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -81,6 +1041,54 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /**
+         * Update my display name or preferences
+         * @description Session only. Null or missing members stay unchanged; preferences merge over the stored ones. Display names: 2-40 of letters, digits, space, _ . -. Errors: VALIDATION_FAILED.
+         */
+        patch: operations["patchMe"];
+        trace?: never;
+    };
+    "/api/v1/me/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My API keys
+         * @description Session only. Every key, newest first, revoked ones included (revokedAt set). Never returns a secret.
+         */
+        get: operations["list_1"];
+        put?: never;
+        /**
+         * Create a personal API key
+         * @description Session only, recent password check. scopes default to the three read scopes; 'trade' needs the admin's 'allow API trading'. expiresInDays 1-365 or omitted (no expiry). The token is shown once. Errors: VALIDATION_FAILED, FORBIDDEN (AI players), FORBIDDEN_SCOPE, RECENT_AUTH_REQUIRED.
+         */
+        post: operations["create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/api-keys/{keyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke one of my API keys
+         * @description Session only. Immediate. Errors: NOT_FOUND.
+         */
+        delete: operations["revoke"];
+        options?: never;
+        head?: never;
         patch?: never;
         trace?: never;
     };
@@ -95,7 +1103,7 @@ export interface paths {
          * List notifications
          * @description Newest first. unreadOnly keeps unread ones; page with the opaque nextCursor (§6.6).
          */
-        get: operations["list"];
+        get: operations["list_7"];
         put?: never;
         post?: never;
         delete?: never;
@@ -124,6 +1132,236 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change my password
+         * @description Session only. Verifies the current password, sets the new one (at least 10 characters), rotates this session's id, ends every other session and revokes all of my API keys (§17.3). Errors: BAD_CREDENTIALS, LOGIN_LOCKED, WEAK_PASSWORD.
+         */
+        post: operations["changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/news": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent news, newest first
+         * @description Optionally filtered by symbols (comma-separated, up to 20). Empty when no news source is available. Headline and summary are untrusted third-party text.
+         */
+        get: operations["news"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List orders
+         * @description Newest first; status OPEN | CLOSED | ALL (default ALL). List items have executions and events null.
+         */
+        get: operations["list"];
+        put?: never;
+        /**
+         * Place an order
+         * @description 201 with the PENDING order; 200 with Idempotent-Replay: true when this clientOrderId was already used for the same request; 409 for a different request.
+         */
+        post: operations["place"];
+        /**
+         * Cancel every open order
+         * @description Optionally only on one symbol.
+         */
+        delete: operations["cancelAll"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/by-client-id/{clientOrderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One order by its clientOrderId, with executions and timeline */
+        get: operations["byClientId"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview an order
+         * @description Runs every check against the current account and market without placing anything; always 200 (valid=false lists the errors). clientOrderId is optional.
+         */
+        post: operations["preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/orders/{orderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One order with its executions and timeline */
+        get: operations["get_1"];
+        put?: never;
+        post?: never;
+        /**
+         * Cancel an order
+         * @description Immediate; cancelling a CANCELLED order is idempotent (200).
+         */
+        delete: operations["cancel"];
+        options?: never;
+        head?: never;
+        /**
+         * Replace an order
+         * @description Cancel-replace of an unfilled whole-share PENDING or WORKING order with a NEW clientOrderId; 201 with the new order.
+         */
+        patch: operations["replace"];
+        trace?: never;
+    };
+    "/api/v1/players": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * League players
+         * @description ACTIVE and FROZEN players (DISABLED ones are hidden), by handle.
+         */
+        get: operations["listPlayers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's public profile
+         * @description Stats per period (return, P&L, rank), deposits, previous-EOD holdings as weights, and recent delayed trades.
+         */
+        get: operations["getPlayerProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's unit-value curve
+         * @description Unit values across runs, plus equity unless holdings visibility is HIDDEN.
+         */
+        get: operations["getPlayerHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}/trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's trades, delayed
+         * @description Executions older than the feed delay (15 min), newest first; `viaApi` marks API-key/MCP orders; the rationale only when it is public.
+         */
+        get: operations["getPlayerTrades"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Quotes for up to 50 symbols
+         * @description Unknown symbols come back with quality NONE and null prices. Quality: SIMULATED (SIM), REALTIME_SINGLE_VENUE (IEX), REALTIME_CONSOLIDATED (SIP), SYNTHETIC (only a consolidated last), STALE, NONE. changePct is a fraction (0.0123 = +1.23%). Errors: VALIDATION_FAILED.
+         */
+        get: operations["quotes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rules": {
         parameters: {
             query?: never;
@@ -144,10 +1382,844 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/snapshots/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Quote plus the current minute and daily bars and the 52-week range
+         * @description Errors: SYMBOL_NOT_FOUND.
+         */
+        get: operations["snapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watchlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's watchlists
+         * @description In sort order, each with its symbols in order.
+         */
+        get: operations["listWatchlists"];
+        put?: never;
+        /**
+         * Create a watchlist
+         * @description Name 1-40 characters, unique per player; unknown symbols answer SYMBOL_NOT_FOUND.
+         */
+        post: operations["createWatchlist"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watchlists/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rename a watchlist and replace its symbols
+         * @description Array order = sort order.
+         */
+        put: operations["updateWatchlist"];
+        post?: never;
+        /** Delete a watchlist */
+        delete: operations["deleteWatchlist"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watchlists/{id}/symbols": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a symbol at the end of a watchlist
+         * @description Idempotent if already present.
+         */
+        post: operations["addWatchlistSymbol"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/watchlists/{id}/symbols/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a symbol from a watchlist
+         * @description Idempotent if absent.
+         */
+        delete: operations["removeWatchlistSymbol"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Account: {
+            accountId: string | null;
+            /** Format: date-time */
+            asOf: string | null;
+            /** Format: decimal */
+            buyingPower: string | null;
+            cash: components["schemas"]["AccountCash"] | null;
+            /** Format: decimal */
+            dayPnl: string | null;
+            /** Format: decimal */
+            dayReturn: string | null;
+            /** Format: int32 */
+            dayTradesLast5Days: number;
+            /** Format: decimal */
+            dividendsReceivable: string | null;
+            /** Format: decimal */
+            equity: string | null;
+            gfv: components["schemas"]["AccountGfv"] | null;
+            /** Format: decimal */
+            longMarketValue: string | null;
+            /** @enum {string|null} */
+            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            /** Format: decimal */
+            netContributions: string | null;
+            /** Format: decimal */
+            openBuyHolds: string | null;
+            /** Format: date-time */
+            openedAt: string | null;
+            /** @enum {string|null} */
+            restriction: "NONE" | "SETTLED_CASH_ONLY" | "LIQUIDATION_ONLY" | "FROZEN" | null;
+            restrictionReason: string | null;
+            /** Format: date-time */
+            restrictionUntil: string | null;
+            /** Format: int32 */
+            runNo: number;
+            /** Format: decimal */
+            startingCash: string | null;
+            /** @enum {string|null} */
+            status: "ACTIVE" | "CLOSED" | null;
+            /** Format: decimal */
+            totalPnl: string | null;
+            /** Format: decimal */
+            totalReturn: string | null;
+            /** @enum {string|null} */
+            type: "CASH" | "MARGIN" | null;
+            /** Format: decimal */
+            unitValue: string | null;
+        };
+        AccountCash: {
+            /** Format: decimal */
+            settled: string | null;
+            /** Format: decimal */
+            settledAvailable: string | null;
+            /** Format: decimal */
+            total: string | null;
+            /** Format: decimal */
+            unsettled: string | null;
+            /** Format: decimal */
+            withdrawable: string | null;
+        };
+        AccountGfv: {
+            /** Format: int32 */
+            active: number;
+            /** Format: int32 */
+            liquidationOnlyAt: number;
+            /** Format: date-time */
+            nextExpiry: string | null;
+            /** Format: int32 */
+            settledCashOnlyAt: number;
+        };
+        Activity: {
+            /** Format: decimal */
+            amount: string | null;
+            /** Format: date-time */
+            at: string | null;
+            /** Format: decimal */
+            balanceAfter: string | null;
+            /** @enum {string|null} */
+            by: "SELF" | "ADMIN" | "SYSTEM" | null;
+            detail: components["schemas"]["AdminViewDetail"] | components["schemas"]["GfvDetail"] | components["schemas"]["NameChangeDetail"] | components["schemas"]["ResetDetail"] | components["schemas"]["RestrictionDetail"] | components["schemas"]["SplitDetail"] | null;
+            executionId: string | null;
+            fees: components["schemas"]["Fees"] | null;
+            id: string | null;
+            memo: string | null;
+            orderId: string | null;
+            /** Format: decimal */
+            price: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            /** Format: date */
+            settleDate: string | null;
+            /** @enum {string|null} */
+            side: "BUY" | "SELL" | null;
+            symbol: string | null;
+            /** Format: date */
+            tradeDate: string | null;
+            transferId: string | null;
+            /** @enum {string|null} */
+            type: "FILL" | "INITIAL_FUNDING" | "DEPOSIT" | "WITHDRAWAL" | "ADJUSTMENT" | "DIVIDEND" | "CASH_IN_LIEU" | "SPLIT" | "NAME_CHANGE" | "GFV" | "RESET" | "RESTRICTION" | "ADMIN_VIEW" | null;
+        };
+        ActivityDetail: {
+            type: string;
+        };
+        AddWatchlistSymbolRequest: {
+            symbol: string | null;
+        };
+        AdminPlayer: {
+            accountId: string | null;
+            /** Format: int32 */
+            activeKeys: number;
+            aiModel: string | null;
+            avatarSeed: string | null;
+            /** Format: decimal */
+            cash: string | null;
+            /** Format: date-time */
+            createdAt: string | null;
+            displayName: string | null;
+            /** Format: decimal */
+            equity: string | null;
+            handle: string | null;
+            /** @enum {string|null} */
+            kind: "HUMAN" | "AI" | null;
+            /** Format: date-time */
+            lastSeenAt: string | null;
+            /** Format: date-time */
+            memberSince: string | null;
+            /** Format: decimal */
+            netContributions: string | null;
+            /** Format: int32 */
+            openOrders: number;
+            ownerHandle: string | null;
+            playerId: string | null;
+            /** Format: decimal */
+            pnl: string | null;
+            /** Format: int32 */
+            resets: number;
+            /** @enum {string|null} */
+            restriction: "NONE" | "SETTLED_CASH_ONLY" | "LIQUIDATION_ONLY" | "FROZEN" | null;
+            /** Format: decimal */
+            return: string | null;
+            /** @enum {string|null} */
+            role: "PLAYER" | "ADMIN" | null;
+            /** Format: int32 */
+            runNo: number;
+            /** @enum {string|null} */
+            status: "ACTIVE" | "DISABLED" | "FROZEN" | null;
+        };
+        AdminPlayerDetail: {
+            apiKeys: components["schemas"]["ApiKeyInfo"][] | null;
+            apiTradingAllowed: boolean;
+            balances: components["schemas"]["Account"] | null;
+            eodHoldings: components["schemas"]["EodHolding"][] | null;
+            /** Format: date */
+            holdingsAsOf: string | null;
+            player: components["schemas"]["AdminPlayer"] | null;
+            recentAudit: components["schemas"]["AuditRow"][] | null;
+            runs: components["schemas"]["Run"][] | null;
+            transfers: components["schemas"]["TransferRow"][] | null;
+        };
+        AdminPlayerLiveView: {
+            openOrders: components["schemas"]["Order"][] | null;
+            player: components["schemas"]["PlayerSummary"] | null;
+            positions: components["schemas"]["Position"][] | null;
+            reason: string | null;
+            /** Format: date-time */
+            viewedAt: string | null;
+        };
+        AdminResetRequest: {
+            memo: string | null;
+            /** Format: decimal */
+            startingCash?: string | null;
+        };
+        AdminViewDetail: Omit<components["schemas"]["ActivityDetail"], "type"> & {
+            admin: string | null;
+            reason: string | null;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "ADMIN_VIEW";
+        };
+        AllTargetRequest: Omit<components["schemas"]["TransferTargetRequest"], "scope"> & {
+            kinds?: ("HUMAN" | "AI")[] | null;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            scope: "ALL";
+        };
+        ApiKeyCreated: {
+            key: components["schemas"]["ApiKeyInfo"] | null;
+            snippets: components["schemas"]["ApiKeySnippets"] | null;
+            token: string | null;
+        };
+        ApiKeyInfo: {
+            /** Format: date-time */
+            createdAt: string | null;
+            /** Format: date-time */
+            expiresAt: string | null;
+            keyId: string | null;
+            /** Format: date-time */
+            lastUsedAt: string | null;
+            lastUsedIp: string | null;
+            name: string | null;
+            /** Format: date-time */
+            revokedAt: string | null;
+            scopes: string[] | null;
+        };
+        ApiKeySnippets: {
+            claudeApi: string | null;
+            claudeCode: string | null;
+            curl: string | null;
+            openaiResponses: string | null;
+        };
+        Arena: {
+            /** Format: decimal */
+            aiMedianReturn: string | null;
+            /** Format: decimal */
+            humansMedianReturn: string | null;
+        };
+        Asset: {
+            exchange: string | null;
+            fractionable: boolean;
+            fundamentals: components["schemas"]["Fundamentals"] | null;
+            /** @enum {string|null} */
+            liquidityTier: "MEGA" | "MID" | "SMALL" | null;
+            logoUrl: string | null;
+            marginable: boolean;
+            name: string | null;
+            shortable: boolean;
+            /** @enum {string|null} */
+            status: "ACTIVE" | "INACTIVE" | null;
+            symbol: string | null;
+            tradable: boolean;
+            /** @enum {string|null} */
+            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | null;
+            /** Format: decimal */
+            week52High: string | null;
+            /** Format: decimal */
+            week52Low: string | null;
+        };
+        AssetSummary: {
+            exchange: string | null;
+            fractionable: boolean;
+            name: string | null;
+            symbol: string | null;
+            tradable: boolean;
+            /** @enum {string|null} */
+            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | null;
+        };
+        AuditRow: {
+            action: string | null;
+            actor: string | null;
+            /** @enum {string|null} */
+            actorKind: "HUMAN" | "AI" | null;
+            apiKeyId: string | null;
+            category: string | null;
+            /** @enum {string|null} */
+            channel: "WEB" | "REST_KEY" | "MCP_KEY" | "MCP_OAUTH" | "SYSTEM" | "ADMIN" | null;
+            detail: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: int64 */
+            id: number;
+            ip: string | null;
+            mcpClient: string | null;
+            mcpTool: string | null;
+            /** Format: date-time */
+            occurredAt: string | null;
+            outcome: string | null;
+            requestId: string | null;
+            targetId: string | null;
+            targetType: string | null;
+        };
+        Balances: {
+            /** Format: date */
+            asOfEt: string | null;
+            /** Format: decimal */
+            buyingPower: string | null;
+            /** Format: decimal */
+            cashTotal: string | null;
+            /** Format: decimal */
+            openBuyHolds: string | null;
+            /** @enum {string|null} */
+            restriction: "NONE" | "SETTLED_CASH_ONLY" | "LIQUIDATION_ONLY" | "FROZEN" | null;
+            /** Format: decimal */
+            settledAvailable: string | null;
+            /** Format: decimal */
+            settledCash: string | null;
+            /** Format: decimal */
+            unsettledCash: string | null;
+            /** Format: decimal */
+            unsettledCredits: string | null;
+            /** Format: decimal */
+            unsettledDebits: string | null;
+            /** Format: decimal */
+            withdrawable: string | null;
+        };
+        Bar: {
+            /** Format: decimal */
+            c: string | null;
+            /** Format: decimal */
+            h: string | null;
+            /** Format: decimal */
+            l: string | null;
+            /** Format: decimal */
+            o: string | null;
+            /** Format: date-time */
+            t: string | null;
+            /** Format: int64 */
+            v: number;
+            /** Format: decimal */
+            vw: string | null;
+        };
+        Bars: {
+            /** @enum {string|null} */
+            adjustment: "RAW" | "SPLIT" | "ALL" | null;
+            bars: components["schemas"]["Bar"][] | null;
+            source: string | null;
+            symbol: string | null;
+            /** Format: date-time */
+            tailFrom: string | null;
+            /** @enum {string|null} */
+            timeframe: "1Min" | "5Min" | "15Min" | "30Min" | "1Hour" | "1Day" | "1Week" | "1Month" | null;
+        };
+        BenchmarkReturn: {
+            /** Format: decimal */
+            return: string | null;
+            symbol: string | null;
+        };
+        CalendarOverride: {
+            closed: boolean;
+            /** Format: date-time */
+            createdAt: string | null;
+            createdBy: string | null;
+            /** Format: date */
+            date: string | null;
+            /** Format: date-time */
+            postCloseAt: string | null;
+            reason: string | null;
+            /** Format: date-time */
+            rthCloseAt: string | null;
+        };
+        CancelledOrders: {
+            cancelled: components["schemas"]["Order"][] | null;
+        };
+        CashTransferPreview: {
+            accounts: components["schemas"]["TransferPreviewAccount"][] | null;
+            /** Format: date-time */
+            asOf: string | null;
+            /** @enum {string|null} */
+            session: "CLOSED" | "PRE" | "REGULAR" | "POST" | null;
+        };
+        CashTransferRequest: {
+            acceptDegradedMarks?: boolean | null;
+            allOrNothing?: boolean | null;
+            /** Format: decimal */
+            amount: string | null;
+            memo: string | null;
+            target: components["schemas"]["AllTargetRequest"] | components["schemas"]["SingleTargetRequest"] | null;
+            /** @enum {string|null} */
+            treatAs?: "CONTRIBUTION" | "PNL_CORRECTION" | null;
+            /** @enum {string|null} */
+            type: "INITIAL" | "DEPOSIT" | "WITHDRAWAL" | "ADJUSTMENT" | null;
+        };
+        ChangePasswordRequest: {
+            currentPassword: string | null;
+            newPassword: string | null;
+        };
+        Clock: {
+            earlyClose: boolean;
+            feed: components["schemas"]["ClockFeed"] | null;
+            /** Format: date-time */
+            nextRegularClose: string | null;
+            /** Format: date-time */
+            nextRegularOpen: string | null;
+            /** @enum {string|null} */
+            nextSession: "CLOSED" | "PRE" | "REGULAR" | "POST" | null;
+            /** Format: date-time */
+            nextSessionAt: string | null;
+            /** Format: date-time */
+            now: string | null;
+            nowEt: string | null;
+            /** @enum {string|null} */
+            session: "CLOSED" | "PRE" | "REGULAR" | "POST" | null;
+            /** Format: date-time */
+            sessionEndsAt: string | null;
+            /** Format: date */
+            tradingDate: string | null;
+            upcomingEarlyCloses: string[] | null;
+            upcomingHolidays: components["schemas"]["ClockHoliday"][] | null;
+        };
+        ClockFeed: {
+            liveIexWindowEt: string | null;
+            profile: string | null;
+            /** @enum {string|null} */
+            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            /** @enum {string|null} */
+            status: "LIVE" | "DEGRADED" | "DOWN" | null;
+        };
+        ClockHoliday: {
+            /** Format: date */
+            date: string | null;
+            name: string | null;
+        };
+        ClosePositionRequest: {
+            clientOrderId: string | null;
+            rationale?: string | null;
+        };
+        CorporateAction: {
+            /** Format: date-time */
+            appliedAt: string | null;
+            /** Format: decimal */
+            cashRate: string | null;
+            /** Format: date-time */
+            createdAt: string | null;
+            detail: string | null;
+            /** Format: date */
+            exDate: string | null;
+            id: string | null;
+            /** Format: decimal */
+            newRate: string | null;
+            newSymbol: string | null;
+            /** Format: decimal */
+            oldRate: string | null;
+            /** @enum {string|null} */
+            origin: "PROVIDER" | "MANUAL" | "DETECTED" | null;
+            /** Format: date */
+            payableDate: string | null;
+            /** Format: date */
+            recordDate: string | null;
+            resolvedBy: string | null;
+            /** @enum {string|null} */
+            status: "PENDING" | "APPLIED" | "SKIPPED" | "NEEDS_ADMIN" | null;
+            symbol: string | null;
+            /** @enum {string|null} */
+            type: "CASH_DIVIDEND" | "FORWARD_SPLIT" | "REVERSE_SPLIT" | "NAME_CHANGE" | "CASH_MERGER" | "STOCK_MERGER" | "SPIN_OFF" | "DELISTING" | null;
+        };
+        CreateApiKeyRequest: {
+            /** Format: int32 */
+            expiresInDays?: number | null;
+            name: string | null;
+            scopes?: string[] | null;
+        };
+        CreateCalendarOverrideRequest: {
+            closed: boolean | null;
+            /** Format: date */
+            date: string | null;
+            /** Format: date-time */
+            postCloseAt?: string | null;
+            reason: string | null;
+            /** Format: date-time */
+            rthCloseAt?: string | null;
+        };
+        CreateInviteRequest: {
+            /** Format: int32 */
+            expiresInHours: number | null;
+            /** Format: int32 */
+            maxUses: number | null;
+        };
+        CreatePlayerRequest: {
+            aiModel?: string | null;
+            displayName: string | null;
+            handle: string | null;
+            issueKey?: boolean | null;
+            /** @enum {string|null} */
+            kind: "HUMAN" | "AI" | null;
+            ownerHandle?: string | null;
+            password?: string | null;
+            /** Format: decimal */
+            startingCash?: string | null;
+        };
+        CreatePlayerResponse: {
+            apiKey: components["schemas"]["ApiKeyCreated"] | null;
+            player: components["schemas"]["AdminPlayer"] | null;
+        };
+        CreateWatchlistRequest: {
+            name: string | null;
+            symbols?: string[] | null;
+        };
+        DepositsSummary: {
+            /** Format: int32 */
+            count: number;
+            /** Format: decimal */
+            total: string | null;
+        };
+        EodHolding: {
+            /** Format: decimal */
+            mark: string | null;
+            /** Format: decimal */
+            marketValue: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            symbol: string | null;
+        };
+        Estimate: {
+            fees: components["schemas"]["Fees"] | null;
+            /** Format: decimal */
+            hold: string | null;
+            /** Format: decimal */
+            price: string | null;
+            /** Format: decimal */
+            principal: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            /** Format: date-time */
+            quoteAsOf: string | null;
+            /** @enum {string|null} */
+            quoteQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+        };
+        Execution: {
+            /** Format: date-time */
+            executedAt: string | null;
+            executionId: string | null;
+            fees: components["schemas"]["Fees"] | null;
+            /** @enum {string|null} */
+            liquidity: "TOUCH" | "WALK" | "RESTING" | "PRINT" | "OPEN" | null;
+            /** Format: decimal */
+            netAmount: string | null;
+            orderId: string | null;
+            /** Format: decimal */
+            price: string | null;
+            /** Format: decimal */
+            principal: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            /** Format: decimal */
+            realizedPnl: string | null;
+            refQuote: components["schemas"]["RefQuote"] | null;
+            /** Format: date */
+            settleDate: string | null;
+            /** @enum {string|null} */
+            side: "BUY" | "SELL" | null;
+            symbol: string | null;
+            /** Format: date */
+            tradeDate: string | null;
+        };
+        ExtendedLine: {
+            /** Format: date-time */
+            at: string | null;
+            /** Format: decimal */
+            change: string | null;
+            /** Format: decimal */
+            changePct: string | null;
+            /** Format: decimal */
+            price: string | null;
+            /** @enum {string|null} */
+            session: "CLOSED" | "PRE" | "REGULAR" | "POST" | null;
+        };
+        FeedItem: {
+            /** Format: date-time */
+            at: string | null;
+            id: string | null;
+            /** @enum {string|null} */
+            kind: "FILL" | "POSITION_CLOSED" | "NEW_LEADER" | "RESET" | "DEPOSIT" | "JOINED" | null;
+            payload: components["schemas"]["FeedPayload"] | null;
+            player: components["schemas"]["PlayerSummary"] | null;
+            symbol: string | null;
+        };
+        FeedPayload: {
+            /** Format: decimal */
+            amount: string | null;
+            period: string | null;
+            /** Format: decimal */
+            price: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            /** Format: decimal */
+            realizedPnl: string | null;
+            /** @enum {string|null} */
+            side: "BUY" | "SELL" | null;
+            untrusted: components["schemas"]["UntrustedFeedText"] | null;
+        };
+        Fees: {
+            /** Format: decimal */
+            cat: string | null;
+            /** Format: decimal */
+            sec: string | null;
+            /** Format: decimal */
+            taf: string | null;
+            /** Format: decimal */
+            total: string | null;
+        };
+        FreezePlayerRequest: {
+            reason: string | null;
+            revokeKeys?: boolean | null;
+        };
+        Fundamentals: {
+            /** Format: decimal */
+            beta: string | null;
+            /** Format: decimal */
+            dividendYield: string | null;
+            /** Format: decimal */
+            epsTtm: string | null;
+            industry: string | null;
+            /** Format: decimal */
+            marketCap: string | null;
+            /** Format: decimal */
+            peTtm: string | null;
+            /** Format: decimal */
+            sharesOutstanding: string | null;
+            source: string | null;
+            website: string | null;
+        };
+        GfvDetail: Omit<components["schemas"]["ActivityDetail"], "type"> & {
+            /** Format: int32 */
+            activeCount: number;
+            /** Format: date */
+            fundingSettleDate: string | null;
+            orderId: string | null;
+            /** Format: decimal */
+            unsettledAmount: string | null;
+            violationId: string | null;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "GFV";
+        };
+        HaltEngineRequest: {
+            reason: string | null;
+        };
+        HistoryFlow: {
+            /** Format: decimal */
+            amount: string | null;
+            memo: string | null;
+            /** Format: date-time */
+            t: string | null;
+            /** @enum {string|null} */
+            type: "INITIAL" | "DEPOSIT" | "WITHDRAWAL" | "ADJUSTMENT" | null;
+        };
+        HistoryPoint: {
+            /** Format: decimal */
+            benchmarkIndex: string | null;
+            /** Format: decimal */
+            equity: string | null;
+            /** Format: decimal */
+            netContributions: string | null;
+            /** Format: decimal */
+            pnl: string | null;
+            /** Format: date-time */
+            t: string | null;
+            /** Format: decimal */
+            unitValue: string | null;
+        };
+        HistorySummary: {
+            /** Format: decimal */
+            excessVsBenchmark: string | null;
+            /** Format: decimal */
+            maxDrawdown: string | null;
+            /** Format: decimal */
+            pnl: string | null;
+            /** Format: decimal */
+            return: string | null;
+        };
+        Invite: {
+            /** Format: date-time */
+            expiresAt: string | null;
+            inviteId: string | null;
+            /** Format: int32 */
+            maxUses: number;
+            /** Format: date-time */
+            revokedAt: string | null;
+            /** Format: int32 */
+            uses: number;
+        };
+        InviteCreated: {
+            code: string | null;
+            /** Format: date-time */
+            expiresAt: string | null;
+            inviteId: string | null;
+            url: string | null;
+        };
+        Leaderboard: {
+            arena: components["schemas"]["Arena"] | null;
+            /** Format: date-time */
+            asOf: string | null;
+            benchmark: components["schemas"]["BenchmarkReturn"] | null;
+            /** @enum {string|null} */
+            kind: "ALL" | "HUMAN" | "AI" | null;
+            me: components["schemas"]["LeaderboardRow"] | null;
+            /** @enum {string|null} */
+            metric: "RETURN" | "PNL" | null;
+            /** @enum {string|null} */
+            period: "TODAY" | "WEEK" | "MONTH" | "YTD" | "SEASON" | "ALL" | null;
+            /** Format: date-time */
+            periodStart: string | null;
+            rows: components["schemas"]["LeaderboardRow"][] | null;
+        };
+        LeaderboardRow: {
+            apiTrader: boolean;
+            eligibilityNote: string | null;
+            eligible: boolean;
+            /** Format: decimal */
+            equity: string | null;
+            /** Format: decimal */
+            excessVsBenchmark: string | null;
+            /** Format: int32 */
+            fills: number;
+            /** Format: decimal */
+            flowsInPeriod: string | null;
+            /** Format: decimal */
+            maxDrawdown: string | null;
+            /** Format: decimal */
+            netContributions: string | null;
+            partialPeriod: boolean;
+            player: components["schemas"]["PlayerSummary"] | null;
+            /** Format: decimal */
+            pnl: string | null;
+            /** Format: int32 */
+            rank: number | null;
+            /** Format: int32 */
+            rankChange: number | null;
+            rebased: boolean;
+            /** Format: decimal */
+            return: string | null;
+            spark: string[] | null;
+            /** Format: int32 */
+            symbolsTraded: number;
+            topHolding: string | null;
+            /** Format: decimal */
+            winRate: string | null;
+        };
+        LiveViewRequest: {
+            reason: string | null;
+        };
         LoginRequest: {
             handle: string | null;
             password: string | null;
@@ -177,6 +2249,52 @@ export interface components {
             /** @enum {string|null} */
             status: "ACTIVE" | "DISABLED" | "FROZEN" | null;
         };
+        MoverItem: {
+            /** Format: decimal */
+            change: string | null;
+            /** Format: decimal */
+            changePct: string | null;
+            name: string | null;
+            /** Format: decimal */
+            price: string | null;
+            symbol: string | null;
+            /** Format: int64 */
+            volume: number | null;
+        };
+        Movers: {
+            /** Format: date-time */
+            asOf: string | null;
+            items: components["schemas"]["MoverItem"][] | null;
+            /** @enum {string|null} */
+            list: "GAINERS" | "LOSERS" | "ACTIVES" | null;
+            source: string | null;
+        };
+        NameChangeDetail: Omit<components["schemas"]["ActivityDetail"], "type"> & {
+            corporateActionId: string | null;
+            newSymbol: string | null;
+            oldSymbol: string | null;
+            /** Format: decimal */
+            qty: string | null;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "NAME_CHANGE";
+        };
+        NewsItem: {
+            id: string | null;
+            imageUrl: string | null;
+            /** Format: date-time */
+            publishedAt: string | null;
+            source: string | null;
+            symbols: string[] | null;
+            untrusted: components["schemas"]["UntrustedNews"] | null;
+            url: string | null;
+        };
+        NewsList: {
+            items: components["schemas"]["NewsItem"][] | null;
+        };
         Notification: {
             body: string | null;
             /** Format: date-time */
@@ -191,6 +2309,90 @@ export interface components {
             readAt: string | null;
             title: string | null;
         };
+        Order: {
+            /** Format: date-time */
+            acceptedAt: string | null;
+            accountId: string | null;
+            /** Format: date-time */
+            activatedAt: string | null;
+            /** Format: decimal */
+            avgFillPrice: string | null;
+            /** @enum {string|null} */
+            channel: "WEB" | "REST_KEY" | "MCP_KEY" | "MCP_OAUTH" | "SYSTEM" | "ADMIN" | null;
+            clientOrderId: string | null;
+            /** Format: decimal */
+            collarPrice: string | null;
+            /** Format: date-time */
+            doneAt: string | null;
+            /** Format: date-time */
+            eligibleAt: string | null;
+            events: components["schemas"]["OrderEvent"][] | null;
+            executions: components["schemas"]["Execution"][] | null;
+            /** Format: date-time */
+            expiresAt: string | null;
+            extendedHours: boolean;
+            /** Format: decimal */
+            fees: string | null;
+            /** Format: decimal */
+            filledPrincipal: string | null;
+            /** Format: decimal */
+            filledQty: string | null;
+            fractional: boolean;
+            /** Format: decimal */
+            limitPrice: string | null;
+            /** Format: decimal */
+            notional: string | null;
+            orderId: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            rationale: string | null;
+            /** Format: date-time */
+            receivedAt: string | null;
+            replacedByOrderId: string | null;
+            replacesOrderId: string | null;
+            /** Format: decimal */
+            reservedCash: string | null;
+            /** Format: decimal */
+            reservedQty: string | null;
+            /** Format: date */
+            sessionDate: string | null;
+            /** @enum {string|null} */
+            side: "BUY" | "SELL" | null;
+            /** @enum {string|null} */
+            status: "PENDING" | "WORKING" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" | "EXPIRED" | "REPLACED" | "REJECTED" | null;
+            statusReason: string | null;
+            /** Format: decimal */
+            stopPrice: string | null;
+            symbol: string | null;
+            /** @enum {string|null} */
+            timeInForce: "DAY" | "GTC" | null;
+            /** Format: decimal */
+            trailAmount: string | null;
+            /** Format: decimal */
+            trailPercent: string | null;
+            triggered: boolean;
+            /** Format: date-time */
+            triggeredAt: string | null;
+            /** @enum {string|null} */
+            type: "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | null;
+            /** @enum {string|null} */
+            waitReason: "LATENCY" | "QUEUED_FOR_OPEN" | "QUEUED_FOR_EXT_OPEN" | "SESSION_CLOSED" | "NOT_TRIGGERED" | "AWAITING_QUOTE" | "HALTED" | "CORPORATE_ACTION_HOLD" | "BEYOND_COLLAR" | "LIMIT_NOT_REACHED" | null;
+            /** Format: decimal */
+            watermarkPrice: string | null;
+        };
+        OrderEvent: {
+            /** Format: date-time */
+            at: string | null;
+            detail: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: int32 */
+            seq: number;
+            /** @enum {string|null} */
+            statusAfter: "PENDING" | "WORKING" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" | "EXPIRED" | "REPLACED" | "REJECTED" | null;
+            /** @enum {string|null} */
+            type: "ACCEPTED" | "QUEUED" | "WORKING" | "PAUSED" | "RESUMED" | "TRIGGERED" | "TRAIL_UPDATED" | "AWAITING_QUOTE" | "BEYOND_COLLAR" | "PARTIAL_FILL" | "FILL" | "CANCELLED" | "EXPIRED" | "REPLACED" | "HOLD_ADJUSTED" | null;
+        };
         OrderMatrixRow: {
             notes: string | null;
             qtyForms: string[] | null;
@@ -199,9 +2401,152 @@ export interface components {
             /** @enum {string|null} */
             type: "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | null;
         };
+        PageActivity: {
+            items: components["schemas"]["Activity"][] | null;
+            nextCursor: string | null;
+        };
+        PageAuditRow: {
+            items: components["schemas"]["AuditRow"][] | null;
+            nextCursor: string | null;
+        };
+        PageCorporateAction: {
+            items: components["schemas"]["CorporateAction"][] | null;
+            nextCursor: string | null;
+        };
+        PageExecution: {
+            items: components["schemas"]["Execution"][] | null;
+            nextCursor: string | null;
+        };
+        PageFeedItem: {
+            items: components["schemas"]["FeedItem"][] | null;
+            nextCursor: string | null;
+        };
         PageNotification: {
             items: components["schemas"]["Notification"][] | null;
             nextCursor: string | null;
+        };
+        PageOrder: {
+            items: components["schemas"]["Order"][] | null;
+            nextCursor: string | null;
+        };
+        PagePublicTrade: {
+            items: components["schemas"]["PublicTrade"][] | null;
+            nextCursor: string | null;
+        };
+        PageTransferRow: {
+            items: components["schemas"]["TransferRow"][] | null;
+            nextCursor: string | null;
+        };
+        PlaceOrderRequest: {
+            acknowledge?: string[] | null;
+            clientOrderId: string | null;
+            extendedHours?: boolean | null;
+            /** Format: decimal */
+            limitPrice?: string | null;
+            /** Format: decimal */
+            notional?: string | null;
+            /** Format: decimal */
+            qty?: string | null;
+            rationale?: string | null;
+            shareNote?: boolean | null;
+            /** @enum {string|null} */
+            side: "BUY" | "SELL" | null;
+            /** Format: decimal */
+            stopPrice?: string | null;
+            symbol: string | null;
+            /** @enum {string|null} */
+            timeInForce?: "DAY" | "GTC" | null;
+            /** Format: decimal */
+            trailAmount?: string | null;
+            /** Format: decimal */
+            trailPercent?: string | null;
+            /** @enum {string|null} */
+            type: "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | null;
+        };
+        PlaceOrderResponse: {
+            /** Format: decimal */
+            buyingPowerAfter: string | null;
+            /** Format: decimal */
+            buyingPowerBefore: string | null;
+            estimate: components["schemas"]["Estimate"] | null;
+            order: components["schemas"]["Order"] | null;
+            replayed: boolean;
+            warnings: components["schemas"]["Warning"][] | null;
+        };
+        PlayerProfile: {
+            deposits: components["schemas"]["DepositsSummary"] | null;
+            /** Format: decimal */
+            equity: string | null;
+            /** Format: int32 */
+            fills: number;
+            holdings: components["schemas"]["ProfileHolding"][] | null;
+            /** Format: date */
+            holdingsAsOf: string | null;
+            /** Format: decimal */
+            moneyWeightedReturnAll: string | null;
+            /** Format: decimal */
+            netContributions: string | null;
+            ownerHandle: string | null;
+            player: components["schemas"]["PlayerSummary"] | null;
+            recentTrades: components["schemas"]["PublicTrade"][] | null;
+            /** Format: int32 */
+            runNo: number;
+            stats: components["schemas"]["ProfileStats"] | null;
+            /** Format: decimal */
+            winRate: string | null;
+        };
+        PlayerSummary: {
+            aiModel: string | null;
+            avatarSeed: string | null;
+            displayName: string | null;
+            handle: string | null;
+            /** @enum {string|null} */
+            kind: "HUMAN" | "AI" | null;
+            /** Format: date-time */
+            memberSince: string | null;
+            playerId: string | null;
+            /** Format: int32 */
+            resets: number;
+        };
+        PortfolioHistory: {
+            flows: components["schemas"]["HistoryFlow"][] | null;
+            points: components["schemas"]["HistoryPoint"][] | null;
+            /** @enum {string|null} */
+            range: "1D" | "1W" | "1M" | "3M" | "YTD" | "1Y" | "ALL" | null;
+            summary: components["schemas"]["HistorySummary"] | null;
+        };
+        Position: {
+            /** Format: decimal */
+            availableQty: string | null;
+            /** Format: decimal */
+            avgCost: string | null;
+            /** Format: decimal */
+            costBasis: string | null;
+            /** Format: decimal */
+            dayPnl: string | null;
+            /** Format: decimal */
+            dayReturn: string | null;
+            fractionable: boolean;
+            /** Format: decimal */
+            last: string | null;
+            /** Format: decimal */
+            mark: string | null;
+            /** @enum {string|null} */
+            markQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            /** Format: decimal */
+            marketValue: string | null;
+            name: string | null;
+            /** Format: date-time */
+            openedAt: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            symbol: string | null;
+            /** Format: decimal */
+            unrealizedPnl: string | null;
+            /** Format: decimal */
+            unrealizedReturn: string | null;
+            /** Format: decimal */
+            weight: string | null;
         };
         Preferences: {
             confirmOrders: boolean;
@@ -215,6 +2560,23 @@ export interface components {
             theme: "DARK" | "LIGHT" | "SYSTEM" | null;
             /** @enum {string|null} */
             upDown: "GREEN_UP" | "RED_UP" | null;
+        };
+        Preview: {
+            /** Format: decimal */
+            buyingPowerAfter: string | null;
+            /** Format: decimal */
+            buyingPowerBefore: string | null;
+            errors: components["schemas"]["PreviewError"][] | null;
+            estimate: components["schemas"]["Estimate"] | null;
+            sessionNote: string | null;
+            valid: boolean;
+            warnings: components["schemas"]["Warning"][] | null;
+        };
+        PreviewError: {
+            code: string | null;
+            field: string | null;
+            hint: string | null;
+            message: string | null;
         };
         Problem: {
             code: string | null;
@@ -233,6 +2595,188 @@ export interface components {
             code: string | null;
             field: string | null;
             message: string | null;
+        };
+        ProfileHolding: {
+            /** Format: decimal */
+            qty: string | null;
+            symbol: string | null;
+            /** Format: decimal */
+            weight: string | null;
+        };
+        ProfileStat: {
+            /** Format: decimal */
+            pnl: string | null;
+            /** Format: int32 */
+            rank: number | null;
+            /** Format: decimal */
+            return: string | null;
+        };
+        ProfileStats: {
+            ALL: components["schemas"]["ProfileStat"] | null;
+            MONTH: components["schemas"]["ProfileStat"] | null;
+            TODAY: components["schemas"]["ProfileStat"] | null;
+            WEEK: components["schemas"]["ProfileStat"] | null;
+            YTD: components["schemas"]["ProfileStat"] | null;
+        };
+        PublicHistory: {
+            points: components["schemas"]["PublicHistoryPoint"][] | null;
+            /** @enum {string|null} */
+            range: "1D" | "1W" | "1M" | "3M" | "YTD" | "1Y" | "ALL" | null;
+        };
+        PublicHistoryPoint: {
+            /** Format: decimal */
+            equity: string | null;
+            /** Format: date-time */
+            t: string | null;
+            /** Format: decimal */
+            unitValue: string | null;
+        };
+        PublicTrade: {
+            /** Format: date-time */
+            executedAt: string | null;
+            /** Format: decimal */
+            price: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            /** Format: decimal */
+            realizedPnl: string | null;
+            /** @enum {string|null} */
+            side: "BUY" | "SELL" | null;
+            symbol: string | null;
+            untrusted: components["schemas"]["UntrustedRationale"] | null;
+            viaApi: boolean;
+        };
+        Quote: {
+            /** Format: int64 */
+            ageMs: number | null;
+            /** Format: date-time */
+            asOf: string | null;
+            /** Format: decimal */
+            ask: string | null;
+            /** Format: int64 */
+            askSize: number | null;
+            /** Format: decimal */
+            bid: string | null;
+            /** Format: int64 */
+            bidSize: number | null;
+            /** Format: decimal */
+            change: string | null;
+            /** Format: decimal */
+            changePct: string | null;
+            /** Format: decimal */
+            dayHigh: string | null;
+            /** Format: decimal */
+            dayLow: string | null;
+            /** Format: decimal */
+            dayOpen: string | null;
+            extended: components["schemas"]["ExtendedLine"] | null;
+            halted: boolean;
+            /** Format: decimal */
+            last: string | null;
+            /** Format: date-time */
+            lastAt: string | null;
+            /** Format: int64 */
+            lastSize: number | null;
+            /** Format: decimal */
+            prevClose: string | null;
+            /** @enum {string|null} */
+            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            /** @enum {string|null} */
+            session: "CLOSED" | "PRE" | "REGULAR" | "POST" | null;
+            source: string | null;
+            symbol: string | null;
+            /** Format: int64 */
+            volume: number | null;
+            volumeIsPartial: boolean;
+        };
+        Quotes: {
+            quotes: components["schemas"]["Quote"][] | null;
+        };
+        ReauthRequest: {
+            password: string | null;
+        };
+        RefQuote: {
+            /** Format: decimal */
+            ask: string | null;
+            /** Format: int64 */
+            askSize: number | null;
+            /** Format: decimal */
+            bid: string | null;
+            /** Format: int64 */
+            bidSize: number | null;
+            clamped: boolean;
+            /** Format: date-time */
+            confirmedAt: string | null;
+            /** Format: decimal */
+            last: string | null;
+            /** @enum {string|null} */
+            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            /** Format: date-time */
+            quoteAt: string | null;
+            source: string | null;
+        };
+        ReplaceOrderRequest: {
+            clientOrderId: string | null;
+            extendedHours?: boolean | null;
+            /** Format: decimal */
+            limitPrice?: string | null;
+            /** Format: decimal */
+            qty?: string | null;
+            rationale?: string | null;
+            /** Format: decimal */
+            stopPrice?: string | null;
+            /** @enum {string|null} */
+            timeInForce?: "DAY" | "GTC" | null;
+            /** Format: decimal */
+            trailAmount?: string | null;
+            /** Format: decimal */
+            trailPercent?: string | null;
+        };
+        ResetAccountRequest: {
+            confirm: string | null;
+        };
+        ResetDetail: Omit<components["schemas"]["ActivityDetail"], "type"> & {
+            /** Format: decimal */
+            finalEquity: string | null;
+            fromAccountId: string | null;
+            memo: string | null;
+            /** Format: int32 */
+            runNo: number;
+            /** @enum {string|null} */
+            side: "CLOSED" | "OPENED" | null;
+            /** Format: decimal */
+            startingCash: string | null;
+            toAccountId: string | null;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "RESET";
+        };
+        ResolveCorporateActionRequest: {
+            /** Format: decimal */
+            newRate?: string | null;
+            note: string | null;
+            /** Format: decimal */
+            oldRate?: string | null;
+            /** @enum {string|null} */
+            resolution: "APPLY" | "SKIP" | null;
+        };
+        RestrictionDetail: Omit<components["schemas"]["ActivityDetail"], "type"> & {
+            /** @enum {string|null} */
+            from: "NONE" | "SETTLED_CASH_ONLY" | "LIQUIDATION_ONLY" | "FROZEN" | null;
+            reason: string | null;
+            /** @enum {string|null} */
+            to: "NONE" | "SETTLED_CASH_ONLY" | "LIQUIDATION_ONLY" | "FROZEN" | null;
+            /** Format: date-time */
+            until: string | null;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "RESTRICTION";
         };
         Rules: {
             account: components["schemas"]["RulesAccount"] | null;
@@ -361,6 +2905,392 @@ export interface components {
             holdingsVisibility: "EOD_WEIGHTS" | "EOD_FULL" | "HIDDEN" | null;
             tradeFeedDelay: string | null;
         };
+        Run: {
+            accountId: string | null;
+            /** Format: date-time */
+            closedAt: string | null;
+            /** Format: decimal */
+            finalEquity: string | null;
+            /** Format: decimal */
+            netContributions: string | null;
+            /** Format: date-time */
+            openedAt: string | null;
+            /** Format: decimal */
+            pnl: string | null;
+            /** Format: decimal */
+            return: string | null;
+            /** Format: int32 */
+            runNo: number;
+            /** Format: decimal */
+            startingCash: string | null;
+            /** @enum {string|null} */
+            status: "ACTIVE" | "CLOSED" | null;
+        };
+        RunJobRequest: {
+            runKey?: string | null;
+        };
+        SetPasswordRequest: {
+            newPassword: string | null;
+        };
+        Settings: {
+            "bots.requireRationale": boolean;
+            "league.allowSelfReset": boolean;
+            /** Format: decimal */
+            "league.defaultStartingCash": string | null;
+            /** Format: int32 */
+            "league.eligibility.minFills": number;
+            /** Format: int32 */
+            "league.eligibility.minSymbols": number;
+            "league.humanKindExcludesApiTraders": boolean;
+            /** Format: date */
+            "league.seasonStart": string | null;
+            /** @enum {string|null} */
+            "social.holdingsVisibility": "EOD_WEIGHTS" | "EOD_FULL" | "HIDDEN" | null;
+            "social.showDepositsInFeed": boolean;
+            "social.tradeFeedDelay": string | null;
+        };
+        SignupRequest: {
+            displayName: string | null;
+            handle: string | null;
+            inviteCode: string | null;
+            password: string | null;
+        };
+        SingleTargetRequest: Omit<components["schemas"]["TransferTargetRequest"], "scope"> & {
+            handle: string | null;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            scope: "SINGLE";
+        };
+        Snapshot: {
+            /** Format: int64 */
+            ageMs: number | null;
+            /** Format: date-time */
+            asOf: string | null;
+            /** Format: decimal */
+            ask: string | null;
+            /** Format: int64 */
+            askSize: number | null;
+            /** Format: decimal */
+            bid: string | null;
+            /** Format: int64 */
+            bidSize: number | null;
+            /** Format: decimal */
+            change: string | null;
+            /** Format: decimal */
+            changePct: string | null;
+            dailyBar: components["schemas"]["Bar"] | null;
+            /** Format: decimal */
+            dayHigh: string | null;
+            /** Format: decimal */
+            dayLow: string | null;
+            /** Format: decimal */
+            dayOpen: string | null;
+            extended: components["schemas"]["ExtendedLine"] | null;
+            halted: boolean;
+            /** Format: decimal */
+            last: string | null;
+            /** Format: date-time */
+            lastAt: string | null;
+            /** Format: int64 */
+            lastSize: number | null;
+            /** Format: decimal */
+            marketCap: string | null;
+            minuteBar: components["schemas"]["Bar"] | null;
+            /** Format: decimal */
+            prevClose: string | null;
+            /** @enum {string|null} */
+            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            /** @enum {string|null} */
+            session: "CLOSED" | "PRE" | "REGULAR" | "POST" | null;
+            source: string | null;
+            symbol: string | null;
+            /** Format: int64 */
+            volume: number | null;
+            volumeIsPartial: boolean;
+            /** Format: decimal */
+            week52High: string | null;
+            /** Format: decimal */
+            week52Low: string | null;
+        };
+        SplitDetail: Omit<components["schemas"]["ActivityDetail"], "type"> & {
+            /** Format: decimal */
+            cashInLieu: string | null;
+            corporateActionId: string | null;
+            /** Format: decimal */
+            costBasis: string | null;
+            /** Format: decimal */
+            dustQty: string | null;
+            /** Format: decimal */
+            newRate: string | null;
+            /** Format: decimal */
+            oldRate: string | null;
+            /** Format: decimal */
+            qtyAfter: string | null;
+            /** Format: decimal */
+            qtyBefore: string | null;
+            /** Format: decimal */
+            realizedPnl: string | null;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "SPLIT";
+        };
+        SystemEngine: {
+            haltReason: string | null;
+            /** Format: date-time */
+            lastCommandAt: string | null;
+            /** Format: int32 */
+            queueDepth: number;
+            /** @enum {string|null} */
+            status: "STARTING" | "RUNNING" | "HALTED" | null;
+        };
+        SystemInvariants: {
+            failures: string[] | null;
+            /** Format: date-time */
+            lastRunAt: string | null;
+            ok: boolean;
+        };
+        SystemJob: {
+            detail: string | null;
+            /** Format: date-time */
+            finishedAt: string | null;
+            lastRunKey: string | null;
+            name: string | null;
+            status: string | null;
+        };
+        SystemMarketData: {
+            corporateActionHolds: string[] | null;
+            profile: string | null;
+            providers: components["schemas"]["SystemProvider"][] | null;
+            staleSymbols: string[] | null;
+        };
+        SystemProvider: {
+            capabilities: {
+                [key: string]: unknown;
+            } | null;
+            id: string | null;
+            /** Format: date-time */
+            lastMessageAt: string | null;
+            probe: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: int32 */
+            restPerMinMax: number;
+            /** Format: int32 */
+            restPerMinUsed: number;
+            state: string | null;
+            /** Format: int32 */
+            streamSymbolsMax: number;
+            /** Format: int32 */
+            streamSymbolsUsed: number;
+        };
+        SystemStatus: {
+            /** Format: int32 */
+            corporateActionsNeedingAdmin: number;
+            db: string | null;
+            engine: components["schemas"]["SystemEngine"] | null;
+            invariants: components["schemas"]["SystemInvariants"] | null;
+            jobs: components["schemas"]["SystemJob"][] | null;
+            marketData: components["schemas"]["SystemMarketData"] | null;
+            /** Format: date-time */
+            startedAt: string | null;
+            version: string | null;
+        };
+        TradingDay: {
+            /** Format: date */
+            date: string | null;
+            earlyClose: boolean;
+            /** Format: date-time */
+            postCloseAt: string | null;
+            /** Format: date-time */
+            preOpenAt: string | null;
+            /** Format: date-time */
+            rthCloseAt: string | null;
+            /** Format: date-time */
+            rthOpenAt: string | null;
+            /** Format: date */
+            settlementDate: string | null;
+        };
+        TransferBatchResult: {
+            /** Format: decimal */
+            amount: string | null;
+            /** Format: int32 */
+            applied: number;
+            batchId: string | null;
+            /** Format: date-time */
+            createdAt: string | null;
+            memo: string | null;
+            results: components["schemas"]["TransferResult"][] | null;
+            /** @enum {string|null} */
+            scope: "SINGLE" | "ALL" | "SYSTEM" | null;
+            /** Format: int32 */
+            skipped: number;
+            /** @enum {string|null} */
+            type: "INITIAL" | "DEPOSIT" | "WITHDRAWAL" | "ADJUSTMENT" | null;
+        };
+        TransferPreviewAccount: {
+            accountId: string | null;
+            /** Format: decimal */
+            cash: string | null;
+            /** Format: decimal */
+            equityBefore: string | null;
+            handle: string | null;
+            /** @enum {string|null} */
+            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            skipReason: string | null;
+            /** Format: decimal */
+            unitValue: string | null;
+            warnings: components["schemas"]["Warning"][] | null;
+            /** Format: decimal */
+            withdrawable: string | null;
+            worstMarkBasis: string | null;
+            wouldApply: boolean;
+        };
+        TransferResult: {
+            accountId: string | null;
+            /** Format: decimal */
+            amount: string | null;
+            /** Format: decimal */
+            cashAfter: string | null;
+            displayName: string | null;
+            /** Format: decimal */
+            equityBefore: string | null;
+            handle: string | null;
+            /** @enum {string|null} */
+            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            rebased: boolean;
+            skipReason: string | null;
+            /** @enum {string|null} */
+            status: "APPLIED" | "SKIPPED" | null;
+            transferId: string | null;
+            /** Format: decimal */
+            unitValue: string | null;
+            warnings: components["schemas"]["Warning"][] | null;
+        };
+        TransferRow: {
+            accountId: string | null;
+            /** Format: decimal */
+            amount: string | null;
+            batchId: string | null;
+            by: string | null;
+            /** Format: date-time */
+            effectiveAt: string | null;
+            /** Format: decimal */
+            equityBefore: string | null;
+            handle: string | null;
+            isContribution: boolean;
+            memo: string | null;
+            skipReason: string | null;
+            /** @enum {string|null} */
+            status: "APPLIED" | "SKIPPED" | null;
+            transferId: string | null;
+            /** @enum {string|null} */
+            type: "INITIAL" | "DEPOSIT" | "WITHDRAWAL" | "ADJUSTMENT" | null;
+            /** Format: decimal */
+            unitValue: string | null;
+        };
+        TransferTargetRequest: {
+            scope: string;
+        };
+        UntrustedFeedText: {
+            memo: string | null;
+            rationale: string | null;
+        };
+        UntrustedNews: {
+            headline: string | null;
+            summary: string | null;
+        };
+        UntrustedRationale: {
+            rationale: string | null;
+        };
+        UpdateMeRequest: {
+            displayName?: string | null;
+            preferences?: components["schemas"]["UpdatePreferencesRequest"] | null;
+        };
+        UpdatePlayerRequest: {
+            aiModel?: string | null;
+            apiTradingAllowed?: boolean | null;
+            displayName?: string | null;
+            /** @enum {string|null} */
+            role?: "PLAYER" | "ADMIN" | null;
+            /** @enum {string|null} */
+            status?: "ACTIVE" | "DISABLED" | "FROZEN" | null;
+        };
+        UpdatePreferencesRequest: {
+            confirmOrders?: boolean | null;
+            /** @enum {string|null} */
+            defaultOrderType?: "LIMIT" | "MARKET" | null;
+            /** @enum {string|null} */
+            defaultQtyMode?: "SHARES" | "AMOUNT" | null;
+            /** @enum {string|null} */
+            defaultTimeInForce?: "DAY" | "GTC" | null;
+            /** @enum {string|null} */
+            theme?: "DARK" | "LIGHT" | "SYSTEM" | null;
+            /** @enum {string|null} */
+            upDown?: "GREEN_UP" | "RED_UP" | null;
+        };
+        UpdateSettingsRequest: {
+            "bots.requireRationale"?: boolean | null;
+            "league.allowSelfReset"?: boolean | null;
+            /** Format: decimal */
+            "league.defaultStartingCash"?: string | null;
+            /** Format: int32 */
+            "league.eligibility.minFills"?: number | null;
+            /** Format: int32 */
+            "league.eligibility.minSymbols"?: number | null;
+            "league.humanKindExcludesApiTraders"?: boolean | null;
+            /** Format: date */
+            "league.seasonStart"?: string | null;
+            /** @enum {string|null} */
+            "social.holdingsVisibility"?: "EOD_WEIGHTS" | "EOD_FULL" | "HIDDEN" | null;
+            "social.showDepositsInFeed"?: boolean | null;
+            "social.tradeFeedDelay"?: string | null;
+        };
+        UpdateWatchlistRequest: {
+            name: string | null;
+            symbols: string[] | null;
+        };
+        Violation: {
+            /** Format: date-time */
+            expiresAt: string | null;
+            /** Format: date */
+            fundingSettleDate: string | null;
+            id: string | null;
+            /** Format: date-time */
+            occurredAt: string | null;
+            orderId: string | null;
+            symbol: string | null;
+            /** Format: date */
+            tradeDate: string | null;
+            /** @enum {string|null} */
+            type: "GFV" | null;
+            /** Format: decimal */
+            unsettledAmount: string | null;
+        };
+        Violations: {
+            active: components["schemas"]["Violation"][] | null;
+            expired: components["schemas"]["Violation"][] | null;
+            /** @enum {string|null} */
+            restriction: "NONE" | "SETTLED_CASH_ONLY" | "LIQUIDATION_ONLY" | "FROZEN" | null;
+            /** Format: date-time */
+            restrictionUntil: string | null;
+        };
+        Warning: {
+            code: string | null;
+            message: string | null;
+        };
+        Watchlist: {
+            id: string | null;
+            name: string | null;
+            /** Format: int32 */
+            sortOrder: number;
+            symbols: string[] | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -370,6 +3300,1493 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    activities: {
+        parameters: {
+            query?: {
+                types?: ("FILL" | "INITIAL_FUNDING" | "DEPOSIT" | "WITHDRAWAL" | "ADJUSTMENT" | "DIVIDEND" | "CASH_IN_LIEU" | "SPLIT" | "NAME_CHANGE" | "GFV" | "RESET" | "RESTRICTION" | "ADMIN_VIEW")[];
+                from?: string;
+                to?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageActivity"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    balances: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Balances"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    executions: {
+        parameters: {
+            query?: {
+                symbol?: string;
+                from?: string;
+                to?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageExecution"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getAccountHistory: {
+        parameters: {
+            query?: {
+                /** @description 1D, 1W, 1M (default), 3M, YTD, 1Y or ALL */
+                range?: "1D" | "1W" | "1M" | "3M" | "YTD" | "1Y" | "ALL";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioHistory"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    positions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Position"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    position: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Position"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    close: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClosePositionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaceOrderResponse"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reset_1: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    violations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Violations"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revoke_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_9: {
+        parameters: {
+            query?: {
+                category?: string;
+                action?: string;
+                actor?: string;
+                from?: string;
+                to?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageAuditRow"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_6: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarOverride"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_3: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCalendarOverrideRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarOverride"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                date: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_5: {
+        parameters: {
+            query?: {
+                handle?: string;
+                batchId?: string;
+                from?: string;
+                to?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageTransferRow"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    apply: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Unique per transfer; reuse only to retry */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CashTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferBatchResult"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    preview_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CashTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashTransferPreview"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_8: {
+        parameters: {
+            query?: {
+                status?: "PENDING" | "APPLIED" | "SKIPPED" | "NEEDS_ADMIN";
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageCorporateAction"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resolve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveCorporateActionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorporateAction"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    halt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HaltEngineRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemStatus"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resume: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemStatus"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_4: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invite"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInviteRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteCreated"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revoke_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inviteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    cancel_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_2: {
+        parameters: {
+            query?: {
+                kind?: "HUMAN" | "AI";
+                status?: "ACTIVE" | "DISABLED" | "FROZEN";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlayer"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePlayerRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatePlayerResponse"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    detail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlayerDetail"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePlayerRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlayer"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_3: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyInfo"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateApiKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyCreated"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    freeze: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FreezePlayerRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlayer"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    liveView: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LiveViewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlayerLiveView"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    setPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reset: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Unique per reset; reuse it only to retry */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminResetRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    unfreeze: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlayer"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    system: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemStatus"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    runJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RunJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    search: {
+        parameters: {
+            query?: {
+                /** @description Symbol or company name fragment */
+                q?: string;
+                /** @description 1–20, default 10 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetSummary"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    asset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Asset"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    logo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description PNG image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getCsrf: {
         parameters: {
             query?: never;
@@ -457,6 +4874,313 @@ export interface operations {
             };
         };
     };
+    reauth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReauthRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    signup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignupRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    bars: {
+        parameters: {
+            query?: {
+                /** @description Chart range */
+                range?: "1D" | "5D" | "1M" | "3M" | "6M" | "YTD" | "1Y" | "5Y" | "ALL";
+                /** @description Bar timeframe (overrides the range default) */
+                timeframe?: "1Min" | "5Min" | "15Min" | "30Min" | "1Hour" | "1Day" | "1Week" | "1Month";
+                /** @description Window start (ISO-8601 instant) */
+                start?: string;
+                /** @description Window end (ISO-8601 instant; default now) */
+                end?: string;
+                /** @description 1–1000 */
+                limit?: number;
+                /** @description RAW, SPLIT (default) or ALL */
+                adjustment?: "RAW" | "SPLIT" | "ALL";
+                /** @description Include pre- and post-market bars (default true) */
+                extendedHours?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bars"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getFeed: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description 1..200, default 50 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageFeedItem"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getLeaderboard: {
+        parameters: {
+            query?: {
+                /** @description TODAY, WEEK (default), MONTH, YTD, SEASON or ALL */
+                period?: "TODAY" | "WEEK" | "MONTH" | "YTD" | "SEASON" | "ALL";
+                /** @description RETURN (default) or PNL */
+                metric?: "RETURN" | "PNL";
+                /** @description ALL (default), HUMAN or AI */
+                kind?: "ALL" | "HUMAN" | "AI";
+                /** @description 1..100, default 50 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Leaderboard"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    calendar: {
+        parameters: {
+            query?: {
+                /** @description First ET date (inclusive) */
+                from?: string;
+                /** @description Last ET date (inclusive) */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradingDay"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    clock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Clock"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    indices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Quote"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    movers: {
+        parameters: {
+            query?: {
+                /** @description GAINERS (default), LOSERS or ACTIVES */
+                list?: "GAINERS" | "LOSERS" | "ACTIVES";
+                /** @description 1–50, default 10 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Movers"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getMe: {
         parameters: {
             query?: never;
@@ -486,7 +5210,131 @@ export interface operations {
             };
         };
     };
-    list: {
+    patchMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMeRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyInfo"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateApiKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyCreated"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_7: {
         parameters: {
             query?: {
                 /** @description Only unread notifications */
@@ -553,6 +5401,498 @@ export interface operations {
             };
         };
     };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    news: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated symbols */
+                symbols?: string;
+                /** @description 1–20, default 10 */
+                limit?: number;
+                /** @description Only items published before this instant */
+                before?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsList"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list: {
+        parameters: {
+            query?: {
+                status?: "OPEN" | "CLOSED" | "ALL";
+                symbol?: string;
+                from?: string;
+                to?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageOrder"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    place: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaceOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaceOrderResponse"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    cancelAll: {
+        parameters: {
+            query?: {
+                symbol?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelledOrders"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    byClientId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clientOrderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaceOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preview"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Order"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaceOrderResponse"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listPlayers: {
+        parameters: {
+            query?: {
+                /** @description HUMAN or AI; both when absent */
+                kind?: "HUMAN" | "AI";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerSummary"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlayerProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerProfile"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlayerHistory: {
+        parameters: {
+            query?: {
+                /** @description 1D, 1W, 1M (default), 3M, YTD, 1Y or ALL */
+                range?: "1D" | "1W" | "1M" | "3M" | "YTD" | "1Y" | "ALL";
+            };
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicHistory"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlayerTrades: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description 1..200, default 50 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagePublicTrade"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    quotes: {
+        parameters: {
+            query: {
+                /** @description Comma-separated symbols, e.g. AAPL,MSFT (1–50) */
+                symbols: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Quotes"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     rules: {
         parameters: {
             query?: never;
@@ -569,6 +5909,230 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Rules"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Snapshot"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listWatchlists: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Watchlist"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createWatchlist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWatchlistRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Watchlist"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateWatchlist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWatchlistRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Watchlist"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteWatchlist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    addWatchlistSymbol: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddWatchlistSymbolRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Watchlist"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    removeWatchlistSymbol: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Watchlist"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

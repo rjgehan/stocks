@@ -442,7 +442,7 @@ export class MockServer {
       return this.place({ clientOrderId, symbol, side: 'SELL', type: 'MARKET', qty: p.availableQty, timeInForce: 'DAY' })
     })
     r('GET', '/account/activities', ({ url }) => {
-      const types = (url.searchParams.get('types') ?? '').split(',').map((t) => t.trim().toUpperCase()).filter(Boolean)
+      const types = url.searchParams.getAll('types').flatMap((v) => v.split(',')).map((t) => t.trim().toUpperCase()).filter(Boolean)
       const rows = this.s.ledger.filter((a) => types.length === 0 || (a.type && types.includes(a.type))).toReversed()
       return json(this.page(rows, url))
     })

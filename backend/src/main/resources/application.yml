@@ -8,6 +8,7 @@ spring:
   application.name: stocks
   profiles.default: dev
   threads.virtual.enabled: true
+  task.execution.mode: force                # keep Boot's applicationTaskExecutor although STOMP defines executors
   datasource:
     url: ${DB_URL:jdbc:h2:file:./.data/stocks-dev;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;AUTO_SERVER=TRUE}
     username: ${DB_USER:sa}

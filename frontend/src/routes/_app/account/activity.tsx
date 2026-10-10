@@ -1,14 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Segmented } from '@/components/ui/Segmented'
 import { ActivityList } from '@/features/account/ActivityList'
+import type { ActivityType } from '@/lib/api/types'
 
 type Filter = 'ALL' | 'TRADES' | 'TRANSFERS' | 'EVENTS'
 
-const TYPES: Record<Filter, string | undefined> = {
+const TYPES: Record<Filter, ActivityType[] | undefined> = {
   ALL: undefined,
-  TRADES: 'FILL',
-  TRANSFERS: 'INITIAL_FUNDING,DEPOSIT,WITHDRAWAL,ADJUSTMENT',
-  EVENTS: 'DIVIDEND,CASH_IN_LIEU,SPLIT,NAME_CHANGE,GFV,RESET,RESTRICTION,ADMIN_VIEW',
+  TRADES: ['FILL'],
+  TRANSFERS: ['INITIAL_FUNDING', 'DEPOSIT', 'WITHDRAWAL', 'ADJUSTMENT'],
+  EVENTS: ['DIVIDEND', 'CASH_IN_LIEU', 'SPLIT', 'NAME_CHANGE', 'GFV', 'RESET', 'RESTRICTION', 'ADMIN_VIEW'],
 }
 
 export const Route = createFileRoute('/_app/account/activity')({
