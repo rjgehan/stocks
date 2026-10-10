@@ -1,6 +1,9 @@
 import { afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 
+// jsdom has no layout: the router's scroll restoration calls window.scrollTo, which jsdom only logs as unimplemented.
+window.scrollTo = () => {}
+
 afterEach(() => {
   cleanup()
   document.cookie.split(';').forEach((c) => {
