@@ -81,7 +81,8 @@ public class PushController {
 
   @PostMapping("/sync")
   @Operation(summary = "Check this browser's push registration", description = "registered=false: the server does "
-      + "not know this subscription for the caller (removed at sign-out, or the device changed hands); the SPA then "
+      + "not know this subscription for the caller (removed at sign-out or by a password change, or the device "
+      + "changed hands); the SPA then registers it again if the player turned push on on this device, otherwise it "
       + "unsubscribes the browser. Re-binds the registration to the current session.")
   public PushSyncDto syncPushSubscription(@Valid @RequestBody PushEndpointRequest body, HttpServletRequest request) {
     return push.sync(me(), sessionHash(request), body.endpoint());
