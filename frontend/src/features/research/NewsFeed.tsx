@@ -26,7 +26,16 @@ export function NewsFeed({ symbols, pageSize = 10 }: { symbols: string; pageSize
   const q = useNewsPages(symbols, pageSize)
   const now = useMinuteClock()
   if (q.isPending) return <SkeletonRows rows={4} cols={2} />
-  const items = (q.data?.pages ?? []).flatMap((p) => p.items ?? []).filter((n) => n.untrusted?.headline)
+  // a page boundary can repeat the item published exactly at `before`: keep each story once
+  const seen = new Set<string>()
+  const items = (q.data?.pages ?? [])
+    .flatMap((p) => p.items ?? [])
+    .filter((n) => {
+      const key = n.id ?? n.url ?? ''
+      if (!n.untrusted?.headline || (key && seen.has(key))) return false
+      if (key) seen.add(key)
+      return true
+    })
   if (q.isError || items.length === 0) {
     return <EmptyState title="No news right now" body="Headlines appear here when the market-data news sources have stories for this symbol." />
   }

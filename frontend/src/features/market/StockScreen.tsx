@@ -61,13 +61,15 @@ const PANE_HEIGHT = { phone: 80, tablet: 100, desktop: 110 } as const
  * dock. Tablet: ticket in a right side sheet, dock as tabs under the chart. Phone: pushed screen with a
  * sticky header and a Trade bar that opens a bottom sheet.
  */
-export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRange, onTf, onTab, onTicket }: StockScreenProps) {
+export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, ticket, onRange, onTf, onTab, onTicket }: StockScreenProps) {
   const asset = useAsset(symbol)
   const quote = useQuote(symbol, 'quote')
   const bars = useBars(symbol, range, effectiveTimeframe(range, tf))
   const scroller = useRef<HTMLDivElement>(null)
   const desktop = breakpoint === 'desktop' || breakpoint === 'wide'
   const phone = breakpoint === 'phone'
+  // desktop shows Time & Sales in the right column, so a `tab=TRADES` link (or a resize) lands on the overview
+  const tab: QuoteTab = desktop && requestedTab === 'TRADES' ? 'OVERVIEW' : requestedTab
   const [dockTab, setDockTab] = useState<'POSITIONS' | 'ORDERS'>('POSITIONS')
   const [style, setStyle] = useChartType(phone, range === '1D')
   const [indicators, setIndicators] = useIndicatorSettings()
@@ -180,7 +182,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
           </div>
         ) : null}
         {tab === 'NEWS' ? <NewsFeed symbols={symbol} /> : null}
-        {tab === 'TRADES' && !desktop ? <TimeAndSales symbol={symbol} maxHeight="max-h-[60vh]" /> : null}
+        {tab === 'TRADES' ? <TimeAndSales symbol={symbol} maxHeight="max-h-[60vh]" /> : null}
         {tab === 'POSITION' ? <MyPositionCard symbol={symbol} /> : null}
       </div>
     </section>
