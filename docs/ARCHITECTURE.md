@@ -4003,7 +4003,7 @@ Notifications reach a player's phone or desktop while the app is closed through 
 
 Scripts, bots and dashboards that hold an API key get the same live data as Server-Sent Events, without STOMP. The SPA keeps STOMP (§19); the agent runner keeps polling inside its short runs.
 
-**Request.** `GET /api/v1/stream?topics=quotes,orders&symbols=AAPL,MSFT` with `Authorization: Bearer stk_…`. Only API keys (and Phase 2 OAuth tokens) may open a stream; a browser session gets 403 `FORBIDDEN` (it has `/ws`). `topics` is a comma list, case-insensitive; without it the stream carries every topic the key's scopes allow (`quotes` only when `symbols` is given). `symbols` is a comma list of at most 50 tickers (unknown tickers stream `quality=NONE` quotes, like `/quotes`). Resume with the standard `Last-Event-ID` header, or `?lastEventId=` for clients that cannot set headers.
+**Request.** `GET /api/v1/stream?topics=quotes,orders&symbols=AAPL,MSFT` with `Authorization: Bearer stk_…`. Only API keys may open a stream; a browser session gets 403 `FORBIDDEN` (it has `/ws`), and an OAuth access token gets 401 (connector tokens are accepted on `/mcp` only, §17.9.5). `topics` is a comma list, case-insensitive; without it the stream carries every topic the key's scopes allow (`quotes` only when `symbols` is given). `symbols` is a comma list of at most 50 tickers (unknown tickers stream `quality=NONE` quotes, like `/quotes`). Resume with the standard `Last-Event-ID` header, or `?lastEventId=` for clients that cannot set headers.
 
 | Topic | Scope | Events (`event:` name → `data:` JSON) | Resumable |
 |---|---|---|---|
