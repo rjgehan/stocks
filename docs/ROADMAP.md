@@ -162,12 +162,12 @@
 
 ### Trading realism
 - [ ] **MARGIN accounts**, offered once equity is at least $2,000 (an admin opt-in per player or league): long-only, intraday buying power 4 × margin excess, overnight 2 × Reg T excess, the Webull maintenance table, IMD/RM/RT calls with due dates, auto-liquidation, strikes
-- [ ] **Bracket (TP/SL, ≥ 0.1% apart), OCO, OTO, OTOCO** group orders
+- [x] **Bracket (TP/SL, ≥ 0.1% apart), OCO, OTO, OTOCO** group orders (§11.9: `/order-groups`, MCP `*_order_group`, the ticket's Advanced mode, linked orders; golden `GroupOrderScenarioTest`)
 - [ ] **Official opening print** fills (SIP condition codes) and halt reopen prints
 - [ ] Halt feed and LULD bands (Nasdaq Trader halts RSS [VERIFY]); market-wide circuit breakers
-- [ ] FINRA 5330 order adjustments on ex-dividend dates
+- [x] FINRA 5330 order adjustments on ex-dividend dates (§14; `doNotReduce`)
 - [ ] Admin tool for corporate actions: cash and stock mergers, delistings (force-close at a price), spin-offs as manual events
-- [ ] Cancel latency (`PENDING_CANCEL`, 150 ms + jitter) behind a flag
+- [x] Cancel latency (`PENDING_CANCEL`, 150 ms + jitter) behind a flag (§11.10, `stocks.rules.cancel-latency.enabled`, off by default)
 - [ ] Engine input log (NDJSON) with bit-for-bit replay; `ReplayMarketDataProvider` and `MarketTapeRecorder`
 - [ ] Leveraged-ETF requirements (2x/3x) for margin
 

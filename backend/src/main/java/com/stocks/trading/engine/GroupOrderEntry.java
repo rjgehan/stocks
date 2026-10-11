@@ -303,6 +303,11 @@ class GroupOrderEntry {
     if (existing.isPresent()) {
       return orderReplays.replay(existing.get(), hash);
     }
+    if (!old.isOpen()) {
+      throw ApiException.of(ErrorCode.ORDER_NOT_REPLACEABLE, "Order " + old.publicId() + " is " + old.status()
+              + " and cannot be replaced.")
+          .withHint("Only open, unfilled legs can be replaced.");
+    }
     AccountRow acc = activeAccount(cmd.accountId());
     Map<OrderGroupRole, String> ids = new EnumMap<>(OrderGroupRole.class);
     for (OrderGroupRole r : cur.roles()) {
