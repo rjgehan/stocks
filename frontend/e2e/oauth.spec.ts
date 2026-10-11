@@ -67,7 +67,9 @@ test('connect an app with the act-as consent, then disconnect it', async ({ page
   }
 
   // Real backend: a dynamically registered public client with a loopback redirect (like the MCP Inspector). One per
-  // viewport project, so the parallel projects never disconnect each other's app.
+  // viewport project, so the parallel projects never disconnect each other's app. A dozen round trips (register,
+  // authorize, sign in, consent, token, MCP, Settings, MCP again), so it gets more than the default 30 s.
+  test.setTimeout(90_000)
   const appName = `e2e connector ${testInfo.project.name}`
   const reg = await request.post('/oauth2/register', {
     data: { client_name: appName, redirect_uris: [LOOPBACK], token_endpoint_auth_method: 'none' },
