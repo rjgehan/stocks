@@ -14,6 +14,19 @@ test('columns, sorting, drag reorder and resize on desktop', async ({ page }, te
   await open(page, '/watchlist')
   const panel = page.getByRole('region', { name: 'Watchlist' }).first()
   const table = panel.getByRole('table', { name: 'Watchlist symbols' })
+  await expect(panel.getByRole('tab', { name: 'My List' })).toBeVisible()
+
+  // a list of its own: the real backend's database is shared by specs running in parallel (watchlist.spec.ts edits
+  // My List at the same time), so this spec never touches another list
+  const listName = `Columns ${testInfo.workerIndex}-${Date.now().toString(36)}`
+  await panel.getByRole('button', { name: 'List actions' }).click()
+  await page.getByRole('dialog', { name: 'List actions' }).getByRole('button', { name: 'New list' }).click()
+  const nameDialog = page.getByRole('dialog', { name: 'New watchlist' })
+  await nameDialog.getByLabel('Name').fill(listName)
+  await nameDialog.getByRole('button', { name: 'Create list' }).click()
+  await expect(panel.getByRole('tab', { name: listName })).toHaveAttribute('aria-selected', 'true')
+  await panel.getByRole('button', { name: 'Add 5 popular stocks' }).click()
+  await expect(table.locator('[role="row"][data-symbol]')).toHaveCount(5, { timeout: 15_000 })
   await expect(table).toBeVisible()
   await expect(table.getByRole('columnheader', { name: /Last/ })).toBeVisible()
 
@@ -48,6 +61,8 @@ test('columns, sorting, drag reorder and resize on desktop', async ({ page }, te
   if (saved) expect((await saved).ok()).toBe(true)
   const expected = [c!, ...listOrder.filter((s) => s !== c)]
   await expect.poll(() => rowOrder(table)).toEqual(expected)
+  // the row order above is optimistic; the mock answers the PUT after 40–120 ms in the page, so let it land
+  if (MOCK) await page.waitForTimeout(1_000)
   await page.reload()
   await expect(page.getByRole('table', { name: 'Watchlist symbols' })).toBeVisible()
   await expect.poll(() => rowOrder(page.getByRole('table', { name: 'Watchlist symbols' }))).toEqual(expected)
@@ -61,7 +76,7 @@ test('columns, sorting, drag reorder and resize on desktop', async ({ page }, te
   await page.keyboard.press('ArrowRight')
   await expect(handle).toHaveAttribute('aria-valuenow', String(before + 40))
 
-  // put the list back (the real backend's database is shared by the specs): Edit mode's arrows
+  // Edit mode's arrows reorder too; then the list is deleted (the real backend's database outlives the run)
   await panel.getByRole('button', { name: 'List actions' }).click()
   await page.getByRole('dialog', { name: 'List actions' }).getByRole('button', { name: 'Edit symbols' }).click()
   const moveDown = panel.getByRole('button', { name: `Move ${c} down` })
@@ -69,4 +84,9 @@ test('columns, sorting, drag reorder and resize on desktop', async ({ page }, te
   await moveDown.click()
   await panel.getByRole('button', { name: 'Done' }).click()
   await expect.poll(() => rowOrder(page.getByRole('table', { name: 'Watchlist symbols' }))).toEqual(listOrder)
+  await panel.getByRole('button', { name: 'List actions' }).click()
+  await page.getByRole('dialog', { name: 'List actions' }).getByRole('button', { name: 'Delete list' }).click()
+  await page.getByRole('dialog', { name: new RegExp(`Delete .${listName}.`) }).getByRole('button', { name: 'Delete list' }).click()
+  await expect(panel.getByRole('tab', { name: listName })).toHaveCount(0)
+  await expect(panel.getByRole('tab', { name: 'My List' })).toHaveAttribute('aria-selected', 'true')
 })
