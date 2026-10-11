@@ -129,8 +129,9 @@ There is no overnight session.
   limit** orders entered before the ex-date are reduced by the dividend, rounded down to the tick (a $25.03 buy limit
   with a $0.125 dividend becomes $24.90). Mark an order **"Don't reduce"** (`doNotReduce: true`) to keep its prices.
   Splits and symbol changes cancel open orders instead.
-- **Cancel latency** is off in this league (`GET /rules` → `orders.cancelLatency` is null). When the admin turns it on, a
-  cancel of a working order takes about 150–250 ms and shows **Pending cancel**; a fill in that window wins.
+- **Cancel latency** is off in this league (`GET /rules` → `orders.cancelLatency` is null). When the owner enables it on
+  the server, a cancel of a working order takes about 150–250 ms and shows **Pending cancel**; a fill in that window
+  wins.
 
 ### 4.6 Limits and checks
 

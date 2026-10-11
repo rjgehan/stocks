@@ -284,6 +284,31 @@ class GroupOrderScenarioTest extends TradingTestBase {
     assertThat(orderQueries.list(p.accountId(), null, null, 50).items()).as("nothing was persisted").isEmpty();
   }
 
+  @Test
+  void anAiPlayerExplainsTheGroupOnceAndEveryLegCarriesTheRationale() {
+    Player bot = bot();
+    String s = symbol();
+    market(s, "9.98", "10.00");
+    PlaceOrderGroupRequest silent = new PlaceOrderGroupRequest(cid(), OrderGroupType.BRACKET, s, Side.BUY,
+        new BigDecimal("10"), null, new GroupLegRequest(OrderType.LIMIT, new BigDecimal("9.90"), null),
+        new GroupLegRequest(null, new BigDecimal("11.00"), null),
+        new GroupLegRequest(null, null, new BigDecimal("9.50")), null, null, null, null, null);
+    // check 7 for the group: an AI player must say why (a preview does not need it)
+    assertThatThrownBy(() -> orders.placeGroup(bot.principal(), silent, botMeta()))
+        .isInstanceOfSatisfying(ApiException.class,
+            e -> assertThat(e.code()).isEqualTo(ErrorCode.RATIONALE_REQUIRED));
+    assertThat(orders.previewGroup(bot.principal(), silent).valid()).isTrue();
+
+    PlaceOrderGroupRequest explained = new PlaceOrderGroupRequest(silent.clientOrderId(), silent.type(), s,
+        silent.side(), silent.qty(), null, silent.entry(), silent.takeProfit(), silent.stopLoss(), null,
+        "Buying the dip with a 1:2 risk/reward bracket.", null, null, null);
+    OrderGroupDto g = orders.placeGroup(bot.principal(), explained, botMeta()).group();
+    assertThat(g.legs()).hasSize(3).allSatisfy(o -> {
+      assertThat(o.rationale()).isEqualTo("Buying the dip with a 1:2 risk/reward bracket.");
+      assertThat(o.channel()).isEqualTo(com.stocks.common.domain.Channel.REST_KEY);
+    });
+  }
+
   // ------------------------------------------------------------------------------------------- OCO
 
   @Test
