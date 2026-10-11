@@ -7,11 +7,11 @@
  * result toast. Server rejections (§7.2 codes) map to inline field errors or a banner. Phase 2: a Simple · Advanced
  * switch (when `GET /rules` lists `orders.groups`) swaps the body for the group-order ticket (`advanced/`, §11.9).
  */
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useAccount, useOrderPreview, usePlaceOrder, usePositions } from '@/lib/api/hooks/account'
 import { useAsset, useClock, useRules } from '@/lib/api/hooks/market'
 import { useMe } from '@/lib/api/hooks/identity'
-import { type DescribedError, describeError, errorField, orderErrorText } from '@/lib/api/errors'
+import { type DescribedError, describeError, errorField, orderErrorText, warningText } from '@/lib/api/errors'
 import { isApiError } from '@/lib/api/problem'
 import type { OrderType, PlaceOrderRequest, Side } from '@/lib/api/types'
 import { useQuote } from '@/lib/realtime/useQuote'
@@ -32,7 +32,6 @@ import { QualityBadge } from '@/features/market/QualityBadge'
 import { toast } from '@/features/notifications/toastStore'
 import { EstimatesPanel } from './EstimatesPanel'
 import { OrderReviewSheet } from './OrderReviewSheet'
-import { AdvancedTicket } from './advanced/AdvancedTicket'
 import {
   BASE_ORDER_TYPES,
   amountHint,
@@ -59,6 +58,9 @@ import {
   trailingStopStart,
   withoutQueueDuplicates,
 } from './ticketState'
+
+/** The Advanced (group order) ticket and its review sheet load when Advanced is first chosen. */
+const AdvancedTicket = lazy(() => import('./advanced/AdvancedTicket').then((m) => ({ default: m.AdvancedTicket })))
 
 /** The price inputs the Bid · Mid · Ask · Last chips can fill. */
 type PriceField = 'limitPrice' | 'stopPrice'
@@ -319,7 +321,9 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
               {untradableNote}
             </p>
           ) : null}
-          <AdvancedTicket symbol={symbol} groups={groupRules} confirmOrders={confirmOrders} onDone={onDone} />
+          <Suspense fallback={<div className="h-64 animate-pulse rounded-md bg-bg-2" aria-busy="true" />}>
+            <AdvancedTicket symbol={symbol} groups={groupRules} confirmOrders={confirmOrders} onDone={onDone} />
+          </Suspense>
         </div>
       </div>
     )
@@ -591,7 +595,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
           .map((w) => (
             <p key={w.code} className="flex gap-1.5 rounded-sm bg-warn/10 p-2 text-caption text-warn">
               <IconInfo size={16} className="mt-0.5 shrink-0" />
-              {w.message}
+              {warningText(w)}
             </p>
           ))}
         {gfvRisk ? (

@@ -34,8 +34,9 @@ import org.springframework.security.oauth2.jwt.JwtException;
  *       human → 401 {@code UNAUTHENTICATED} ({@code error="invalid_token"});</li>
  *   <li>the actor or the human DISABLED → 403 {@code PLAYER_DISABLED}; FROZEN → 403 {@code PLAYER_FROZEN}.</li>
  * </ul>
- * The principal acts as the grant's actor with {@code scopes = token ∩ grant}, {@link AuthMethod#OAUTH} and the
- * token's {@code client_id}; its authorities never include {@code ROLE_ADMIN} (§17.4 layer 3), even for the admin's
+ * The principal acts as the grant's actor with {@code scopes = token ∩ grant} ({@code trade} removed from a grant
+ * acting as the human while the admin has their API trading off, §17.9.3), {@link AuthMethod#OAUTH} and the token's
+ * {@code client_id}; its authorities never include {@code ROLE_ADMIN} (§17.4 layer 3), even for the admin's
  * own grant. Grant rows are cached for {@code stocks.oauth.grant-cache-ttl} (60 s; 0 in tests) and evicted at once by
  * every revocation ({@link OAuthGrantsRevoked}); player statuses come from {@link PlayerQueries#status}.
  */
@@ -61,7 +62,7 @@ public class OAuthTokenAuthenticationProvider {
 
   record GrantRow(long id, String publicId, String clientId, Set<String> scopes, Instant revokedAt, long humanId,
                   long actorId, String actorPublicId, String actorHandle, PlayerKind actorKind, PlayerRole actorRole,
-                  Long actorOwnerId) {}
+                  Long actorOwnerId, boolean humanApiTradingAllowed) {}
 
   /**
    * Authenticates a JWT access token.
@@ -100,6 +101,9 @@ public class OAuthTokenAuthenticationProvider {
     }
     Set<String> scopes = scopes(jwt.getClaimAsString("scope"));
     scopes.retainAll(grant.scopes());
+    if (grant.actorId() == grant.humanId() && !grant.humanApiTradingAllowed()) {
+      scopes.remove(Scopes.TRADE);             // §17.9.3: trading as myself follows the current rule, not the consent
+    }
     PlayerPrincipal principal = new PlayerPrincipal(grant.actorId(), grant.actorPublicId(), grant.actorHandle(),
         grant.actorKind(), grant.actorRole(), scopes, AuthMethod.OAUTH, null, jwt.getClaimAsString("client_id"),
         time.now());
@@ -141,15 +145,17 @@ public class OAuthTokenAuthenticationProvider {
   private Optional<GrantRow> find(String gid) {
     return jdbc.sql("""
             SELECT g.id, g.public_id, g.client_id, g.scopes, g.revoked_at, g.human_player_id, g.actor_player_id,
-                   a.public_id AS actor_public_id, a.handle, a.kind, a.role, a.owner_player_id
+                   a.public_id AS actor_public_id, a.handle, a.kind, a.role, a.owner_player_id,
+                   h.api_trading_allowed AS human_api_trading
               FROM oauth_grant g JOIN player a ON a.id = g.actor_player_id
+                                 JOIN player h ON h.id = g.human_player_id
              WHERE g.public_id = ?""")
         .param(gid)
         .query((rs, n) -> new GrantRow(rs.getLong("id"), rs.getString("public_id"), rs.getString("client_id"),
             Set.copyOf(scopes(rs.getString("scopes"))), Jdbc.instant(rs, "revoked_at"), rs.getLong("human_player_id"),
             rs.getLong("actor_player_id"), rs.getString("actor_public_id"), rs.getString("handle"),
             PlayerKind.valueOf(rs.getString("kind")), PlayerRole.valueOf(rs.getString("role")),
-            Jdbc.longOrNull(rs, "owner_player_id")))
+            Jdbc.longOrNull(rs, "owner_player_id"), rs.getBoolean("human_api_trading")))
         .optional();
   }
 

@@ -4,6 +4,7 @@ import com.stocks.common.time.TimeSource;
 import com.stocks.common.web.Cursor;
 import com.stocks.common.web.Page;
 import com.stocks.contract.jobs.PeriodicTask;
+import com.stocks.contract.portfolio.FeedReactionService;
 import com.stocks.contract.portfolio.dto.FeedItemDto;
 import com.stocks.contract.portfolio.dto.FeedItemDto.FeedPayloadDto;
 import com.stocks.contract.portfolio.dto.FeedReactionsDto;
@@ -119,7 +120,9 @@ public class FeedService implements PeriodicTask {
       return;
     }
     try {
-      ops.convertAndSend(TOPIC, dto);
+      // marked, so the SSE tap streams it as a non-resumable feedReactions event (§19.3), never in the ring buffer
+      ops.convertAndSend(TOPIC, dto,
+          Map.<String, Object>of(FeedReactionService.STOMP_KIND_HEADER, FeedReactionService.REACTIONS_KIND));
     } catch (RuntimeException e) {
       log.debug("Could not publish {}: {}", TOPIC, e.toString());
     }

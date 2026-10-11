@@ -1,3 +1,4 @@
+import { warningText } from '@/lib/api/errors'
 import type { PlaceOrderRequest, Preview } from '@/lib/api/types'
 import { formatMoney, formatTrailAmount } from '@/lib/format/money'
 import { formatPrice, formatQty } from '@/lib/format/number'
@@ -72,7 +73,7 @@ export function OrderReviewSheet({
         </div>
         {withoutQueueDuplicates(preview.warnings ?? [], preview.sessionNote).map((w) => (
           <p key={w.code} className="rounded-sm bg-warn/10 p-2 text-caption text-warn">
-            {w.message}
+            {warningText(w)}
           </p>
         ))}
         {request.rationale ? <p className="rounded-sm bg-bg-2 p-2 text-caption text-text-2">“{request.rationale}”</p> : null}

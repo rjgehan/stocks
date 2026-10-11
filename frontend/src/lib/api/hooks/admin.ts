@@ -21,6 +21,7 @@ const K = {
   players: queryKeys.admin('players'),
   player: (handle: string) => queryKeys.admin('player', handle),
   keys: (handle: string) => queryKeys.admin('player', handle, 'keys'),
+  oauthGrants: (handle: string) => queryKeys.admin('player', handle, 'oauth-grants'),
   transfers: (filter: Record<string, unknown>) => queryKeys.admin('transfers', filter),
   settings: queryKeys.admin('settings'),
   invites: queryKeys.admin('invites'),
@@ -156,6 +157,27 @@ export function useRevokeKey() {
   return useMutation({
     mutationFn: ({ keyId }: { keyId: string; handle?: string }) => unwrap(api.DELETE('/api/v1/admin/api-keys/{keyId}', { params: { path: { keyId } } })),
     onSuccess: (_r, { handle }) => invalidate(handle),
+  })
+}
+
+// ---------------------------------------------------------------- OAuth connectors (§17.9, §21.1)
+
+/** `GET /admin/players/{handle}/oauth-grants`: the player's live connectors (acting as them, or approved by them). */
+export function useAdminOAuthGrants(handle: string) {
+  return useQuery({
+    queryKey: K.oauthGrants(handle),
+    queryFn: () => unwrap(api.GET('/api/v1/admin/players/{handle}/oauth-grants', { params: { path: { handle } } })),
+    staleTime: 10_000,
+  })
+}
+
+/** `DELETE /admin/oauth-grants/{grantId}`: ends a connector at once. */
+export function useAdminRevokeOAuthGrant() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ grantId }: { grantId: string; handle: string }) =>
+      unwrap(api.DELETE('/api/v1/admin/oauth-grants/{grantId}', { params: { path: { grantId } } })),
+    onSuccess: (_r, { handle }) => void qc.invalidateQueries({ queryKey: K.oauthGrants(handle) }),
   })
 }
 

@@ -22,6 +22,7 @@ export type OAuthConsent = S['OAuthConsent']
 export type OAuthActor = S['OAuthActor']
 export type OAuthClientInfo = S['OAuthClientInfo']
 export type ConnectedApp = S['ConnectedApp']
+export type AdminOAuthGrant = S['AdminOAuthGrant']
 // market
 export type Clock = S['Clock']
 export type Quote = S['Quote']

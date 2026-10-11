@@ -1,3 +1,4 @@
+import { warningText } from '@/lib/api/errors'
 import type { GroupPreview, PlaceOrderGroupRequest } from '@/lib/api/groupTypes'
 import { formatMoney } from '@/lib/format/money'
 import { formatPrice, formatQty } from '@/lib/format/number'
@@ -5,6 +6,29 @@ import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { ORDER_TYPE_LABEL } from '@/features/account/orderLabels'
 import { GROUP_TYPE_HELP, GROUP_TYPE_LABEL } from '@/features/groups/groupLabels'
+
+/**
+ * A leg's type and prices the way the other legs read: "Limit 11.98", "Stop 12.10", "Stop 12.10 / limit 12.15",
+ * "Market".
+ */
+export function legLine(leg: { type?: string | null; stopPrice?: string | null; limitPrice?: string | null }): string {
+  const stop = leg.stopPrice ? formatPrice(leg.stopPrice) : null
+  const limit = leg.limitPrice ? formatPrice(leg.limitPrice) : null
+  switch (leg.type) {
+    case 'MARKET':
+      return 'Market'
+    case 'LIMIT':
+      return `Limit${limit ? ` ${limit}` : ''}`
+    case 'STOP':
+      return `Stop${stop ? ` ${stop}` : ''}`
+    case 'STOP_LIMIT':
+      return `Stop ${stop ?? ''} / limit ${limit ?? ''}`.replace(/\s+/g, ' ').trim()
+    default: {
+      const label = leg.type ? (ORDER_TYPE_LABEL[leg.type as keyof typeof ORDER_TYPE_LABEL] ?? leg.type) : ''
+      return [label, stop ? `stop ${stop}` : null, limit ? `limit ${limit}` : null].filter(Boolean).join(' · ')
+    }
+  }
+}
 
 /**
  * The group review sheet (§22.5 Advanced): every leg with its type and prices, the bracket's reward to risk, the
@@ -31,8 +55,7 @@ export function GroupReviewSheet({
   const legs: Array<[string, string]> = []
   if (request.entry) {
     const e = request.entry
-    const prices = [e.stopPrice ? `stop ${formatPrice(e.stopPrice)}` : null, e.limitPrice ? `limit ${formatPrice(e.limitPrice)}` : null].filter(Boolean).join(' · ')
-    legs.push(['Entry', `Buy ${formatQty(request.qty)} · ${e.type ? ORDER_TYPE_LABEL[e.type] : ''}${prices ? ` · ${prices}` : ''}`])
+    legs.push(['Entry', `Buy ${formatQty(request.qty)} · ${legLine(e)}`])
   }
   const sellSide = type === 'OCO' ? (request.side === 'BUY' ? 'Buy' : 'Sell') : 'Sell'
   if (request.takeProfit) legs.push(['Take profit', `${sellSide} ${formatQty(request.qty)} · Limit ${formatPrice(request.takeProfit.limitPrice)}`])
@@ -42,8 +65,7 @@ export function GroupReviewSheet({
   }
   if (request.secondary) {
     const s = request.secondary
-    const prices = [s.stopPrice ? `stop ${formatPrice(s.stopPrice)}` : null, s.limitPrice ? `limit ${formatPrice(s.limitPrice)}` : null].filter(Boolean).join(' · ')
-    legs.push(['Then', `Sell ${formatQty(request.qty)} · ${s.type ? ORDER_TYPE_LABEL[s.type] : ''}${prices ? ` · ${prices}` : ''}`])
+    legs.push(['Then', `Sell ${formatQty(request.qty)} · ${legLine(s)}`])
   }
   return (
     <Dialog
@@ -95,7 +117,7 @@ export function GroupReviewSheet({
         </dl>
         {(preview.warnings ?? []).map((w) => (
           <p key={`${w.code}-${w.message}`} className="rounded-sm bg-warn/10 p-2 text-caption text-warn">
-            {w.message}
+            {warningText(w)}
           </p>
         ))}
         {request.rationale ? <p className="rounded-sm bg-bg-2 p-2 text-caption text-text-2">“{request.rationale}”</p> : null}

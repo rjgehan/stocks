@@ -46,6 +46,21 @@ final class OAuthRequests {
         client, null);
   }
 
+  /**
+   * The token and revoke endpoints read the form body only (RFC 6749 §2.3.1: a client secret MUST NOT be in the
+   * request URI; §3.2: form parameters). Spring binds the query string into the same parameter map, so any query
+   * string is refused before the parameters are read.
+   *
+   * @throws OAuthException {@code invalid_request} when the URL carries a query string
+   */
+  static void requireFormBody(HttpServletRequest request) {
+    String query = request.getQueryString();
+    if (query != null && !query.isEmpty()) {
+      throw new OAuthException(OAuthException.INVALID_REQUEST,
+          "Send the parameters in the application/x-www-form-urlencoded body, not in the URL.");
+    }
+  }
+
   /** The form as single values; a repeated parameter is {@code invalid_request}. */
   static Map<String, String> single(MultiValueMap<String, String> form) {
     Map<String, String> out = new LinkedHashMap<>();

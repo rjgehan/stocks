@@ -4,7 +4,7 @@
  * registered client) or starting with `oar_expired` (404). State lives in its own sessionStorage key so the shared
  * mock state needs no new field.
  */
-import type { ConnectedApp, OAuthActor, OAuthConsent, PlayerSummary } from '../types'
+import type { AdminOAuthGrant, ConnectedApp, OAuthActor, OAuthConsent, PlayerSummary } from '../types'
 
 export interface MockOAuthPlayers {
   me(): PlayerSummary
@@ -141,6 +141,15 @@ export class MockOAuth {
 
   list(): Response {
     return json(this.saved.apps)
+  }
+
+  /** `GET /admin/players/{handle}/oauth-grants`: every app the signed-in human connected acts as them or one of their bots. */
+  adminList(handle: string): Response {
+    const me = this.players.me()
+    const rows: AdminOAuthGrant[] = this.saved.apps
+      .filter((a) => a.actAs?.handle === handle || me.handle === handle)
+      .map((a) => ({ grantId: a.grantId, client: a.client, redirectHost: a.redirectHost, approvedBy: me, actAs: a.actAs, scopes: a.scopes, createdAt: a.createdAt, lastUsedAt: a.lastUsedAt, connected: true }))
+    return json(rows)
   }
 
   disconnect(grantId: string): Response {

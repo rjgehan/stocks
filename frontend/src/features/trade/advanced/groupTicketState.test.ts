@@ -111,9 +111,19 @@ describe('advanced ticket (§11.9, §22.5)', () => {
   })
 
   it('defaults the prices around the market on tick', () => {
-    expect(defaultPrices('BRACKET', 'BUY', { bid: '99.98', ask: '100.00', last: '100.00' })).toMatchObject({ entryLimit: '99.98', tpLimit: '105.00', slStop: '97.00' })
-    expect(defaultPrices('OCO', 'SELL', { last: '20.00' })).toEqual({ tpLimit: '21.00', slStop: '19.00' })
-    expect(defaultPrices('OCO', 'BUY', { last: '20.00' })).toEqual({ tpLimit: '19.00', slStop: '21.00' })
+    expect(defaultPrices('BRACKET', 'BUY', { bid: '99.98', ask: '100.00', last: '100.00' })).toMatchObject({ entryLimit: '99.98', tpLimit: '104.00', slStop: '97.00' })
+    expect(defaultPrices('OCO', 'SELL', { last: '20.00' })).toEqual({ tpLimit: '20.80', slStop: '19.20' })
+    expect(defaultPrices('OCO', 'BUY', { last: '20.00' })).toEqual({ tpLimit: '19.20', slStop: '20.80' })
+    // review finding: the 5% legs rounded outward always tripped the server's 5% FAT_FINGER warning; 4% stays clear
+    for (const last of ['11.97', '0.9731', '227.43', '3.01']) {
+      const p = defaultPrices('BRACKET', 'BUY', { last })
+      const pct = (Number(p.tpLimit) / Number(last) - 1) * 100
+      expect(pct).toBeLessThanOrEqual(5)
+      for (const side of ['BUY', 'SELL'] as const) {
+        const o = defaultPrices('OCO', side, { last })
+        for (const v of [o.tpLimit, o.slStop]) expect(Math.abs(Number(v) / Number(last) - 1) * 100).toBeLessThanOrEqual(5)
+      }
+    }
     expect(defaultPrices('BRACKET', 'BUY', { last: null })).toEqual({})
   })
 
@@ -133,5 +143,15 @@ describe('advanced ticket (§11.9, §22.5)', () => {
     expect(groupChipLabel(null)).toBeNull()
     expect(heldLabel({ held: true })).toBe('Waiting for entry')
     expect(heldLabel({ held: false })).toBeNull()
+  })
+})
+
+describe('group review lines (review finding: "Buy 1 · Limit · limit 11.98")', () => {
+  it('reads every leg the same way', async () => {
+    const { legLine } = await import('./GroupReviewSheet')
+    expect(legLine({ type: 'LIMIT', limitPrice: '11.98' })).toBe('Limit 11.98')
+    expect(legLine({ type: 'MARKET' })).toBe('Market')
+    expect(legLine({ type: 'STOP', stopPrice: '12.1' })).toBe('Stop 12.10')
+    expect(legLine({ type: 'STOP_LIMIT', stopPrice: '12.10', limitPrice: '12.15' })).toBe('Stop 12.10 / limit 12.15')
   })
 })

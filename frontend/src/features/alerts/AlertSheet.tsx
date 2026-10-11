@@ -5,9 +5,7 @@ import { useAlerts, useCreateAlert, useUpdateAlert } from '@/lib/api/hooks/alert
 import type { Alert } from '@/lib/api/types'
 import { useQuote } from '@/lib/realtime/useQuote'
 import { useBreakpoint } from '@/app/useBreakpoint'
-import { IconButton } from '@/components/ui/Button'
 import { Sheet } from '@/components/ui/Sheet'
-import { IconBell } from '@/components/ui/icons'
 import { toast } from '@/features/notifications/toastStore'
 import { AlertForm } from './AlertForm'
 import { AlertRow } from './AlertRow'
@@ -15,15 +13,17 @@ import { describeCondition, liveView, sortAlerts } from './alertLogic'
 
 /**
  * The quote page's alert sheet (§22.10): a new alert for this symbol (or the one being edited), and the symbol's other
- * alerts with pause/resume, edit and delete. A bottom sheet on phones, a right sheet elsewhere.
+ * alerts with pause/resume, edit and delete. A bottom sheet on phones, a right sheet elsewhere. After "Create alert"
+ * the form starts over (fresh defaults from the live price), so a second press never repeats the alert just set.
  */
-export function AlertSheet({ symbol, open, onClose }: { symbol: string; open: boolean; onClose: () => void }) {
+export default function AlertSheet({ symbol, open, onClose }: { symbol: string; open: boolean; onClose: () => void }) {
   const bp = useBreakpoint()
   const quote = useQuote(symbol, 'quote')
   const alerts = useAlerts()
   const create = useCreateAlert()
   const update = useUpdateAlert()
   const [editing, setEditing] = useState<Alert | null>(null)
+  const [formKey, setFormKey] = useState(0)
   const mine = sortAlerts((alerts.data ?? []).filter((a) => a.symbol === symbol))
   const mutation = editing ? update : create
   const err = mutation.error ? describeError(mutation.error) : null
@@ -39,7 +39,8 @@ export function AlertSheet({ symbol, open, onClose }: { symbol: string; open: bo
     <Sheet open={open} onClose={close} side={bp === 'phone' ? 'bottom' : 'right'} title={editing ? `Edit ${symbol} alert` : `New ${symbol} alert`}>
       <div className="p-4">
         <AlertForm
-          key={editing?.id ?? 'new'}
+          key={editing?.id ?? `new-${formKey}`}
+          existing={mine}
           symbol={symbol}
           live={liveView(quote)}
           alert={editing}
@@ -61,7 +62,13 @@ export function AlertSheet({ symbol, open, onClose }: { symbol: string; open: bo
             } else {
               create.mutate(
                 { symbol, ...body },
-                { onSuccess: (a) => toast({ tone: 'neutral', title: `Alert set: ${symbol} ${describeCondition(a.condition, a.threshold)}` }) },
+                {
+                  onSuccess: (a) => {
+                    toast({ tone: 'neutral', title: `Alert set: ${symbol} ${describeCondition(a.condition, a.threshold)}` })
+                    create.reset()
+                    setFormKey((k) => k + 1)
+                  },
+                },
               )
             }
           }}
@@ -85,26 +92,5 @@ export function AlertSheet({ symbol, open, onClose }: { symbol: string; open: bo
         )}
       </section>
     </Sheet>
-  )
-}
-
-/** The quote page's bell (§22.10): opens the alert sheet; highlighted while the symbol has an active alert. */
-export function AlertButton({ symbol, size = 'md' }: { symbol: string; size?: 'md' | 'touch' }) {
-  const [open, setOpen] = useState(false)
-  const alerts = useAlerts()
-  const active = (alerts.data ?? []).some((a) => a.symbol === symbol && a.status === 'ACTIVE')
-  return (
-    <>
-      <IconButton
-        label={active ? `${symbol} price alerts (active)` : `Set a price alert on ${symbol}`}
-        size={size}
-        active={active}
-        onClick={() => setOpen(true)}
-        data-testid="alert-button"
-      >
-        <IconBell />
-      </IconButton>
-      <AlertSheet symbol={symbol} open={open} onClose={() => setOpen(false)} />
-    </>
   )
 }

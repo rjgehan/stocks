@@ -57,10 +57,11 @@ class SyncJobAndStoreTest extends CorporateActionTestSupport {
           WED, null, null, new BigDecimal("0.25"), null));
     };
     CorporateActionSyncJob job = new CorporateActionSyncJob(source, store, publicIds, time, calendar, jdbc, events,
-        context.getBeanProvider(CorporateActionApplyJob.class), "SPY");
+        context.getBeanProvider(CorporateActionApplyJob.class), "SPY", "qqq, QQQ");
     time.set(et("2026-10-10T02:30:00"));                                // Saturday's sync: Friday's ex-date passed
     job.run("2026-10-10");
-    assertThat(asked.get()).contains(held, "SPY");
+    assertThat(asked.get()).as("every benchmark's dividends are synced (review finding: QQQ was not)")
+        .contains(held, "SPY", "QQQ");
     assertThat(window).containsExactly(LocalDate.of(2026, 10, 3), LocalDate.of(2027, 1, 8));
     CorporateActionRow row = store.byProviderRef(ref).orElseThrow();
     assertThat(row.symbol()).isEqualTo(held);

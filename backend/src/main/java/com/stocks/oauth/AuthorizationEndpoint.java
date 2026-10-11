@@ -139,6 +139,12 @@ public class AuthorizationEndpoint {
       scopes.addAll(Scopes.ALL);
     }
     Instant now = time.now();
+    int cap = properties.maxPendingRequests();
+    if (cap > 0 && store.livePendingRequests(now) >= cap) {
+      // a flood of authorization requests (many addresses) must not grow the table without bound (§17.9.1)
+      return toClient(redirectUri, OAuthException.TEMPORARILY_UNAVAILABLE,
+          "Too many sign-ins are pending right now; try again in a few minutes.", state);
+    }
     String requestId = ids.request();
     store.insertRequest(new OAuthStore.PendingRequest(requestId, client.clientId(), client.kind(), client.name(),
         client.host(), redirectUri, scopes, offline, client.allowsRefresh(), state, challenge, urls.resource(), now,

@@ -48,6 +48,13 @@ public class OAuthStore {
         .update();
   }
 
+  /** Pending requests not consumed and not expired at {@code now} (the global cap, §17.9.1). */
+  public int livePendingRequests(Instant now) {
+    return jdbc.sql("SELECT COUNT(*) FROM oauth_authorization_request WHERE consumed_at IS NULL AND expires_at > ?")
+        .param(Jdbc.ts(now))
+        .query(Integer.class).single();
+  }
+
   public Optional<PendingRequest> findRequest(String requestId) {
     return jdbc.sql("""
             SELECT request_id, client_id, client_kind, client_name, client_host, redirect_uri, scopes, offline_access,
@@ -136,6 +143,16 @@ public class OAuthStore {
     return jdbc.sql("""
             UPDATE oauth_grant SET revoked_at = ?, revoke_reason = ? WHERE id = ? AND revoked_at IS NULL""")
         .params(Jdbc.ts(now), reason, grantId)
+        .update() == 1;
+  }
+
+  /**
+   * Sets a live grant's scopes (the admin removed a privilege, §17.9.3); false when it is revoked. The refresh-token
+   * family stays: the next tokens carry the new scopes.
+   */
+  public boolean setGrantScopes(long grantId, Set<String> scopes) {
+    return jdbc.sql("UPDATE oauth_grant SET scopes = ? WHERE id = ? AND revoked_at IS NULL")
+        .params(joinScopes(scopes), grantId)
         .update() == 1;
   }
 

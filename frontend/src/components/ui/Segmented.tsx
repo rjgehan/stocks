@@ -16,6 +16,8 @@ export interface SegmentedProps<T extends string> {
   label: string
   size?: 'sm' | 'md'
   block?: boolean
+  /** Options as wide as their labels instead of equal columns (many or long labels: an equal column can be too narrow). */
+  fit?: boolean
 }
 
 const TONES = {
@@ -24,9 +26,9 @@ const TONES = {
   down: 'bg-down text-on-updown',
 } as const
 
-export function Segmented<T extends string>({ value, options, onChange, label, size = 'md', block }: SegmentedProps<T>) {
+export function Segmented<T extends string>({ value, options, onChange, label, size = 'md', block, fit }: SegmentedProps<T>) {
   return (
-    <div role="radiogroup" aria-label={label} className={cx('inline-flex rounded-md bg-bg-2 p-0.5', block && 'flex w-full')}>
+    <div role="radiogroup" aria-label={label} className={cx('inline-flex rounded-md bg-bg-2 p-0.5', fit && 'shrink-0', block && 'flex w-full')}>
       {options.map((o) => {
         const selected = o.value === value
         return (
@@ -39,7 +41,8 @@ export function Segmented<T extends string>({ value, options, onChange, label, s
             title={o.title}
             onClick={() => onChange(o.value)}
             className={cx(
-              'flex-1 whitespace-nowrap rounded-[6px] font-semibold transition-colors duration-150 disabled:opacity-40',
+              fit ? 'shrink-0' : 'flex-1',
+              'whitespace-nowrap rounded-[6px] font-semibold transition-colors duration-150 disabled:opacity-40',
               // §22.3: 44 px touch targets below the tablet breakpoint; compact again from tablet up
               // (min-w-11: a one-character option such as the trail's "$" is still 44 px wide on phones)
               size === 'sm' ? 'h-11 min-w-11 px-2.5 text-caption tablet:h-7 tablet:min-w-0' : 'h-11 min-w-11 px-3 text-body tablet:h-9 tablet:min-w-0',

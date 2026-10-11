@@ -26,6 +26,23 @@ async function signInIfAsked(page: Page): Promise<void> {
   await expect(consent).toBeVisible({ timeout: 20_000 })
 }
 
+/**
+ * Allow, answering the password prompt when it appears: approving needs a recent password check (§17.9.3 step 4),
+ * and other specs may move the backend clock past the 15-minute window after this page signed in.
+ */
+async function allow(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Allow' }).click()
+  const reauth = page.getByRole('dialog', { name: "Confirm it's you" })
+  const asked = await reauth
+    .waitFor({ state: 'visible', timeout: 3_000 })
+    .then(() => true)
+    .catch(() => false)
+  if (asked) {
+    await reauth.getByLabel('Password').fill(credentials()!.password)
+    await reauth.getByRole('button', { name: 'Confirm' }).click()
+  }
+}
+
 async function disconnect(page: Page, appName: string): Promise<void> {
   await open(page, '/settings/connected-apps')
   const list = page.getByRole('list', { name: 'Connected apps' })
@@ -55,11 +72,12 @@ test('connect an app with the act-as consent, then disconnect it', async ({ page
     await signInIfAsked(page)
     await expect(page.getByRole('heading', { name: 'Connect Claude' })).toBeVisible()
     await expect(page.getByText('claude.ai', { exact: true }).first()).toBeVisible()
-    // act as the bot (preselected), with every requested scope
+    // act as the Claude bot (preselected for Claude's connector, never the ChatGPT bot), with every requested scope
     const bot = page.getByRole('radio', { name: 'Claude (@claude)' })
     await expect(bot).toBeChecked()
+    await expect(page.getByRole('radio', { name: 'ChatGPT (@chatgpt)' })).not.toBeChecked()
     await expect(page.getByRole('checkbox', { name: /Trade/ })).toBeChecked()
-    await page.getByRole('button', { name: 'Allow' }).click()
+    await allow(page)
     await expect(page).toHaveURL(/^https:\/\/claude\.ai\/api\/mcp\/auth_callback\?code=mock_.*&state=mock-state&iss=/, { timeout: 20_000 })
     await disconnect(page, 'Claude')
     await expect(page.getByText('No connected apps')).toBeVisible()
@@ -96,8 +114,12 @@ test('connect an app with the act-as consent, then disconnect it', async ({ page
   await expect(page.getByRole('heading', { name: `Connect ${appName}` })).toBeVisible()
   await expect(page.getByText(/runs on your own computer/)).toBeVisible()
   const me = credentials()!.handle
+  // an unknown app gets no preselected player (review finding: it used to default to the first bot), so Allow waits
+  for (const radio of await page.getByRole('radio').all()) await expect(radio).not.toBeChecked()
+  await expect(page.getByRole('button', { name: 'Allow' })).toBeDisabled()
   await page.getByRole('radio', { name: `Myself (@${me})` }).check()
-  await page.getByRole('button', { name: 'Allow' }).click()
+  await expect(page.getByText(`will act as @${me}`)).toBeVisible()
+  await allow(page)
   await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:9\/callback\?code=/, { timeout: 20_000 })
   const back = new URL(page.url())
   expect(back.searchParams.get('state')).toBe(state)
@@ -115,6 +137,11 @@ test('connect an app with the act-as consent, then disconnect it', async ({ page
   const body = (await whoami.json()) as { result: { structuredContent: { me: { handle: string; authMethod: string } } } }
   expect(body.result.structuredContent.me.handle).toBe(me)
   expect(body.result.structuredContent.me.authMethod).toBe('OAUTH')
+
+  // the admin sees the connector on the player's admin page (§21.3; the e2e user is the admin)
+  await open(page, `/admin/players/${me}`)
+  const adminApps = page.getByRole('list', { name: 'Connected apps of this player' })
+  await expect(adminApps.getByText(appName).first()).toBeVisible({ timeout: 20_000 })
 
   await disconnect(page, appName)
   expect((await mcpWhoami(request, tokens.access_token)).status()).toBe(401)

@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.stocks.common.domain.HistoryRange;
+import com.stocks.common.domain.Timeframe;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
+import com.stocks.contract.marketdata.model.Bar;
 import com.stocks.contract.portfolio.dto.BenchmarkCurveDto;
 import com.stocks.contract.portfolio.dto.PnlAnalysisDto;
 import com.stocks.contract.portfolio.dto.PnlAnalysisDto.EarningsPointDto;
@@ -62,7 +64,8 @@ class PnlAnalysisTest {
     kit = new PortfolioKit();
     data = kit.data;
     analysis = new PnlAnalysisService(kit.repository, kit.eodRepository, kit.snapshots, kit.anchors, kit.periods,
-        kit.pnlCalendar, kit.valuation, kit.sampler, kit.benchmark, kit.accounts, kit.db.jdbc(), kit.time);
+        kit.pnlCalendar, kit.valuation, kit.sampler, kit.benchmark, kit.accounts, kit.market, kit.db.jdbc(),
+        kit.time);
     kit.at(MON_10);
     alice = data.human("alice");
     acc = data.open(alice, "1000.00");
@@ -158,6 +161,7 @@ class PnlAnalysisTest {
     data.buy(acc, "AAA", "10", "50.00");
     kit.benchmark.write("SPY", FRI_BEFORE, d("500.0000"), BigDecimal.ZERO);
     kit.benchmark.write("QQQ", FRI_BEFORE, d("400.0000"), BigDecimal.ZERO);
+    qqqMinute(MON_10.minusSeconds(60), "400.00");                       // QQQ at the opening: unchanged
     kit.market.dayEndMark("AAA", MON, "52.00").dayEndMark("SPY", MON, "505.00").dayEndMark("QQQ", MON, "404.00");
     kit.at(MON_EOD);
     kit.eodJob().runFor(MON);
@@ -200,6 +204,47 @@ class PnlAnalysisTest {
     assertThat(analysis.analysis(acc.id(), HistoryRange.W1).benchmarks().get(1).ret()).isNull();
     assertThatThrownBy(() -> analysis.analysis(999_999L, HistoryRange.W1))
         .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND));
+  }
+
+  void qqqMinute(Instant start, String close) {
+    BigDecimal c = d(close);
+    kit.market.scriptBar(new Bar("QQQ", Timeframe.MIN1, start, c, c, c, c, 1_000, null, 1, false));
+  }
+
+  /**
+   * Review finding: a run opened mid-session started QQQ at the previous EOD (so its line counted the move before the
+   * opening) while SPY started at the opening's mark. QQQ now starts at its price at the opening (its 1-minute bars),
+   * and has no curve while that price is unknown.
+   */
+  @Test
+  void anIntradayOpeningStartsQqqAtItsPriceThenNotAtThePreviousClose() {
+    kit.benchmark.write("SPY", FRI_BEFORE, d("500.0000"), BigDecimal.ZERO);
+    kit.benchmark.write("QQQ", FRI_BEFORE, d("400.0000"), BigDecimal.ZERO);
+    kit.market.print("SPY", MON_10.plusSeconds(60), "505.00", 10).print("QQQ", MON_10.plusSeconds(60), "404.00", 10);
+    kit.at(MON_10.plusSeconds(120));
+
+    // no bar yet (the provider's bars lag): no QQQ curve, never one from Friday's close
+    PnlAnalysisDto early = analysis.analysis(acc.id(), HistoryRange.W1);
+    assertThat(early.benchmarks().get(1).symbol()).isEqualTo("QQQ");
+    assertThat(early.benchmarks().get(1).ret()).isNull();
+    assertThat(early.benchmarks().get(1).points()).isEmpty();
+
+    // QQQ was already up 1% when the run opened: its line starts there (404 / 404 − 1 = 0), like SPY's
+    qqqMinute(MON_10.minusSeconds(60), "404.00");
+    kit.at(MON_10.plusSeconds(120).plus(PnlAnalysisService.OPENING_MISS_RETRY));
+    PnlAnalysisDto w = analysis.analysis(acc.id(), HistoryRange.W1);
+    BenchmarkCurveDto qqq = w.benchmarks().get(1);
+    assertThat(qqq.points().getFirst().t()).isEqualTo(MON_10);
+    assertThat(qqq.ret()).isEqualByComparingTo("0");
+
+    // an opening before the regular open starts at the last EOD: nothing has moved since
+    assertThat(analysis.extraIndexAtOpening("QQQ", Instant.parse("2026-10-05T12:00:00Z")))
+        .isEqualByComparingTo(kit.benchmark.indexAtEod("QQQ", FRI_BEFORE).orElseThrow());
+    // ... unless QQQ already traded pre-market: then from that trade, like SPY's mark at the opening
+    qqqMinute(Instant.parse("2026-10-05T11:30:00Z"), "402.00");
+    Instant preMarket = Instant.parse("2026-10-05T11:45:00Z");
+    assertThat(analysis.extraIndexAtOpening("QQQ", preMarket))
+        .isEqualByComparingTo(kit.benchmark.indexAt("QQQ", preMarket, d("402.00")).orElseThrow());
   }
 
   // ------------------------------------------------------------------------------------------- calendar

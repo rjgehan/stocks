@@ -88,6 +88,28 @@ public class SplitAdjustmentsImpl implements SplitAdjustments {
     return any ? Rounding.SPLIT_ADJUST.divide(price.multiply(num), den) : price;
   }
 
+  /**
+   * The share-count factor of the applied splits of {@code symbol} with {@code since < ex_date ≤ asOf}:
+   * {@code {Π new_rate, Π old_rate}} (a quantity from {@code since} times {@code [0] ÷ [1]} is on today's basis), or
+   * null when none applies. The screener rescales a share count or a volume average fetched before a split (§15.10).
+   */
+  public BigDecimal[] shareFactor(String symbol, LocalDate since, LocalDate asOf) {
+    if (symbol == null || since == null || asOf == null || !since.isBefore(asOf)) {
+      return null;
+    }
+    BigDecimal num = BigDecimal.ONE;
+    BigDecimal den = BigDecimal.ONE;
+    boolean any = false;
+    for (Split s : splits().getOrDefault(symbol, List.of())) {
+      if (since.isBefore(s.exDate()) && !s.exDate().isAfter(asOf)) {
+        num = num.multiply(s.newRate());
+        den = den.multiply(s.oldRate());
+        any = true;
+      }
+    }
+    return any ? new BigDecimal[] {num, den} : null;
+  }
+
   /** True when an applied split of {@code symbol} has {@code ex_date = date} (SplitGuard). */
   public boolean appliedOn(String symbol, LocalDate date) {
     return splits().getOrDefault(symbol, List.of()).stream().anyMatch(s -> s.exDate().equals(date));

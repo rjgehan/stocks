@@ -462,16 +462,17 @@ class GroupOrderEntry {
 
   // ------------------------------------------------------------------------------------------- cancel
 
-  /** {@code DELETE /order-groups/{groupId}}: every open leg, children first (§11.9; §11.10 latency applies). */
+  /**
+   * {@code DELETE /order-groups/{groupId}}: every open leg, children first (§11.9). With cancel latency (§11.10) a
+   * working entry's cancel is only requested and its held children stay held until it ends.
+   */
   OrderGroupDto cancelGroup(CancelOrderGroupCmd cmd, EngineTx tx) {
     OrderGroupRow g = groups.byPublicId(cmd.accountId(), cmd.groupId()).orElseThrow(() -> notFound(cmd.groupId()));
     Instant now = clock.now();
     List<OrderRow> open = handler.current(g.id()).stream().filter(OrderRow::isOpen)
         .sorted(Comparator.comparing((OrderRow r) -> r.parentOrderId() == null).thenComparingLong(OrderRow::id))
         .toList();
-    for (OrderRow r : open) {
-      orderHandler.cancelOrRequest(r, CancelReason.USER, cmd.actorPlayerId(), now, tx);
-    }
+    orderHandler.cancelOrRequestAll(open, CancelReason.USER, cmd.actorPlayerId(), now, tx);
     return groupMapper.toDto(groups.byId(g.id()).orElseThrow(), orders.legs(g.id()));
   }
 

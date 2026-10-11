@@ -326,8 +326,10 @@ trades are labeled "via API". Revoke it any time in **Settings → Connected app
      `https://claude.ai/oauth/mcp-oauth-client-metadata`; **Register automatically** also works).
    - If it shows *Advanced settings* instead, leave the OAuth client ID and secret **empty**.
    - Leave **Request headers** empty. Click **Add**.
-3. Click **Connect**. A browser tab opens stocks: sign in if asked, then on **Connect Claude** pick *Act as*
-   **Claude (@claude)** (or Myself), keep or untick permissions, and click **Allow**. The tab returns to claude.ai
+3. Click **Connect**. A browser tab opens stocks: sign in if asked, then on **Connect Claude** check *Act as*
+   (**Claude (@claude)** is preselected for Claude's connector; pick Myself instead if you want), keep or untick
+   permissions, and click **Allow**. If you signed in more than 15 minutes ago, stocks asks for your password once
+   more before it connects the app (like creating an API key). The tab returns to claude.ai
    (`https://claude.ai/api/mcp/auth_callback`) and the connector shows as connected.
 4. In a chat, click **+ → Connectors**, turn `stocks` on, and ask, for example: "Use stocks: call get_rules and
    whoami, then show my account." Tokens refresh by themselves; after 30 days without use, click Connect again.

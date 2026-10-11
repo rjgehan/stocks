@@ -2,11 +2,14 @@
 //  - dist/sw.js exists and precaches the app shell: index.html and the hashed /assets/* (so the app opens offline);
 //  - nothing under the server's own paths (/api, /mcp, /ws, /v3, /swagger-ui, /actuator, ...) is precached;
 //  - no runtime caching strategy is configured: private API data must never land in a cache;
-//  - the navigation denylist that keeps /api, /mcp and /ws away from the offline shell is in the bundle.
+//  - the navigation denylist that keeps /api, /mcp and /ws away from the offline shell is in the bundle;
+//  - size budgets (gzip) for the chunks every quote-page visit loads: the StockScreen chunk stays lean because the
+//    Advanced ticket, the indicator panel, the alert sheet, news, ratings and Time & Sales load on demand.
 // Exits 1 with the reasons on any failure. Usage: node scripts/check-sw.mjs [distDir]
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { gzipSync } from 'node:zlib'
 
 const dist = resolve(process.argv[2] ?? fileURLToPath(new URL('../dist', import.meta.url)))
 const swPath = join(dist, 'sw.js')
@@ -38,8 +41,23 @@ for (const path of ['api', 'mcp', 'ws']) {
   if (!new RegExp(`\\^\\\\/${path}\\(`).test(sw)) failures.push(`the navigation denylist for /${path} is missing`)
 }
 
+// Size budgets: gzip bytes of the named chunk (dist/assets/<name>-<hash>.js).
+const BUDGETS = { StockScreen: 19 * 1024 }
+const assets = existsSync(join(dist, 'assets')) ? readdirSync(join(dist, 'assets')) : []
+const sizes = []
+for (const [name, budget] of Object.entries(BUDGETS)) {
+  const file = assets.find((f) => new RegExp(`^${name}-[\\w-]+\\.js$`).test(f))
+  if (!file) {
+    failures.push(`no ${name} chunk in dist/assets (renamed? update BUDGETS)`)
+    continue
+  }
+  const gz = gzipSync(readFileSync(join(dist, 'assets', file))).length
+  sizes.push(`${name} ${(gz / 1024).toFixed(1)} KB gzip`)
+  if (gz > budget) failures.push(`${file} is ${(gz / 1024).toFixed(1)} KB gzip, over its ${budget / 1024} KB budget (load the new part on demand)`)
+}
+
 if (failures.length > 0) {
   console.error(`check-sw: ${swPath}\n  - ${failures.join('\n  - ')}`)
   process.exit(1)
 }
-console.log(`check-sw: ${swPath} OK (${urls.length} precached files, no server paths, no runtime caching)`)
+console.log(`check-sw: ${swPath} OK (${urls.length} precached files, no server paths, no runtime caching; ${sizes.join(', ')})`)

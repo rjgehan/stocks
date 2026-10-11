@@ -329,7 +329,7 @@ export interface paths {
          * Revoke an API key
          * @description Immediate (the key cache is evicted); the bot then gets API_KEY_REVOKED. Errors: NOT_FOUND.
          */
-        delete: operations["revoke_2"];
+        delete: operations["revoke_3"];
         options?: never;
         head?: never;
         patch?: never;
@@ -346,7 +346,7 @@ export interface paths {
          * Audit rows
          * @description category: AUTH, ORDER, MONEY, ADMIN, KEY, ACCOUNT or SYSTEM; action e.g. LOGIN_FAIL; actor a player handle; from/to ISO-8601 instants. Paged with cursor/limit (default 50, max 200).
          */
-        get: operations["list_9"];
+        get: operations["list_10"];
         put?: never;
         post?: never;
         delete?: never;
@@ -474,7 +474,7 @@ export interface paths {
          * Corporate actions
          * @description Newest first; filter by status (NEEDS_ADMIN for the ones to resolve).
          */
-        get: operations["list_8"];
+        get: operations["list_9"];
         put?: never;
         post?: never;
         delete?: never;
@@ -580,6 +580,26 @@ export interface paths {
         /**
          * Revoke an invite link
          * @description Immediate. Errors: NOT_FOUND.
+         */
+        delete: operations["revoke_2"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/oauth-grants/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an OAuth grant
+         * @description Immediate: its access tokens stop on the next request and its refresh token is dead (the connector must be connected again). Audited KEY/OAUTH_REVOKE. Errors: NOT_FOUND (unknown or already revoked).
          */
         delete: operations["revoke_1"];
         options?: never;
@@ -713,6 +733,26 @@ export interface paths {
          * @description Recent password check. Writes an audit row and an ADMIN_VIEW entry the player sees in their activity before showing anything. reason: 5-200 characters. Errors: PLAYER_NOT_FOUND, ACCOUNT_NOT_FOUND.
          */
         post: operations["liveView"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players/{handle}/oauth-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's connected apps (OAuth grants)
+         * @description Live grants the player approved or that act as the player (a bot's connector), newest first: the client, the redirect host, who approved it, who it acts as, the scopes and when it was last used. Never a token. Errors: PLAYER_NOT_FOUND.
+         */
+        get: operations["list_8"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1556,7 +1596,7 @@ export interface paths {
         put?: never;
         /**
          * Approve or deny an OAuth authorization request
-         * @description Session only, CSRF. approve=true needs actAs (a handle from the request's actors) and optionally scopes (default: every requested scope the actor may get). Answers the URL to send the browser to: the client's redirect URI with code, state and iss, or error=access_denied. The request is used up either way. Errors: NOT_FOUND, VALIDATION_FAILED, FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED.
+         * @description Session only, CSRF. approve=true needs actAs (a handle from the request's actors) and optionally scopes (default: every requested scope the actor may get). Answers the URL to send the browser to: the client's redirect URI with code, state and iss, or error=access_denied. The request is used up either way. Approving needs a recent password check (like issuing an API key: RECENT_AUTH_REQUIRED, then POST /auth/reauth and retry); denying does not. Errors: NOT_FOUND, VALIDATION_FAILED, FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED, RECENT_AUTH_REQUIRED.
          */
         post: operations["decideOAuthRequest"];
         delete?: never;
@@ -2329,6 +2369,19 @@ export interface components {
             status: "ACTIVE" | "DISABLED" | "FROZEN" | null;
             today: components["schemas"]["BotToday"] | null;
             tools: components["schemas"]["BotTool"][] | null;
+        };
+        AdminOAuthGrant: {
+            actAs: components["schemas"]["PlayerSummary"] | null;
+            approvedBy: components["schemas"]["PlayerSummary"] | null;
+            client: components["schemas"]["OAuthClientInfo"] | null;
+            connected: boolean;
+            /** Format: date-time */
+            createdAt: string | null;
+            grantId: string | null;
+            /** Format: date-time */
+            lastUsedAt: string | null;
+            redirectHost: string | null;
+            scopes: string[] | null;
         };
         AdminPlayer: {
             accountId: string | null;
@@ -5340,7 +5393,7 @@ export interface operations {
             };
         };
     };
-    revoke_2: {
+    revoke_3: {
         parameters: {
             query?: never;
             header?: never;
@@ -5369,7 +5422,7 @@ export interface operations {
             };
         };
     };
-    list_9: {
+    list_10: {
         parameters: {
             query?: {
                 category?: string;
@@ -5634,7 +5687,7 @@ export interface operations {
             };
         };
     };
-    list_8: {
+    list_9: {
         parameters: {
             query?: {
                 status?: "PENDING" | "APPLIED" | "SKIPPED" | "NEEDS_ADMIN";
@@ -5826,12 +5879,41 @@ export interface operations {
             };
         };
     };
-    revoke_1: {
+    revoke_2: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 inviteId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revoke_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grantId: string;
             };
             cookie?: never;
         };
@@ -6140,6 +6222,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminPlayerLiveView"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_8: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOAuthGrant"][];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

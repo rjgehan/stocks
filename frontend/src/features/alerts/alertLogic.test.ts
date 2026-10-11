@@ -114,3 +114,19 @@ describe('price alert form (§19.1, §22.10)', () => {
     expect(statusLine(alert({ status: 'PAUSED' }))).toBe('Paused')
   })
 })
+
+describe('duplicate alerts (review finding: a second press made a near-duplicate)', () => {
+  it('finds a live alert with the same condition and threshold, never the one being edited', async () => {
+    const { sameAlert } = await import('./AlertForm')
+    const a = alert({ id: 'alr_1', symbol: 'MSFT', condition: 'PRICE_GTE', threshold: '538.83', status: 'ACTIVE' })
+    const paused = alert({ id: 'alr_2', symbol: 'MSFT', condition: 'PRICE_GTE', threshold: '500.00', status: 'PAUSED' })
+    const fired = alert({ id: 'alr_3', symbol: 'MSFT', condition: 'PRICE_GTE', threshold: '520.00', status: 'TRIGGERED' })
+    const list = [a, paused, fired]
+    expect(sameAlert(list, null, 'PRICE_GTE', '538.830')?.id).toBe('alr_1')
+    expect(sameAlert(list, null, 'PRICE_GTE', '500')?.id).toBe('alr_2')
+    expect(sameAlert(list, null, 'PRICE_GTE', '520.00')).toBeNull()
+    expect(sameAlert(list, null, 'PRICE_LTE', '538.83')).toBeNull()
+    expect(sameAlert(list, a, 'PRICE_GTE', '538.83')).toBeNull()
+    expect(sameAlert(list, null, 'PRICE_GTE', null)).toBeNull()
+  })
+})

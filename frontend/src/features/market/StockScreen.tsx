@@ -14,7 +14,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Tabs } from '@/components/ui/Tabs'
 import { BottomDock } from '@/features/account/BottomDock'
-import { AlertButton } from '@/features/alerts/AlertSheet'
+import { AlertButton } from '@/features/alerts/AlertButton'
 import { MyPositionCard } from '@/features/account/MyPositionCard'
 import { OrdersTable } from '@/features/account/OrdersTable'
 import { PositionsTable } from '@/features/account/PositionsTable'
@@ -25,9 +25,6 @@ import { StarButton } from '@/features/watchlist/StarButton'
 import { ChartTypePicker, IndicatorPicker, useChartType, useIndicatorSettings } from '@/features/charts/IndicatorPicker'
 import { activeOscillators } from '@/features/charts/indicatorSettings'
 import { etDateOf, regularSessionTest } from '@/features/charts/sessions'
-import { AnalystRatings } from '@/features/research/AnalystRatings'
-import { NewsFeed } from '@/features/research/NewsFeed'
-import { TimeAndSales } from '@/features/tape/TimeAndSales'
 import { useCalendarDays } from '@/lib/api/hooks/marketExtras'
 import { BidAskBar } from './BidAskBar'
 import { IntervalPicker, effectiveTimeframe } from './IntervalPicker'
@@ -36,6 +33,10 @@ import { QuoteHeader } from './QuoteHeader'
 import { RangeChips } from './RangeChips'
 
 const PriceChart = lazy(() => import('./PriceChart'))
+// Loaded on demand (review finding: wave A grew this chunk by ~80%): research cards, news and the tape
+const AnalystRatings = lazy(() => import('@/features/research/AnalystRatings').then((m) => ({ default: m.AnalystRatings })))
+const NewsFeed = lazy(() => import('@/features/research/NewsFeed').then((m) => ({ default: m.NewsFeed })))
+const TimeAndSales = lazy(() => import('@/features/tape/TimeAndSales').then((m) => ({ default: m.TimeAndSales })))
 
 export type QuoteTab = 'OVERVIEW' | 'NEWS' | 'TRADES' | 'POSITION'
 
@@ -158,7 +159,9 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
           <div className="space-y-4">
             <KeyStatsGrid quote={quote} asset={asset.data} />
             {breakpoint !== 'wide' ? <BidAskBar quote={quote} /> : null}
-            <AnalystRatings symbol={symbol} />
+            <Suspense fallback={null}>
+              <AnalystRatings symbol={symbol} />
+            </Suspense>
             <div>
               <h2 className="mb-1 text-section font-semibold">About</h2>
               {asset.data ? (
@@ -182,8 +185,10 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
             </div>
           </div>
         ) : null}
-        {tab === 'NEWS' ? <NewsFeed symbols={symbol} /> : null}
-        {tab === 'TRADES' ? <TimeAndSales symbol={symbol} maxHeight="max-h-[60vh]" /> : null}
+        <Suspense fallback={<Skeleton className="h-24" />}>
+          {tab === 'NEWS' ? <NewsFeed symbols={symbol} /> : null}
+          {tab === 'TRADES' ? <TimeAndSales symbol={symbol} maxHeight="max-h-[60vh]" /> : null}
+        </Suspense>
         {tab === 'POSITION' ? <MyPositionCard symbol={symbol} /> : null}
       </div>
     </section>
@@ -215,7 +220,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
   if (!desktop) {
     // Tablet: content + right side sheet ticket; dock becomes tabs under the chart.
     return (
-      <div ref={scroller} className="scrollbar-thin h-full overflow-y-auto">
+      <div ref={scroller} className="scrollbar-thin relative h-full overflow-y-auto">
         <QuoteHeader
           symbol={symbol}
           asset={asset.data}
@@ -256,14 +261,14 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
   return (
     <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+        <div ref={scroller} className="scrollbar-thin relative min-h-0 flex-1 overflow-y-auto">
           <QuoteHeader symbol={symbol} asset={asset.data} quote={quote} scrollRoot={scroller} actions={<AlertButton symbol={symbol} />} />
           {chart}
           {detailTabs}
         </div>
         <BottomDock />
       </div>
-      <aside aria-label={`Trade ${symbol}`} className="scrollbar-thin flex w-[340px] shrink-0 flex-col overflow-y-auto border-l border-divider bg-bg-1 wide:w-[380px]">
+      <aside aria-label={`Trade ${symbol}`} className="scrollbar-thin relative flex w-[340px] shrink-0 flex-col overflow-y-auto border-l border-divider bg-bg-1 wide:w-[380px]">
         <TradeTicket key={symbol} symbol={symbol} initialSide={ticket ?? 'BUY'} />
         {breakpoint === 'wide' ? (
           <div className="border-t border-divider px-4 py-3">
@@ -272,7 +277,9 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
           </div>
         ) : null}
         <div className="border-t border-divider px-4 py-3">
-          <TimeAndSales symbol={symbol} maxHeight="max-h-[280px]" />
+          <Suspense fallback={<Skeleton className="h-40" />}>
+            <TimeAndSales symbol={symbol} maxHeight="max-h-[280px]" />
+          </Suspense>
         </div>
       </aside>
     </div>

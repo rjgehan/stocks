@@ -18,6 +18,7 @@ import com.stocks.contract.portfolio.dto.RaceChartDto.RaceSeriesDto;
 import com.stocks.league.LeaderboardComputer.Board;
 import com.stocks.league.LeaderboardComputer.PeriodBoard;
 import com.stocks.league.LeagueEntry.CurvePoint;
+import com.stocks.league.LeagueRepository.Activity;
 import com.stocks.league.LeagueRepository.RankRow;
 import com.stocks.portfolio.BenchmarkService;
 import com.stocks.portfolio.BenchmarkService.BenchmarkDay;
@@ -53,8 +54,9 @@ import org.springframework.stereotype.Service;
  *   <li>the unit-value metrics (Sharpe, volatility, drawdown) and the profit-factor sums come with every
  *       {@link LeagueEntry} ({@link LeagueEntry.Extras});</li>
  *   <li>the closed lots (hold time, best and worst trade) are a FIFO replay of the player's executions and
- *       adjustments ({@link ClosedLots}), on request; another player's best and worst trade only consider lots closed
- *       before the feed delay (§16.7);</li>
+ *       adjustments ({@link ClosedLots}), on request; another player's trade statistics (closing sells, wins, win
+ *       rate, gross profit and loss, profit factor, closed lots, hold time, best and worst trade) only count what
+ *       happened before the feed delay (§16.7), so a profile never shows a sell before the feed does;</li>
  *   <li>rank history: the latest 30 EOD {@code leaderboard_snapshot} ranks of the period.</li>
  * </ul>
  * The race chart normalizes each entry's curve by its anchor ({@code U(t) / U(a) − 1}, −1 across a rebase); TODAY uses
@@ -124,21 +126,38 @@ public class PlayerStatsService implements LeagueStatsQueries {
     LeagueEntry.Extras x = e.extras();
     Instant start = x.curve().isEmpty() ? pb.periodStart() : x.curve().get(0).t();
 
-    // closed lots of every run of the player closed in (a, b]
+    // another player's trade statistics are as of the feed delay (§16.7 item 3): a profile never shows a sell, its
+    // realized P&L or its hold time before the feed does; the player's own are live
+    Instant tradesAsOf = self ? board.asOf() : board.asOf().minus(settings.tradeFeedDelay());
+    // closed lots of every run of the player closed in (a, tradesAsOf]
     List<Long> runIds = accounts.runsOfPlayer(p.id()).stream().map(AccountRow::id).toList();
     Instant from = pb.window().sinceOpening() ? null : pb.window().anchorAt();
     List<Lot> lots = trades.closedLots(runIds).stream()
-        .filter(l -> (from == null || l.closedAt().isAfter(from)) && !l.closedAt().isAfter(board.asOf()))
+        .filter(l -> (from == null || l.closedAt().isAfter(from)) && !l.closedAt().isAfter(tradesAsOf))
         .toList();
-    Instant tradesAsOf = self ? board.asOf() : board.asOf().minus(settings.tradeFeedDelay());
     Summary summary = ClosedLots.summarize(lots, tradesAsOf);
+    int closingSells = x.closingSells();
+    int wins = x.wins();
+    BigDecimal grossProfit = x.grossProfit();
+    BigDecimal grossLoss = x.grossLoss();
+    BigDecimal profitFactor = x.profitFactor();
+    BigDecimal winRate = e.winRate();
+    if (tradesAsOf.isBefore(board.asOf())) {
+      Activity delayed = league.activityOf(p.id(), pb.window().anchorAt(), tradesAsOf);
+      closingSells = delayed.closingSells();
+      wins = delayed.wins();
+      grossProfit = delayed.grossProfit();
+      grossLoss = delayed.grossLoss();
+      profitFactor = MetricsCalculator.profitFactor(grossProfit, grossLoss);
+      winRate = MetricsCalculator.winRate(wins, closingSells);
+    }
 
     List<RankPointDto> ranks = ranks(league.rankHistories(per, board.pnlDay(), RANK_HISTORY).get(p.id()));
     return new PlayerStatsDto(p.summary(), per, start, board.asOf(), e.twr(), e.pnl(), e.maxDrawdown(),
         e.partialPeriod(), e.rebased(), x.risk().sharpe(), x.risk().volatility(), x.risk().dailyReturns(),
-        MetricsCalculator.SHARPE_MIN_DAYS, x.closingSells(), x.wins(), e.winRate(), x.grossProfit(), x.grossLoss(),
-        x.profitFactor(), summary.count(), summary.avgHoldSeconds(), tradesAsOf, lot(summary.best()),
-        lot(summary.worst()), row == null ? null : row.rank(), row == null ? null : row.rankChange(), ranks);
+        MetricsCalculator.SHARPE_MIN_DAYS, closingSells, wins, winRate, grossProfit, grossLoss, profitFactor,
+        summary.count(), summary.avgHoldSeconds(), tradesAsOf, lot(summary.best()), lot(summary.worst()),
+        row == null ? null : row.rank(), row == null ? null : row.rankChange(), ranks);
   }
 
   static ClosedLotDto lot(Lot l) {

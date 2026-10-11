@@ -663,9 +663,15 @@ export class MockServer {
     })
     // OAuth connectors (§17.9): the act-as consent and Settings → Connected apps
     r('GET', '/me/oauth/requests/{requestId}', ({ params }) => this.oauth.consent(params[0]!))
-    r('POST', '/me/oauth/requests/{requestId}', ({ params, body }) => this.oauth.decide(params[0]!, body))
+    r('POST', '/me/oauth/requests/{requestId}', ({ params, body }) => {
+      // approving needs a recent password check like key issuance (§17.9.3 step 4); denying does not
+      const approving = Boolean((body as { approve?: boolean } | null)?.approve)
+      return (approving && this.requireRecentAuth()) || this.oauth.decide(params[0]!, body)
+    })
     r('GET', '/me/connected-apps', () => this.oauth.list())
     r('DELETE', '/me/connected-apps/{grantId}', ({ params }) => this.oauth.disconnect(params[0]!))
+    r('GET', '/admin/players/{handle}/oauth-grants', ({ params }) => this.admin(() => this.oauth.adminList(params[0]!)))
+    r('DELETE', '/admin/oauth-grants/{grantId}', ({ params }) => this.admin(() => this.oauth.disconnect(params[0]!)))
     r('GET', '/me/notifications', ({ url }) => {
       const unread = url.searchParams.get('unreadOnly') === 'true'
       const items = this.s.notifications.filter((n) => !unread || !n.readAt).toReversed()

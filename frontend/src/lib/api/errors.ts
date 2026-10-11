@@ -140,6 +140,24 @@ export function humanizeMessage(message: string): string {
 const NUMBER = '(\\d+(?:\\.\\d+)?)'
 
 /**
+ * The ticket's text for a preview warning (§22.5): FAT_FINGER reads "Take profit limit price is 5.0% from the market
+ * (11.97)." (leg and field in words, never `limitPrice`), every other warning its message made readable.
+ */
+export function warningText(w: { code?: string | null; message?: string | null }): string {
+  const msg = w.message ?? ''
+  if (w.code === 'FAT_FINGER') {
+    const m = new RegExp(`^(?:(.+?): )?(.+?) is ${NUMBER}% from the reference price ${NUMBER}\\.?$`).exec(msg)
+    if (m) {
+      const [, leg, field, pct, ref] = m
+      const what = humanizeMessage(field!)
+      const subject = leg ? `${leg} ${what}` : what.charAt(0).toUpperCase() + what.slice(1)
+      return `${subject} is ${pct}% from the market (${formatPrice(ref!)}).`
+    }
+  }
+  return humanizeMessage(msg)
+}
+
+/**
  * The ticket's text for an order validation error (§22.5): friendly copy for the codes players hit with stops and
  * trails, with the market price formatted ("Buy stops must be above the market (256.33)"), never a Java field name
  * or a 4-decimal internal price. Works on the problem's message and on a field's short message ("Above 256.3300").

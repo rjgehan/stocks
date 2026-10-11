@@ -127,8 +127,11 @@ class ScreenerTest {
         () -> symbols, types, CAL, time, perTick, nanos::get);
   }
 
+  ScreenerService.SplitFactor splitFactor = ScreenerService.SplitFactor.NONE;
+
   ScreenerService service(Feed feed, ScreenerStats stats, boolean simulated, AtomicLong nanos) {
-    return new ScreenerService(feed.feed, assets, Sectors.load(), stats, q -> q, time, simulated, nanos::get);
+    return new ScreenerService(feed.feed, assets, Sectors.load(), stats, q -> q, splitFactor, time, simulated,
+        nanos::get);
   }
 
   static ScreenQuery query(ScreenPreset preset) {
@@ -179,6 +182,64 @@ class ScreenerTest {
     assertThat(r.coverage()).isEqualTo(new ScreenResult.Coverage(assets.universe().size(), 3, 2, 3));
     assertThat(r.total()).isEqualTo(3);
     assertThat(r.nextOffset()).isNull();
+  }
+
+  /**
+   * Review finding: an IEX-only (partial) volume was divided by the SIP average when no IEX average was stored
+   * (about 0.05×, so never UNUSUAL_VOLUME). §15.10: the same basis or none.
+   */
+  @Test
+  void aPartialVolumeWithoutAnIexAverageHasNoRelativeVolume() {
+    AtomicLong nanos = new AtomicLong(1);
+    repo.upsertVolumes(Map.of("AAPL", new ScreenerStatRepository.Volumes(50_000_000L, null, 20,
+        LocalDate.of(2026, 10, 8))), time.now());
+    Feed feed = new Feed().put(quote("AAPL", "227.40", "0.0120", 2_500_000L, true,
+        DataQuality.REALTIME_SINGLE_VENUE));
+    ScreenResult r = service(feed, stats(null, null, true, false, nanos, 0, List.of()), false, nanos)
+        .screen(new ScreenQuery(null, null, null, null, null, null, null, null, null, null, Set.of(), Set.of(),
+            ScreenSort.SYMBOL, null, 25, 0));
+    ScreenResult.Row aapl = r.rows().getFirst();
+    assertThat(aapl.avgVolume()).isEqualTo(50_000_000L);                      // still shown
+    assertThat(aapl.relVolume()).as("IEX volume is never compared with the SIP average").isNull();
+  }
+
+  /**
+   * Review finding: after a split the live price is post-split while the stored share count (refreshed every 30
+   * days) and the volume averages (fetched before the ex-date) are not, so the market cap was off by the ratio.
+   * They are now rescaled by the applied splits since they were fetched (price_adjustment).
+   */
+  @Test
+  void aSplitAfterTheProfileAndTheAveragesWereFetchedRescalesThem() {
+    AtomicLong nanos = new AtomicLong(1);
+    repo.upsertProfile("AAPL", new ScreenerStatRepository.Profile(new BigDecimal("15000000000"),
+        new BigDecimal("3411000000000"), "Technology", "finnhub"), time.now());
+    repo.upsertVolumes(Map.of("AAPL", new ScreenerStatRepository.Volumes(50_000_000L, 1_000_000L, 20,
+        LocalDate.of(2026, 10, 8))), time.now());
+    SplitAdjustmentsImpl splits = new SplitAdjustmentsImpl(db.dataSource(), time);
+    splitFactor = splits::shareFactor;
+    MarketDataProvider profiles = mock(MarketDataProvider.class);
+    ScreenerStats st = stats(null, profiles, true, false, nanos, 3, List.of("AAPL"));
+    // a 4-for-1 split with ex-date Mon 2026-10-12; the profile is not due again for 30 days
+    splits.record("AAPL", LocalDate.of(2026, 10, 12), new BigDecimal("1"), new BigDecimal("4"), 1);
+    time.set(Instant.parse("2026-10-12T14:00:00Z"));
+    st.refresh(3);
+    verify(profiles, never()).profile(any(), any(RefreshPriority.class));
+    Feed feed = new Feed().put(quote("AAPL", "56.85", "0.0000", 8_000_000L, true,
+        DataQuality.REALTIME_SINGLE_VENUE));
+    ScreenResult.Row aapl = service(feed, st, false, nanos).screen(new ScreenQuery(null, null, null, null, null,
+        null, null, null, null, null, Set.of(), Set.of(), ScreenSort.SYMBOL, null, 25, 0)).rows().getFirst();
+    assertThat(aapl.marketCap()).isEqualByComparingTo("3411000000000");     // 60B shares × 56.85
+    assertThat(aapl.avgVolume()).isEqualTo(200_000_000L);
+    assertThat(aapl.relVolume()).isEqualByComparingTo("2.00");               // 8M ÷ (1M × 4)
+
+    // statistics fetched on or after the ex-date are already on the new basis
+    repo.upsertProfile("AAPL", new ScreenerStatRepository.Profile(new BigDecimal("60000000000"), null, null,
+        "finnhub"), time.now());
+    ScreenerStats fresh = stats(null, null, true, false, nanos, 0, List.of());
+    ScreenResult.Row again = service(feed, fresh, false, new AtomicLong(1)).screen(new ScreenQuery(null, null, null,
+        null, null, null, null, null, null, null, Set.of(), Set.of(), ScreenSort.SYMBOL, null, 25, 0)).rows()
+        .getFirst();
+    assertThat(again.marketCap()).isEqualByComparingTo("3411000000000");
   }
 
   @Test
@@ -400,6 +461,32 @@ class ScreenerTest {
     // a reloaded copy (another process) reads the same table
     ScreenerStats other = stats(p, null, true, false, nanos, 0, List.of("AAPL", "SPY"));
     assertThat(other.stats().get("SPY").avgVolume()).isEqualTo(1_750_000L);
+  }
+
+  /**
+   * Review finding: the average divided by the number of bars, so a thin IEX symbol with no IEX trade on some days
+   * got an inflated average. A session without a bar now counts as zero; sessions before the first bar (a recent
+   * listing, on either basis) are left out.
+   */
+  @Test
+  void averagesCountEverySessionOfTheWindowAndSkipOnlyThoseBeforeTheListing() {
+    List<LocalDate> sessions = new ArrayList<>();
+    for (LocalDate d = LocalDate.of(2026, 10, 8); sessions.size() < 20; d = CAL.previousTradingDay(d)) {
+      sessions.addFirst(d);
+    }
+    // ten bars of 1,000 on every other session: 10,000 over 20 sessions
+    List<Bar> sparse = new ArrayList<>();
+    for (int i = 0; i < 20; i += 2) {
+      sparse.add(new Bar("X", Timeframe.DAY1, com.stocks.common.time.Et.startOfDay(sessions.get(i)), BigDecimal.ONE,
+          BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, 1_000, null, 1, false));
+    }
+    assertThat(ScreenerStats.average(sparse, sessions, null)).get()
+        .satisfies(a -> assertThat(a).containsExactly(500L, 20L));
+    // listed five sessions ago (the SIP bars say so): the average covers those five
+    List<Bar> recent = sparse.subList(8, 10);                                // sessions 16 and 18
+    assertThat(ScreenerStats.average(recent, sessions, sessions.get(15))).get()
+        .satisfies(a -> assertThat(a).containsExactly(400L, 5L));
+    assertThat(ScreenerStats.average(List.of(), sessions, null)).isEmpty();
   }
 
   @Test

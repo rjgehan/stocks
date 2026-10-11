@@ -70,6 +70,7 @@ export function ApiCallsList() {
           <Segmented
             label="Whose calls"
             size="sm"
+            fit
             value={scope}
             onChange={setScope}
             options={[

@@ -94,9 +94,10 @@ stocks:
       - https://claude.com/api/mcp/auth_callback   # not in Claude's docs yet; reported by third-party guides
       - https://chatgpt.com/connector_platform_oauth_redirect
       - https://chatgpt.com/connector/oauth/*
-    requests-per-min-per-ip: 60             # /oauth2/authorize and /oauth2/token, each
+    requests-per-min-per-ip: 60             # /oauth2/authorize and /oauth2/token, each; per IPv4 address or IPv6 /64
+    max-pending-requests: 2000              # live pending /oauth2/authorize requests, all clients together
     cimd: { enabled: true, timeout: 3s, max-bytes: 8192, min-cache: 5m, max-cache: 24h }
-    dcr: { enabled: true, max-clients: 500, per-ip-per-hour: 20, unused-client-ttl: 24h, idle-client-ttl: 90d }
+    dcr: { enabled: true, max-clients: 500, per-ip-per-hour: 20, max-per-hour: 100, unused-client-ttl: 24h, idle-client-ttl: 90d }
   engine:
     seed: ${ENGINE_SEED:dev-seed-change-me}
     queue-capacity: 10000

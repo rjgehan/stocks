@@ -941,7 +941,7 @@
     "/api/v1/admin/api-keys/{keyId}": {
       "delete": {
         "description": "Immediate (the key cache is evicted); the bot then gets API_KEY_REVOKED. Errors: NOT_FOUND.",
-        "operationId": "revoke_2",
+        "operationId": "revoke_3",
         "parameters": [
           {
             "in": "path",
@@ -976,7 +976,7 @@
     "/api/v1/admin/audit": {
       "get": {
         "description": "category: AUTH, ORDER, MONEY, ADMIN, KEY, ACCOUNT or SYSTEM; action e.g. LOGIN_FAIL; actor a player handle; from/to ISO-8601 instants. Paged with cursor/limit (default 50, max 200).",
-        "operationId": "list_9",
+        "operationId": "list_10",
         "parameters": [
           {
             "in": "query",
@@ -1413,7 +1413,7 @@
     "/api/v1/admin/corporate-actions": {
       "get": {
         "description": "Newest first; filter by status (NEEDS_ADMIN for the ones to resolve).",
-        "operationId": "list_8",
+        "operationId": "list_9",
         "parameters": [
           {
             "in": "query",
@@ -1679,7 +1679,7 @@
     "/api/v1/admin/invites/{inviteId}": {
       "delete": {
         "description": "Immediate. Errors: NOT_FOUND.",
-        "operationId": "revoke_1",
+        "operationId": "revoke_2",
         "parameters": [
           {
             "in": "path",
@@ -1706,6 +1706,41 @@
           }
         },
         "summary": "Revoke an invite link",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/oauth-grants/{grantId}": {
+      "delete": {
+        "description": "Immediate: its access tokens stop on the next request and its refresh token is dead (the connector must be connected again). Audited KEY/OAUTH_REVOKE. Errors: NOT_FOUND (unknown or already revoked).",
+        "operationId": "revoke_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Revoke an OAuth grant",
         "tags": [
           "admin"
         ]
@@ -2141,6 +2176,51 @@
           }
         },
         "summary": "Break glass: the player's live positions and open orders",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/players/{handle}/oauth-grants": {
+      "get": {
+        "description": "Live grants the player approved or that act as the player (a bot's connector), newest first: the client, the redirect host, who approved it, who it acts as, the scopes and when it was last used. Never a token. Errors: PLAYER_NOT_FOUND.",
+        "operationId": "list_8",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminOAuthGrant"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A player's connected apps (OAuth grants)",
         "tags": [
           "admin"
         ]
@@ -4560,7 +4640,7 @@
         ]
       },
       "post": {
-        "description": "Session only, CSRF. approve=true needs actAs (a handle from the request's actors) and optionally scopes (default: every requested scope the actor may get). Answers the URL to send the browser to: the client's redirect URI with code, state and iss, or error=access_denied. The request is used up either way. Errors: NOT_FOUND, VALIDATION_FAILED, FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED.",
+        "description": "Session only, CSRF. approve=true needs actAs (a handle from the request's actors) and optionally scopes (default: every requested scope the actor may get). Answers the URL to send the browser to: the client's redirect URI with code, state and iss, or error=access_denied. The request is used up either way. Approving needs a recent password check (like issuing an API key: RECENT_AUTH_REQUIRED, then POST /auth/reauth and retry); denying does not. Errors: NOT_FOUND, VALIDATION_FAILED, FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED, RECENT_AUTH_REQUIRED.",
         "operationId": "decideOAuthRequest",
         "parameters": [
           {
@@ -7052,6 +7132,90 @@
           "status",
           "today",
           "tools"
+        ]
+      },
+      "AdminOAuthGrant": {
+        "type": "object",
+        "properties": {
+          "actAs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlayerSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approvedBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlayerSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "client": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthClientInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "grantId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "redirectHost": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scopes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "actAs",
+          "approvedBy",
+          "client",
+          "connected",
+          "createdAt",
+          "grantId",
+          "lastUsedAt",
+          "redirectHost",
+          "scopes"
         ]
       },
       "AdminPlayer": {

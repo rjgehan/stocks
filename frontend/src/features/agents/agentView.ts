@@ -81,6 +81,27 @@ export function spendMeter(spent: string | null | undefined, cap: string | null 
   }
 }
 
+/** A run's counts: "40 s · 12 tool calls (1 error) · 2 orders". */
+export function runCounts(r: { durationMs?: number | null; toolCalls?: number | null; toolErrors?: number | null; orders?: number | null }): string {
+  const errors = r.toolErrors ? ` (${plural(r.toolErrors, 'error')})` : ''
+  return `${formatDuration(r.durationMs)} · ${plural(r.toolCalls ?? 0, 'tool call')}${errors} · ${plural(r.orders ?? 0, 'order')}`
+}
+
+/**
+ * An ISO-8601 feed delay (`GET /rules` `social.tradeFeedDelay`, e.g. PT15M) in words: "right away", "15 minutes",
+ * "1 hour", "1 hour 30 minutes"; null when it cannot be read.
+ */
+export function delayWords(iso: string | null | undefined): string | null {
+  const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(iso ?? '')
+  if (!m || (!m[1] && !m[2] && !m[3])) return null
+  const total = Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Math.round(Number(m[3] ?? 0))
+  if (total === 0) return 'right away'
+  const h = Math.floor(total / 3600)
+  const min = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  return [h ? plural(h, 'hour') : null, min ? plural(min, 'minute') : null, s ? plural(s, 'second') : null].filter(Boolean).join(' ')
+}
+
 /** 450 ms, 12.4 s, 1 min 34 s, 2 h 5 min. */
 export function formatDuration(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return '--'

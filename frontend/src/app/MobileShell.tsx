@@ -11,9 +11,10 @@ export function MobileShell() {
   const meta = useRouteMeta()
   const root = meta.phone === 'root'
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-bg-0">
+    // `relative` on the shell and its scroller: absolutely positioned descendants (sr-only labels) stay inside them
+    <div className="relative flex h-dvh flex-col overflow-hidden bg-bg-0">
       {root ? <PhoneTopBar title={meta.title} /> : null}
-      <main className="scrollbar-none min-h-0 flex-1 overflow-y-auto overscroll-contain pl-safe pr-safe">
+      <main className="scrollbar-none relative min-h-0 flex-1 overflow-y-auto overscroll-contain pl-safe pr-safe">
         <Outlet />
       </main>
       {root ? <BottomTabBar /> : null}

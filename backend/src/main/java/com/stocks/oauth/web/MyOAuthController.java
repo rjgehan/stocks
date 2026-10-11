@@ -56,7 +56,9 @@ public class MyOAuthController {
       description = "Session only, CSRF. approve=true needs actAs (a handle from the request's actors) and optionally "
           + "scopes (default: every requested scope the actor may get). Answers the URL to send the browser to: the "
           + "client's redirect URI with code, state and iss, or error=access_denied. The request is used up either way. "
-          + "Errors: NOT_FOUND, VALIDATION_FAILED, FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED.")
+          + "Approving needs a recent password check (like issuing an API key: RECENT_AUTH_REQUIRED, then "
+          + "POST /auth/reauth and retry); denying does not. "
+          + "Errors: NOT_FOUND, VALIDATION_FAILED, FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED, RECENT_AUTH_REQUIRED.")
   public OAuthRedirectDto decideOAuthRequest(@PathVariable String requestId, @Valid @RequestBody OAuthDecisionRequest body,
                                  HttpServletRequest request) {
     PlayerPrincipal who = CurrentPlayer.require();

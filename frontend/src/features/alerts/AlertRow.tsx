@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { describeError, errorBody } from '@/lib/api/errors'
 import { useDeleteAlert, usePauseAlert } from '@/lib/api/hooks/alerts'
 import type { Alert } from '@/lib/api/types'
 import { formatDateTimeEt } from '@/lib/format/time'
 import { IconButton } from '@/components/ui/Button'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { IconEdit, IconTrash } from '@/components/ui/icons'
 import { Pill } from '@/components/ui/Pill'
 import { cx } from '@/components/ui/cx'
@@ -17,10 +19,12 @@ function onError(title: string) {
   }
 }
 
-/** One alert: what it watches, its state, and pause/resume, edit and delete (§22.10). */
+/** One alert: what it watches, its state, and pause/resume, edit and delete (after a confirmation) (§22.10). */
 export function AlertRow({ alert, showSymbol = true, onEdit }: { alert: Alert; showSymbol?: boolean; onEdit?: (a: Alert) => void }) {
   const pause = usePauseAlert()
   const remove = useDeleteAlert()
+  const [confirming, setConfirming] = useState(false)
+  const what = `${alert.symbol ?? ''} ${describeCondition(alert.condition, alert.threshold)}`.trim()
   const id = alert.id ?? ''
   const live = alert.status === 'ACTIVE' || alert.status === 'PAUSED'
   const tone = alert.status === 'ACTIVE' ? 'accent' : alert.status === 'TRIGGERED' ? 'up' : 'neutral'
@@ -60,13 +64,24 @@ export function AlertRow({ alert, showSymbol = true, onEdit }: { alert: Alert; s
             <IconEdit size={18} />
           </IconButton>
         ) : null}
-        <IconButton
-          label="Delete alert"
-          onClick={() => remove.mutate(id, { onError: onError('Alert not deleted'), onSuccess: () => toast({ tone: 'neutral', title: 'Alert deleted' }) })}
-        >
+        <IconButton label="Delete alert" onClick={() => setConfirming(true)}>
           <IconTrash size={18} />
         </IconButton>
       </div>
+      <ConfirmDialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title="Delete this alert?"
+        confirmLabel="Delete"
+        tone="danger"
+        pending={remove.isPending}
+        onConfirm={() => {
+          setConfirming(false)
+          remove.mutate(id, { onError: onError('Alert not deleted'), onSuccess: () => toast({ tone: 'neutral', title: 'Alert deleted' }) })
+        }}
+      >
+        {what}. It stops watching the price; this cannot be undone.
+      </ConfirmDialog>
     </li>
   )
 }

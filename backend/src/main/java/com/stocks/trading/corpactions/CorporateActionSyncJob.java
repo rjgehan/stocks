@@ -18,8 +18,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -34,7 +36,8 @@ import org.springframework.stereotype.Component;
 /**
  * {@code CORPORATE_ACTION_SYNC} (§14, §25: 02:30 ET daily, run key = date, catch-up LATEST_ONLY): asks the profile's
  * {@link CorporateActionSource} for the corporate actions of every held, open-order and watch-listed symbol plus the
- * benchmark, from 7 days back to {@value #LOOK_AHEAD_DAYS} days ahead, and upserts them by {@code provider_ref}.
+ * benchmarks (SPY and the extra QQQ), from 7 days back to {@value #LOOK_AHEAD_DAYS} days ahead, and upserts them by
+ * {@code provider_ref}.
  * <ul>
  *   <li>The look-ahead is longer than the spec's 14 days because Alpaca filters on {@code process_date}, which for a
  *       cash dividend is around the payable date: a 14-day window would find many dividends only after their
@@ -75,11 +78,13 @@ public class CorporateActionSyncJob implements ScheduledJob {
   private final ApplicationEventPublisher events;
   private final ObjectProvider<CorporateActionApplyJob> applyJob;
   private final String benchmarkSymbol;
+  private final List<String> extraBenchmarks;
 
   public CorporateActionSyncJob(CorporateActionSource source, CorporateActionStore store, PublicId publicIds,
                                 TimeSource time, MarketCalendar calendar, JdbcClient jdbc,
                                 ApplicationEventPublisher events, ObjectProvider<CorporateActionApplyJob> applyJob,
-                                @Value("${stocks.performance.benchmark-symbol:SPY}") String benchmarkSymbol) {
+                                @Value("${stocks.performance.benchmark-symbol:SPY}") String benchmarkSymbol,
+                                @Value("${stocks.performance.extra-benchmarks:QQQ}") String extraBenchmarks) {
     this.source = source;
     this.store = store;
     this.publicIds = publicIds;
@@ -89,6 +94,8 @@ public class CorporateActionSyncJob implements ScheduledJob {
     this.events = events;
     this.applyJob = applyJob;
     this.benchmarkSymbol = benchmarkSymbol;
+    this.extraBenchmarks = extraBenchmarks == null ? List.of() : Arrays.stream(extraBenchmarks.split(","))
+        .map(String::trim).filter(x -> !x.isEmpty()).map(x -> x.toUpperCase(Locale.ROOT)).distinct().toList();
   }
 
   @Override
@@ -128,7 +135,10 @@ public class CorporateActionSyncJob implements ScheduledJob {
     return CatchUpPolicy.LATEST_ONLY;
   }
 
-  /** Held (ACTIVE runs), open-order and watch-listed symbols, plus the benchmark (§14). */
+  /**
+   * Held (ACTIVE runs), open-order and watch-listed symbols, plus every benchmark (§14): the main one and the extras
+   * (QQQ, §16.6), whose cash dividends feed {@code daily_mark.dividend_ex} and so their total-return chains.
+   */
   Set<String> symbols() {
     Set<String> out = new TreeSet<>(jdbc.sql("""
             SELECT p.symbol FROM position p JOIN account a ON a.id = p.account_id WHERE a.status = 'ACTIVE'
@@ -136,6 +146,7 @@ public class CorporateActionSyncJob implements ScheduledJob {
             UNION SELECT symbol FROM watchlist_item""")
         .query(String.class).list());
     out.add(benchmarkSymbol);
+    out.addAll(extraBenchmarks);
     return out;
   }
 

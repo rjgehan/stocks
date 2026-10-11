@@ -70,7 +70,24 @@ public class LeagueRepository {
 
   /** Activity per player in {@code (fromExclusive, toInclusive]}; {@code fromExclusive} null = all time. */
   public Map<Long, Activity> activity(Instant fromExclusive, Instant toInclusive) {
+    return activity(fromExclusive, toInclusive, null);
+  }
+
+  /**
+   * One player's activity in {@code (fromExclusive, toInclusive]} (§16.8: another player's trade statistics as of the
+   * feed delay); {@link Activity#NONE} without any.
+   */
+  public Activity activityOf(long playerId, Instant fromExclusive, Instant toInclusive) {
+    if (fromExclusive != null && !toInclusive.isAfter(fromExclusive)) {
+      return Activity.NONE;
+    }
+    return activity(fromExclusive, toInclusive, playerId).getOrDefault(playerId, Activity.NONE);
+  }
+
+  private Map<Long, Activity> activity(Instant fromExclusive, Instant toInclusive, Long playerOrNull) {
     Instant from = fromExclusive == null ? Instant.EPOCH : fromExclusive;
+    long onlyPlayer = playerOrNull == null ? 0 : playerOrNull;
+    boolean all = playerOrNull == null;
     Map<Long, int[]> acc = new HashMap<>();
     Map<Long, BigDecimal[]> gross = new HashMap<>();
     jdbc.sql("""
@@ -79,9 +96,9 @@ public class LeagueRepository {
               JOIN account a ON a.id = o.account_id
               JOIN (SELECT order_id, MIN(executed_at) AS first_at FROM execution GROUP BY order_id) f
                 ON f.order_id = o.id
-             WHERE f.first_at > ? AND f.first_at <= ?
+             WHERE f.first_at > ? AND f.first_at <= ? AND (CAST(? AS BOOLEAN) OR a.player_id = ?)
              GROUP BY a.player_id""")
-        .params(Jdbc.ts(from), Jdbc.ts(toInclusive))
+        .params(Jdbc.ts(from), Jdbc.ts(toInclusive), all, onlyPlayer)
         .query(rs -> {
           int[] v = acc.computeIfAbsent(rs.getLong("player_id"), k -> new int[5]);
           v[0] = rs.getInt("fills");
@@ -97,9 +114,9 @@ public class LeagueRepository {
               FROM execution e
               JOIN account a ON a.id = e.account_id
               JOIN trade_order o ON o.id = e.order_id
-             WHERE e.executed_at > ? AND e.executed_at <= ?
+             WHERE e.executed_at > ? AND e.executed_at <= ? AND (CAST(? AS BOOLEAN) OR a.player_id = ?)
              GROUP BY a.player_id""")
-        .params(Jdbc.ts(from), Jdbc.ts(toInclusive))
+        .params(Jdbc.ts(from), Jdbc.ts(toInclusive), all, onlyPlayer)
         .query(rs -> {
           int[] v = acc.computeIfAbsent(rs.getLong("player_id"), k -> new int[5]);
           v[2] = rs.getInt("sells");

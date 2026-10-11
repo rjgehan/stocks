@@ -40,6 +40,7 @@ stocks:
     grant-cache-ttl: 0s                     # fixtures change grant rows directly
     requests-per-min-per-ip: 100000         # the fixed clock never opens a new window; OAuthFlowIT tightens it
     dcr.per-ip-per-hour: 100000
+    dcr.max-per-hour: 100000
   engine:
     seed: test-seed
   marketdata:

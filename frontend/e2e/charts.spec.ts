@@ -14,6 +14,7 @@ function collectErrors(page: Page): string[] {
 }
 
 const chart = (page: Page) => page.locator('[data-chart-type]').first()
+const types = (page: Page) => page.getByRole('radiogroup', { name: 'Chart type' })
 
 test('chart types and indicators persist, oscillators get their own panes', async ({ page }) => {
   test.setTimeout(90_000)
@@ -33,17 +34,25 @@ test('chart types and indicators persist, oscillators get their own panes', asyn
   await page.getByRole('dialog', { name: 'Indicators' }).getByRole('button', { name: 'Close', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Indicators' })).toHaveCount(0)
   await expect(chart(page)).toHaveAttribute('data-oscillators', '2')
+  // overlays above the candles; each oscillator's values inside its own pane (review finding: all of them sat over
+  // the price pane)
   const legend = page.getByTestId('indicator-legend')
   await expect(legend).toContainText('MA5', { timeout: 15_000 })
-  await expect(legend).toContainText('RSI10')
-  await expect(legend).toContainText('MACD(12,26,9)')
+  await expect(legend).not.toContainText('RSI10')
+  const panes = page.getByTestId('indicator-legend-pane')
+  await expect(panes).toHaveCount(2)
+  await expect(panes.filter({ hasText: 'RSI10' })).toHaveCount(1)
+  await expect(panes.filter({ hasText: 'MACD(12,26,9)' })).toHaveCount(1)
+  const priceTop = (await chart(page).boundingBox())!.y
+  const rsiTop = (await panes.filter({ hasText: 'RSI10' }).boundingBox())!.y
+  expect(rsiTop - priceTop).toBeGreaterThan(100)
+  await expect(types(page).getByRole('radio', { name: 'Heikin Ashi' })).toHaveAccessibleName('Heikin Ashi')
   await expect(page.getByRole('button', { name: /Indicators/ })).toContainText('3')
 
   // Chart types
-  const types = page.getByRole('radiogroup', { name: 'Chart type' })
-  await types.getByRole('radio', { name: 'Heikin Ashi' }).click()
+  await types(page).getByRole('radio', { name: 'Heikin Ashi' }).click()
   await expect(chart(page)).toHaveAttribute('data-chart-type', 'heikin')
-  await types.getByRole('radio', { name: 'Hollow candles' }).click()
+  await types(page).getByRole('radio', { name: 'Hollow candles' }).click()
   await expect(chart(page)).toHaveAttribute('data-chart-type', 'hollow')
 
   // A different range rebuilds the data, not the panes; then everything survives a reload
@@ -54,7 +63,7 @@ test('chart types and indicators persist, oscillators get their own panes', asyn
   await expect(chart(page)).toHaveAttribute('data-chart-type', 'hollow')
   await expect(chart(page)).toHaveAttribute('data-oscillators', '2')
   // the legend shows once the bars have loaded (a cold 5D on the real SIM computes ~1,000 bars)
-  await expect(page.getByTestId('indicator-legend')).toContainText('RSI10', { timeout: 20_000 })
+  await expect(page.getByTestId('indicator-legend-pane').filter({ hasText: 'RSI10' })).toHaveCount(1, { timeout: 20_000 })
 
   // Turning the oscillators off removes their panes
   await page.getByRole('button', { name: /Indicators/ }).click()
@@ -63,6 +72,7 @@ test('chart types and indicators persist, oscillators get their own panes', asyn
   await expect(page.getByRole('dialog', { name: 'Indicators' })).toHaveCount(0)
   await expect(chart(page)).toHaveAttribute('data-oscillators', '0')
   await expect(page.getByTestId('indicator-legend')).toHaveCount(0)
+  await expect(page.getByTestId('indicator-legend-pane')).toHaveCount(0)
   // leaving the page tears the chart down cleanly (no draw on a disposed chart)
   await page.goto('/markets')
   await expect(page.getByTestId('screener-card')).toBeVisible()
@@ -112,4 +122,38 @@ test('analyst ratings and the news tab', async ({ page }) => {
   await open(page, '/stock/SPY')
   await expect(page.getByRole('heading', { name: 'SPY', level: 1 })).toBeVisible()
   await expect(page.getByTestId('analyst-ratings')).toHaveCount(0)
+})
+
+/**
+ * Review finding: sr-only labels (one per Time & Sales print, one per news link on phone) are absolutely positioned;
+ * with no positioned ancestor they escaped every overflow clip, made the document taller than the viewport, and a
+ * wheel over the rail scrolled the whole app off-screen. The shell owns all scrolling: the document never does.
+ */
+test('the quote page never makes the document scroll past the shell', async ({ page }, testInfo) => {
+  const vp = viewport(testInfo)
+  const fitsTheViewport = async () => {
+    const { scrollHeight, innerHeight } = await page.evaluate(() => ({
+      scrollHeight: document.documentElement.scrollHeight,
+      innerHeight: window.innerHeight,
+    }))
+    expect(scrollHeight).toBeLessThanOrEqual(innerHeight + 1)
+  }
+  await open(page, '/stock/AAPL')
+  await expect(page.getByRole('heading', { name: 'AAPL', level: 1 })).toBeVisible()
+  // the tape's rows carry the sr-only side labels: desktop shows it beside the ticket, phone and tablet in a tab
+  const tapeRows = () => page.getByTestId('time-and-sales').filter({ visible: true }).first().locator('li').first()
+  if (vp === 'desktop') await expect(tapeRows()).toBeVisible({ timeout: 15_000 })
+  await fitsTheViewport()
+  for (const tab of vp === 'desktop' ? ['News'] : ['News', 'Trades']) {
+    await page.getByRole('tab', { name: tab }).click()
+    await expect(page).toHaveURL(new RegExp(`tab=${tab.toUpperCase()}`))
+    if (tab === 'News') await expect(page.getByTestId('news-feed').getByRole('link').first()).toBeVisible({ timeout: 15_000 })
+    if (tab === 'Trades') await expect(tapeRows()).toBeVisible({ timeout: 15_000 })
+    await fitsTheViewport()
+  }
+  await page.mouse.move(20, 300)
+  await page.mouse.wheel(0, 2_000)
+  expect(await page.evaluate(() => window.scrollY)).toBe(0)
+  await open(page, '/watchlist')
+  await fitsTheViewport()
 })

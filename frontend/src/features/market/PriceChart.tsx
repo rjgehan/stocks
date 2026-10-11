@@ -170,7 +170,9 @@ export default function PriceChart({
   const [hover, setHover] = useState<{ bar: Bar; index: number } | null>(null)
   const [latest, setLatest] = useState<Bar | null>(null)
   /** The legend's indicator values per bar (the crosshair picks an index; the last bar otherwise). */
-  const [legend, setLegend] = useState<{ label: string; color: string; values: Line }[]>([])
+  const [legend, setLegend] = useState<{ label: string; color: string; values: Line; pane: number }[]>([])
+  /** Each pane's top (px from the chart's top), so an oscillator's values are written inside its own pane. */
+  const [paneTops, setPaneTops] = useState<number[]>([0])
   const theme = useThemeStore((s) => s.theme)
   const upDown = useThemeStore((s) => s.upDown)
   const intraday = bars?.timeframe ? !['1Day', '1Week', '1Month'].includes(bars.timeframe) : range === '1D' || range === '5D'
@@ -206,7 +208,10 @@ export default function PriceChart({
     }
     c.subscribeCrosshairMove(onMove)
     chart.current = c
+    const resized = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => requestAnimationFrame(() => setPaneTops((prev) => sameTops(prev, measurePanes(chart.current)))))
+    resized?.observe(host.current)
     return () => {
+      resized?.disconnect()
       c.unsubscribeCrosshairMove(onMove)
       c.remove()
       chart.current = null
@@ -282,7 +287,8 @@ export default function PriceChart({
     const times = data.map((b) => b.time as number)
     shading.current?.setData(times, intraday && isRegular ? extendedSpans(times, isRegular) : [], extColor())
     rebuildIndicators(c, lines, JSON.parse(indicatorKey) as IndicatorSettings, intraday, data)
-    setLegend(lines.current.filter((l) => !l.histogram).map((l) => ({ label: l.label, color: l.color, values: l.values(data) })))
+    setLegend(legendOf(lines.current, data))
+    requestAnimationFrame(() => setPaneTops((prev) => sameTops(prev, measurePanes(chart.current))))
     c.timeScale().fitContent()
     setHover(null)
     setLatest(data[data.length - 1]?.raw ?? null)
@@ -323,7 +329,7 @@ export default function PriceChart({
         else (l.series as ISeriesApi<SeriesType>).update(point as never)
       }
       if (lines.current.length > 0) {
-        setLegend(lines.current.filter((l) => !l.histogram).map((l) => ({ label: l.label, color: l.color, values: l.values(data) })))
+        setLegend(legendOf(lines.current, data))
       }
     } catch {
       /* an out-of-order update is ignored; the next refetch resyncs the series */
@@ -334,8 +340,10 @@ export default function PriceChart({
   const values = legend.map((l) => {
     const index = hover ? hover.index : l.values.length - 1
     const v = l.values[index]
-    return { label: l.label, color: l.color, value: v == null || !Number.isFinite(v) ? null : v }
+    return { label: l.label, color: l.color, pane: l.pane, value: v == null || !Number.isFinite(v) ? null : v }
   })
+  const overlays = values.filter((v) => v.pane === 0)
+  const paneRows = [...new Set(values.filter((v) => v.pane > 0).map((v) => v.pane))].sort((a, b) => a - b)
   const empty = bars !== undefined && (bars.bars?.length ?? 0) === 0
   return (
     <div className="relative h-full w-full" data-chart-type={style} data-oscillators={oscillators}>
@@ -364,22 +372,68 @@ export default function PriceChart({
             </span>
             {style === 'heikin' ? <span className="text-text-3">(real prices; candles are Heikin Ashi)</span> : null}
           </div>
-          {values.length > 0 ? (
-            <div className="flex flex-wrap gap-x-2.5" data-testid="indicator-legend">
-              {values.map((v) => (
-                <span key={v.label} style={{ color: v.color }}>
-                  {v.label} {v.value == null ? '--' : v.value.toFixed(Math.abs(v.value) >= 1000 ? 0 : 2)}
-                </span>
+          {overlays.length > 0 ? (
+            // one line on a phone (cut at the edge) so it never covers the candles; wrapping from tablet up
+            <div className="flex flex-nowrap gap-x-2.5 overflow-hidden whitespace-nowrap tablet:flex-wrap" data-testid="indicator-legend">
+              {overlays.map((v) => (
+                <LegendValue key={v.label} v={v} />
               ))}
             </div>
           ) : null}
         </div>
       ) : null}
+      {/* each oscillator's values at the top of its own pane (review finding: they all sat over the price pane) */}
+      {shown
+        ? paneRows.map((pane) => (
+            <div
+              key={pane}
+              className="pointer-events-none absolute right-16 left-1 z-10 flex flex-nowrap gap-x-2.5 overflow-hidden text-micro whitespace-nowrap"
+              style={{ top: (paneTops[pane] ?? 0) + 2 }}
+              aria-hidden="true"
+              data-testid="indicator-legend-pane"
+            >
+              {values
+                .filter((v) => v.pane === pane)
+                .map((v) => (
+                  <LegendValue key={v.label} v={v} />
+                ))}
+            </div>
+          ))
+        : null}
       <div ref={host} className={cx('h-full w-full', empty && 'opacity-0')} />
       {empty ? <p className="absolute inset-0 flex items-center justify-center text-caption text-text-3">No bars for this range yet.</p> : null}
     </div>
   )
 }
+
+function LegendValue({ v }: { v: { label: string; color: string; value: number | null } }) {
+  return (
+    <span style={{ color: v.color }}>
+      {v.label} {v.value == null ? '--' : v.value.toFixed(Math.abs(v.value) >= 1000 ? 0 : 2)}
+    </span>
+  )
+}
+
+/** The legend's lines (histograms are drawn, not listed) with the pane each one is drawn in. */
+function legendOf(lines: readonly IndicatorLine[], data: readonly PlotBar[]) {
+  return lines
+    .filter((l) => !l.histogram)
+    .map((l) => ({ label: l.label, color: l.color, values: l.values(data), pane: Number(l.slot.split('@')[1] ?? 0) || 0 }))
+}
+
+/** The top of every pane (heights plus the 1 px separators), or [0] without a chart. */
+function measurePanes(c: IChartApi | null): number[] {
+  if (!c) return [0]
+  const tops: number[] = []
+  let y = 0
+  for (const pane of c.panes()) {
+    tops.push(y)
+    y += pane.getHeight() + 1
+  }
+  return tops.length ? tops : [0]
+}
+
+const sameTops = (a: number[], b: number[]) => (a.length === b.length && a.every((v, i) => v === b[i]) ? a : b)
 
 function extColor(): string {
   return document.documentElement.dataset.theme === 'light' ? 'rgba(217,138,0,0.08)' : 'rgba(245,165,36,0.07)'

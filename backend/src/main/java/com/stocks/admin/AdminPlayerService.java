@@ -44,6 +44,7 @@ import com.stocks.identity.PlayerQueriesImpl;
 import com.stocks.identity.PlayerRecord;
 import com.stocks.identity.PlayerService;
 import com.stocks.identity.SettingKey;
+import com.stocks.oauth.OAuthGrants;
 import com.stocks.security.ApiKeyAuthenticationProvider;
 import com.stocks.security.PlayerSessions;
 import java.math.BigDecimal;
@@ -91,13 +92,14 @@ public class AdminPlayerService {
   private final TransactionTemplate tx;
   private final TimeSource time;
   private final LoginThrottle loginThrottle;
+  private final OAuthGrants oauthGrants;
 
   public AdminPlayerService(PlayerService players, PlayerQueriesImpl playerQueries, AdminPlayerViews views,
                             ApiKeyService apiKeys, ApiKeyAuthenticationProvider keyCache, PlayerSessions sessions,
                             AccountProvisioner accounts, AccountService accountService, AccountQueries accountQueries,
                             OrderQueries orderQueries, IdempotencyFastPath idempotency, AuditService audit,
                             ApplicationEventPublisher events, TransactionTemplate tx, TimeSource time,
-                            LoginThrottle loginThrottle) {
+                            LoginThrottle loginThrottle, OAuthGrants oauthGrants) {
     this.players = players;
     this.playerQueries = playerQueries;
     this.views = views;
@@ -114,6 +116,7 @@ public class AdminPlayerService {
     this.tx = tx;
     this.time = time;
     this.loginThrottle = loginThrottle;
+    this.oauthGrants = oauthGrants;
   }
 
   // ------------------------------------------------------------------------------------------- create
@@ -271,6 +274,10 @@ public class AdminPlayerService {
     });
     playerQueries.evict(p.id());
     keyCache.evictPlayer(p.id());
+    if (Boolean.FALSE.equals(changes.get("apiTradingAllowed"))) {
+      // §10.5 / §17.9.3: a connector acting as the human loses trade at once too, not only their personal keys
+      changes.put("oauthGrantsWithoutTrade", oauthGrants.dropSelfTrade(p.id(), admin, meta));
+    }
     audit.record(AuditEntry.of(AuditCategory.ADMIN, "PLAYER_UPDATE", AuditOutcome.OK).withActor(admin).withMeta(meta)
         .withTarget("player", p.publicId()).withDetail("handle", p.handle()).withDetail("changes", changes));
     if (changes.containsKey("status")) {
@@ -306,9 +313,12 @@ public class AdminPlayerService {
     });
     playerQueries.evict(p.id());
     keyCache.evictPlayer(p.id());
+    // "revoke keys" ends every credential the player's API access rests on: the OAuth grants too (§10.5), which a
+    // freeze alone keeps (reversible; their requests answer 403 PLAYER_FROZEN meanwhile)
+    int grantsRevoked = revokeKeys ? oauthGrants.revokeAllOf(p.id(), OAuthGrants.CREDENTIALS_CHANGED, admin, meta) : 0;
     audit.record(AuditEntry.of(AuditCategory.ADMIN, "PLAYER_FREEZE", AuditOutcome.OK).withActor(admin).withMeta(meta)
         .withTarget("player", p.publicId()).withDetail("handle", p.handle()).withDetail("reason", reason)
-        .withDetail("keysRevoked", revoked[0]));
+        .withDetail("keysRevoked", revoked[0]).withDetail("oauthGrantsRevoked", grantsRevoked));
     events.publishEvent(new PlayerStatusChanged(p.id(), PlayerStatus.FROZEN, time.now()));
     engineStep(p, () -> accountService.restrict(p.id(), AccountRestriction.FROZEN, CancelReason.PLAYER_FROZEN,
         reason, admin.playerId()));

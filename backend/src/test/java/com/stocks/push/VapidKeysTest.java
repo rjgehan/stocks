@@ -112,4 +112,62 @@ class VapidKeysTest {
     time.advance(Duration.ofMinutes(2));                         // less than an hour left: re-signed
     assertThat(k.authorization(fcm)).isNotEqualTo(first);
   }
+
+  String storedPrivate() {
+    return db.jdbc().sql("SELECT private_key FROM push_vapid_key WHERE id = 1").query(String.class).single();
+  }
+
+  /**
+   * Review finding: the private key was stored in plain text next to every subscription's secrets, so a database dump
+   * alone could push to every device. It is now sealed under the pepper (like the OAuth signing key).
+   */
+  @Test
+  void theStoredPrivateKeyIsEncryptedUnderThePepper() {
+    VapidKeys.Pair a = keys(PushProperties.defaults()).current().orElseThrow();
+    String stored = storedPrivate();
+    assertThat(stored).startsWith("v1:").hasSizeLessThanOrEqualTo(100);
+    assertThat(stored).doesNotContain(WebPushCrypto.b64(WebPushCrypto.encodeScalar(a.privateKey())));
+    // the next start decrypts it: same pair
+    assertThat(keys(PushProperties.defaults()).current().orElseThrow().publicKeyB64()).isEqualTo(a.publicKeyB64());
+  }
+
+  @Test
+  void aPlainTextKeyFromAnEarlierVersionIsKeptAndRewrittenEncrypted() {
+    KeyPair kp = WebPushCrypto.generateKeyPair();
+    String pub = WebPushCrypto.b64(WebPushCrypto.encodePoint((ECPublicKey) kp.getPublic()));
+    String priv = WebPushCrypto.b64(WebPushCrypto.encodeScalar((ECPrivateKey) kp.getPrivate()));
+    db.jdbc().sql("INSERT INTO push_vapid_key (id, public_key, private_key, created_at) VALUES (1, ?, ?, ?)")
+        .params(pub, priv, com.stocks.common.jdbc.Jdbc.ts(time.now())).update();
+    VapidKeys.Pair p = keys(PushProperties.defaults()).current().orElseThrow();
+    assertThat(p.publicKeyB64()).as("subscriptions stay bound to it").isEqualTo(pub);
+    assertThat(storedPrivate()).startsWith("v1:");
+    assertThat(keys(PushProperties.defaults()).current().orElseThrow().publicKeyB64()).isEqualTo(pub);
+  }
+
+  @Test
+  void anotherPepperGetsANewPairAndTheOldSubscriptionsGo() {
+    VapidKeys.Pair a = keys(PushProperties.defaults()).current().orElseThrow();
+    com.stocks.testkit.Fixtures fx = new com.stocks.testkit.Fixtures(db.jdbc(), time);
+    com.stocks.testkit.Fixtures.PlayerRef alice = fx.human("vapidalice");
+    db.jdbc().sql("""
+            INSERT INTO push_subscription (public_id, player_id, endpoint, endpoint_hash, p256dh, auth_secret,
+                                           device_label, failure_count, created_at, updated_at)
+            VALUES ('psb_1', ?, 'https://fcm.googleapis.com/fcm/send/x', 'h1', 'p', 'a', 'Chrome', 0, ?, ?)""")
+        .params(alice.id(), com.stocks.common.jdbc.Jdbc.ts(time.now()), com.stocks.common.jdbc.Jdbc.ts(time.now()))
+        .update();
+    VapidKeys other = new VapidKeys(db.jdbc(), time, PushProperties.defaults(),
+        TestProperties.stocks("stocks.security.api-key-pepper", "another-pepper-not-secret-0123456789abcd"));
+    VapidKeys.Pair b = other.current().orElseThrow();
+    assertThat(b.publicKeyB64()).isNotEqualTo(a.publicKeyB64());
+    assertThat(db.jdbc().sql("SELECT COUNT(*) FROM push_subscription").query(Integer.class).single()).isZero();
+    assertThat(storedPrivate()).startsWith("v1:");
+  }
+
+  @Test
+  void withoutAPepperTheKeyLivesInMemoryOnly() {
+    VapidKeys k = new VapidKeys(db.jdbc(), time, PushProperties.defaults(),
+        TestProperties.stocks("stocks.security.api-key-pepper", ""));
+    assertThat(k.current().orElseThrow().source()).isEqualTo("memory");
+    assertThat(db.jdbc().sql("SELECT COUNT(*) FROM push_vapid_key").query(Integer.class).single()).isZero();
+  }
 }

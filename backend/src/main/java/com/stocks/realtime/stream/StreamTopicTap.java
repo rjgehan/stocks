@@ -1,5 +1,6 @@
 package com.stocks.realtime.stream;
 
+import com.stocks.contract.portfolio.FeedReactionService;
 import java.nio.charset.StandardCharsets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -7,6 +8,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.support.NativeMessageHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
@@ -15,7 +17,10 @@ import tools.jackson.databind.json.JsonMapper;
  * Tees the broadcast topics to the SSE stream (§19.3): an interceptor on the STOMP broker channel that hands
  * {@code /topic/market.session}, {@code /topic/leaderboard} and {@code /topic/feed} to {@link StreamHub}, whoever
  * publishes them (WS4 publishes the leaderboard and the feed). Payloads arrive already written by Boot's
- * {@code JsonMapper} (§6.3), so the stream carries the very same JSON. Never blocks and never fails the send.
+ * {@code JsonMapper} (§6.3), so the stream carries the very same JSON. Never blocks and never fails the send. A
+ * {@code /topic/feed} message marked as a reactions update ({@link FeedReactionService#STOMP_KIND_HEADER}) goes out as
+ * the non-resumable {@code feedReactions} event: one player's reaction toggles never take ring-buffer room from other
+ * players' resumable events.
  */
 @Component
 public class StreamTopicTap implements ChannelInterceptor {
@@ -37,7 +42,13 @@ public class StreamTopicTap implements ChannelInterceptor {
       if (StreamHub.publicRoute(destination) != null) {
         StreamHub h = hub.getIfAvailable();
         if (h != null) {
-          h.publishPublic(destination, body(message.getPayload()));
+          boolean reactions = FeedReactionService.REACTIONS_KIND.equals(NativeMessageHeaderAccessor
+              .getFirstNativeHeader(FeedReactionService.STOMP_KIND_HEADER, message.getHeaders()));
+          if (reactions) {
+            h.publishFeedReactions(body(message.getPayload()));
+          } else {
+            h.publishPublic(destination, body(message.getPayload()));
+          }
         }
       }
     } catch (RuntimeException e) {

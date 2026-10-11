@@ -1,6 +1,7 @@
 package com.stocks.portfolio;
 
 import com.stocks.common.domain.HistoryRange;
+import com.stocks.common.domain.Timeframe;
 import com.stocks.common.domain.TransferType;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
@@ -9,7 +10,12 @@ import com.stocks.common.money.Money;
 import com.stocks.common.money.Rounding;
 import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
+import com.stocks.contract.marketdata.BarRequest;
+import com.stocks.contract.marketdata.BarSeries;
 import com.stocks.contract.marketdata.Mark;
+import com.stocks.contract.marketdata.MarketDataService;
+import com.stocks.contract.marketdata.model.AdjustmentMode;
+import com.stocks.contract.marketdata.model.Bar;
 import com.stocks.contract.portfolio.AccountPnl;
 import com.stocks.contract.portfolio.PnlAnalysisQueries;
 import com.stocks.contract.portfolio.Valuation;
@@ -33,16 +39,20 @@ import com.stocks.portfolio.PortfolioRepository.PositionRow;
 import com.stocks.portfolio.PortfolioRepository.TransferRow;
 import com.stocks.portfolio.RunAnchors.Anchor;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -77,13 +87,21 @@ public class PnlAnalysisService implements PnlAnalysisQueries {
   private final IntradaySampler sampler;
   private final BenchmarkService benchmark;
   private final AccountPerformance performance;
+  private final MarketDataService marketData;
   private final JdbcClient jdbc;
   private final TimeSource time;
+  /** Extra benchmarks' prices at run openings (§16.6), by {@code symbol@instant}: kept once found. */
+  private final Map<String, BigDecimal> openingPrices = new ConcurrentHashMap<>();
+  /** Openings whose price could not be read yet: the next attempt, and whether the bars answered without a trade. */
+  private final Map<String, Miss> openingMisses = new ConcurrentHashMap<>();
+
+  private record Miss(Instant retryAt, boolean answered) {}
 
   public PnlAnalysisService(PortfolioRepository repository, EodSnapshotRepository snapshots, EodSnapshots eod,
                             RunAnchors anchors, PeriodResolver periods, PnlCalendar calendar,
                             ValuationService valuation, IntradaySampler sampler, BenchmarkService benchmark,
-                            AccountPerformance performance, JdbcClient jdbc, TimeSource time) {
+                            AccountPerformance performance, MarketDataService marketData, JdbcClient jdbc,
+                            TimeSource time) {
     this.repository = repository;
     this.snapshots = snapshots;
     this.eod = eod;
@@ -94,6 +112,7 @@ public class PnlAnalysisService implements PnlAnalysisQueries {
     this.sampler = sampler;
     this.benchmark = benchmark;
     this.performance = performance;
+    this.marketData = marketData;
     this.jdbc = jdbc;
     this.time = time;
   }
@@ -183,23 +202,99 @@ public class PnlAnalysisService implements PnlAnalysisQueries {
 
   /**
    * B at the anchor: the EOD row of the anchor day; at an opening, SPY from the mark recorded on the INITIAL transfer
-   * (§16.6), an extra benchmark from its last EOD at or before the opening.
+   * (§16.6), an extra benchmark from its price at the opening ({@link #extraIndexAtOpening}), so every line starts at
+   * the same instant.
    */
   private BigDecimal startIndex(String symbol, Anchor anchor, List<TransferRow> transfers) {
     if (!anchor.opening()) {
       return benchmark.indexAtEod(symbol, anchor.date()).orElse(null);
     }
-    if (symbol.equals(benchmark.symbol())) {
-      for (TransferRow t : transfers) {
-        if (Long.valueOf(t.id()).equals(anchor.openingTransferId())) {
-          BigDecimal b = benchmark.indexAt(symbol, t.effectiveAt(), t.spyMark()).orElse(null);
-          if (b != null) {
-            return b;
-          }
+    if (!symbol.equals(benchmark.symbol())) {
+      return extraIndexAtOpening(symbol, anchor.at());
+    }
+    for (TransferRow t : transfers) {
+      if (Long.valueOf(t.id()).equals(anchor.openingTransferId())) {
+        BigDecimal b = benchmark.indexAt(symbol, t.effectiveAt(), t.spyMark()).orElse(null);
+        if (b != null) {
+          return b;
         }
       }
     }
     return benchmark.indexAtLastEod(symbol, anchor.at()).orElse(null);
+  }
+
+  /** The regular open (ET): before it, an extra benchmark has not moved since its last EOD. */
+  static final LocalTime REGULAR_OPEN = LocalTime.of(9, 30);
+  /** How long an opening whose price could not be read waits before the next attempt. */
+  static final Duration OPENING_MISS_RETRY = Duration.ofMinutes(5);
+  private static final int MAX_CACHED_OPENINGS = 10_000;
+  /** Enough 1-minute bars for one day (a regular session has 390). */
+  private static final int DAY_BARS = 1000;
+
+  /**
+   * An extra benchmark (QQQ) at a run's opening (§16.6): no transfer records its mark, so a run opened during a
+   * trading day reads the benchmark's price then from its 1-minute bars (the close of the last bar that started
+   * before the opening; one bar request per opening, then cached), {@code B = B_prevEOD × P(t) / P_prevEOD} like SPY.
+   * An opening on a non-trading day or after the day's cut-off starts at the last EOD (the price has not moved
+   * since), and so does a pre-market opening before the day's first trade. After the regular open a bar is
+   * required: while the bars are unavailable (or lag) the extra benchmark has no curve, never one from the previous
+   * close that would count the move before the opening.
+   */
+  BigDecimal extraIndexAtOpening(String symbol, Instant t) {
+    LocalDate day = Et.date(t);
+    if (!calendar.isTradingDay(day) || !t.isBefore(calendar.cutoff(day))) {
+      return benchmark.indexAtLastEod(symbol, t).orElse(null);
+    }
+    Optional<Optional<BigDecimal>> price = priceAt(symbol, t);
+    if (price.isEmpty()) {
+      return null;                                                  // not known yet: retried later
+    }
+    if (price.get().isEmpty()) {
+      // the bars answered with no trade that day before t
+      return Et.time(t).isBefore(REGULAR_OPEN) ? benchmark.indexAtLastEod(symbol, t).orElse(null) : null;
+    }
+    return benchmark.indexAt(symbol, t, price.get().get()).orElse(null);
+  }
+
+  /**
+   * The close of the last 1-minute bar of {@code symbol} that started on {@code t}'s day before {@code t}: empty
+   * when the request failed or is waiting for its retry, {@code Optional.of(Optional.empty())} when the bars answered
+   * without one. Found prices are cached; misses are retried after {@link #OPENING_MISS_RETRY}.
+   */
+  private Optional<Optional<BigDecimal>> priceAt(String symbol, Instant t) {
+    String key = symbol + "@" + t;
+    BigDecimal hit = openingPrices.get(key);
+    if (hit != null) {
+      return Optional.of(Optional.of(hit));
+    }
+    Instant now = time.now();
+    Miss miss = openingMisses.get(key);
+    if (miss != null && now.isBefore(miss.retryAt())) {
+      return miss.answered() ? Optional.of(Optional.empty()) : Optional.empty();
+    }
+    Optional<Optional<BigDecimal>> price;
+    try {
+      BarSeries series = marketData.bars(new BarRequest(symbol, null, Timeframe.MIN1, Et.startOfDay(Et.date(t)), t,
+          DAY_BARS, AdjustmentMode.RAW, false));
+      price = Optional.of(series.bars().stream()
+          .filter(b -> b.start() != null && b.start().isBefore(t) && b.close() != null && b.close().signum() > 0)
+          .max(Comparator.comparing(Bar::start)).map(Bar::close));
+    } catch (RuntimeException e) {
+      price = Optional.empty();                                     // unavailable now: no curve, retried later
+    }
+    if (price.isPresent() && price.get().isPresent()) {
+      if (openingPrices.size() >= MAX_CACHED_OPENINGS) {
+        openingPrices.clear();
+      }
+      openingPrices.put(key, price.get().get());
+      openingMisses.remove(key);
+    } else {
+      if (openingMisses.size() >= MAX_CACHED_OPENINGS) {
+        openingMisses.clear();
+      }
+      openingMisses.put(key, new Miss(now.plus(OPENING_MISS_RETRY), price.isPresent()));
+    }
+    return price;
   }
 
   // ------------------------------------------------------------------------------------------- by symbol

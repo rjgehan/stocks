@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api/client'
+import { withRecentAuth } from '@/lib/api/reauth'
 
 /** Query keys of the OAuth slice (§17.9), kept here so the shared key table stays untouched. */
 export const oauthKeys = {
@@ -18,12 +19,15 @@ export function useOAuthRequest(requestId: string) {
   })
 }
 
-/** `POST /me/oauth/requests/{id}`: approve or deny; answers the URL the browser must go to. */
+/**
+ * `POST /me/oauth/requests/{id}`: approve or deny; answers the URL the browser must go to. Approving needs a recent
+ * password check (§17.9.3 step 4): on `RECENT_AUTH_REQUIRED` the password prompt opens and the decision is retried.
+ */
 export function useDecideOAuthRequest(requestId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: { approve: boolean; actAs?: string; scopes?: string[] }) =>
-      unwrap(api.POST('/api/v1/me/oauth/requests/{requestId}', { params: { path: { requestId } }, body })),
+      withRecentAuth(() => unwrap(api.POST('/api/v1/me/oauth/requests/{requestId}', { params: { path: { requestId } }, body }))),
     onSuccess: () => void qc.invalidateQueries({ queryKey: oauthKeys.connectedApps }),
   })
 }

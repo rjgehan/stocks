@@ -53,7 +53,7 @@ export function TimeAndSales({ symbol, className, maxHeight = 'max-h-[320px]' }:
           <Popover
             label="About Time & Sales"
             renderTrigger={(props) => (
-              <button type="button" className="flex size-7 items-center justify-center rounded-md text-text-3 hover:text-text-1" aria-label="About Time & Sales" {...props}>
+              <button type="button" className="-my-2 flex size-11 items-center justify-center rounded-md text-text-3 hover:text-text-1 tablet:my-0 tablet:size-7" aria-label="About Time & Sales" {...props}>
                 <IconInfo size={15} />
               </button>
             )}
@@ -82,7 +82,7 @@ export function TimeAndSales({ symbol, className, maxHeight = 'max-h-[320px]' }:
             : 'Waiting for the next print…'}
         </p>
       ) : (
-        <ol className={cx('scrollbar-thin min-h-0 overflow-y-auto font-mono text-caption tabular-nums', maxHeight)} aria-live="off">
+        <ol className={cx('scrollbar-thin relative min-h-0 overflow-y-auto font-mono text-caption tabular-nums', maxHeight)} aria-live="off">
           {prints.map((p) => {
             const v = sideView(p.side)
             return (

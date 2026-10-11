@@ -3,6 +3,7 @@ package com.stocks.identity;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.stocks.common.time.TimeSource;
+import com.stocks.common.web.ClientNetworks;
 import com.stocks.config.StocksProperties;
 import java.time.Duration;
 import java.time.Instant;
@@ -99,6 +100,6 @@ public class LoginThrottle {
   }
 
   private static String pairKey(String handle, String ip) {
-    return handleKey(handle) + "|" + (ip == null ? "" : ip);
+    return handleKey(handle) + "|" + (ip == null ? "" : ClientNetworks.bucketKey(ip));   // IPv6: its /64
   }
 }

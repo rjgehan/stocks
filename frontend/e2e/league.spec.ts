@@ -27,6 +27,13 @@ test('the board shows the Arena and explains its formulas', async ({ page }) => 
 test('the feed shows league events and new ones arrive live', async ({ page }) => {
   await open(page, '/league?view=FEED')
   await expect(page.getByRole('radiogroup', { name: 'Feed filter' })).toBeVisible()
+  // review finding: six equal columns overflowed (labels ran together, "Live" was pushed off a phone screen)
+  const live = page.getByTitle('New events appear as they happen')
+  const box = (await live.boundingBox())!
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+  for (const option of await page.getByRole('radiogroup', { name: 'Feed filter' }).getByRole('radio').all()) {
+    expect(await option.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+  }
   const feed = page.getByRole('list', { name: 'League feed' })
   if (!MOCK) {
     // a fresh e2e league may have no visible events yet; either way the view renders

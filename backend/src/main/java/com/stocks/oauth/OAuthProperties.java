@@ -34,8 +34,11 @@ public record OAuthProperties(
     @DefaultValue({"https://claude.ai/api/mcp/auth_callback", "https://claude.com/api/mcp/auth_callback",
         "https://chatgpt.com/connector_platform_oauth_redirect",
         "https://chatgpt.com/connector/oauth/*"}) List<String> redirectAllowlist,
-    /* Per client IP and minute: /oauth2/authorize and /oauth2/token (each). */
+    /* Per client IP (an IPv6 /64) and minute: /oauth2/authorize and /oauth2/token (each). */
     @DefaultValue("60") int requestsPerMinPerIp,
+    /* Live pending authorization requests across all clients; beyond it /oauth2/authorize answers the client
+       temporarily_unavailable, so a flood from many addresses cannot grow oauth_authorization_request without bound. */
+    @DefaultValue("2000") int maxPendingRequests,
     @DefaultValue Cimd cimd,
     @DefaultValue Dcr dcr) {
 
@@ -52,7 +55,10 @@ public record OAuthProperties(
   public record Dcr(
       @DefaultValue("true") boolean enabled,
       @DefaultValue("500") int maxClients,
+      /* Per client IP (an IPv6 /64) and hour. */
       @DefaultValue("20") int perIpPerHour,
+      /* Across all addresses and per hour (temporarily_unavailable beyond), independent of maxClients. */
+      @DefaultValue("100") int maxPerHour,
       /* A DCR client that never completed a grant is deleted after this. */
       @DefaultValue("24h") Duration unusedClientTtl,
       /* A DCR client without a live grant and unused this long is deleted. */

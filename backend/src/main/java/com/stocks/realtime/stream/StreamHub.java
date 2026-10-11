@@ -77,6 +77,8 @@ public class StreamHub implements SmartLifecycle {
   public static final String ACCOUNT = "account";
   public static final String NOTIFICATION = "notification";
   public static final String FEED = "feed";
+  /** A feed item's reactions changed (§16.11): {@code FeedReactions}, never resumable. */
+  public static final String FEED_REACTIONS = "feedReactions";
   public static final String LEADERBOARD = "leaderboard";
   public static final String SESSION = "session";
   public static final String QUOTE = "quote";
@@ -419,6 +421,28 @@ public class StreamHub implements SmartLifecycle {
       String frame = route.resumable() ? record(route, null, body) : frame(null, route.event(), body);
       for (StreamConnection c : connections.values()) {
         if (c.wants(route.topic())) {
+          c.offer(frame);
+        }
+      }
+    }
+  }
+
+  /**
+   * A feed item's reactions ({@code FeedReactions}, from {@link StreamTopicTap}): sent live to the {@code feed}
+   * streams as {@code feedReactions}, with no id and never buffered, so reaction toggles cannot evict anyone's
+   * resumable events (a reconnecting client refetches the feed, which carries the reactions).
+   */
+  public void publishFeedReactions(String body) {
+    if (body == null) {
+      return;
+    }
+    synchronized (lock) {
+      if (connections.isEmpty()) {
+        return;
+      }
+      String frame = frame(null, FEED_REACTIONS, body);
+      for (StreamConnection c : connections.values()) {
+        if (c.wants(StreamTopic.FEED)) {
           c.offer(frame);
         }
       }

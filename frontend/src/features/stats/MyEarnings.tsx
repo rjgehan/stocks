@@ -86,7 +86,8 @@ export function MyEarnings({
             )}
           </div>
           <p className="text-micro text-text-3">
-            <span className="text-accent">━</span> You (time-weighted, deposits excluded) · <span>┅</span> SPY · <span className="text-warn">┅</span> QQQ (total return from the same start)
+            <span className="text-accent">━</span> You (time-weighted, deposits excluded) · <span>┅</span> SPY · <span className="text-warn">┅</span> QQQ (both total
+            return, measured from your start, even one in the middle of a trading day)
           </p>
         </>
       )}

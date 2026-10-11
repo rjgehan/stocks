@@ -275,11 +275,31 @@ class OrderHandler {
   List<OrderDto> cancelAll(CancelAllCmd cmd, EngineTx tx) {
     List<OrderDto> out = new ArrayList<>();
     Instant now = clock.now();
-    for (OrderRow r : orders.openByAccount(cmd.accountId(), cmd.symbolOrNull())) {
-      cancelOrRequest(r, cmd.reason(), cmd.actorPlayerId(), now, tx);
+    List<OrderRow> open = orders.openByAccount(cmd.accountId(), cmd.symbolOrNull());
+    cancelOrRequestAll(open, cmd.reason(), cmd.actorPlayerId(), now, tx);
+    for (OrderRow r : open) {
       out.add(mapper.toDto(orders.byId(r.id()).orElseThrow()));
     }
     return out;
+  }
+
+  /**
+   * One command cancelling several orders ({@code DELETE /orders}, {@code DELETE /order-groups/{id}}). With cancel
+   * latency (§11.10) a held child whose entry's cancel is only requested stays held, exactly as with
+   * {@code DELETE /orders/{entry}}: if the entry ends unfilled its cancel takes the child with it
+   * ({@code PARENT_NOT_FILLED}), and if it fills during the latency the child is released and protects the shares
+   * (§11.9). Cancelling the child at once would leave those shares without their take profit and stop loss.
+   */
+  void cancelOrRequestAll(List<OrderRow> rows, CancelReason reason, long actorPlayerId, Instant now, EngineTx tx) {
+    for (OrderRow r : rows) {
+      if (reason == CancelReason.USER && r.held() && r.parentOrderId() != null) {
+        OrderRow parent = orders.byId(r.parentOrderId()).orElse(null);
+        if (parent != null && parent.isOpen() && cancelLatencyApplies(parent)) {
+          continue;
+        }
+      }
+      cancelOrRequest(r, reason, actorPlayerId, now, tx);
+    }
   }
 
   /**

@@ -30,9 +30,9 @@ public class CimdRulesTest {
       Duration.ofSeconds(10), Duration.ofMinutes(5), Duration.ofMinutes(15), Duration.ofSeconds(60), true,
       List.of("https://claude.ai/api/mcp/auth_callback", "https://claude.com/api/mcp/auth_callback",
           "https://chatgpt.com/connector_platform_oauth_redirect",
-          "https://chatgpt.com/connector/oauth/*"), 60,
+          "https://chatgpt.com/connector/oauth/*"), 60, 2000,
       new OAuthProperties.Cimd(true, Duration.ofSeconds(3), 8192, Duration.ofMinutes(5), Duration.ofHours(24)),
-      new OAuthProperties.Dcr(true, 500, 20, Duration.ofHours(24), Duration.ofDays(90)));
+      new OAuthProperties.Dcr(true, 500, 20, 100, Duration.ofHours(24), Duration.ofDays(90)));
 
   static final String CLAUDE = "https://claude.ai/oauth/mcp-oauth-client-metadata";
   static final String CHATGPT = "https://chatgpt.com/oauth/client.json";

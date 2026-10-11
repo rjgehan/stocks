@@ -37,7 +37,9 @@ import tools.jackson.databind.json.JsonMapper;
  * {@code POST /oauth2/token} and {@code POST /oauth2/revoke} ({@code application/x-www-form-urlencoded}), and
  * {@code POST /oauth2/register} (RFC 7591, JSON ≤ 16 KiB). Errors are RFC 6749 JSON ({@link OAuthErrors}); the
  * token, revoke and register answers are {@code no-store} and readable cross-origin without credentials. Each
- * endpoint has its own per-IP limit ({@link OAuthRateLimiter}).
+ * endpoint has its own per-IP limit ({@link OAuthRateLimiter}). The token and revoke endpoints take their parameters
+ * from the form body only: a request with a query string is {@code invalid_request} (RFC 6749 §2.3.1 and §3.2), so a
+ * code, verifier, refresh token or client secret never sits in a URL that proxies and access logs record.
  */
 @RestController
 @Hidden
@@ -84,6 +86,7 @@ public class OAuthServerController {
                                                    HttpServletRequest request) {
     enabled();
     limiter.charge(OAuthRateLimiter.Bucket.TOKEN, OAuthRequests.ip(request));
+    OAuthRequests.requireFormBody(request);
     Map<String, String> params = OAuthRequests.single(form);
     String grantType = params.get("grant_type");
     if (grantType == null) {
@@ -110,6 +113,7 @@ public class OAuthServerController {
   public ResponseEntity<Void> revoke(@RequestParam MultiValueMap<String, String> form, HttpServletRequest request) {
     enabled();
     limiter.charge(OAuthRateLimiter.Bucket.TOKEN, OAuthRequests.ip(request));
+    OAuthRequests.requireFormBody(request);
     Map<String, String> params = OAuthRequests.single(form);
     OAuthClient client = authenticate(request, params);
     tokens.revoke(client, params.get("token"), OAuthRequests.meta(request, Channel.MCP_OAUTH, client.name()));

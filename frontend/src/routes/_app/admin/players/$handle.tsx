@@ -25,6 +25,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { IconChevronLeft, IconShield } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { IssueKeyDialog } from '@/features/admin/IssueKeyDialog'
+import { OAuthGrantsSection } from '@/features/admin/OAuthGrantsSection'
 import { PlayerActions } from '@/features/admin/PlayerActions'
 import { TransferRows } from '@/features/admin/TransferRows'
 import { ORDER_TYPE_LABEL, orderSizeLabel } from '@/features/account/orderLabels'
@@ -219,6 +220,8 @@ function AdminPlayerPage() {
           }
         />
       </Section>
+
+      <OAuthGrantsSection handle={handle} />
 
       <Section title="Transfers">
         <TransferRows rows={d.transfers ?? []} hideHandle />

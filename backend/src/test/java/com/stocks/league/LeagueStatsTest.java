@@ -269,16 +269,31 @@ class LeagueStatsTest {
       assertThat(p.ranked()).isEqualTo(2);
     });
 
-    // bob looking at alice 5 minutes after her sell: counted, but not shown before the 15-minute feed delay
+    // bob looking at alice 5 minutes after her sell: none of its statistics before the 15-minute feed delay (review
+    // finding: the counts, gross profit, closed lots and hold time used to show it at once)
     PlayerStatsDto seen = lk.stats.playerStats("alice", LeaderboardPeriod.TODAY, bob.id());
-    assertThat(seen.closedLots()).isEqualTo(1);
+    assertThat(seen.tradesAsOf()).isEqualTo(seen.asOf().minus(Duration.ofMinutes(15)));
+    assertThat(seen.closingSells()).isZero();
+    assertThat(seen.wins()).isZero();
+    assertThat(seen.winRate()).isNull();
+    assertThat(seen.grossProfit()).isEqualByComparingTo("0");
+    assertThat(seen.grossLoss()).isEqualByComparingTo("0");
+    assertThat(seen.profitFactor()).isNull();
+    assertThat(seen.closedLots()).isZero();
+    assertThat(seen.avgHoldSeconds()).isNull();
     assertThat(seen.bestTrade()).isNull();
     assertThat(seen.worstTrade()).isNull();
-    assertThat(seen.tradesAsOf()).isEqualTo(seen.asOf().minus(Duration.ofMinutes(15)));
+    assertThat(seen.ret()).as("returns stay live, like the board").isEqualByComparingTo(mine.ret());
     assertThat(lk.stats.playerStats("alice", LeaderboardPeriod.TODAY, alice.id()).bestTrade()).isNotNull();
     kit.at(TUE_11.plus(Duration.ofMinutes(16)));
     lk.leaderboard.refresh();
-    assertThat(lk.stats.playerStats("alice", LeaderboardPeriod.TODAY, bob.id()).bestTrade()).isNotNull();
+    PlayerStatsDto later = lk.stats.playerStats("alice", LeaderboardPeriod.TODAY, bob.id());
+    assertThat(later.bestTrade()).isNotNull();
+    assertThat(later.closingSells()).isEqualTo(1);
+    assertThat(later.winRate()).isEqualByComparingTo("1");
+    assertThat(later.grossProfit()).isEqualByComparingTo("24.00");
+    assertThat(later.closedLots()).isEqualTo(1);
+    assertThat(later.avgHoldSeconds()).isEqualTo(Duration.ofHours(25).toSeconds());
 
     PlayerStatsDto bobs = lk.stats.myStats(bob.id(), LeaderboardPeriod.TODAY);
     assertThat(bobs.grossLoss()).isEqualByComparingTo("10.00");

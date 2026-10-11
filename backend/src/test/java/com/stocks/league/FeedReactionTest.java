@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
+import com.stocks.contract.portfolio.FeedReactionService;
 import com.stocks.contract.portfolio.dto.FeedItemDto;
 import com.stocks.contract.portfolio.dto.FeedItemDto.FeedItemKind;
 import com.stocks.contract.portfolio.dto.FeedReactionsDto;
@@ -23,6 +24,7 @@ import com.stocks.testkit.Fixtures.PlayerRef;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -109,8 +111,10 @@ class FeedReactionTest {
     assertThat(r.reactions()).extracting(FeedReactionDto::reaction).containsExactly(Reaction.ROCKET, Reaction.SKULL);
     assertThat(lk.reactions.unreact(bob.id(), item)).isEqualTo(r);        // removing nothing is fine
 
-    // every change was pushed on /topic/feed (the no-op removal was not)
-    verify(ops, times(6)).convertAndSend(eq(FeedService.TOPIC), any(FeedReactionsDto.class));
+    // every change was pushed on /topic/feed (the no-op removal was not), marked as a reactions update so the SSE
+    // stream sends it live only (§19.3)
+    verify(ops, times(6)).convertAndSend(eq(FeedService.TOPIC), any(FeedReactionsDto.class),
+        eq(Map.<String, Object>of(FeedReactionService.STOMP_KIND_HEADER, FeedReactionService.REACTIONS_KIND)));
   }
 
   @Test
@@ -150,5 +154,22 @@ class FeedReactionTest {
     kit.at(MON_10.plusSeconds(10));
     assertThat(lk.feedService.publishNewlyVisible()).isEqualTo(1);
     verify(ops).convertAndSend(eq(FeedService.TOPIC), any(FeedItemDto.class));
+  }
+
+  /** Review finding: one player's toggles could flood every client; now at most 30 changes per minute. */
+  @Test
+  void aPlayerMayChangeReactionsThirtyTimesAMinute() {
+    for (int i = 0; i < FeedReactionService.MAX_CHANGES_PER_MINUTE / 2; i++) {
+      lk.reactions.react(bob.id(), item, Reaction.FIRE);
+      lk.reactions.unreact(bob.id(), item);
+    }
+    assertThatThrownBy(() -> lk.reactions.react(bob.id(), item, Reaction.GEM))
+        .isInstanceOfSatisfying(ApiException.class, e -> {
+          assertThat(e.code()).isEqualTo(ErrorCode.RATE_LIMITED);
+          assertThat(e.retryAfterS()).isEqualTo(60L);
+        });
+    assertThat(lk.reactions.react(claude.id(), item, Reaction.GEM).reactions()).as("per player").hasSize(1);
+    kit.at(MON_10.plusSeconds(60));
+    assertThat(lk.reactions.react(bob.id(), item, Reaction.GEM).reactions()).hasSize(1);
   }
 }

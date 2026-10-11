@@ -5,6 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.common.time.TimeSource;
+import com.stocks.common.web.ClientNetworks;
 import com.stocks.config.StocksProperties;
 import com.stocks.contract.security.RateLimitService;
 import com.stocks.contract.security.RateLimitStatus;
@@ -162,7 +163,8 @@ public class RateLimitServiceImpl implements RateLimitService {
   private Bucket ipBucket(String ip, IpClass ipClass) {
     long rate = ipRate(ipClass);
     Duration period = ipClass == IpClass.SIGNUP ? Duration.ofHours(1) : Duration.ofMinutes(1);
-    return buckets.get("ip:" + ipClass + ":" + (ip == null ? "?" : ip), k -> bucket(rate, rate, period));
+    // an IPv6 client counts by its /64: it could send every request from a fresh address in it (§17.5)
+    return buckets.get("ip:" + ipClass + ":" + ClientNetworks.bucketKey(ip), k -> bucket(rate, rate, period));
   }
 
   // ------------------------------------------------------------------------------------------- internals

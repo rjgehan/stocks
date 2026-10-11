@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   channelLabel,
+  delayWords,
   formatDuration,
   formatTokens,
   formatUsd,
   outcomeTone,
+  runCounts,
   runSummaryLine,
   spendMeter,
   statusLabel,
@@ -68,5 +70,24 @@ describe('formatting', () => {
     expect(outcomeTone({ ok: false, outcome: 'INTERNAL_ERROR' })).toBe('down')
     expect(channelLabel('MCP_KEY')).toBe('MCP')
     expect(channelLabel('REST_KEY')).toBe('REST')
+  })
+})
+
+describe('review fixes: copy', () => {
+  it('pluralizes a run\'s counts ("1 error", not "1 errors")', () => {
+    expect(runCounts({ durationMs: 40_000, toolCalls: 12, toolErrors: 1, orders: 2 })).toBe('40 s · 12 tool calls (1 error) · 2 orders')
+    expect(runCounts({ durationMs: 500, toolCalls: 1, toolErrors: 0, orders: 1 })).toBe('500 ms · 1 tool call · 1 order')
+    expect(runCounts({ durationMs: null, toolCalls: null, toolErrors: 3, orders: null })).toBe('-- · 0 tool calls (3 errors) · 0 orders')
+  })
+
+  it('words the admin\'s feed delay for the journal (it used to be a hard-coded 15 minutes)', () => {
+    expect(delayWords('PT15M')).toBe('15 minutes')
+    expect(delayWords('PT0S')).toBe('right away')
+    expect(delayWords('PT1H')).toBe('1 hour')
+    expect(delayWords('PT1H30M')).toBe('1 hour 30 minutes')
+    expect(delayWords('PT1M')).toBe('1 minute')
+    expect(delayWords('PT45S')).toBe('45 seconds')
+    expect(delayWords('P1D')).toBeNull()
+    expect(delayWords(undefined)).toBeNull()
   })
 })

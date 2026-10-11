@@ -41,7 +41,7 @@ export function ReauthDialog() {
   return (
     <Dialog open={open} onClose={() => close(false)} title="Confirm it's you">
       <form onSubmit={(e) => void submit(e)} className="space-y-3 p-4">
-        <p className="text-body text-text-2">Sensitive admin and key actions need your password again (every 15 minutes).</p>
+        <p className="text-body text-text-2">Sensitive actions (admin, API keys, connecting apps) need your password again (every 15 minutes).</p>
         <input type="text" autoComplete="username" value={me?.handle ?? ''} readOnly hidden />
         <TextField
           label="Password"

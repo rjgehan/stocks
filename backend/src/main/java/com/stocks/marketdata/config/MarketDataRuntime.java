@@ -211,7 +211,8 @@ public final class MarketDataRuntime implements AutoCloseable {
             props.simulated() ? sim : finnhub, props.simulated()),
         universe::symbols, s -> universe.get(s).map(Universe.Entry::type).orElse(null), calendar, time,
         props.screener().profilesPerMinute());
-    this.screener = new ScreenerService(feed, assets, Sectors.load(), screenerStats, splitAdjuster::adjust, time,
+    this.screener = new ScreenerService(feed, assets, Sectors.load(), screenerStats, splitAdjuster::adjust,
+        splits instanceof SplitAdjustmentsImpl impl ? impl::shareFactor : ScreenerService.SplitFactor.NONE, time,
         props.simulated());
     this.movers = new MoversService(primary, feed, assets, calendar, time,
         () -> probe == null || probe.screenerAvailable(), splitAdjuster);

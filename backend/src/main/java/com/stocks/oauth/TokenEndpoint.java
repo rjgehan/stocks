@@ -10,6 +10,7 @@ import com.stocks.common.time.TimeSource;
 import com.stocks.contract.identity.PlayerQueries;
 import com.stocks.contract.oauth.dto.OAuthClientKind;
 import com.stocks.contract.security.RequestMeta;
+import com.stocks.contract.security.Scopes;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -104,11 +105,12 @@ public class TokenEndpoint {
       grants.revoke(grant, p.dead(), null, meta);
       throw invalidGrant("The player this grant acts as is no longer available.");
     }
+    Set<String> scopes = allowed(grant, grant.scopes());
     Map<String, Object> response = tx.execute(s -> {
       if (!store.useCode(grant.id(), now)) {
         return null;
       }
-      return issue(grant, grant.scopes(), now);
+      return issue(grant, scopes, now);
     });
     if (response == null) {
       grants.revoke(grant, OAuthGrants.CODE_REUSE, null, meta);
@@ -117,7 +119,7 @@ public class TokenEndpoint {
     if (grant.clientKind() == OAuthClientKind.DCR) {
       dcr.touch(grant.clientId());
     }
-    audit(grant, "OAUTH_TOKEN", meta, grant.scopes());
+    audit(grant, "OAUTH_TOKEN", meta, scopes);
     return response;
   }
 
@@ -145,12 +147,12 @@ public class TokenEndpoint {
       throw invalidGrant("The refresh token has expired; authorize again.");
     }
     checkResource(form.get("resource"));
-    Set<String> scopes = narrow(grant.scopes(), form.get("scope"));
     Players p = players(grant);
     if (p.dead() != null) {
       grants.revoke(grant, p.dead(), null, meta);
       throw invalidGrant("The player this grant acts as is no longer available; authorize again.");
     }
+    Set<String> scopes = allowed(grant, narrow(grant.scopes(), form.get("scope")));
     Map<String, Object> response = tx.execute(s -> {
       if (!store.rotate(hash, now)) {
         return null;
@@ -202,6 +204,27 @@ public class TokenEndpoint {
       out.put("refresh_token", refresh);
     }
     out.put("scope", String.join(" ", new TreeSet<>(scopes)));
+    return out;
+  }
+
+  /**
+   * The scopes the grant may use now (§17.9.3): acting as the human, {@code trade} needs their current
+   * {@code api_trading_allowed} (the admin can turn it off after the consent, like a personal key's). Never empty.
+   */
+  private Set<String> allowed(OAuthStore.Grant grant, Set<String> scopes) {
+    if (grant.actorPlayerId() != grant.humanPlayerId() || !scopes.contains(Scopes.TRADE)) {
+      return scopes;
+    }
+    boolean trading = jdbc.sql("SELECT api_trading_allowed FROM player WHERE id = ?").param(grant.humanPlayerId())
+        .query(Boolean.class).optional().orElse(false);
+    if (trading) {
+      return scopes;
+    }
+    Set<String> out = new LinkedHashSet<>(scopes);
+    out.remove(Scopes.TRADE);
+    if (out.isEmpty()) {
+      throw invalidGrant("This grant's only scope (trade) is no longer allowed; authorize again.");
+    }
     return out;
   }
 

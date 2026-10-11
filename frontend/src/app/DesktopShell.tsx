@@ -35,7 +35,9 @@ export function DesktopShell({ breakpoint }: { breakpoint: Breakpoint }) {
   }
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden pl-safe pr-safe">
+    // `relative`: the containing block of every absolutely positioned descendant (sr-only labels included), so none
+    // escapes the fixed-height shell and makes the document scroll the app off-screen
+    <div className="relative flex h-dvh flex-col overflow-hidden pl-safe pr-safe">
       <TopBar showWatchlistToggle={tablet} onToggleWatchlist={() => setDrawer(true)} />
       <div className="flex min-h-0 flex-1">
         <LeftRail />
@@ -57,7 +59,7 @@ export function DesktopShell({ breakpoint }: { breakpoint: Breakpoint }) {
             </ResizableAside>
           )
         ) : null}
-        <main className="min-w-0 flex-1 overflow-hidden bg-bg-0">
+        <main className="relative min-w-0 flex-1 overflow-hidden bg-bg-0">
           <Outlet />
         </main>
       </div>

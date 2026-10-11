@@ -6,7 +6,7 @@
  * and posts `POST /order-groups` with a `web-<uuid>` group id that is reused on a network retry.
  */
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { describeError, errorBody } from '@/lib/api/errors'
+import { describeError, errorBody, warningText } from '@/lib/api/errors'
 import type { OrderGroupRule, OrderGroupType } from '@/lib/api/groupTypes'
 import { useGroupPreview, usePlaceGroup } from '@/lib/api/hooks/orderGroups'
 import { usePositions } from '@/lib/api/hooks/account'
@@ -355,7 +355,7 @@ export function AdvancedTicket({ symbol, groups, confirmOrders, onDone }: { symb
           .map((w) => (
             <p key={`${w.code}-${w.message}`} className="flex gap-1.5 rounded-sm bg-warn/10 p-2 text-caption text-warn">
               <IconInfo size={16} className="mt-0.5 shrink-0" />
-              {w.message}
+              {warningText(w)}
             </p>
           ))}
         {gfvRisk ? (

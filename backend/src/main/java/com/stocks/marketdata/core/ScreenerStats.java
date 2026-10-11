@@ -39,7 +39,8 @@ import org.slf4j.LoggerFactory;
  * Screener statistics (§15.10, {@code screener_stat}), kept current by the {@code SCREENER_STATS} periodic task:
  * <ol>
  *   <li>once per trading day (when the stored window ends before the last trading day before today) the 20-day
- *       average daily volume of every universe symbol, from {@code 1Day} bars in batches of 100 at
+ *       average daily volume of every universe symbol (per trading session: a session without a bar counts as
+ *       zero), from {@code 1Day} bars in batches of 100 at
  *       {@code BACKGROUND} priority: the SIP basis (display) and, on {@code hybrid}, the IEX basis (the quote's volume
  *       is IEX-only there, so relative volume compares like with like); a failed pass is retried after an hour;</li>
  *   <li>at most {@code profilesPerTick} company profiles per tick (Finnhub {@code profile2}, one call each,
@@ -60,8 +61,13 @@ public class ScreenerStats implements PeriodicTask {
   static final Duration FORBIDDEN_FOR = Duration.ofHours(24);
 
   /** One symbol's statistics, as the screener reads them. */
+  /**
+   * One symbol's statistics, as the screener reads them. {@code volumeAt} and {@code profileAt} are when the averages
+   * and the profile were fetched: a split after them changes the share basis (the screener rescales, §15.10).
+   */
   public record Stat(Long avgVolume, Long avgVolumeIex, Integer avgVolumeDays, LocalDate avgVolumeAsOf,
-                     BigDecimal sharesOutstanding, BigDecimal marketCap, String industry, Instant profileAt) {}
+                     Instant volumeAt, BigDecimal sharesOutstanding, BigDecimal marketCap, String industry,
+                     Instant profileAt) {}
 
   /** Where the statistics come from, per profile. */
   public record Sources(MarketDataProvider bars, String sipFeedOrNull, boolean iexBasis,
@@ -192,12 +198,17 @@ public class ScreenerStats implements PeriodicTask {
       start = calendar.previousTradingDay(start);
     }
     List<String> symbols = new ArrayList<>(new TreeSet<>(universe.get()));
+    List<LocalDate> sessions = new ArrayList<>();
+    for (LocalDate d = end; sessions.size() < AVG_DAYS; d = calendar.previousTradingDay(d)) {
+      sessions.addFirst(d);
+    }
     Map<String, long[]> sip;
     Map<String, long[]> iex = Map.of();
     try {
-      sip = averages(symbols, start, end, sources.sipFeedOrNull());
+      Map<String, LocalDate> firstSip = new HashMap<>();
+      sip = averages(symbols, start, end, sources.sipFeedOrNull(), sessions, Map.of(), firstSip);
       if (sources.iexBasis()) {
-        iex = averages(symbols, start, end, "iex");
+        iex = averages(symbols, start, end, "iex", sessions, firstSip, new HashMap<>());
       }
     } catch (ProviderException | UnsupportedOperationException e) {
       volumesRetryAtNanos = nanos.getAsLong() + RETRY_AFTER.toNanos();
@@ -226,33 +237,63 @@ public class ScreenerStats implements PeriodicTask {
         end);
   }
 
-  /** {symbol → [average volume, days]} over the last {@link #AVG_DAYS} daily bars dated ≤ {@code end}. */
-  private Map<String, long[]> averages(List<String> symbols, LocalDate start, LocalDate end, String feed) {
+  /**
+   * {symbol → [average volume, days]} over the {@code sessions} window (the last {@link #AVG_DAYS} trading days up to
+   * {@code end}). {@code listedSince} gives an earlier first-bar date per symbol (the SIP bars, for the IEX basis);
+   * {@code firstBars} receives each symbol's first bar date of this feed.
+   */
+  private Map<String, long[]> averages(List<String> symbols, LocalDate start, LocalDate end, String feed,
+                                       List<LocalDate> sessions, Map<String, LocalDate> listedSince,
+                                       Map<String, LocalDate> firstBars) {
     Map<String, long[]> out = new HashMap<>();
     for (int i = 0; i < symbols.size(); i += BATCH) {
       Set<String> batch = Set.copyOf(symbols.subList(i, Math.min(symbols.size(), i + BATCH)));
       Map<String, List<Bar>> bars = sources.bars().bars(new BarQuery(batch, Timeframe.DAY1, Et.startOfDay(start),
           Et.startOfDay(end.plusDays(1)), AdjustmentMode.SPLIT, false, 10_000, feed), RefreshPriority.BACKGROUND);
-      bars.forEach((sym, list) -> average(list, end).ifPresent(a -> out.put(sym, a)));
+      bars.forEach((sym, list) -> {
+        list.stream().filter(b -> b.start() != null).map(b -> Et.date(b.start())).min(LocalDate::compareTo)
+            .ifPresent(d -> firstBars.put(sym, d));
+        average(list, sessions, listedSince.get(sym)).ifPresent(a -> out.put(sym, a));
+      });
     }
     return out;
   }
 
-  /** The average volume of the newest {@link #AVG_DAYS} bars dated on or before {@code end} (HALF_EVEN). */
-  static Optional<long[]> average(List<Bar> bars, LocalDate end) {
-    List<Bar> eligible = bars.stream().filter(b -> b.start() != null && !Et.date(b.start()).isAfter(end)).toList();
-    List<Bar> last = eligible.size() > AVG_DAYS ? eligible.subList(eligible.size() - AVG_DAYS, eligible.size())
-        : eligible;
-    if (last.isEmpty()) {
+  /**
+   * The average daily volume over the window's trading sessions (HALF_EVEN). A session without a bar counts as zero
+   * volume (a thin symbol with no IEX trade that day), so the divisor is the number of sessions, not of bars; only the
+   * sessions before the symbol's first bar (a recent listing) are left out of it. {@code listedSinceOrNull} is an
+   * earlier first-bar date from another feed (the IEX basis uses the SIP bars'). Empty when no session counts.
+   */
+  static Optional<long[]> average(List<Bar> bars, List<LocalDate> sessions, LocalDate listedSinceOrNull) {
+    if (sessions.isEmpty()) {
       return Optional.empty();
     }
+    Set<LocalDate> window = Set.copyOf(sessions);
+    LocalDate first = listedSinceOrNull;
     long total = 0;
-    for (Bar b : last) {
-      total += Math.max(0, b.volume());
+    boolean any = false;
+    for (Bar b : bars) {
+      if (b.start() == null) {
+        continue;
+      }
+      LocalDate d = Et.date(b.start());
+      if (first == null || d.isBefore(first)) {
+        first = d;
+      }
+      if (window.contains(d)) {
+        total += Math.max(0, b.volume());
+        any = true;
+      }
     }
-    long avg = BigDecimal.valueOf(total).divide(BigDecimal.valueOf(last.size()), 0, RoundingMode.HALF_EVEN)
+    if (!any) {
+      return Optional.empty();
+    }
+    LocalDate since = first;
+    long days = sessions.stream().filter(d -> !d.isBefore(since)).count();
+    long avg = BigDecimal.valueOf(total).divide(BigDecimal.valueOf(days), 0, RoundingMode.HALF_EVEN)
         .longValueExact();
-    return Optional.of(new long[] {avg, last.size()});
+    return Optional.of(new long[] {avg, days});
   }
 
   void refreshProfiles(int max) {
@@ -329,7 +370,7 @@ public class ScreenerStats implements PeriodicTask {
     try {
       for (ScreenerStatRepository.Row r : repository.loadAll()) {
         out.put(r.symbol(), new Stat(r.avgVolume(), r.avgVolumeIex(), r.avgVolumeDays(), r.avgVolumeAsOf(),
-            r.sharesOutstanding(), r.marketCap(), r.industry(), r.profileAt()));
+            r.volumeAt(), r.sharesOutstanding(), r.marketCap(), r.industry(), r.profileAt()));
       }
     } catch (RuntimeException e) {
       log.warn("Screener statistics: could not read screener_stat: {}", e.toString());

@@ -38,10 +38,46 @@ export function blockedReason(scope: string, actor: OAuthActor | null | undefine
   return 'Not available for this player.'
 }
 
-/** The preselected "Act as" choice: the first of your AI bots (the usual reason to connect), else yourself. */
-export function defaultActor(actors: readonly OAuthActor[] | null | undefined): string | null {
-  const list = actors ?? []
-  return (list.find((a) => !a.self) ?? list.find((a) => a.self))?.player?.handle ?? null
+/** Which league bot family an app belongs to, from its client host, redirect host or name (null when unknown). */
+export type ClientFamily = 'claude' | 'chatgpt'
+
+const CLAUDE_HOSTS = ['claude.ai', 'claude.com', 'anthropic.com']
+const CHATGPT_HOSTS = ['chatgpt.com', 'openai.com']
+const hostIn = (host: string | null | undefined, list: readonly string[]) => {
+  const h = (host ?? '').toLowerCase()
+  return h.length > 0 && list.some((d) => h === d || h.endsWith(`.${d}`))
+}
+
+export function clientFamily(client: OAuthClientInfo | null | undefined, redirectHost?: string | null): ClientFamily | null {
+  const name = (client?.name ?? '').trim().toLowerCase()
+  if (hostIn(client?.host, CLAUDE_HOSTS) || hostIn(redirectHost, CLAUDE_HOSTS) || name.startsWith('claude')) return 'claude'
+  if (hostIn(client?.host, CHATGPT_HOSTS) || hostIn(redirectHost, CHATGPT_HOSTS) || name.startsWith('chatgpt') || name.startsWith('openai')) return 'chatgpt'
+  return null
+}
+
+/** True when a bot's model label (else its handle or name) belongs to `family`. */
+function botOf(actor: OAuthActor, family: ClientFamily): boolean {
+  const p = actor.player
+  const label = (p?.aiModel ?? '').toLowerCase()
+  const fallback = `${p?.handle ?? ''} ${p?.displayName ?? ''}`.toLowerCase()
+  const test = (t: string) => (family === 'claude' ? t.includes('claude') : t.includes('gpt') || t.includes('openai'))
+  return label ? test(label) : test(fallback)
+}
+
+/**
+ * The preselected "Act as" choice (§17.9.3): the one bot of the asking app's family (Claude's connector or Claude
+ * Code → the Claude bot, ChatGPT → the ChatGPT bot), so one press of Allow never binds an app to another vendor's
+ * bot. An unknown app, or no single matching bot, preselects nothing: the human picks, and Allow waits for it.
+ */
+export function defaultActor(
+  actors: readonly OAuthActor[] | null | undefined,
+  client?: OAuthClientInfo | null,
+  redirectHost?: string | null,
+): string | null {
+  const family = clientFamily(client, redirectHost)
+  if (!family) return null
+  const matches = (actors ?? []).filter((a) => !a.self && botOf(a, family))
+  return matches.length === 1 ? (matches[0]!.player?.handle ?? null) : null
 }
 
 /**

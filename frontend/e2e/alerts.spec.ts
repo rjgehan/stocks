@@ -34,6 +34,12 @@ test('set alerts from the quote page, see one fire, manage them in the list', as
   await expect(toastWith(page, `Alert set: AAPL Price ≥ ${shown(far)}`)).toBeVisible()
   const rows = sheet.getByTestId('alert-row')
   await expect(rows.filter({ hasText: `Price ≥ ${shown(far)}` })).toHaveCount(1)
+  // the form starts over after Create (review finding: it kept the values, so a second press made a near-duplicate),
+  // and the same alert again is refused up front
+  await expect(sheet.getByLabel('Note (private)')).toHaveValue('')
+  await sheet.getByLabel('Price', { exact: true }).fill(far)
+  await expect(sheet.getByText('You already have this alert')).toBeVisible()
+  await expect(sheet.getByRole('button', { name: 'Create alert' })).toBeDisabled()
 
   // 2. One whose condition already holds: the sheet says so, and it fires on the next live price.
   await choose(sheet, 'When it is', 'At or below')
@@ -58,9 +64,17 @@ test('set alerts from the quote page, see one fire, manage them in the list', as
   await page.getByRole('tab', { name: 'All' }).click()
   await waiting.getByRole('button', { name: 'Resume' }).click()
   await expect(waiting).toContainText('active')
+  // deleting asks first (review finding: it used to delete at once, with no undo)
   await waiting.getByRole('button', { name: 'Delete alert' }).click()
+  const confirm = page.getByRole('dialog', { name: 'Delete this alert?' })
+  await expect(confirm).toContainText(`AAPL Price ≥ ${shown(far)}`)
+  await confirm.getByRole('button', { name: 'Cancel' }).click()
+  await expect(waiting).toHaveCount(1)
+  await waiting.getByRole('button', { name: 'Delete alert' }).click()
+  await confirm.getByRole('button', { name: 'Delete' }).click()
   await expect(waiting).toHaveCount(0)
   await fired.getByRole('button', { name: 'Delete alert' }).click()
+  await confirm.getByRole('button', { name: 'Delete' }).click()
   await expect(fired).toHaveCount(0)
 })
 

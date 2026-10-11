@@ -246,12 +246,14 @@ export function defaultPrices(groupType: OrderGroupType, side: Side, quote: { bi
   if (!last || !isDecimal(last) || sign(last) <= 0) return {}
   const up = (pct: string): string => roundToTick(mul(last, pct), 'CEILING')
   const down = (pct: string): string => roundToTick(mul(last, pct), 'FLOOR')
+  // ±4%, not 5%: rounded outward to the tick, 5% always landed just past the server's 5% FAT_FINGER warning, so an
+  // untouched default ticket looked like a mistake (review finding)
   if (groupType === 'OCO') {
     // Sell: take profit above, stop below; Buy: a limit below (buy the dip), a stop above (buy the breakout)
-    return side === 'SELL' ? { tpLimit: up('1.05'), slStop: down('0.95') } : { tpLimit: down('0.95'), slStop: up('1.05') }
+    return side === 'SELL' ? { tpLimit: up('1.04'), slStop: down('0.96') } : { tpLimit: down('0.96'), slStop: up('1.04') }
   }
   const entry = roundToTick(quote.bid ?? last)
-  return { entryLimit: entry, entryStop: up('1.01'), tpLimit: up('1.05'), slStop: down('0.97'), secondaryLimit: up('1.05'), secondaryStop: down('0.97') }
+  return { entryLimit: entry, entryStop: up('1.01'), tpLimit: up('1.04'), slStop: down('0.97'), secondaryLimit: up('1.04'), secondaryStop: down('0.97') }
 }
 
 /**

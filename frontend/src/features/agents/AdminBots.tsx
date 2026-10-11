@@ -11,7 +11,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { IconRobot } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { AiChip, Avatar } from '@/features/league/PlayerBadge'
-import { RUN_STATUSES, formatDuration, formatTokens, formatUsd, spendMeter, statusLabel, statusTone } from './agentView'
+import { RUN_STATUSES, formatTokens, formatUsd, runCounts, spendMeter, statusLabel, statusTone } from './agentView'
 
 const METER_TONE = { ok: 'bg-accent', warn: 'bg-warn', over: 'bg-down', none: 'bg-bg-3' } as const
 
@@ -120,10 +120,12 @@ function RunLine({ label, run }: { label: string; run: AgentRun | null | undefin
       <p className="flex flex-wrap items-center gap-2">
         <span className="text-text-3">{label}</span>
         <span className="font-semibold">{formatDateTimeEt(run.startedAt)}</span>
-        <Pill tone={statusTone(run.status)}>{statusLabel(run.status)}</Pill>
+        <Pill tone={statusTone(run.status)} className="tracking-normal normal-case!">
+          {statusLabel(run.status)}
+        </Pill>
       </p>
       <p className="mt-0.5 text-text-2">
-        {formatDuration(run.durationMs)} · {run.toolCalls} tool calls{run.toolErrors ? ` (${run.toolErrors} errors)` : ''} · {run.orders} orders · {formatUsd(run.costUsd)}
+        {runCounts(run)} · {formatUsd(run.costUsd)}
       </p>
       {run.message && run.status !== 'COMPLETED' ? <p className="mt-0.5 rounded-sm bg-bg-2 px-2 py-1 break-words text-text-2">{run.message}</p> : null}
     </div>
@@ -168,12 +170,14 @@ function RunRow({ r }: { r: AgentRun }) {
     <li className="px-4 py-2.5 text-table">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="font-semibold">@{r.player?.handle}</span>
-        <Pill tone={statusTone(r.status)}>{statusLabel(r.status)}</Pill>
+        <Pill tone={statusTone(r.status)} className="tracking-normal normal-case!">
+          {statusLabel(r.status)}
+        </Pill>
         <span className="text-caption text-text-3">{r.trigger === 'SCHEDULE' ? `schedule ${r.slot ?? ''}` : 'manual'}</span>
         <span className="ml-auto text-caption text-text-3">{formatDateTimeEt(r.startedAt)}</span>
       </div>
       <p className="mt-0.5 text-caption text-text-2">
-        {formatDuration(r.durationMs)} · {r.toolCalls} tool calls{r.toolErrors ? ` (${r.toolErrors} errors)` : ''} · {r.orders} orders · tokens in{' '}
+        {runCounts(r)} · tokens in{' '}
         {formatTokens((r.tokens?.input ?? 0) + (r.tokens?.cacheRead ?? 0) + (r.tokens?.cacheWrite ?? 0))} / out {formatTokens(r.tokens?.output)} · {formatUsd(r.costUsd)}
       </p>
       {r.message ? <p className="mt-0.5 text-caption break-words text-text-3">{r.message}</p> : null}

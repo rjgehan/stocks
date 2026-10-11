@@ -10,6 +10,7 @@ import com.stocks.common.domain.PlayerStatus;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.common.time.TimeSource;
+import com.stocks.config.StocksProperties;
 import com.stocks.contract.identity.PlayerQueries;
 import com.stocks.contract.identity.dto.PlayerSummaryDto;
 import com.stocks.contract.oauth.dto.OAuthActorDto;
@@ -20,6 +21,7 @@ import com.stocks.contract.oauth.dto.OAuthRedirectDto;
 import com.stocks.contract.security.PlayerPrincipal;
 import com.stocks.contract.security.RequestMeta;
 import com.stocks.contract.security.Scopes;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -40,6 +42,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * {@code trade} only with {@code player.api_trading_allowed} (the personal-key rule, §17.2). There is no admin scope,
  * so nothing admin-like is grantable (§17.4). Approving creates the {@code oauth_grant} and its one-time code;
  * either decision consumes the request. Audited as {@code KEY}/{@code OAUTH_GRANT} or {@code OAUTH_DENY}.
+ *
+ * <p>Approving issues a long-lived credential (a rolling 30-day refresh token), so it needs a <b>recent</b> password
+ * check like {@code POST /me/api-keys} (§17.1 {@code @RecentAuth}, §17.9.3 step 4): the session's
+ * {@code authenticatedAt} at most {@code stocks.security.recent-auth} old, else 403 {@code RECENT_AUTH_REQUIRED} and
+ * the SPA asks for the password and retries. The rule is checked here, not with the {@code security} annotation,
+ * because {@code oauth} never depends on {@code security} (§17.9.5). Denying needs no recent check.
  */
 @Service
 public class ConsentService {
@@ -54,10 +62,11 @@ public class ConsentService {
   private final DcrClients dcr;
   private final AuditService audit;
   private final TransactionTemplate tx;
+  private final Duration recentAuth;
 
   public ConsentService(OAuthStore store, JdbcClient jdbc, PlayerQueries players, TimeSource time, OAuthIds ids,
                         OAuthProperties properties, AuthorizationEndpoint endpoint, DcrClients dcr,
-                        AuditService audit, TransactionTemplate tx) {
+                        AuditService audit, TransactionTemplate tx, StocksProperties stocks) {
     this.store = store;
     this.jdbc = jdbc;
     this.players = players;
@@ -68,6 +77,7 @@ public class ConsentService {
     this.dcr = dcr;
     this.audit = audit;
     this.tx = tx;
+    this.recentAuth = stocks.security().recentAuth();
   }
 
   /** A possible actor: the player row bits the consent needs. */
@@ -103,7 +113,8 @@ public class ConsentService {
    * Approves or denies a pending request.
    *
    * @throws ApiException 404 {@code NOT_FOUND}; 400 {@code VALIDATION_FAILED} (actAs not one of the choices, scopes
-   *                      outside the request or the actor's allowed set, or none); 403 as in {@link #view}
+   *                      outside the request or the actor's allowed set, or none); 403 as in {@link #view}, and 403
+   *                      {@code RECENT_AUTH_REQUIRED} for an approval on a session whose password check is too old
    */
   public OAuthRedirectDto decide(String requestId, OAuthDecisionRequest decision, PlayerPrincipal human,
                                  RequestMeta meta) {
@@ -122,6 +133,7 @@ public class ConsentService {
       p.put("state", r.state());
       return new OAuthRedirectDto(endpoint.redirect(r.redirectUri(), p));
     }
+    requireRecentAuth(human, now);
     String actAs = decision.actAs() == null ? "" : decision.actAs().trim().toLowerCase(Locale.ROOT);
     Candidate actor = candidates(human.playerId()).stream().filter(c -> c.handle().equals(actAs)).findFirst()
         .orElseThrow(() -> ApiException.validation("actAs", "Choose yourself or one of your active AI bots"));
@@ -196,6 +208,16 @@ public class ConsentService {
     }
     if (status == PlayerStatus.DISABLED) {
       throw ApiException.of(ErrorCode.PLAYER_DISABLED, "Your player is disabled.");
+    }
+  }
+
+  /** §17.1 {@code @RecentAuth}'s rule (mirrored: {@code oauth} cannot depend on {@code security}). */
+  private void requireRecentAuth(PlayerPrincipal p, Instant now) {
+    Instant at = p.authenticatedAt();
+    if (p.authMethod() != AuthMethod.SESSION || at == null || at.plus(recentAuth).isBefore(now)) {
+      throw ApiException.of(ErrorCode.RECENT_AUTH_REQUIRED,
+              "Connecting an app needs a recent password check (within " + recentAuth.toMinutes() + " minutes).")
+          .withHint("POST /api/v1/auth/reauth {\"password\": \"...\"}, then retry.");
     }
   }
 

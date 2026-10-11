@@ -118,8 +118,8 @@ class OAuthUnitTest {
     MutableTimeSource time = new MutableTimeSource(Instant.parse("2026-10-09T14:00:00Z"));
     OAuthProperties tight = new OAuthProperties(true, null, Duration.ofMinutes(30), Duration.ofDays(30),
         Duration.ofSeconds(10), Duration.ofMinutes(5), Duration.ofMinutes(15), Duration.ofSeconds(60), true,
-        List.of(), 2, CimdRulesTest.PROPS.cimd(),
-        new OAuthProperties.Dcr(true, 500, 1, Duration.ofHours(24), Duration.ofDays(90)));
+        List.of(), 2, 2000, CimdRulesTest.PROPS.cimd(),
+        new OAuthProperties.Dcr(true, 500, 1, 3, Duration.ofHours(24), Duration.ofDays(90)));
     OAuthRateLimiter limiter = new OAuthRateLimiter(time, tight);
     limiter.charge(OAuthRateLimiter.Bucket.TOKEN, "1.2.3.4");
     limiter.charge(OAuthRateLimiter.Bucket.TOKEN, "1.2.3.4");

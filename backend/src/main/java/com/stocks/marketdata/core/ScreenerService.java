@@ -2,6 +2,7 @@ package com.stocks.marketdata.core;
 
 import com.stocks.common.domain.AssetType;
 import com.stocks.common.domain.DataQuality;
+import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
 import com.stocks.contract.marketdata.QuoteView;
 import com.stocks.contract.marketdata.ScreenPreset;
@@ -15,6 +16,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -55,6 +57,7 @@ public class ScreenerService {
   private final Sectors sectors;
   private final ScreenerStats stats;
   private final UnaryOperator<QuoteView> splitAdjust;
+  private final SplitFactor splitFactor;
   private final TimeSource time;
   private final boolean simulated;
   private final LongSupplier nanos;
@@ -62,18 +65,32 @@ public class ScreenerService {
   private volatile long warmedAtNanos;
   private volatile boolean warmedOnce;
 
+  /**
+   * The share-count factor of a symbol's applied splits with {@code since < ex_date ≤ asOf} (§14,
+   * {@code price_adjustment}): {@code {Π new_rate, Π old_rate}}, so {@code shares × [0] ÷ [1]}; null when none applies.
+   */
+  @FunctionalInterface
+  public interface SplitFactor {
+    SplitFactor NONE = (symbol, since, asOf) -> null;
+
+    BigDecimal[] of(String symbol, LocalDate since, LocalDate asOf);
+  }
+
   public ScreenerService(MarketFeed feed, AssetService assets, Sectors sectors, ScreenerStats stats,
-                         UnaryOperator<QuoteView> splitAdjust, TimeSource time, boolean simulated) {
-    this(feed, assets, sectors, stats, splitAdjust, time, simulated, System::nanoTime);
+                         UnaryOperator<QuoteView> splitAdjust, SplitFactor splitFactor, TimeSource time,
+                         boolean simulated) {
+    this(feed, assets, sectors, stats, splitAdjust, splitFactor, time, simulated, System::nanoTime);
   }
 
   ScreenerService(MarketFeed feed, AssetService assets, Sectors sectors, ScreenerStats stats,
-                  UnaryOperator<QuoteView> splitAdjust, TimeSource time, boolean simulated, LongSupplier nanos) {
+                  UnaryOperator<QuoteView> splitAdjust, SplitFactor splitFactor, TimeSource time, boolean simulated,
+                  LongSupplier nanos) {
     this.feed = feed;
     this.assets = assets;
     this.sectors = sectors;
     this.stats = stats;
     this.splitAdjust = splitAdjust;
+    this.splitFactor = splitFactor == null ? SplitFactor.NONE : splitFactor;
     this.time = time;
     this.simulated = simulated;
     this.nanos = nanos;
@@ -148,6 +165,7 @@ public class ScreenerService {
     }
     Map<String, ScreenerStats.Stat> st = stats.stats();
     Map<String, QuoteView> quotes = feed.peek(symbols);
+    LocalDate today = Et.date(time.now());
     List<ScreenResult.Row> rows = new ArrayList<>();
     for (Asset a : universe) {
       QuoteView raw = quotes.get(a.symbol());
@@ -155,28 +173,54 @@ public class ScreenerService {
       if (qv == null || qv.last() == null || qv.last().signum() <= 0 || qv.quality() == DataQuality.NONE) {
         continue;
       }
-      rows.add(row(a, qv, st.get(a.symbol())));
+      rows.add(row(a, qv, st.get(a.symbol()), today));
     }
     return new Table(List.copyOf(rows), universe.size(), time.now(), nanos.getAsLong(), st);
   }
 
-  private ScreenResult.Row row(Asset a, QuoteView q, ScreenerStats.Stat s) {
+  private ScreenResult.Row row(Asset a, QuoteView q, ScreenerStats.Stat s, LocalDate today) {
     BigDecimal price = q.last();
     BigDecimal marketCap = null;
     if (a.type() != AssetType.ETF && s != null) {
       if (s.sharesOutstanding() != null && s.sharesOutstanding().signum() > 0) {
-        marketCap = s.sharesOutstanding().multiply(price).setScale(0, RoundingMode.HALF_EVEN);
+        // the stored count is pre-split if a split took effect after the profile was fetched: rescale it (§15.10)
+        BigDecimal[] f = factor(a.symbol(), s.profileAt(), today);
+        BigDecimal cap = s.sharesOutstanding().multiply(price);
+        marketCap = f == null ? cap.setScale(0, RoundingMode.HALF_EVEN)
+            : cap.multiply(f[0]).divide(f[1], 0, RoundingMode.HALF_EVEN);
       } else if (s.marketCap() != null && s.marketCap().signum() > 0) {
-        marketCap = s.marketCap().setScale(0, RoundingMode.HALF_EVEN);
+        marketCap = s.marketCap().setScale(0, RoundingMode.HALF_EVEN);      // a dollar value: a split keeps it
       }
     }
-    Long avg = s == null ? null : s.avgVolume() != null ? s.avgVolume() : s.avgVolumeIex();
-    Long basis = s == null ? null : q.volumeIsPartial() && s.avgVolumeIex() != null ? s.avgVolumeIex() : s.avgVolume();
+    BigDecimal[] vf = s == null ? null : factor(a.symbol(), s.volumeAt(), today);
+    Long sip = s == null ? null : scaled(s.avgVolume(), vf);
+    Long iex = s == null ? null : scaled(s.avgVolumeIex(), vf);
+    Long avg = sip != null ? sip : iex;
+    // the same basis or none (§15.10): an IEX-only volume is never divided by the SIP average
+    Long basis = q.volumeIsPartial() ? iex : sip;
     BigDecimal rel = relVolume(q.volume(), basis);
     Sector sector = a.type() == AssetType.ETF ? null
         : sectors.of(a.symbol(), s == null ? null : s.industry()).orElse(null);
     return new ScreenResult.Row(a.symbol(), a.name(), a.type(), a.exchange(), sector, price, q.change(), q.changePct(),
         q.volume(), q.volumeIsPartial(), avg, rel, marketCap, q.quality(), q.asOf());
+  }
+
+  /** The split factor since {@code fetchedAt}'s ET date, or null (never fetched, or no split since). */
+  private BigDecimal[] factor(String symbol, Instant fetchedAt, LocalDate today) {
+    if (fetchedAt == null) {
+      return null;
+    }
+    BigDecimal[] f = splitFactor.of(symbol, Et.date(fetchedAt), today);
+    return f == null || f.length != 2 || f[0] == null || f[1] == null || f[0].signum() <= 0 || f[1].signum() <= 0
+        ? null : f;
+  }
+
+  /** A share volume on today's share basis (HALF_EVEN). */
+  private static Long scaled(Long volume, BigDecimal[] f) {
+    if (volume == null || f == null) {
+      return volume;
+    }
+    return BigDecimal.valueOf(volume).multiply(f[0]).divide(f[1], 0, RoundingMode.HALF_EVEN).longValue();
   }
 
   static BigDecimal relVolume(Long volume, Long average) {

@@ -11,6 +11,7 @@ import { cx } from '@/components/ui/cx'
 import { IconShield } from '@/components/ui/icons'
 import { AuthCard } from '@/features/auth/AuthCard'
 import { AiChip, Avatar } from '@/features/league/PlayerBadge'
+import { ReauthDialog } from '@/app/ReauthDialog'
 import { useDecideOAuthRequest, useOAuthRequest } from './api'
 import { leaveTo } from './leave'
 import { SCOPE_INFO, approval, blockedReason, clientName, clientOrigin, defaultActor, orderedScopes, reconcileSelection, safeRedirect } from './scopes'
@@ -20,6 +21,10 @@ import { SCOPE_INFO, approval, blockedReason, clientName, clientOrigin, defaultA
  * Code, or a dynamically registered client) asks to use the league for you. You choose which player it acts as (one
  * of your AI bots, or yourself) and which scopes it gets; approving sends the browser back to the app with a one-time
  * code. Shown to a signed-in human only (the route sends anonymous visitors to /login and back).
+ *
+ * Nothing is preselected for an unknown app: only Claude's connector (or Claude Code) gets the Claude bot and ChatGPT
+ * the ChatGPT bot, so one press of Allow never binds an app to another vendor's bot. Approving needs a recent password
+ * check; the page sits outside the app shell, so it mounts its own password prompt.
  */
 export function ConsentScreen({ requestId }: { requestId: string }) {
   const request = useOAuthRequest(requestId)
@@ -44,7 +49,7 @@ export function ConsentScreen({ requestId }: { requestId: string }) {
   const consent = request.data
   const actors = consent.actors ?? []
   const requested = orderedScopes(consent.requestedScopes)
-  const currentHandle = actAs ?? defaultActor(actors)
+  const currentHandle = actAs ?? defaultActor(actors, consent.client, consent.redirectHost)
   const actor = actors.find((a) => a.player?.handle === currentHandle) ?? null
   const selection = selected ?? reconcileSelection(null, requested, actor)
   const name = clientName(consent.client)
@@ -66,7 +71,7 @@ export function ConsentScreen({ requestId }: { requestId: string }) {
     setLeaving({ host: new URL(url).host, approved })
     leaveTo(url)
   }
-  const allow = () => currentHandle && decide.mutate(approval(currentHandle, selection), { onSuccess: (r) => finish(r.redirectUrl, true) })
+  const allow = () => actor?.player?.handle && decide.mutate(approval(actor.player.handle, selection), { onSuccess: (r) => finish(r.redirectUrl, true) })
   const deny = () => decide.mutate({ approve: false }, { onSuccess: (r) => finish(r.redirectUrl, false) })
 
   if (leaving) {
@@ -111,7 +116,7 @@ export function ConsentScreen({ requestId }: { requestId: string }) {
           const blocked = blockedReason(scope, actor)
           return (
             <div key={scope}>
-              <Checkbox checked={!blocked && selection.has(scope)} disabled={Boolean(blocked)} onChange={(on) => toggle(scope, on)}>
+              <Checkbox checked={Boolean(actor) && !blocked && selection.has(scope)} disabled={!actor || Boolean(blocked)} onChange={(on) => toggle(scope, on)}>
                 <span className="font-semibold">{SCOPE_INFO[scope]?.label ?? scope}</span>
                 <span className="block text-micro text-text-3">{blocked ?? SCOPE_INFO[scope]?.detail}</span>
               </Checkbox>
@@ -125,6 +130,17 @@ export function ConsentScreen({ requestId }: { requestId: string }) {
         Apps never get admin powers, trade only fake money, and are labeled “via API” in the league. Disconnect them any time in Settings → Connected apps.
       </p>
 
+      <p role="status" className="text-caption text-text-2">
+        {actor?.player?.handle ? (
+          <>
+            {name} will act as <span className="font-semibold text-text-1">@{actor.player.handle}</span>
+            {actor.self ? ' (you)' : ' (your bot)'}.
+          </>
+        ) : (
+          'Choose who it acts as to continue.'
+        )}
+      </p>
+
       {err ? (
         <p role="alert" className="rounded-sm bg-down-bg p-2 text-caption text-down">
           {err.title}
@@ -136,10 +152,11 @@ export function ConsentScreen({ requestId }: { requestId: string }) {
         <Button size="lg" onClick={deny} disabled={decide.isPending}>
           Deny
         </Button>
-        <Button size="lg" variant="primary" onClick={allow} disabled={decide.isPending || !currentHandle || selection.size === 0}>
+        <Button size="lg" variant="primary" onClick={allow} disabled={decide.isPending || !actor || selection.size === 0}>
           {decide.isPending ? 'Working…' : 'Allow'}
         </Button>
       </div>
+      <ReauthDialog />
     </AuthCard>
   )
 }

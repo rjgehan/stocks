@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Alert, AlertCondition, CreateAlertRequest } from '@/lib/api/types'
+import { compare, isDecimal } from '@/lib/format/decimal'
 import { formatPct, formatPrice } from '@/lib/format/number'
 import { formatDateTimeEt } from '@/lib/format/time'
 import { Button } from '@/components/ui/Button'
@@ -35,14 +36,34 @@ export interface AlertFormProps {
   submitLabel: string
   onSubmit: (body: Omit<CreateAlertRequest, 'symbol'>) => void
   onCancel?: () => void
+  /** The symbol's other alerts: a live one with the same condition and threshold blocks a duplicate. */
+  existing?: readonly Alert[]
+}
+
+/** A live (active or paused) alert other than `self` with the same condition and threshold, if any. */
+export function sameAlert(existing: readonly Alert[] | undefined, self: Alert | null | undefined, condition: AlertCondition, wire: string | null): Alert | null {
+  if (wire === null || !isDecimal(wire)) return null
+  return (
+    (existing ?? []).find(
+      (a) =>
+        a.id !== self?.id &&
+        (a.status === 'ACTIVE' || a.status === 'PAUSED') &&
+        a.condition === condition &&
+        typeof a.threshold === 'string' &&
+        isDecimal(a.threshold) &&
+        compare(a.threshold, wire) === 0,
+    ) ?? null
+  )
 }
 
 /**
  * The alert sheet's form (§22.10): condition (price or day change, at/above or at/below), threshold (prefilled from
  * the live price, or ±5% for a change; percent here, a fraction on the wire), repeat, expiry and a private note. It
- * says up front when the condition already holds, i.e. the alert would fire on the next live price.
+ * says up front when the condition already holds, i.e. the alert would fire on the next live price. The default
+ * threshold is taken from the live price once, when the form opens (it does not follow every tick), and a live alert
+ * with the same condition and threshold blocks a duplicate.
  */
-export function AlertForm({ symbol, live, alert, pending, error, submitLabel, onSubmit, onCancel }: AlertFormProps) {
+export function AlertForm({ symbol, live, alert, pending, error, submitLabel, onSubmit, onCancel, existing }: AlertFormProps) {
   const initialCondition: AlertCondition = alert?.condition ?? 'PRICE_GTE'
   const [kind, setKind] = useState<Kind>(isPrice(initialCondition) ? 'PRICE' : 'CHANGE')
   const [dir, setDir] = useState<Dir>(isAbove(initialCondition) ? 'GTE' : 'LTE')
@@ -50,7 +71,10 @@ export function AlertForm({ symbol, live, alert, pending, error, submitLabel, on
   const [inputs, setInputs] = useState<Partial<Record<AlertCondition, string>>>(() =>
     alert?.condition ? { [alert.condition]: fromWireThreshold(alert.condition, alert.threshold) } : {},
   )
-  const input = inputs[condition] ?? defaultInput(condition, live)
+  // the live line the defaults come from, frozen at the first price (review finding: it followed every tick)
+  const [base, setBase] = useState<LiveView | null>(() => (live.price ? live : null))
+  if (!base && live.price) setBase(live) // the first price arrived after the form opened (render-time adjustment)
+  const input = inputs[condition] ?? defaultInput(condition, base ?? live)
   const [repeat, setRepeat] = useState(alert?.repeat ?? false)
   const [expiry, setExpiry] = useState<ExpiryPreset | 'KEEP'>(alert?.expiresAt ? 'KEEP' : 'NEVER')
   const [note, setNote] = useState(alert?.note ?? '')
@@ -59,6 +83,7 @@ export function AlertForm({ symbol, live, alert, pending, error, submitLabel, on
   const wire = toWireThreshold(condition, input)
   const problem = thresholdError(condition, input)
   const firesNow = !problem && wouldFireNow(condition, wire, live)
+  const duplicate = problem ? null : sameAlert(existing, alert, condition, wire)
   const expiryOptions = [
     ...(alert?.expiresAt ? [{ value: 'KEEP', label: `Keep (${formatDateTimeEt(alert.expiresAt)})` }] : []),
     ...EXPIRY_PRESETS.map((p) => ({ value: p.value, label: p.label })),
@@ -67,7 +92,7 @@ export function AlertForm({ symbol, live, alert, pending, error, submitLabel, on
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     setTouched(true)
-    if (problem || wire === null) return
+    if (problem || wire === null || duplicate) return
     onSubmit({
       condition,
       threshold: wire,
@@ -125,6 +150,11 @@ export function AlertForm({ symbol, live, alert, pending, error, submitLabel, on
         error={touched ? problem : null}
         hint={kind === 'CHANGE' ? 'From the previous close, e.g. 5 for +5% or -3 for −3%.' : undefined}
       />
+      {duplicate ? (
+        <p role="status" className="rounded-md border border-divider bg-bg-2 px-3 py-2 text-caption text-text-2">
+          You already have this alert{duplicate.status === 'PAUSED' ? ' (paused)' : ''}.
+        </p>
+      ) : null}
       {firesNow ? (
         <p role="status" className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-caption text-text-1">
           The condition already holds: this alert fires on the next live price.
@@ -161,7 +191,7 @@ export function AlertForm({ symbol, live, alert, pending, error, submitLabel, on
             Cancel
           </Button>
         ) : null}
-        <Button variant="primary" type="submit" disabled={pending} className="flex-1">
+        <Button variant="primary" type="submit" disabled={pending || Boolean(duplicate)} className="flex-1">
           {pending ? 'Saving…' : submitLabel}
         </Button>
       </div>

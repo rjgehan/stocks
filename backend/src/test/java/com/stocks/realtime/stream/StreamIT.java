@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.stocks.apilog.ApiAccessLog;
 import com.stocks.common.domain.NotificationKind;
 import com.stocks.config.StocksProperties;
+import com.stocks.contract.portfolio.FeedReactionService;
 import com.stocks.realtime.NotificationService;
 import com.stocks.realtime.StompDestinations;
 import com.stocks.testkit.Fixtures;
@@ -218,6 +219,42 @@ class StreamIT {
     accessLog.flush();
     assertThat(jdbc.sql("SELECT COUNT(*) FROM api_access_log WHERE player_id = ? AND endpoint = "
         + "'GET /api/v1/stream' AND outcome = '200'").param(alice.id()).query(Long.class).single()).isEqualTo(1);
+  }
+
+  /**
+   * Review finding: reaction toggles were buffered as resumable {@code feed} events in the shared ring buffer, so one
+   * player toggling 2,000 times evicted everyone's private events (their reconnect got {@code reset EXPIRED}). They
+   * are now the live-only {@code feedReactions} event.
+   */
+  @Test
+  void reactionUpdatesAreLiveOnlyAndNeverEvictAnyonesResumableEvents() throws Exception {
+    Map<String, Object> marked = Map.of(FeedReactionService.STOMP_KIND_HEADER, FeedReactionService.REACTIONS_KIND);
+    Stream a = open(aliceKey, "?topics=account,feed", null);
+    a.until("hello");
+    notify(alice, "r1-" + SEQ.get());
+    String lastId = id(a.until("notification"));
+
+    messaging.convertAndSend(StompDestinations.FEED_TOPIC, (Object) Map.of("itemId", "fde_r", "reactions",
+        List.of()), marked);
+    String live = a.until("feedReactions");
+    assertThat(live).contains("\"fde_r\"");
+    assertThat(id(live)).as("never resumable").isNull();
+
+    // Alice is offline (inside the reconnect window) while someone toggles a reaction 2,001 times
+    a.close();
+    long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (!hub.streamsOf(alice.id()).isEmpty() && System.nanoTime() < end) {
+      Thread.sleep(50);
+    }
+    for (int i = 0; i <= 2_000; i++) {
+      messaging.convertAndSend(StompDestinations.FEED_TOPIC, (Object) Map.of("itemId", "fde_r", "reactions",
+          List.of()), marked);
+    }
+    notify(alice, "r2-" + SEQ.get());
+    Stream again = open(aliceKey, "?topics=account,feed", lastId);
+    String hello = again.until("hello");
+    assertThat(hello).contains("\"resumed\":true").contains("\"replayed\":1");
+    assertThat(again.until("notification")).contains("r2-");
   }
 
   @Test

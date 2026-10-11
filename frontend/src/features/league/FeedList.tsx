@@ -176,22 +176,28 @@ export function FeedList() {
 
   return (
     <div className="space-y-3">
-      <div className="scrollbar-none -mx-4 flex items-center gap-2 overflow-x-auto px-4 tablet:mx-0 tablet:px-0">
-        <Segmented
-          label="Feed filter"
-          size="sm"
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: 'ALL', label: 'All' },
-            { value: 'TRADES', label: 'Trades' },
-            { value: 'JOURNAL', label: 'Journal' },
-            { value: 'LEADERS', label: 'Leaders' },
-            { value: 'MONEY', label: 'Deposits' },
-            { value: 'PLAYERS', label: 'Players' },
-          ]}
-        />
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-micro text-text-3" title="New events appear as they happen">
+      {/* phone: the filter scrolls sideways under the 16 px gutters and "Live" gets a line of its own, so it is never
+          scrolled out of view; tablet and up: one row (review finding: six equal columns overflowed both) */}
+      <div className="space-y-1.5 tablet:flex tablet:items-center tablet:gap-2 tablet:space-y-0">
+        <div className="scrollbar-none -mx-4 flex overflow-x-auto px-4 tablet:mx-0 tablet:px-0">
+          <Segmented
+            label="Feed filter"
+            size="sm"
+            fit
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: 'ALL', label: 'All' },
+              { value: 'TRADES', label: 'Trades' },
+              { value: 'JOURNAL', label: 'Journal' },
+              { value: 'LEADERS', label: 'Leaders' },
+              { value: 'MONEY', label: 'Deposits' },
+              { value: 'PLAYERS', label: 'Players' },
+            ]}
+          />
+          <span className="w-4 shrink-0 tablet:hidden" aria-hidden="true" />
+        </div>
+        <span className="flex shrink-0 items-center gap-1.5 text-micro text-text-3 tablet:ml-auto" title="New events appear as they happen">
           <span className="size-1.5 animate-pulse rounded-full bg-up" aria-hidden="true" /> Live
         </span>
       </div>

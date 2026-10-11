@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ERROR_COPY, describeError, errorBody, errorField, humanizeMessage, orderErrorText } from './errors'
+import { ERROR_COPY, describeError, errorBody, errorField, humanizeMessage, orderErrorText, warningText } from './errors'
 import { ApiError, type ProblemDetail } from './problem'
 
 const problem = (over: Partial<ProblemDetail>): ApiError =>
@@ -62,5 +62,18 @@ describe('order error text for the ticket', () => {
     expect(humanizeMessage('limitPrice 227.4000 must be > 0')).toBe('limit price 227.40 must be > 0')
     expect(orderErrorText({ code: 'VALIDATION_FAILED', message: 'qty must be positive' })).toBe('quantity must be positive')
     expect(orderErrorText({ code: 'INSUFFICIENT_BUYING_POWER', message: '' })).toBe('Not enough buying power')
+  })
+
+  it('words FAT_FINGER warnings without Java field names (review finding)', () => {
+    expect(warningText({ code: 'FAT_FINGER', message: 'Take profit: limitPrice is 5.0% from the reference price 11.97.' })).toBe(
+      'Take profit limit price is 5.0% from the market (11.97).',
+    )
+    expect(warningText({ code: 'FAT_FINGER', message: 'stopPrice is 7.3% from the reference price 256.3300.' })).toBe('Stop price is 7.3% from the market (256.33).')
+    expect(warningText({ code: 'FAT_FINGER', message: "The trailing stop's starting stop is 6.0% from the reference price 41.2." })).toBe(
+      "The trailing stop's starting stop is 6.0% from the market (41.20).",
+    )
+    expect(warningText({ code: 'GFV_RISK', message: 'Selling now may cause a good-faith violation.' })).toBe('Selling now may cause a good-faith violation.')
+    expect(warningText({ code: 'OTHER', message: 'limitPrice 12.5000 is far' })).toBe('limit price 12.50 is far')
+    expect(warningText({ code: 'FAT_FINGER', message: null })).toBe('')
   })
 })

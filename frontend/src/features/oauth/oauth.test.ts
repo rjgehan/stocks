@@ -1,20 +1,25 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { ConnectedApp, OAuthActor, OAuthConsent } from '@/lib/api/types'
 import { MockServer } from '@/lib/api/mock/server'
-import { approval, blockedReason, clientName, clientOrigin, defaultActor, grantableScopes, orderedScopes, reconcileSelection, safeRedirect } from './scopes'
+import { approval, blockedReason, clientFamily, clientName, clientOrigin, defaultActor, grantableScopes, orderedScopes, reconcileSelection, safeRedirect } from './scopes'
 
-const player = (handle: string, kind: 'HUMAN' | 'AI') => ({
+const player = (handle: string, kind: 'HUMAN' | 'AI', aiModel: string | null = kind === 'AI' ? 'Claude' : null) => ({
   playerId: `ply_${handle}`,
   handle,
   displayName: handle,
   kind,
-  aiModel: kind === 'AI' ? 'Claude' : null,
+  aiModel,
   avatarSeed: handle,
   memberSince: '2026-10-01T13:00:00Z',
   resets: 0,
 })
 const bot: OAuthActor = { player: player('claude', 'AI'), self: false, allowedScopes: ['market:read', 'account:read', 'trade', 'league:read'] }
 const me: OAuthActor = { player: player('demo', 'HUMAN'), self: true, allowedScopes: ['market:read', 'account:read', 'league:read'] }
+const gpt: OAuthActor = { player: player('chatgpt', 'AI', 'ChatGPT'), self: false, allowedScopes: bot.allowedScopes }
+const CLAUDE = { clientId: 'https://claude.ai/oauth/mcp-oauth-client-metadata', name: 'Claude', kind: 'CIMD' as const, host: 'claude.ai' }
+const CLAUDE_CODE = { clientId: 'https://claude.ai/oauth/claude-code-client-metadata', name: 'Claude Code', kind: 'CIMD' as const, host: 'claude.ai' }
+const CHATGPT = { clientId: 'https://chatgpt.com/oauth/client.json', name: 'ChatGPT', kind: 'CIMD' as const, host: 'chatgpt.com' }
+const INSPECTOR = { clientId: 'ocl_1', name: 'MCP Inspector', kind: 'DCR' as const, host: null }
 const ALL = ['trade', 'league:read', 'market:read', 'account:read']
 
 describe('act-as consent rules (§17.9.3)', () => {
@@ -30,10 +35,25 @@ describe('act-as consent rules (§17.9.3)', () => {
     expect(blockedReason('trade', bot)).toBeNull()
   })
 
-  it('preselects the first bot, else yourself', () => {
-    expect(defaultActor([me, bot])).toBe('claude')
-    expect(defaultActor([me])).toBe('demo')
-    expect(defaultActor([])).toBeNull()
+  it('preselects the bot of the asking app only (review finding: Claude used to get @chatgpt, the first bot)', () => {
+    // the league's real order: the server lists bots by handle, so @chatgpt comes first
+    const league = [gpt, bot, me]
+    expect(defaultActor(league, CLAUDE, 'claude.ai')).toBe('claude')
+    expect(defaultActor(league, CLAUDE_CODE, 'localhost')).toBe('claude')
+    expect(defaultActor(league, CHATGPT, 'chatgpt.com')).toBe('chatgpt')
+    // a dynamically registered client is known by its redirect host or name
+    expect(defaultActor(league, { ...INSPECTOR, name: 'Claude' }, 'claude.ai')).toBe('claude')
+    expect(defaultActor(league, { ...INSPECTOR, name: 'x' }, 'chatgpt.com')).toBe('chatgpt')
+    // an unknown app, or no single matching bot: nothing preselected
+    expect(defaultActor(league, INSPECTOR, '127.0.0.1')).toBeNull()
+    expect(defaultActor([me], CLAUDE, 'claude.ai')).toBeNull()
+    expect(defaultActor([gpt, me], CLAUDE, 'claude.ai')).toBeNull()
+    expect(defaultActor([bot, { ...bot, player: player('claude2', 'AI') }, me], CLAUDE, 'claude.ai')).toBeNull()
+    expect(defaultActor([], CLAUDE)).toBeNull()
+    // a bot without a model label is matched by its handle; GPT labels count as ChatGPT
+    expect(defaultActor([{ ...gpt, player: player('chatgpt', 'AI', null) }, me], CHATGPT)).toBe('chatgpt')
+    expect(defaultActor([{ ...gpt, player: player('openbot', 'AI', 'GPT-5') }, me], CHATGPT)).toBe('openbot')
+    expect(clientFamily(null, 'evil.claude.ai.example')).toBeNull()
   })
 
   it('keeps what is still grantable when the actor changes, else selects everything grantable', () => {
