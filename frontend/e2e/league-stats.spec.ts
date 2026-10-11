@@ -83,10 +83,16 @@ test('players react to feed items, one reaction each, and see others react live'
 })
 
 test('a profile shows league stats with Sharpe, profit factor and rank history', async ({ page }) => {
-  await open(page, MOCK ? '/players/claude' : '/league')
-  test.skip(!MOCK, 'A fresh e2e league has no other player profile to open')
+  // a real e2e league: the signed-in admin's own profile (a fresh league has no other player to open)
+  const handle = MOCK ? 'claude' : process.env.E2E_USER
+  test.skip(!handle, 'Real backend without E2E_USER')
+  await open(page, `/players/${handle}`)
   const stats = page.getByRole('region', { name: 'League stats' })
   await expect(stats).toBeVisible()
+  if (!MOCK) {
+    await expect(stats.getByText('Sharpe', { exact: true }).or(stats.getByText(/Stats appear once/))).toBeVisible()
+    return
+  }
   await expect(stats.getByText('Sharpe', { exact: true })).toBeVisible()
   await expect(stats.getByText('Profit factor', { exact: true })).toBeVisible()
   await expect(stats.getByText('Best trade', { exact: true })).toBeVisible()
