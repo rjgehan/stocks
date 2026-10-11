@@ -784,6 +784,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's price alerts
+         * @description ACTIVE, PAUSED, TRIGGERED, EXPIRED in that order, newest first within each; optionally of one status and/or symbol.
+         */
+        get: operations["listAlerts"];
+        put?: never;
+        /**
+         * Create a price alert
+         * @description 201 with the new alert; 200 with the existing one when an identical ACTIVE or PAUSED alert exists (symbol, condition, threshold, repeat). A price threshold is a price; a change threshold is a fraction like Quote.changePct ("0.05" = +5%). At most 50 active or paused alerts (TOO_MANY_ALERTS).
+         */
+        post: operations["createAlert"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alerts/{alertId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Edit a price alert
+         * @description Replaces condition, threshold, repeat, expiry and note, and re-arms it; a TRIGGERED or EXPIRED alert becomes ACTIVE again, a PAUSED one stays PAUSED.
+         */
+        put: operations["updateAlert"];
+        post?: never;
+        /** Delete a price alert */
+        delete: operations["deleteAlert"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alerts/{alertId}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause a price alert
+         * @description A paused alert is kept but never fires.
+         */
+        post: operations["pauseAlert"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/alerts/{alertId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a paused price alert
+         * @description Re-arms it.
+         */
+        post: operations["resumeAlert"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assets/search": {
         parameters: {
             query?: never;
@@ -1250,6 +1335,140 @@ export interface paths {
          * @description Session only. Verifies the current password, sets the new one (at least 10 characters), rotates this session's id, ends every other session and revokes all of my API keys (§17.3). Errors: BAD_CREDENTIALS, WEAK_PASSWORD; 5 wrong current passwords end this session (UNAUTHENTICATED).
          */
         post: operations["changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Push settings
+         * @description Whether Web Push works on this server, the VAPID public key to subscribe with, the category preferences and the caller's devices (current = this session's).
+         */
+        get: operations["getPushSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/push/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change push preferences
+         * @description Partial: null members are unchanged. Categories: fills (fills, cancellations, expiries), alerts (price alerts), money (admin deposits, withdrawals, adjustments), account (violations, restrictions, corporate actions, resets), league (a new weekly leader).
+         */
+        patch: operations["updatePushPreferences"];
+        trace?: never;
+    };
+    "/api/v1/me/push/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register this browser for push
+         * @description The browser's PushSubscription (endpoint and keys, base64url). A subscription belongs to one player: registering it from another player's session moves it. At most 10 devices per player (the oldest is dropped).
+         */
+        post: operations["createPushSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/push/subscriptions/{deviceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove one of the caller's push devices */
+        delete: operations["deletePushSubscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/push/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check this browser's push registration
+         * @description registered=false: the server does not know this subscription for the caller (removed at sign-out or by a password change, or the device changed hands); the SPA then registers it again if the player turned push on on this device, otherwise it unsubscribes the browser. Re-binds the registration to the current session.
+         */
+        post: operations["syncPushSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/push/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a test notification
+         * @description To every device of the caller; waits up to 15 s for the push services. One call per 10 seconds.
+         */
+        post: operations["testPush"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/push/unsubscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn push off on this browser */
+        post: operations["unsubscribePush"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1862,6 +2081,31 @@ export interface components {
              */
             type: "ADMIN_VIEW";
         };
+        Alert: {
+            armed: boolean;
+            /** @enum {string|null} */
+            condition: "PRICE_GTE" | "PRICE_LTE" | "CHANGE_PCT_GTE" | "CHANGE_PCT_LTE" | null;
+            /** Format: date-time */
+            createdAt: string | null;
+            /** Format: date-time */
+            expiresAt: string | null;
+            id: string | null;
+            /** Format: decimal */
+            lastTriggerPrice: string | null;
+            /** Format: date-time */
+            lastTriggeredAt: string | null;
+            note: string | null;
+            repeat: boolean;
+            /** @enum {string|null} */
+            status: "ACTIVE" | "PAUSED" | "TRIGGERED" | "EXPIRED" | null;
+            symbol: string | null;
+            /** Format: decimal */
+            threshold: string | null;
+            /** Format: int32 */
+            triggerCount: number;
+            /** Format: date-time */
+            updatedAt: string | null;
+        };
         AllTargetRequest: Omit<components["schemas"]["TransferTargetRequest"], "scope"> & {
             kinds?: ("HUMAN" | "AI")[] | null;
         } & {
@@ -2144,6 +2388,17 @@ export interface components {
             symbol: string | null;
             /** @enum {string|null} */
             type: "CASH_DIVIDEND" | "FORWARD_SPLIT" | "REVERSE_SPLIT" | "NAME_CHANGE" | "CASH_MERGER" | "STOCK_MERGER" | "SPIN_OFF" | "DELISTING" | null;
+        };
+        CreateAlertRequest: {
+            /** @enum {string|null} */
+            condition: "PRICE_GTE" | "PRICE_LTE" | "CHANGE_PCT_GTE" | "CHANGE_PCT_LTE" | null;
+            /** Format: date-time */
+            expiresAt?: string | null;
+            note?: string | null;
+            repeat?: boolean | null;
+            symbol: string | null;
+            /** Format: decimal */
+            threshold: string | null;
         };
         CreateApiKeyRequest: {
             /** Format: int32 */
@@ -2573,7 +2828,7 @@ export interface components {
             createdAt: string | null;
             id: string | null;
             /** @enum {string|null} */
-            kind: "FILL" | "PARTIAL_FILL" | "ORDER_CANCELLED" | "ORDER_EXPIRED" | "DEPOSIT" | "WITHDRAWAL" | "ADJUSTMENT" | "GFV_ISSUED" | "RESTRICTION_CHANGED" | "CORPORATE_ACTION" | "ACCOUNT_RESET" | "SYSTEM" | null;
+            kind: "FILL" | "PARTIAL_FILL" | "ORDER_CANCELLED" | "ORDER_EXPIRED" | "DEPOSIT" | "WITHDRAWAL" | "ADJUSTMENT" | "GFV_ISSUED" | "RESTRICTION_CHANGED" | "CORPORATE_ACTION" | "ACCOUNT_RESET" | "SYSTEM" | "PRICE_ALERT" | null;
             payload: {
                 [key: string]: unknown;
             } | null;
@@ -3083,6 +3338,53 @@ export interface components {
             symbol: string | null;
             untrusted: components["schemas"]["UntrustedRationale"] | null;
             viaApi: boolean;
+        };
+        PushDevice: {
+            /** Format: date-time */
+            createdAt: string | null;
+            current: boolean;
+            id: string | null;
+            label: string | null;
+            /** Format: date-time */
+            lastFailureAt: string | null;
+            /** Format: date-time */
+            lastSuccessAt: string | null;
+            pushService: string | null;
+        };
+        PushEndpointRequest: {
+            endpoint: string | null;
+        };
+        PushPreferences: {
+            account: boolean;
+            alerts: boolean;
+            fills: boolean;
+            league: boolean;
+            money: boolean;
+        };
+        PushSettings: {
+            available: boolean;
+            devices: components["schemas"]["PushDevice"][] | null;
+            preferences: components["schemas"]["PushPreferences"] | null;
+            vapidPublicKey: string | null;
+        };
+        PushSubscriptionRequest: {
+            auth: string | null;
+            endpoint: string | null;
+            p256dh: string | null;
+        };
+        PushSync: {
+            device: components["schemas"]["PushDevice"] | null;
+            registered: boolean;
+        };
+        PushTestResult: {
+            /** Format: int32 */
+            delivered: number;
+            /** Format: int32 */
+            devices: number;
+            /** Format: int32 */
+            failed: number;
+            /** Format: int32 */
+            removed: number;
         };
         Quote: {
             /** Format: int64 */
@@ -3721,6 +4023,16 @@ export interface components {
         UntrustedRationale: {
             rationale: string | null;
         };
+        UpdateAlertRequest: {
+            /** @enum {string|null} */
+            condition: "PRICE_GTE" | "PRICE_LTE" | "CHANGE_PCT_GTE" | "CHANGE_PCT_LTE" | null;
+            /** Format: date-time */
+            expiresAt?: string | null;
+            note?: string | null;
+            repeat?: boolean | null;
+            /** Format: decimal */
+            threshold: string | null;
+        };
         UpdateMeRequest: {
             displayName?: string | null;
             preferences?: components["schemas"]["UpdatePreferencesRequest"] | null;
@@ -3746,6 +4058,13 @@ export interface components {
             theme?: "DARK" | "LIGHT" | "SYSTEM" | null;
             /** @enum {string|null} */
             upDown?: "GREEN_UP" | "RED_UP" | null;
+        };
+        UpdatePushPreferencesRequest: {
+            account?: boolean | null;
+            alerts?: boolean | null;
+            fills?: boolean | null;
+            league?: boolean | null;
+            money?: boolean | null;
         };
         UpdateSettingsRequest: {
             "bots.requireRationale"?: boolean | null;
@@ -5304,6 +5623,197 @@ export interface operations {
             };
         };
     };
+    listAlerts: {
+        parameters: {
+            query?: {
+                status?: "ACTIVE" | "PAUSED" | "TRIGGERED" | "EXPIRED";
+                symbol?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alert"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAlertRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alert"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alertId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAlertRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alert"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alertId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    pauseAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alertId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alert"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resumeAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alertId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alert"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     search: {
         parameters: {
             query?: {
@@ -6124,6 +6634,223 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPushSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSettings"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updatePushPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePushPreferencesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushPreferences"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createPushSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscriptionRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushDevice"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deletePushSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    syncPushSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushEndpointRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSync"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    testPush: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushTestResult"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    unsubscribePush: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushEndpointRequest"];
             };
         };
         responses: {

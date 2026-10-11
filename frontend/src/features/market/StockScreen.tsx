@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Tabs } from '@/components/ui/Tabs'
 import { IconArea, IconCandles } from '@/components/ui/icons'
 import { BottomDock } from '@/features/account/BottomDock'
+import { AlertButton } from '@/features/alerts/AlertSheet'
 import { MyPositionCard } from '@/features/account/MyPositionCard'
 import { OrdersTable } from '@/features/account/OrdersTable'
 import { PositionsTable } from '@/features/account/PositionsTable'
@@ -181,7 +182,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
   if (phone) {
     return (
       <div className="flex min-h-full flex-col">
-        <PushedHeader title={symbol} subtitle={asset.data?.name ?? undefined} actions={<StarButton symbol={symbol} size="touch" />} />
+        <PushedHeader title={symbol} subtitle={asset.data?.name ?? undefined} actions={<><AlertButton symbol={symbol} size="touch" /><StarButton symbol={symbol} size="touch" /></>} />
         <div className="flex-1">
           <QuoteHeader symbol={symbol} asset={asset.data} quote={quote} stickyTopClass="top-[calc(48px+env(safe-area-inset-top))]" showStar={false} />
           {chart}
@@ -212,6 +213,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
           scrollRoot={scroller}
           actions={
             <>
+              <AlertButton symbol={symbol} />
               <Button variant="buy" onClick={() => onTicket('BUY')}>
                 Buy
               </Button>
@@ -245,7 +247,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
     <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
         <div ref={scroller} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
-          <QuoteHeader symbol={symbol} asset={asset.data} quote={quote} scrollRoot={scroller} />
+          <QuoteHeader symbol={symbol} asset={asset.data} quote={quote} scrollRoot={scroller} actions={<AlertButton symbol={symbol} />} />
           {chart}
           {detailTabs}
         </div>

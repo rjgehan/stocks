@@ -9,6 +9,8 @@ export const Route = createFileRoute('/_app/settings/')({
 const ITEMS = [
   { to: '/settings/appearance', label: 'Appearance', detail: 'Theme and up/down colors' },
   { to: '/settings/trading', label: 'Trading defaults', detail: 'Order confirmation, default type, TIF, quantity mode' },
+  { to: '/settings/notifications', label: 'Notifications', detail: 'Push notifications on this device, what to send' },
+  { to: '/alerts', label: 'Price alerts', detail: 'Get notified at a price or a move on the day' },
   { to: '/settings/api-keys', label: 'API keys', detail: 'Personal read-only keys for your own scripts' },
   { to: '/settings/account', label: 'Account', detail: 'Password and self-reset' },
 ] as const

@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
+import { VitePWA } from 'vite-plugin-pwa'
 
 // ARCHITECTURE §24.6: the dev server proxies the backend paths so the browser sees ONE origin
 // (cookies, CSRF and the STOMP handshake behave exactly as in production).
@@ -22,6 +23,23 @@ export default defineConfig({
     }),
     react(),
     tailwindcss(),
+    // §22.10 (Phase 2): the service worker (src/sw/sw.ts → dist/sw.js) precaches the app shell only; no runtime
+    // caching, so /api, /mcp and /ws never touch a cache (scripts/check-sw.mjs checks the build). The static
+    // public/manifest.webmanifest and icons stay as they are (manifest: false). The SPA registers the worker itself
+    // (src/features/pwa), never in dev or mock mode.
+    VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src/sw',
+      filename: 'sw.ts',
+      registerType: 'prompt',
+      injectRegister: false,
+      manifest: false,
+      injectManifest: {
+        globPatterns: ['index.html', 'theme-init.js', 'assets/**/*.{js,css,woff2,svg,png,webp}', '*.{png,svg,ico}'],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+      },
+      devOptions: { enabled: false },
+    }),
   ],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },

@@ -44,7 +44,9 @@ public final class McpToolCatalog {
       "preview_order_group", "place_order_group", "get_order_group", "cancel_order_group",
       // Phase 2, league slice (§20.3)
       "get_my_stats", "get_player_stats", "get_race_chart", "get_pnl_calendar", "get_pnl_analysis",
-      "react_to_feed_item");
+      "react_to_feed_item",
+      // Phase 2 price alerts (§20.3)
+      "list_alerts", "create_alert", "delete_alert");
 
   /** {@link #SCOPES} value of a tool any authenticated caller may use ({@code whoami}). */
   public static final String NO_SCOPE = "";
@@ -64,7 +66,7 @@ public final class McpToolCatalog {
     }
     for (String t : List.of("get_account", "get_positions", "get_orders", "get_order", "get_executions",
         "get_activity", "get_violations", "get_runs", "get_portfolio_history", "get_notifications", "preview_order",
-        "get_watchlists", "mark_notifications_read", "preview_order_group", "get_order_group")) {
+        "get_watchlists", "mark_notifications_read", "preview_order_group", "get_order_group", "list_alerts")) {
       m.put(t, Scopes.ACCOUNT_READ);
     }
     for (String t : List.of("get_leaderboard", "list_players", "get_player_profile", "get_player_history",
@@ -72,10 +74,11 @@ public final class McpToolCatalog {
       m.put(t, Scopes.LEAGUE_READ);
     }
     for (String t : List.of("place_order", "replace_order", "cancel_order", "cancel_all_orders", "close_position",
-        "update_watchlist", "delete_watchlist", "place_order_group", "cancel_order_group")) {
+        "update_watchlist", "delete_watchlist", "place_order_group", "cancel_order_group", "create_alert",
+        "delete_alert")) {
       m.put(t, Scopes.TRADE);
     }
-    // Phase 2, league slice (§20.3 #39–#44)
+    // Phase 2, league slice (§20.3 #43–#48)
     for (String t : List.of("get_my_stats", "get_pnl_calendar", "get_pnl_analysis")) {
       m.put(t, Scopes.ACCOUNT_READ);
     }

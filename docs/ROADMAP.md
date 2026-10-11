@@ -179,7 +179,7 @@
 
 ### Product (Webull parity, part 1)
 - [ ] P&L Analysis: My Earnings (return vs SPY/QQQ), P&L calendar (day/month), P&L distribution by symbol
-- [ ] Alerts: price ≥/≤, % change; full PWA (vite-plugin-pwa 1.3.0: service worker, offline shell) with Web Push for fills and alerts (the static manifest ships in Phase 1)
+- [x] Alerts: price ≥/≤, % change; full PWA (vite-plugin-pwa 1.3.0: service worker, offline shell) with Web Push for fills and alerts (the static manifest ships in Phase 1). Built in Phase 2 wave A: §19.1 price alerts (repeat, expiry, live-only evaluation, MCP `list_alerts`/`create_alert`/`delete_alert`), §19.2 Web Push (RFC 8291/8292 on JDK crypto, VAPID key generated on first boot, five categories, test push) and §22.10 PWA
 - [ ] Chart indicators: MA, EMA, BOLL, VWAP, MACD, RSI, KDJ; extended-hours shading; Heikin Ashi and hollow candles
 - [ ] Time & Sales (colored at bid / at ask / between) when stream data allows
 - [ ] News tab polish; analyst ratings and price targets if a free source exists

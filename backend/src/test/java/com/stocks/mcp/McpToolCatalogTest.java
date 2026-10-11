@@ -78,12 +78,14 @@ class McpToolCatalogTest {
         .containsEntry("mark_notifications_read", Scopes.ACCOUNT_READ)
         .containsEntry("get_leaderboard", Scopes.LEAGUE_READ).containsEntry("get_league_feed", Scopes.LEAGUE_READ)
         .containsEntry("place_order", Scopes.TRADE).containsEntry("update_watchlist", Scopes.TRADE)
-        .containsEntry("delete_watchlist", Scopes.TRADE);
+        .containsEntry("delete_watchlist", Scopes.TRADE)
+        .containsEntry("list_alerts", Scopes.ACCOUNT_READ).containsEntry("create_alert", Scopes.TRADE)
+        .containsEntry("delete_alert", Scopes.TRADE);
   }
 
   @Test
-  void theCatalogHasThe48ToolsOfSection20Point3AndNoAdminTool() {
-    assertThat(McpToolCatalog.ORDER).hasSize(48).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
+  void theCatalogHasThe51ToolsOfSection20Point3AndNoAdminTool() {
+    assertThat(McpToolCatalog.ORDER).hasSize(51).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
         .noneMatch(n -> n.contains("admin"));
     assertThat(McpToolCatalog.ORDER.get(37)).as("Phase 1 ends at #38").isEqualTo("mark_notifications_read");
   }
@@ -105,5 +107,13 @@ class McpToolCatalogTest {
         .containsEntry("get_player_stats", Scopes.LEAGUE_READ).containsEntry("get_race_chart", Scopes.LEAGUE_READ)
         .containsEntry("get_pnl_calendar", Scopes.ACCOUNT_READ).containsEntry("get_pnl_analysis", Scopes.ACCOUNT_READ)
         .containsEntry("react_to_feed_item", Scopes.TRADE);
+  }
+
+  @Test
+  void phase2AlertToolsFollowThePhase1Catalog() {          // §20.3 #49–#51
+    assertThat(McpToolCatalog.ORDER.subList(38, McpToolCatalog.ORDER.size())).containsSubsequence("list_alerts",
+        "create_alert", "delete_alert");
+    assertThat(McpToolCatalog.SCOPES).containsEntry("list_alerts", Scopes.ACCOUNT_READ)
+        .containsEntry("create_alert", Scopes.TRADE).containsEntry("delete_alert", Scopes.TRADE);
   }
 }

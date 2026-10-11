@@ -5,6 +5,7 @@ import { queryKeys } from '../queryKeys'
 import { withRecentAuth } from '../reauth'
 import type { Me, Preferences } from '../types'
 import { stopRealtime } from '../../realtime/stomp'
+import { signOutThisDevice } from '../../push/pushDevice'
 
 /** The signed-in player, or `null` when the session is anonymous (401). */
 export function useMe() {
@@ -56,7 +57,11 @@ export function useSignup() {
 export function useLogout() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => unwrap(api.POST('/api/v1/auth/logout')),
+    mutationFn: async () => {
+      // Phase 2 (§19.2): this device stops getting the player's pushes (the server also forgets it at logout)
+      await signOutThisDevice(qc.getQueryData<Me | null>(queryKeys.me)?.playerId)
+      return unwrap(api.POST('/api/v1/auth/logout'))
+    },
     onSettled: () => {
       // The STOMP session was authenticated as this player at its handshake: close it, so the next sign-in on this
       // tab gets a fresh CONNECT and never another player's /user/queue/* messages (§19).

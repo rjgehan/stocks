@@ -15,6 +15,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAccountRouteRouteImport } from './routes/_app/account/route'
 import { Route as AppAdminRouteRouteImport } from './routes/_app/admin/route'
+import { Route as AppAlertsRouteImport } from './routes/_app/alerts'
 import { Route as AppLeagueRouteImport } from './routes/_app/league'
 import { Route as AppMarketsRouteImport } from './routes/_app/markets'
 import { Route as AppSearchRouteImport } from './routes/_app/search'
@@ -38,6 +39,7 @@ import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/ind
 import { Route as AppSettingsAccountRouteImport } from './routes/_app/settings/account'
 import { Route as AppSettingsApiKeysRouteImport } from './routes/_app/settings/api-keys'
 import { Route as AppSettingsAppearanceRouteImport } from './routes/_app/settings/appearance'
+import { Route as AppSettingsNotificationsRouteImport } from './routes/_app/settings/notifications'
 import { Route as AppSettingsTradingRouteImport } from './routes/_app/settings/trading'
 import { Route as AppStockSymbolRouteImport } from './routes/_app/stock.$symbol'
 import { Route as AppAccountOrdersIndexRouteImport } from './routes/_app/account/orders/index'
@@ -72,6 +74,11 @@ const AppAccountRouteRoute = AppAccountRouteRouteImport.update({
 const AppAdminRouteRoute = AppAdminRouteRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAlertsRoute = AppAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => AppRoute,
 } as any)
 const AppLeagueRoute = AppLeagueRouteImport.update({
@@ -190,6 +197,12 @@ const AppSettingsAppearanceRoute = AppSettingsAppearanceRouteImport.update({
   path: '/appearance',
   getParentRoute: () => AppSettingsRouteRoute,
 } as any)
+const AppSettingsNotificationsRoute =
+  AppSettingsNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AppSettingsRouteRoute,
+  } as any)
 const AppSettingsTradingRoute = AppSettingsTradingRouteImport.update({
   id: '/trading',
   path: '/trading',
@@ -228,6 +241,7 @@ export interface FileRoutesByFullPath {
   '/account': typeof AppAccountRouteRouteWithChildren
   '/admin': typeof AppAdminRouteRouteWithChildren
   '/settings': typeof AppSettingsRouteRouteWithChildren
+  '/alerts': typeof AppAlertsRoute
   '/league': typeof AppLeagueRoute
   '/markets': typeof AppMarketsRoute
   '/search': typeof AppSearchRoute
@@ -247,6 +261,7 @@ export interface FileRoutesByFullPath {
   '/settings/account': typeof AppSettingsAccountRoute
   '/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/settings/appearance': typeof AppSettingsAppearanceRoute
+  '/settings/notifications': typeof AppSettingsNotificationsRoute
   '/settings/trading': typeof AppSettingsTradingRoute
   '/stock/$symbol': typeof AppStockSymbolRoute
   '/account/': typeof AppAccountIndexRoute
@@ -260,6 +275,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
+  '/alerts': typeof AppAlertsRoute
   '/league': typeof AppLeagueRoute
   '/markets': typeof AppMarketsRoute
   '/search': typeof AppSearchRoute
@@ -280,6 +296,7 @@ export interface FileRoutesByTo {
   '/settings/account': typeof AppSettingsAccountRoute
   '/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/settings/appearance': typeof AppSettingsAppearanceRoute
+  '/settings/notifications': typeof AppSettingsNotificationsRoute
   '/settings/trading': typeof AppSettingsTradingRoute
   '/stock/$symbol': typeof AppStockSymbolRoute
   '/account': typeof AppAccountIndexRoute
@@ -298,6 +315,7 @@ export interface FileRoutesById {
   '/_app/account': typeof AppAccountRouteRouteWithChildren
   '/_app/admin': typeof AppAdminRouteRouteWithChildren
   '/_app/settings': typeof AppSettingsRouteRouteWithChildren
+  '/_app/alerts': typeof AppAlertsRoute
   '/_app/league': typeof AppLeagueRoute
   '/_app/markets': typeof AppMarketsRoute
   '/_app/search': typeof AppSearchRoute
@@ -318,6 +336,7 @@ export interface FileRoutesById {
   '/_app/settings/account': typeof AppSettingsAccountRoute
   '/_app/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/_app/settings/appearance': typeof AppSettingsAppearanceRoute
+  '/_app/settings/notifications': typeof AppSettingsNotificationsRoute
   '/_app/settings/trading': typeof AppSettingsTradingRoute
   '/_app/stock/$symbol': typeof AppStockSymbolRoute
   '/_app/account/': typeof AppAccountIndexRoute
@@ -337,6 +356,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin'
     | '/settings'
+    | '/alerts'
     | '/league'
     | '/markets'
     | '/search'
@@ -356,6 +376,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/settings/api-keys'
     | '/settings/appearance'
+    | '/settings/notifications'
     | '/settings/trading'
     | '/stock/$symbol'
     | '/account/'
@@ -369,6 +390,7 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/signup'
+    | '/alerts'
     | '/league'
     | '/markets'
     | '/search'
@@ -389,6 +411,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/settings/api-keys'
     | '/settings/appearance'
+    | '/settings/notifications'
     | '/settings/trading'
     | '/stock/$symbol'
     | '/account'
@@ -406,6 +429,7 @@ export interface FileRouteTypes {
     | '/_app/account'
     | '/_app/admin'
     | '/_app/settings'
+    | '/_app/alerts'
     | '/_app/league'
     | '/_app/markets'
     | '/_app/search'
@@ -426,6 +450,7 @@ export interface FileRouteTypes {
     | '/_app/settings/account'
     | '/_app/settings/api-keys'
     | '/_app/settings/appearance'
+    | '/_app/settings/notifications'
     | '/_app/settings/trading'
     | '/_app/stock/$symbol'
     | '/_app/account/'
@@ -486,6 +511,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AppAdminRouteRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/alerts': {
+      id: '/_app/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AppAlertsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/league': {
@@ -649,6 +681,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsAppearanceRouteImport
       parentRoute: typeof AppSettingsRouteRoute
     }
+    '/_app/settings/notifications': {
+      id: '/_app/settings/notifications'
+      path: '/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof AppSettingsNotificationsRouteImport
+      parentRoute: typeof AppSettingsRouteRoute
+    }
     '/_app/settings/trading': {
       id: '/_app/settings/trading'
       path: '/trading'
@@ -750,6 +789,7 @@ interface AppSettingsRouteRouteChildren {
   AppSettingsAccountRoute: typeof AppSettingsAccountRoute
   AppSettingsApiKeysRoute: typeof AppSettingsApiKeysRoute
   AppSettingsAppearanceRoute: typeof AppSettingsAppearanceRoute
+  AppSettingsNotificationsRoute: typeof AppSettingsNotificationsRoute
   AppSettingsTradingRoute: typeof AppSettingsTradingRoute
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute
 }
@@ -758,6 +798,7 @@ const AppSettingsRouteRouteChildren: AppSettingsRouteRouteChildren = {
   AppSettingsAccountRoute: AppSettingsAccountRoute,
   AppSettingsApiKeysRoute: AppSettingsApiKeysRoute,
   AppSettingsAppearanceRoute: AppSettingsAppearanceRoute,
+  AppSettingsNotificationsRoute: AppSettingsNotificationsRoute,
   AppSettingsTradingRoute: AppSettingsTradingRoute,
   AppSettingsIndexRoute: AppSettingsIndexRoute,
 }
@@ -769,6 +810,7 @@ interface AppRouteChildren {
   AppAccountRouteRoute: typeof AppAccountRouteRouteWithChildren
   AppAdminRouteRoute: typeof AppAdminRouteRouteWithChildren
   AppSettingsRouteRoute: typeof AppSettingsRouteRouteWithChildren
+  AppAlertsRoute: typeof AppAlertsRoute
   AppLeagueRoute: typeof AppLeagueRoute
   AppMarketsRoute: typeof AppMarketsRoute
   AppSearchRoute: typeof AppSearchRoute
@@ -782,6 +824,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAccountRouteRoute: AppAccountRouteRouteWithChildren,
   AppAdminRouteRoute: AppAdminRouteRouteWithChildren,
   AppSettingsRouteRoute: AppSettingsRouteRouteWithChildren,
+  AppAlertsRoute: AppAlertsRoute,
   AppLeagueRoute: AppLeagueRoute,
   AppMarketsRoute: AppMarketsRoute,
   AppSearchRoute: AppSearchRoute,

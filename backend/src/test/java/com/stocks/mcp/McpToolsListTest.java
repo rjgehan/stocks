@@ -17,9 +17,10 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 
 /**
- * The §20.3 {@code tools/list}: every tool (38 in Phase 1, then Phase 2's) in catalog order, the four hints of every tool as the tables give them,
- * snake_case inputs, schemas that follow §20.2, and a reviewed snapshot ({@code golden/mcp/tools-list.json}; re-record
- * with {@code -Dgolden.update=true} after an intended change and review the diff: it is what every agent sees).
+ * The §20.3 {@code tools/list}: every tool (38 in Phase 1, then Phase 2's) in catalog order, the four hints of every
+ * tool as the tables give them, snake_case inputs, schemas that follow §20.2, and a reviewed snapshot
+ * ({@code golden/mcp/tools-list.json}; re-record with {@code -Dgolden.update=true} after an intended change and review
+ * the diff: it is what every agent sees).
  */
 class McpToolsListTest {
 
@@ -32,7 +33,8 @@ class McpToolsListTest {
       Map.entry("close_position", true), Map.entry("update_watchlist", false), Map.entry("delete_watchlist", true),
       Map.entry("mark_notifications_read", false),
       Map.entry("place_order_group", false), Map.entry("cancel_order_group", true),   // Phase 2 orders
-      Map.entry("react_to_feed_item", false));                                         // Phase 2 league
+      Map.entry("react_to_feed_item", false),                                          // Phase 2 league
+      Map.entry("create_alert", false), Map.entry("delete_alert", true));              // Phase 2 alerts
 
   static final Pattern SNAKE = Pattern.compile("^[a-z][a-z0-9]*(_[a-z0-9]+)*$");
 

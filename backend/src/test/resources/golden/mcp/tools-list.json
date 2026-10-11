@@ -3412,7 +3412,7 @@
             },
             "kind" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "FILL", "PARTIAL_FILL", "ORDER_CANCELLED", "ORDER_EXPIRED", "DEPOSIT", "WITHDRAWAL", "ADJUSTMENT", "GFV_ISSUED", "RESTRICTION_CHANGED", "CORPORATE_ACTION", "ACCOUNT_RESET", "SYSTEM", null ]
+              "enum" : [ "FILL", "PARTIAL_FILL", "ORDER_CANCELLED", "ORDER_EXPIRED", "DEPOSIT", "WITHDRAWAL", "ADJUSTMENT", "GFV_ISSUED", "RESTRICTION_CHANGED", "CORPORATE_ACTION", "ACCOUNT_RESET", "SYSTEM", "PRICE_ALERT", null ]
             },
             "payload" : {
               "type" : [ "object", "null" ]
@@ -9593,5 +9593,233 @@
       }
     },
     "required" : [ "itemId", "reactions" ]
+  }
+}, {
+  "name" : "list_alerts",
+  "title" : "Price alerts",
+  "description" : "Your price alerts: ACTIVE, PAUSED, TRIGGERED, EXPIRED in that order, newest first within each. Optionally only one status and/or one symbol. A fired alert shows triggerCount, lastTriggeredAt and lastTriggerPrice; the PRICE_ALERT notification it wrote is in get_notifications.",
+  "annotations" : {
+    "title" : "Price alerts",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "status" : {
+        "type" : "string",
+        "enum" : [ "ACTIVE", "PAUSED", "TRIGGERED", "EXPIRED" ],
+        "description" : "ACTIVE, PAUSED, TRIGGERED or EXPIRED"
+      },
+      "symbol" : {
+        "type" : "string",
+        "description" : "Only alerts on this ticker"
+      }
+    },
+    "required" : [ ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "alerts" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "armed" : {
+              "type" : "boolean"
+            },
+            "condition" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "PRICE_GTE", "PRICE_LTE", "CHANGE_PCT_GTE", "CHANGE_PCT_LTE", null ]
+            },
+            "createdAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "expiresAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "id" : {
+              "type" : [ "string", "null" ]
+            },
+            "lastTriggerPrice" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "lastTriggeredAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "note" : {
+              "type" : [ "string", "null" ]
+            },
+            "repeat" : {
+              "type" : "boolean"
+            },
+            "status" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "ACTIVE", "PAUSED", "TRIGGERED", "EXPIRED", null ]
+            },
+            "symbol" : {
+              "type" : [ "string", "null" ]
+            },
+            "threshold" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "triggerCount" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "updatedAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            }
+          },
+          "required" : [ "id", "symbol", "condition", "threshold", "repeat", "status", "armed", "note", "expiresAt", "triggerCount", "lastTriggeredAt", "lastTriggerPrice", "createdAt", "updatedAt" ]
+        }
+      }
+    },
+    "required" : [ "alerts" ]
+  }
+}, {
+  "name" : "create_alert",
+  "title" : "Create a price alert",
+  "description" : "Creates a price alert that notifies you (a PRICE_ALERT notification) when its condition holds on a live price; it never places or changes an order. condition: PRICE_GTE / PRICE_LTE (threshold is a price, e.g. \"230.00\") or CHANGE_PCT_GTE / CHANGE_PCT_LTE (threshold is the change from the previous close as a fraction like Quote.changePct: \"0.05\" = +5%, \"-0.03\" = -3%). repeat=false (default) fires once; repeat=true fires again after the price moves 0.5% back (and at most every 15 minutes). Idempotent: an identical active or paused alert is returned instead of a duplicate. At most 50 active or paused alerts (TOO_MANY_ALERTS).",
+  "annotations" : {
+    "title" : "Create a price alert",
+    "readOnlyHint" : false,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "symbol" : {
+        "type" : "string",
+        "description" : "Ticker, e.g. \"AAPL\""
+      },
+      "condition" : {
+        "type" : "string",
+        "enum" : [ "PRICE_GTE", "PRICE_LTE", "CHANGE_PCT_GTE", "CHANGE_PCT_LTE" ],
+        "description" : "PRICE_GTE, PRICE_LTE, CHANGE_PCT_GTE or CHANGE_PCT_LTE"
+      },
+      "threshold" : {
+        "type" : [ "string", "number" ],
+        "description" : "Decimal string: a price, or a change fraction (\"0.05\" = +5%)"
+      },
+      "repeat" : {
+        "type" : "boolean",
+        "description" : "Fire again after re-arming (default false: once)"
+      },
+      "expires_at" : {
+        "type" : "string",
+        "format" : "date-time",
+        "description" : "Expiry (ISO-8601 instant, within 365 days)"
+      },
+      "note" : {
+        "type" : "string",
+        "description" : "A private note, at most 140 characters"
+      }
+    },
+    "required" : [ "symbol", "condition", "threshold" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "armed" : {
+        "type" : "boolean"
+      },
+      "condition" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "PRICE_GTE", "PRICE_LTE", "CHANGE_PCT_GTE", "CHANGE_PCT_LTE", null ]
+      },
+      "createdAt" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "expiresAt" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "id" : {
+        "type" : [ "string", "null" ]
+      },
+      "lastTriggerPrice" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "lastTriggeredAt" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "note" : {
+        "type" : [ "string", "null" ]
+      },
+      "repeat" : {
+        "type" : "boolean"
+      },
+      "status" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "ACTIVE", "PAUSED", "TRIGGERED", "EXPIRED", null ]
+      },
+      "symbol" : {
+        "type" : [ "string", "null" ]
+      },
+      "threshold" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "triggerCount" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "updatedAt" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      }
+    },
+    "required" : [ "id", "symbol", "condition", "threshold", "repeat", "status", "armed", "note", "expiresAt", "triggerCount", "lastTriggeredAt", "lastTriggerPrice", "createdAt", "updatedAt" ]
+  }
+}, {
+  "name" : "delete_alert",
+  "title" : "Delete a price alert",
+  "description" : "Deletes one of your price alerts by its id (alr_...). Returns deleted=false if there was no such alert.",
+  "annotations" : {
+    "title" : "Delete a price alert",
+    "readOnlyHint" : false,
+    "destructiveHint" : true,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "alert_id" : {
+        "type" : "string",
+        "description" : "The alert id (alr_...)"
+      }
+    },
+    "required" : [ "alert_id" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "deleted" : {
+        "type" : "boolean"
+      }
+    },
+    "required" : [ "deleted" ]
   }
 } ]

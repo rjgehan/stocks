@@ -4,6 +4,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { isApiError } from '@/lib/api/problem'
 import { Button } from '@/components/ui/Button'
 import { ToastHost } from '@/features/notifications/ToastHost'
+import { OfflineNotice, isOfflineError } from '@/features/pwa/OfflineNotice'
 
 export interface RouterContext {
   queryClient: QueryClient
@@ -48,6 +49,8 @@ function NotFound() {
 }
 
 function RootError({ error, reset }: { error: unknown; reset: () => void }) {
+  // Phase 2 (§22.10): the offline shell opened but the server is unreachable
+  if (isOfflineError(error)) return <OfflineNotice reset={reset} />
   const message = isApiError(error) ? `${error.problem.title} (${error.code})` : error instanceof Error ? error.message : 'Something went wrong.'
   return (
     <div role="alert" className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center">

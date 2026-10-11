@@ -2,6 +2,10 @@ package com.stocks.mcp;
 
 import static org.mockito.Mockito.mock;
 
+import com.stocks.alerts.AlertMonitor;
+import com.stocks.alerts.AlertProperties;
+import com.stocks.alerts.AlertRepository;
+import com.stocks.alerts.AlertService;
 import com.stocks.common.domain.Channel;
 import com.stocks.common.domain.PlayerKind;
 import com.stocks.common.domain.SessionType;
@@ -31,6 +35,7 @@ import com.stocks.contract.trading.OrderService;
 import com.stocks.contract.watchlist.WatchlistService;
 import com.stocks.mcp.tools.AccountIdentityTools;
 import com.stocks.mcp.tools.AccountTools;
+import com.stocks.mcp.tools.AlertTools;
 import com.stocks.mcp.tools.LeagueStatsTools;
 import com.stocks.mcp.tools.LeagueTools;
 import com.stocks.mcp.tools.MarketTools;
@@ -100,6 +105,7 @@ final class McpToolHarness implements AutoCloseable {
   final Fixtures.PlayerRef owner;
   final Fixtures.PlayerRef botPlayer;
   final NotificationService notifications;
+  final AlertService alerts;
   final RulesService rules;
   final List<McpToolSet> toolSets;
   final Map<String, SyncToolSpecification> specs = new LinkedHashMap<>();
@@ -133,6 +139,10 @@ final class McpToolHarness implements AutoCloseable {
     Mockito.when(calendar.stateAt(Mockito.any())).thenReturn(new SessionState(SessionType.REGULAR,
         TestTimes.TRADE_DATE, Instant.parse("2026-10-09T13:30:00Z"), Instant.parse("2026-10-09T20:00:00Z"),
         SessionType.POST, Instant.parse("2026-10-09T20:00:00Z")));
+    AlertRepository alertRows = new AlertRepository(db.jdbc());
+    AlertProperties alertProps = AlertProperties.defaults();
+    alerts = new AlertService(alertRows, new AlertMonitor(alertRows, notifications, marketData, calendar, time,
+        alertProps), marketData, db.jdbc(), new PublicId(time), time, alertProps);
     toolSets = List.of(
         new AccountIdentityTools(me, accounts, rateLimits),
         new MarketTools(rules, calendar, marketData, quoteMessages, tracker, time),
@@ -142,7 +152,8 @@ final class McpToolHarness implements AutoCloseable {
         new LeagueTools(leaderboard, players, performance),
         new WatchlistTools(watchlists),
         new NotificationTools(notifications),
-        new LeagueStatsTools(leagueStats, pnlAnalysis, reactions, accounts));
+        new LeagueStatsTools(leagueStats, pnlAnalysis, reactions, accounts),
+        new AlertTools(alerts));
     for (SyncToolSpecification s : McpToolCatalog.specifications(toolSets, MAPPER)) {
       specs.put(s.tool().name(), s);
     }

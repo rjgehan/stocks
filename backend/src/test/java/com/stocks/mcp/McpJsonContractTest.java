@@ -128,6 +128,10 @@ class McpJsonContractTest {
     when(h.orderService.preview(any(), any())).thenReturn((PreviewDto) sample(PreviewDto.class, full));
     h.notifications.notify(h.botPlayer.id(), com.stocks.common.domain.NotificationKind.FILL, "Bought 1 AAPL", "Filled.",
         full ? Map.of("orderId", "ord_1", "amount", new BigDecimal("1.00")) : null, "REF:" + full);
+    // a price alert: with every optional member (note, expiry) or none of them
+    h.alerts.create(h.botPlayer.id(), new com.stocks.contract.alerts.dto.CreateAlertRequest("AAPL",
+        com.stocks.common.domain.AlertCondition.PRICE_GTE, new BigDecimal("230.00"), full,
+        full ? TestTimes.START.plus(java.time.Duration.ofDays(7)) : null, full ? "breakout" : null));
   }
 
   static Object sample(Class<?> type, boolean full) {
@@ -162,12 +166,12 @@ class McpJsonContractTest {
       "get_fundamentals", "get_account", "get_positions", "get_orders", "get_order", "get_executions", "get_activity",
       "get_violations", "get_runs", "get_portfolio_history", "get_notifications", "preview_order", "get_leaderboard",
       "list_players", "get_player_profile", "get_player_history", "get_player_trades", "get_league_feed",
-      "get_watchlists");
+      "get_watchlists", "list_alerts");
 
   @ParameterizedTest(name = "full={0}")
   @ValueSource(booleans = {true, false})
   void everyReadToolResultValidatesAgainstItsOutputSchema(boolean full) {
-    assertThat(READ_TOOLS).hasSize(30).doesNotHaveDuplicates();
+    assertThat(READ_TOOLS).hasSize(31).doesNotHaveDuplicates();
     stub(full);
     List<String> failures = new ArrayList<>();
     for (String tool : READ_TOOLS) {
