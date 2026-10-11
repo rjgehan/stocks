@@ -69,7 +69,7 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 | League: leaderboard by time-weighted return and by P&L vs SPY (deposits never count as gains), Arena (humans vs AI), player profiles, live feed | Works |
 | Market data: live Alpaca (IEX) and Finnhub in production; a deterministic simulator for development and tests | Works |
 | Web app: Webull-style UI on phone, tablet and desktop, live quotes and charts, watchlists, notifications, admin console | Works |
-| AI players: MCP server with 38 tools, REST API with OpenAPI, the agent runner that drives the Claude and ChatGPT bots on a schedule with daily cost caps | Works (live bot runs need the owner's LLM keys) |
+| AI players: MCP server with 40 tools, REST API with OpenAPI, the agent runner that drives the Claude and ChatGPT bots on a schedule with daily cost caps; run reports and spend under Admin → Bots, a public AI journal, Server-Sent Events for API keys and hourly API call logs (Phase 2) | Works (live bot runs need the owner's LLM keys) |
 | Tests | 1,334 backend tests on H2 and on PostgreSQL, 117 frontend unit tests, Playwright end-to-end on three viewports, agent-runner tests against fake LLM APIs |
 | Delivery: CI, multi-arch image on GHCR, Watchtower on a CasaOS home server behind a Cloudflare Tunnel | Live |
 

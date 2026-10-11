@@ -33,11 +33,45 @@ async function createBot(page: Page, handle: string): Promise<string> {
   return key
 }
 
-test('a bot reports its run and writes a journal note; the admin sees both', async ({ page }) => {
+/** The first frames of `GET /api/v1/stream` up to `event: hello`, then the stream is closed (§19.1). */
+async function streamHello(url: string, auth: Record<string, string>) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 20_000)
+  try {
+    const res = await fetch(url, { headers: auth, signal: ctrl.signal })
+    let text = ''
+    if (res.body) {
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      while (!text.includes('event: hello')) {
+        const { value, done } = await reader.read()
+        if (done) break
+        text += decoder.decode(value, { stream: true })
+      }
+    }
+    return { res, text }
+  } finally {
+    clearTimeout(timer)
+    ctrl.abort()
+  }
+}
+
+test('a bot reports its run and writes a journal note; the admin sees both', async ({ page, baseURL }) => {
   test.skip(MOCK, 'Needs the real backend: the bot calls the API with its own key')
   const handle = `runner${Date.now() % 1_000_000}`
   const key = await createBot(page, handle)
   const auth = { Authorization: `Bearer ${key}` }
+
+  // §19.1: the bot's key opens the SSE stream, unbuffered and uncacheable for proxies such as Cloudflare; the
+  // admin's browser session cannot (it has /ws).
+  const { res: stream, text: hello } = await streamHello(`${baseURL}/api/v1/stream?topics=session,orders,feed`, auth)
+  expect(stream.status).toBe(200)
+  expect(stream.headers.get('content-type')).toMatch(/^text\/event-stream/)
+  expect(stream.headers.get('cache-control')).toBe('no-store, no-transform')
+  expect(stream.headers.get('x-accel-buffering')).toBe('no')
+  expect(hello).toMatch(/^retry: 3000\n\n/)
+  expect(hello).toContain('"topics":["SESSION","ORDERS","FEED"]')
+  expect((await page.request.get('/api/v1/stream?topics=session')).status()).toBe(403)
 
   // The agent runner's report (§20.6), with the bot's own key, timed on the server's (SIM) clock.
   const clock = await page.request.get('/api/v1/market/clock', { headers: auth })

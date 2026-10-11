@@ -106,7 +106,7 @@ describe('Claude run (Messages API)', () => {
     expect(mcp.calls[2]?.args).toEqual(ORDER);
     expect(mcp.closed).toBe(1);
 
-    // The requests: all 38 MCP tools + save_notes as plain custom tools, the shared system prompt, caching on.
+    // The requests: all 40 MCP tools + save_notes as plain custom tools, the shared system prompt, caching on.
     const first = llm.calls[0];
     expect(first?.headers['x-api-key']).toBe(CLAUDE_LLM_KEY);
     expect(first?.body.model).toBe('claude-opus-5-5');

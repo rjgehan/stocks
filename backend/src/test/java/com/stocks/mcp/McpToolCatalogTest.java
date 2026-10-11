@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.mcp.annotation.McpTool;
 import tools.jackson.databind.json.JsonMapper;
 
-/** §20.3: the tool list follows the catalog order, rejects unknown and duplicate names, and has all 38 names. */
+/** §20.3: the tool list follows the catalog order, rejects unknown and duplicate names, and has all 40 names. */
 class McpToolCatalogTest {
 
   static final JsonMapper MAPPER = JacksonConfig.newMapper();

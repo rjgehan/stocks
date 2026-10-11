@@ -72,7 +72,8 @@ class AgentRunServiceTest {
     botKey = key(bot);
     otherKey = key(other);
     AgentPlayers players = new AgentPlayers(db.jdbc(), mock(PlayerQueries.class));
-    service = new AgentRunService(new AgentRunRepository(db.jdbc()), players, new PublicId(time), time);
+    service = new AgentRunService(new AgentRunRepository(db.jdbc()), players, new PublicId(time), time,
+        AgentsProperties.defaults());
   }
 
   @AfterEach
@@ -132,6 +133,26 @@ class AgentRunServiceTest {
     assertThat(db.jdbc().sql("SELECT COUNT(*) FROM agent_run").query(Long.class).single()).isEqualTo(1);
     // another bot may use the same runRef: refs are per player
     assertThat(service.report(otherKey, report("ref-00000001")).created()).isTrue();
+  }
+
+  @Test
+  void aBotReportsAtMostAHundredNewRunsIn24HoursButRepeatsAreFree() {
+    for (int i = 0; i < 100; i++) {
+      assertThat(service.report(botKey, report("flood-%08d".formatted(i))).created()).isTrue();
+      time.advance(Duration.ofMinutes(1));
+    }
+    assertThatThrownBy(() -> service.report(botKey, report("flood-overflow")))
+        .isInstanceOfSatisfying(ApiException.class, e -> {
+          assertThat(e.code()).isEqualTo(ErrorCode.RATE_LIMITED);
+          // the oldest report (100 minutes ago) leaves the window in 24 h - 100 min
+          assertThat(e.retryAfterS()).isEqualTo(Duration.ofHours(24).minusMinutes(100).toSeconds());
+        });
+    // a retry of a stored run still answers 200; another bot has its own budget
+    assertThat(service.report(botKey, report("flood-00000000")).created()).isFalse();
+    assertThat(service.report(otherKey, report("other-00000001")).created()).isTrue();
+    // once the oldest report is 24 hours old, one more fits
+    time.advance(Duration.ofHours(24).minusMinutes(100));
+    assertThat(service.report(botKey, report("flood-next-0001")).created()).isTrue();
   }
 
   @Test

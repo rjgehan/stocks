@@ -89,16 +89,22 @@ public class AgentRunService {
   /** A stored run and whether this call created it (201) or found it by {@code runRef} (200). */
   public record Reported(AgentRunDto run, boolean created) {}
 
+  /** The window of {@code stocks.agents.max-reports-per-day}. */
+  static final Duration REPORT_WINDOW = Duration.ofHours(24);
+
   private final AgentRunRepository runs;
   private final AgentPlayers players;
   private final PublicId publicIds;
   private final TimeSource time;
+  private final int maxReportsPerDay;
 
-  public AgentRunService(AgentRunRepository runs, AgentPlayers players, PublicId publicIds, TimeSource time) {
+  public AgentRunService(AgentRunRepository runs, AgentPlayers players, PublicId publicIds, TimeSource time,
+                         AgentsProperties properties) {
     this.runs = runs;
     this.players = players;
     this.publicIds = publicIds;
     this.time = time;
+    this.maxReportsPerDay = (properties == null ? AgentsProperties.defaults() : properties).maxReportsPerDay();
   }
 
   // ------------------------------------------------------------------------------------------- report
@@ -172,6 +178,7 @@ public class AgentRunService {
       throw ApiException.of(ErrorCode.VALIDATION_FAILED, "Invalid run report: " + errors.get(0).field() + ": "
           + errors.get(0).message()).withFields(errors);
     }
+    requireReportBudget(caller.playerId(), now);
     String message = cleanMessage(request.message());
     String runnerVersion = Text.trimToNull(Text.clip(request.runnerVersion(), RUNNER_VERSION_MAX));
     RunRow row = new RunRow(0, publicIds.next(Prefix.AGENT_RUN), caller.playerId(), caller.apiKeyId(), runRef,
@@ -185,6 +192,24 @@ public class AgentRunService {
       return runs.byRef(caller.playerId(), runRef).map(r -> new Reported(dto(r), false)).orElseThrow(() -> e);
     }
     return new Reported(dto(runs.byRef(caller.playerId(), runRef).orElseThrow()), true);
+  }
+
+  /**
+   * §20.6: at most {@code stocks.agents.max-reports-per-day} new runs per bot in any 24 hours (the runner sends a few a
+   * day), so a leaked or misused bot key cannot flood the table; beyond that {@code RATE_LIMITED} with
+   * {@code retryAfterS} until the oldest report of the window leaves it.
+   */
+  private void requireReportBudget(long playerId, Instant now) {
+    if (maxReportsPerDay <= 0) {
+      return;
+    }
+    AgentRunRepository.Received received = runs.receivedSince(playerId, now.minus(REPORT_WINDOW));
+    if (received.count() >= maxReportsPerDay) {
+      Instant free = received.oldest() == null ? now.plus(REPORT_WINDOW) : received.oldest().plus(REPORT_WINDOW);
+      long seconds = Math.max(1, (Duration.between(now, free).toMillis() + 999) / 1000);
+      throw ApiException.of(ErrorCode.RATE_LIMITED, "At most " + maxReportsPerDay + " run reports per bot in 24 hours. "
+          + "Retry in " + seconds + " s.").withRetryAfter(seconds);
+    }
   }
 
   /** §20.6: only an API key of an AI player reports runs (a human's key or a browser session is FORBIDDEN). */

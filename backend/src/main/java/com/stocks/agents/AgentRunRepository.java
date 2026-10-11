@@ -126,6 +126,17 @@ public class AgentRunRepository {
         .query(Integer.class).single();
   }
 
+  /** The reports of a player received after {@code since}: how many, and when the oldest of them arrived. */
+  public record Received(int count, Instant oldest) {}
+
+  public Received receivedSince(long playerId, Instant since) {
+    return jdbc.sql("SELECT COUNT(*) AS n, MIN(received_at) AS oldest FROM agent_run WHERE player_id = ? "
+            + "AND received_at > ?")
+        .params(playerId, Jdbc.ts(since))
+        .query((rs, n) -> new Received(rs.getInt("n"), Jdbc.instant(rs, "oldest")))
+        .single();
+  }
+
   public int countSince(long playerId, Instant since) {
     return jdbc.sql("SELECT COUNT(*) FROM agent_run WHERE player_id = ? AND started_at >= ?")
         .params(playerId, Jdbc.ts(since)).query(Integer.class).single();

@@ -74,7 +74,7 @@ export function runnerError(code: string, message: string, hint: string): ToolOu
 /**
  * Accepts every structured result without client-side checks. The stocks server already validates each result
  * against its own output schema before sending it (§20.1), the model reads the text block either way, and the SDK's
- * default Ajv validator would compile all 38 output schemas per run and warn on stdout about the custom
+ * default Ajv validator would compile all 40 output schemas per run and warn on stdout about the custom
  * `format: "decimal"` for every money field.
  */
 export const trustServerOutput: jsonSchemaValidator = {
