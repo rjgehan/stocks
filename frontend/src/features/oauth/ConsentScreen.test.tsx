@@ -9,6 +9,8 @@ vi.mock('./leave', () => ({ leaveTo: vi.fn<(url: string) => void>() }))
 const { leaveTo } = await import('./leave')
 
 let server: MockServer
+/** The first render loads the route and the mock server; on a busy CI machine that takes longer than findBy's 1 s. */
+const SLOW = { timeout: 5000 }
 
 beforeEach(() => {
   sessionStorage.clear()
@@ -21,10 +23,10 @@ afterEach(() => {
   vi.mocked(leaveTo).mockReset()
 })
 
-describe('ConsentScreen (§17.9.3)', () => {
+describe('ConsentScreen (§17.9.3)', { timeout: 20_000 }, () => {
   it('shows the client, the redirect host and the act-as choices, then approves as the chosen player', async () => {
     renderWithRouter(<ConsentScreen requestId="oar_screen1" />)
-    expect(await screen.findByRole('heading', { name: 'Connect Claude' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Connect Claude' }, SLOW)).toBeTruthy()
     expect(screen.getByText('claude.ai', { selector: 'span.font-semibold' })).toBeTruthy()
     const bot = screen.getByRole('radio', { name: 'Claude (@claude)' }) as HTMLInputElement
     expect(bot.checked).toBe(true)
@@ -33,9 +35,9 @@ describe('ConsentScreen (§17.9.3)', () => {
     // drop a scope, then allow
     await userEvent.click(screen.getByRole('checkbox', { name: /League/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Allow' }))
-    await waitFor(() => expect(leaveTo).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(leaveTo).toHaveBeenCalledTimes(1), SLOW)
     expect(vi.mocked(leaveTo).mock.calls[0]![0]).toMatch(/^https:\/\/claude\.ai\/api\/mcp\/auth_callback\?code=/)
-    expect(await screen.findByRole('heading', { name: 'Connected' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Connected' }, SLOW)).toBeTruthy()
     const apps = await (await server.handle(new Request('http://localhost/api/v1/me/connected-apps'))).json()
     expect(apps[0].actAs.handle).toBe('demo')
     expect(apps[0].scopes).toEqual(['account:read', 'market:read', 'trade'])
@@ -43,19 +45,19 @@ describe('ConsentScreen (§17.9.3)', () => {
 
   it('warns about loopback redirects', async () => {
     renderWithRouter(<ConsentScreen requestId="oar_loopback_2" />)
-    expect(await screen.findByText(/runs on your own computer/)).toBeTruthy()
+    expect(await screen.findByText(/runs on your own computer/, {}, SLOW)).toBeTruthy()
   })
 
   it('explains an expired request', async () => {
     renderWithRouter(<ConsentScreen requestId="oar_expired_3" />)
-    expect(await screen.findByRole('heading', { name: 'This request expired' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'This request expired' }, SLOW)).toBeTruthy()
   })
 
   it('denies', async () => {
     renderWithRouter(<ConsentScreen requestId="oar_screen4" />)
-    await userEvent.click(await screen.findByRole('button', { name: 'Deny' }))
-    await waitFor(() => expect(leaveTo).toHaveBeenCalledTimes(1))
+    await userEvent.click(await screen.findByRole('button', { name: 'Deny' }, SLOW))
+    await waitFor(() => expect(leaveTo).toHaveBeenCalledTimes(1), SLOW)
     expect(vi.mocked(leaveTo).mock.calls[0]![0]).toContain('error=access_denied')
-    expect(await screen.findByRole('heading', { name: 'Not connected' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Not connected' }, SLOW)).toBeTruthy()
   })
 })
