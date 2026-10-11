@@ -5,16 +5,14 @@ import { isApiError } from '@/lib/api/problem'
 import type { ChartRange, Side, Timeframe } from '@/lib/api/types'
 import { useLiveBar } from '@/lib/realtime/useLiveBar'
 import { useQuote } from '@/lib/realtime/useQuote'
-import { readLocal, setLastSymbol, writeLocal } from '@/lib/prefs/local'
+import { setLastSymbol } from '@/lib/prefs/local'
 import { direction } from '@/lib/format/number'
 import { type Breakpoint } from '@/app/useBreakpoint'
 import { PushedHeader } from '@/app/PushedHeader'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { Segmented } from '@/components/ui/Segmented'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Tabs } from '@/components/ui/Tabs'
-import { IconArea, IconCandles } from '@/components/ui/icons'
 import { BottomDock } from '@/features/account/BottomDock'
 import { AlertButton } from '@/features/alerts/AlertSheet'
 import { MyPositionCard } from '@/features/account/MyPositionCard'
@@ -24,17 +22,22 @@ import { TradeSheet } from '@/features/trade/TradeSheet'
 import { TradeTicket } from '@/features/trade/TradeTicket'
 import { canSell } from '@/features/trade/ticketState'
 import { StarButton } from '@/features/watchlist/StarButton'
+import { ChartTypePicker, IndicatorPicker, useChartType, useIndicatorSettings } from '@/features/charts/IndicatorPicker'
+import { activeOscillators } from '@/features/charts/indicatorSettings'
+import { etDateOf, regularSessionTest } from '@/features/charts/sessions'
+import { AnalystRatings } from '@/features/research/AnalystRatings'
+import { NewsFeed } from '@/features/research/NewsFeed'
+import { TimeAndSales } from '@/features/tape/TimeAndSales'
+import { useCalendarDays } from '@/lib/api/hooks/marketExtras'
 import { BidAskBar } from './BidAskBar'
 import { IntervalPicker, effectiveTimeframe } from './IntervalPicker'
 import { KeyStatsGrid } from './KeyStatsGrid'
-import { NewsList } from './NewsList'
-import type { ChartStyle } from './PriceChart'
 import { QuoteHeader } from './QuoteHeader'
 import { RangeChips } from './RangeChips'
 
 const PriceChart = lazy(() => import('./PriceChart'))
 
-export type QuoteTab = 'OVERVIEW' | 'NEWS' | 'POSITION'
+export type QuoteTab = 'OVERVIEW' | 'NEWS' | 'TRADES' | 'POSITION'
 
 export interface StockScreenProps {
   symbol: string
@@ -50,38 +53,38 @@ export interface StockScreenProps {
   onTicket: (side: Side | undefined) => void
 }
 
-const STYLE_KEY = 'stocks.chart.style'
-
-/** Candles by default; area on the phone's 1D view (§22.4). The user's choice is remembered per device. */
-function useChartStyle(phone: boolean, range: ChartRange): [ChartStyle, (s: ChartStyle) => void] {
-  const [chosen, setChosen] = useState<ChartStyle | null>(() => {
-    const v = readLocal(STYLE_KEY, '')
-    return v === 'area' || v === 'candles' ? v : null
-  })
-  const style: ChartStyle = chosen ?? (phone && range === '1D' ? 'area' : 'candles')
-  return [
-    style,
-    (s) => {
-      setChosen(s)
-      writeLocal(STYLE_KEY, s)
-    },
-  ]
-}
+/** Chart heights (px) by breakpoint, plus room for each oscillator pane (§22.10). */
+const CHART_HEIGHT = { phone: 240, tablet: 320, desktop: 360 } as const
+const PANE_HEIGHT = { phone: 80, tablet: 100, desktop: 110 } as const
 
 /**
  * The quote page (§22.2, §22.4). Desktop: center column (header, chart, tabs) + docked ticket + bottom
  * dock. Tablet: ticket in a right side sheet, dock as tabs under the chart. Phone: pushed screen with a
  * sticky header and a Trade bar that opens a bottom sheet.
  */
-export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRange, onTf, onTab, onTicket }: StockScreenProps) {
+export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, ticket, onRange, onTf, onTab, onTicket }: StockScreenProps) {
   const asset = useAsset(symbol)
   const quote = useQuote(symbol, 'quote')
   const bars = useBars(symbol, range, effectiveTimeframe(range, tf))
   const scroller = useRef<HTMLDivElement>(null)
   const desktop = breakpoint === 'desktop' || breakpoint === 'wide'
   const phone = breakpoint === 'phone'
+  // desktop shows Time & Sales in the right column, so a `tab=TRADES` link (or a resize) lands on the overview
+  const tab: QuoteTab = desktop && requestedTab === 'TRADES' ? 'OVERVIEW' : requestedTab
   const [dockTab, setDockTab] = useState<'POSITIONS' | 'ORDERS'>('POSITIONS')
-  const [style, setStyle] = useChartStyle(phone, range)
+  const [style, setStyle] = useChartType(phone, range === '1D')
+  const [indicators, setIndicators] = useIndicatorSettings()
+  const intraday = bars.data?.timeframe ? !['1Day', '1Week', '1Month'].includes(bars.data.timeframe) : range === '1D' || range === '5D'
+  // §22.10: extended-hours bands use the calendar's regular session of each bar's ET date (early closes included)
+  const barList = bars.data?.bars ?? []
+  const firstT = barList[0]?.t
+  const lastT = barList[barList.length - 1]?.t
+  const fromDate = intraday && firstT ? etDateOf(Date.parse(firstT) / 1000) : null
+  const toDate = intraday && lastT ? etDateOf(Date.parse(lastT) / 1000) : null
+  const sessionDays = useCalendarDays(fromDate, toDate)
+  const isRegular = useMemo(() => (intraday ? regularSessionTest(sessionDays.data) : undefined), [intraday, sessionDays.data])
+  const sizeKey = phone ? 'phone' : desktop ? 'desktop' : 'tablet'
+  const chartHeight = CHART_HEIGHT[sizeKey] + activeOscillators(indicators).length * PANE_HEIGHT[sizeKey]
   // §22.5: Sell is disabled without a position to sell (it used to open a Buy ticket)
   const positions = usePositions()
   const held = positions.data?.find((p) => p.symbol === symbol)
@@ -105,12 +108,21 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
 
   const chart = (
     <section className="px-2 tablet:px-3" aria-label={`${symbol} chart`}>
-      <div className="h-[240px] tablet:h-[320px] desktop:h-[360px]">
+      <div style={{ height: chartHeight }} data-testid="price-chart">
         <Suspense fallback={<Skeleton className="h-full w-full" />}>
           {bars.isError ? (
             <div className="flex h-full items-center justify-center text-caption text-text-3">Chart data is unavailable right now.</div>
           ) : (
-            <PriceChart bars={bars.data} range={range} prevClose={quote?.prevClose} up={direction(quote?.change) !== 'down'} style={style} live={live} />
+            <PriceChart
+              bars={bars.data}
+              range={range}
+              prevClose={quote?.prevClose}
+              up={direction(quote?.change) !== 'down'}
+              style={style}
+              live={live}
+              indicators={indicators}
+              isRegular={isRegular}
+            />
           )}
         </Suspense>
       </div>
@@ -119,16 +131,10 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
           <RangeChips value={range} onChange={onRange} />
         </div>
         {onTf ? <IntervalPicker range={range} value={tf} onChange={onTf} /> : null}
-        <Segmented
-          label="Chart style"
-          size="sm"
-          value={style}
-          onChange={setStyle}
-          options={[
-            { value: 'candles', label: (<><IconCandles size={16} /><span className="sr-only">Candles</span></>), title: 'Candles' },
-            { value: 'area', label: (<><IconArea size={16} /><span className="sr-only">Line</span></>), title: 'Line' },
-          ]}
-        />
+        <div className="flex items-center gap-2">
+          <ChartTypePicker value={style} onChange={setStyle} />
+          <IndicatorPicker value={indicators} onChange={setIndicators} phone={phone} intraday={intraday} />
+        </div>
       </div>
     </section>
   )
@@ -142,6 +148,8 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
         items={[
           { value: 'OVERVIEW', label: 'Overview' },
           { value: 'NEWS', label: 'News' },
+          // desktop shows Time & Sales in the right column (§22.10)
+          ...(desktop ? [] : [{ value: 'TRADES' as const, label: 'Trades' }]),
           { value: 'POSITION', label: 'My position' },
         ]}
       />
@@ -150,6 +158,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
           <div className="space-y-4">
             <KeyStatsGrid quote={quote} asset={asset.data} />
             {breakpoint !== 'wide' ? <BidAskBar quote={quote} /> : null}
+            <AnalystRatings symbol={symbol} />
             <div>
               <h2 className="mb-1 text-section font-semibold">About</h2>
               {asset.data ? (
@@ -173,7 +182,8 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
             </div>
           </div>
         ) : null}
-        {tab === 'NEWS' ? <NewsList symbols={symbol} /> : null}
+        {tab === 'NEWS' ? <NewsFeed symbols={symbol} /> : null}
+        {tab === 'TRADES' ? <TimeAndSales symbol={symbol} maxHeight="max-h-[60vh]" /> : null}
         {tab === 'POSITION' ? <MyPositionCard symbol={symbol} /> : null}
       </div>
     </section>
@@ -261,6 +271,9 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab, ticket, onRang
             <BidAskBar quote={quote} />
           </div>
         ) : null}
+        <div className="border-t border-divider px-4 py-3">
+          <TimeAndSales symbol={symbol} maxHeight="max-h-[280px]" />
+        </div>
       </aside>
     </div>
   )

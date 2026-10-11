@@ -1,8 +1,9 @@
 import type { ComponentType } from 'react'
 import { IconAccount, IconLeague, IconMarkets, IconMenu, IconSettings, IconShield, IconWatchlist } from '@/components/ui/icons'
+import { IconScreener } from '@/features/screener/icon'
 
 export interface NavItem {
-  to: '/watchlist' | '/markets' | '/league' | '/account' | '/settings' | '/admin'
+  to: '/watchlist' | '/markets' | '/screener' | '/league' | '/account' | '/settings' | '/admin'
   label: string
   icon: ComponentType<{ size?: number }>
   adminOnly?: boolean
@@ -21,6 +22,7 @@ export const TAB_ITEMS: readonly NavItem[] = [
 export const RAIL_ITEMS: readonly NavItem[] = [
   { to: '/watchlist', label: 'Trade', icon: IconWatchlist },
   { to: '/markets', label: 'Markets', icon: IconMarkets },
+  { to: '/screener', label: 'Screener', icon: IconScreener },
   { to: '/league', label: 'League', icon: IconLeague },
   { to: '/account', label: 'Account', icon: IconAccount },
   { to: '/settings', label: 'Settings', icon: IconSettings },

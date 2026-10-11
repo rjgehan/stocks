@@ -22,6 +22,6 @@ public final class Providers {
   public static MarketDataProperties hybrid(MarketDataProperties.Alpaca alpaca, MarketDataProperties.Finnhub finnhub) {
     return new MarketDataProperties("hybrid", false, List.of("SPY"), Map.of(), MarketDataProperties.Poll.defaults(),
         alpaca, finnhub == null ? MarketDataProperties.Finnhub.defaults() : finnhub,
-        MarketDataProperties.Sim.defaults());
+        MarketDataProperties.Sim.defaults(), MarketDataProperties.Screener.defaults());
   }
 }

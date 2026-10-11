@@ -29,6 +29,14 @@ class StompDestinationsTest {
     assertThat(bars.symbol()).isEqualTo("SPY");
     assertThat(bars.kind().leasePriority()).isEqualTo(LeasePriority.VIEWING);
     assertThat(bars.kind().isMarket()).isTrue();
+
+    Parsed trades = StompDestinations.parse("/topic/trades.BRK.B").orElseThrow();   // §15.10 Time & Sales
+    assertThat(trades.kind()).isEqualTo(Kind.TRADES);
+    assertThat(trades.symbol()).isEqualTo("BRK.B");
+    assertThat(trades.kind().leasePriority()).isEqualTo(LeasePriority.VIEWING);
+    assertThat(trades.kind().isMarket()).isTrue();
+    assertThat(StompDestinations.trades("AAPL")).isEqualTo("/topic/trades.AAPL");
+    assertThat(StompDestinations.invalidSymbol(StompDestinations.parse("/topic/trades.aapl").orElseThrow())).isTrue();
   }
 
   @Test

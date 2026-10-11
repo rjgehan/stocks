@@ -4,6 +4,7 @@ import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
 import com.stocks.contract.marketdata.MarketUpdateListener;
 import com.stocks.contract.marketdata.Print;
+import com.stocks.contract.marketdata.TapePrint;
 import com.stocks.contract.marketdata.model.Bar;
 import com.stocks.contract.marketdata.model.BarEvent;
 import com.stocks.contract.marketdata.model.MarketEvent;
@@ -46,6 +47,8 @@ public class QuoteBook {
   /** While consolidated prints arrive, IEX prints are not buffered for the engine (they are in the SIP already). */
   static final Duration CONSOLIDATED_DEDUP = Duration.ofSeconds(60);
   private static final int MAX_CLOSES = 8;
+  /** §15.10: prints kept per symbol for Time &amp; Sales. */
+  static final int TAPE_SIZE = 500;
 
   /** Mutable state of one symbol; guarded by its own monitor. */
   public static final class SymbolState {
@@ -67,6 +70,9 @@ public class QuoteBook {
     /** Keys of the trades buffered recently, so a trade seen again (stream, then every snapshot poll) is one print. */
     final java.util.LinkedHashSet<String> bufferedKeys = new java.util.LinkedHashSet<>();
     Instant drainedUpTo;
+    /** §15.10 Time &amp; Sales: stream-delivered prints only (never the poller's sampled latest trade). */
+    final Deque<TapePrint> tape = new ArrayDeque<>();
+    final java.util.LinkedHashSet<String> tapeKeys = new java.util.LinkedHashSet<>();
 
     SymbolState(String symbol) {
       this.symbol = symbol;
@@ -139,6 +145,7 @@ public class QuoteBook {
       case TradeEvent te -> {
         sym = te.trade().symbol();
         applyTrade(te.trade(), now);
+        recordTape(te.trade(), now);
       }
       case BarEvent be -> {
         sym = be.bar().symbol();
@@ -211,6 +218,63 @@ public class QuoteBook {
       }
       s.updatedAt = observedAt;
     }
+  }
+
+  /**
+   * Appends a stream-delivered print to the symbol's Time &amp; Sales tape (§15.10), colored against the quote in
+   * force now. While consolidated prints flow, IEX prints are skipped (they are in the SIP tape already); a print seen
+   * twice (same identity as {@link #printKey}) is kept once.
+   */
+  void recordTape(Trade t, Instant observedAt) {
+    if (t == null || t.price() == null || t.ts() == null) {
+      return;
+    }
+    SymbolState s = state(t.symbol());
+    synchronized (s) {
+      boolean consolidatedFlowing = s.lastConsolidated != null && s.lastConsolidated.observedAt() != null
+          && Duration.between(s.lastConsolidated.observedAt(), observedAt).compareTo(CONSOLIDATED_DEDUP) <= 0;
+      if (!t.consolidated() && consolidatedFlowing) {
+        return;
+      }
+      String key = printKey(t);
+      if (!s.tapeKeys.add(key)) {
+        return;
+      }
+      Quote q = s.quote;
+      s.tape.addLast(new TapePrint(tapeId(t), t.price(), t.size(), t.ts(), t.venue(), t.consolidated(),
+          TapeClassifier.classify(t.price(), q == null ? null : q.bid(), q == null ? null : q.ask())));
+      while (s.tape.size() > TAPE_SIZE) {
+        s.tape.removeFirst();
+      }
+      while (s.tapeKeys.size() > TAPE_SIZE) {
+        s.tapeKeys.removeFirst();
+      }
+    }
+  }
+
+  /** An opaque, compact print id: the provider's trade id when it sends one, else time, price and size. */
+  static String tapeId(Trade t) {
+    String kind = t.consolidated() ? "c" : "i";
+    if (t.id() != null && !t.id().isBlank()) {
+      return kind + t.id();
+    }
+    return kind + Long.toString(t.ts().getEpochSecond(), 36) + "." + t.ts().getNano() + "."
+        + t.price().stripTrailingZeros().toPlainString() + "x" + t.size();
+  }
+
+  /** The newest {@code limit} tape prints of a symbol, newest first (by trade time, then arrival). */
+  public List<TapePrint> tape(String symbol, int limit) {
+    SymbolState s = states.get(symbol);
+    if (s == null || limit <= 0) {
+      return List.of();
+    }
+    List<TapePrint> out;
+    synchronized (s) {
+      out = new ArrayList<>(s.tape);
+    }
+    java.util.Collections.reverse(out);                 // newest arrival first
+    out.sort(java.util.Comparator.comparing(TapePrint::ts).reversed());   // stable: arrival order breaks ties
+    return out.size() > limit ? List.copyOf(out.subList(0, limit)) : List.copyOf(out);
   }
 
   /**

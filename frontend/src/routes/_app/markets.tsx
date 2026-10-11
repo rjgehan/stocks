@@ -11,7 +11,8 @@ import { Tabs } from '@/components/ui/Tabs'
 import { cx } from '@/components/ui/cx'
 import { Change } from '@/features/market/Change'
 import { INDEX_SYMBOLS } from '@/features/market/IndexStrip'
-import { NewsList } from '@/features/market/NewsList'
+import { NewsFeed } from '@/features/research/NewsFeed'
+import { IconScreener } from '@/features/screener/icon'
 
 type MarketsTab = 'MOVERS' | 'NEWS'
 
@@ -99,6 +100,21 @@ function MarketsPage() {
             <IndexCard key={s} symbol={s} />
           ))}
         </div>
+        {/* §22.10: the screener's entry point (the phone keeps its five bottom tabs) */}
+        <Link
+          to="/screener"
+          className="flex items-center gap-3 rounded-lg border border-divider bg-bg-1 px-3 py-3 transition-colors hover:border-border"
+          data-testid="screener-card"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-accent-bg text-accent">
+            <IconScreener size={20} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-body font-semibold">Stock screener</span>
+            <span className="block truncate text-caption text-text-3">Top gainers, most active, unusual volume, large caps under $50, …</span>
+          </span>
+          <span aria-hidden="true" className="text-text-3">›</span>
+        </Link>
         <Tabs
           label="Markets sections"
           value={tab}
@@ -124,7 +140,7 @@ function MarketsPage() {
             <Movers list={list} />
           </section>
         ) : (
-          <NewsList symbols="" limit={20} />
+          <NewsFeed symbols="" pageSize={20} />
         )}
       </div>
     </div>

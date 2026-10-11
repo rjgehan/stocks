@@ -43,6 +43,7 @@ import com.stocks.mcp.tools.McpToolSet;
 import com.stocks.mcp.tools.NotificationTools;
 import com.stocks.mcp.tools.OrderGroupTools;
 import com.stocks.mcp.tools.OrderTools;
+import com.stocks.mcp.tools.ResearchTools;
 import com.stocks.mcp.tools.WatchlistTools;
 import com.stocks.realtime.NotificationService;
 import com.stocks.realtime.QuoteMessages;
@@ -153,7 +154,8 @@ final class McpToolHarness implements AutoCloseable {
         new WatchlistTools(watchlists),
         new NotificationTools(notifications),
         new LeagueStatsTools(leagueStats, pnlAnalysis, reactions, accounts),
-        new AlertTools(alerts));
+        new AlertTools(alerts),
+        new ResearchTools(marketData));
     for (SyncToolSpecification s : McpToolCatalog.specifications(toolSets, MAPPER)) {
       specs.put(s.tool().name(), s);
     }

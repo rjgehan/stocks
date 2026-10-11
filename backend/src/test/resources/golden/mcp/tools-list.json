@@ -9822,4 +9822,296 @@
     },
     "required" : [ "deleted" ]
   }
+}, {
+  "name" : "screen_stocks",
+  "title" : "Stock screener",
+  "description" : "Screens the league's universe (~690 symbols: S&P 500, Nasdaq-100 extras, popular stocks, ADRs, ETFs) by price, market cap, change, volume, relative volume (today's volume / 20-day average), sector and type, sorted and paged. Presets: TOP_GAINERS, TOP_LOSERS, MOST_ACTIVE, UNUSUAL_VOLUME (relative volume >= 2), LARGE_CAPS_UNDER_50 (cap >= $10B, price <= 50), MEGA_CAPS (cap >= $200B), ETFS; an explicit argument replaces the preset's value. Change percents are fractions (0.05 = +5%), market caps dollars, decimals as strings. Rows without a price are left out; warming=true means the first market snapshot is still loading (try again shortly). For the next page pass cursor = the result's nextCursor.",
+  "annotations" : {
+    "title" : "Stock screener",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "preset" : {
+        "type" : "string",
+        "enum" : [ "TOP_GAINERS", "TOP_LOSERS", "MOST_ACTIVE", "UNUSUAL_VOLUME", "LARGE_CAPS_UNDER_50", "MEGA_CAPS", "ETFS" ],
+        "description" : "A preset screen"
+      },
+      "min_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "Minimum last price, e.g. \"5\""
+      },
+      "max_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "Maximum last price"
+      },
+      "min_market_cap" : {
+        "type" : [ "string", "number" ],
+        "description" : "Minimum market cap in dollars, e.g. \"10000000000\""
+      },
+      "max_market_cap" : {
+        "type" : [ "string", "number" ],
+        "description" : "Maximum market cap in dollars"
+      },
+      "min_change_pct" : {
+        "type" : [ "string", "number" ],
+        "description" : "Minimum change vs the previous close, a fraction (\"0.02\")"
+      },
+      "max_change_pct" : {
+        "type" : [ "string", "number" ],
+        "description" : "Maximum change vs the previous close, a fraction (\"-0.02\")"
+      },
+      "min_volume" : {
+        "type" : "integer",
+        "format" : "int64",
+        "description" : "Minimum volume today (shares)"
+      },
+      "min_avg_volume" : {
+        "type" : "integer",
+        "format" : "int64",
+        "description" : "Minimum 20-day average volume (shares)"
+      },
+      "min_rel_volume" : {
+        "type" : [ "string", "number" ],
+        "description" : "Minimum relative volume, e.g. \"2\""
+      },
+      "sectors" : {
+        "type" : "array",
+        "items" : {
+          "type" : "string",
+          "enum" : [ "COMMUNICATION_SERVICES", "CONSUMER_DISCRETIONARY", "CONSUMER_STAPLES", "ENERGY", "FINANCIALS", "HEALTH_CARE", "INDUSTRIALS", "INFORMATION_TECHNOLOGY", "MATERIALS", "REAL_ESTATE", "UTILITIES" ]
+        },
+        "description" : "Only these GICS sectors"
+      },
+      "types" : {
+        "type" : "array",
+        "items" : {
+          "type" : "string",
+          "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN" ]
+        },
+        "description" : "Only these types: COMMON_STOCK, ETF, ADR"
+      },
+      "sort" : {
+        "type" : "string",
+        "enum" : [ "SYMBOL", "PRICE", "CHANGE_PCT", "VOLUME", "AVG_VOLUME", "REL_VOLUME", "MARKET_CAP" ],
+        "description" : "Sort column (default: the preset's, else MARKET_CAP)"
+      },
+      "order" : {
+        "type" : "string",
+        "enum" : [ "ASC", "DESC" ],
+        "description" : "ASC or DESC"
+      },
+      "limit" : {
+        "type" : "integer",
+        "format" : "int32",
+        "description" : "1-50, default 20"
+      },
+      "cursor" : {
+        "type" : "string",
+        "description" : "nextCursor of the previous result"
+      }
+    },
+    "required" : [ ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "asOf" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "coverage" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "priced" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "universe" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "withAvgVolume" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "withMarketCap" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "universe", "priced", "withMarketCap", "withAvgVolume" ]
+      },
+      "items" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "asOf" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "avgVolume" : {
+              "type" : [ "integer", "null" ],
+              "format" : "int64"
+            },
+            "change" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "changePct" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "exchange" : {
+              "type" : [ "string", "null" ]
+            },
+            "marketCap" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "name" : {
+              "type" : [ "string", "null" ]
+            },
+            "price" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "quality" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+            },
+            "relVolume" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "sector" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "COMMUNICATION_SERVICES", "CONSUMER_DISCRETIONARY", "CONSUMER_STAPLES", "ENERGY", "FINANCIALS", "HEALTH_CARE", "INDUSTRIALS", "INFORMATION_TECHNOLOGY", "MATERIALS", "REAL_ESTATE", "UTILITIES", null ]
+            },
+            "symbol" : {
+              "type" : [ "string", "null" ]
+            },
+            "type" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", null ]
+            },
+            "volume" : {
+              "type" : [ "integer", "null" ],
+              "format" : "int64"
+            },
+            "volumeIsPartial" : {
+              "type" : "boolean"
+            }
+          },
+          "required" : [ "symbol", "name", "type", "exchange", "sector", "price", "change", "changePct", "volume", "volumeIsPartial", "avgVolume", "relVolume", "marketCap", "quality", "asOf" ]
+        }
+      },
+      "nextCursor" : {
+        "type" : [ "string", "null" ]
+      },
+      "order" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "ASC", "DESC", null ]
+      },
+      "preset" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "TOP_GAINERS", "TOP_LOSERS", "MOST_ACTIVE", "UNUSUAL_VOLUME", "LARGE_CAPS_UNDER_50", "MEGA_CAPS", "ETFS", null ]
+      },
+      "sort" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "SYMBOL", "PRICE", "CHANGE_PCT", "VOLUME", "AVG_VOLUME", "REL_VOLUME", "MARKET_CAP", null ]
+      },
+      "total" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "warming" : {
+        "type" : "boolean"
+      }
+    },
+    "required" : [ "preset", "sort", "order", "total", "items", "nextCursor", "asOf", "warming", "coverage" ]
+  }
+}, {
+  "name" : "get_recommendations",
+  "title" : "Analyst recommendations",
+  "description" : "Monthly analyst recommendation trends for one stock (counts of strong buy, buy, hold, sell and strong sell; newest month first, up to 6). periods is empty and source is \"none\" when no source covers the symbol (for example an ETF). There are no price targets.",
+  "annotations" : {
+    "title" : "Analyst recommendations",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "symbol" : {
+        "type" : "string",
+        "description" : "Ticker, e.g. AAPL"
+      }
+    },
+    "required" : [ "symbol" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "asOf" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "periods" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "buy" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "hold" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "period" : {
+              "type" : [ "string", "null" ],
+              "format" : "date"
+            },
+            "sell" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "strongBuy" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "strongSell" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "total" : {
+              "type" : "integer",
+              "format" : "int32"
+            }
+          },
+          "required" : [ "period", "strongBuy", "buy", "hold", "sell", "strongSell", "total" ]
+        }
+      },
+      "source" : {
+        "type" : [ "string", "null" ]
+      },
+      "symbol" : {
+        "type" : [ "string", "null" ]
+      }
+    },
+    "required" : [ "symbol", "source", "asOf", "periods" ]
+  }
 } ]

@@ -7,6 +7,7 @@ import com.stocks.contract.marketdata.Print;
 import com.stocks.contract.marketdata.ProviderStatus;
 import com.stocks.contract.marketdata.QuoteView;
 import com.stocks.contract.marketdata.RefreshPriority;
+import com.stocks.contract.marketdata.Tape;
 import com.stocks.contract.marketdata.model.Bar;
 import com.stocks.contract.marketdata.model.Quote;
 import com.stocks.contract.marketdata.model.Trade;
@@ -41,6 +42,18 @@ public interface MarketFeed extends AutoCloseable {
   /** Like {@link #quotes} but never waits on a provider (what is known now). */
   default Map<String, QuoteView> peek(Collection<String> symbols) {
     return quotes(symbols);
+  }
+
+  /** §15.10 Time &amp; Sales: the newest {@code limit} stream-delivered prints, newest first. */
+  default Tape tape(String symbol, int limit) {
+    return Tape.none(symbol);
+  }
+
+  /**
+   * §15.10 screener warm-up: fetch {@code symbols} that have not been polled recently, in the background at
+   * {@code BACKGROUND} priority (never on the caller's thread). A no-op for feeds that are always current (the SIM).
+   */
+  default void warm(Collection<String> symbols) {
   }
 
   Optional<ExecQuote> executableQuote(String symbol, Instant notBefore, SessionType session);

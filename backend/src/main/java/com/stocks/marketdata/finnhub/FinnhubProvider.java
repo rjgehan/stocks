@@ -7,6 +7,8 @@ import com.stocks.contract.marketdata.RefreshPriority;
 import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.contract.marketdata.model.MarketEvent;
 import com.stocks.contract.marketdata.model.NewsItem;
+import com.stocks.contract.marketdata.model.RecommendationTrend;
+import com.stocks.marketdata.spi.CompanyProfile;
 import com.stocks.marketdata.config.MarketDataProperties;
 import com.stocks.marketdata.core.WebSocketStream;
 import com.stocks.marketdata.spi.Capabilities;
@@ -66,6 +68,18 @@ public class FinnhubProvider implements MarketDataProvider {
   @Override
   public Optional<Fundamentals> fundamentals(String symbol) {
     return rest.fundamentals(symbol, RefreshPriority.UI);
+  }
+
+  /** §15.10: {@code /stock/recommendation} at UI priority (a player opened the quote page; cached 12 h). */
+  @Override
+  public List<RecommendationTrend> recommendations(String symbol) {
+    return rest.recommendations(symbol, RefreshPriority.UI);
+  }
+
+  /** §15.10: {@code /stock/profile2} for the screener's statistics (the refresher asks at BACKGROUND priority). */
+  @Override
+  public Optional<CompanyProfile> profile(String symbol, RefreshPriority priority) {
+    return rest.profile(symbol, priority);
   }
 
   @Override

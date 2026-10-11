@@ -258,9 +258,11 @@ describe('agent runner against the real stocks MCP server', () => {
     // The model saw every server tool (38 in Phase 1, more as Phase 2 adds them) plus save_notes, converted to
     // Messages API custom tools.
     const tools = llm.calls[0]?.body.tools as { name: string; input_schema: { type: string } }[];
-    expect(tools.length).toBeGreaterThanOrEqual(39);
+    expect(tools.length).toBeGreaterThanOrEqual(41);
     expect(tools.at(-1)?.name).toBe('save_notes');
-    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['whoami', 'place_order', 'get_league_feed', 'save_notes']));
+    expect(tools.map((t) => t.name)).toEqual(
+      expect.arrayContaining(['whoami', 'place_order', 'get_league_feed', 'screen_stocks', 'get_recommendations', 'save_notes']),
+    );
     expect(llm.calls[0]?.body.messages[0].content).toContain('"feed":{"profile":"simulated"');
 
     const order = await orderByClientId(keys.claude, clientOrderId);
@@ -324,10 +326,11 @@ describe('agent runner against the real stocks MCP server', () => {
 
     expect(`${s.status}\n${sink.text}`).toMatch(/^completed\n/);
     expect(s).toMatchObject({ toolCalls: 4, toolErrors: 0, orders: 1 });
-    // every server tool (38 in Phase 1, more as Phase 2 adds them) plus save_notes, as Responses API function tools
+    // the same tools as the Claude bot (every server tool plus save_notes), as Responses API function tools
     const tools = llm.calls[0]?.body.tools as { type: string; name: string }[];
-    expect(tools.length).toBeGreaterThanOrEqual(39);
-    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['whoami', 'place_order', 'get_league_feed', 'save_notes']));
+    expect(tools.length).toBeGreaterThanOrEqual(41);
+    expect(tools.at(-1)?.name).toBe('save_notes');
+    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['screen_stocks', 'get_recommendations']));
     expect(JSON.parse(placed)).toMatchObject({ order: { clientOrderId }, replayed: false });
     expect(llm.calls[1]?.body.previous_response_id).toMatch(/^resp_fake_/);
     const order = await orderByClientId(keys.chatgpt, clientOrderId);

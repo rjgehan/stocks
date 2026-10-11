@@ -929,6 +929,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assets/{symbol}/recommendations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Analyst recommendation trends
+         * @description Phase 2 (§15.10): monthly counts of strong buy, buy, hold, sell and strong sell ratings, newest first (Finnhub's free recommendation trends, cached 12 h). periods is empty and source is "none" when no source covers the symbol (no Finnhub token, an ETF). Errors: SYMBOL_NOT_FOUND.
+         */
+        get: operations["recommendations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{symbol}/trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Time & Sales (recent prints)
+         * @description Phase 2 (§15.10): the symbol's most recent prints, newest first, each with its side against the quote in force when it arrived (AT_ASK, AT_BID, BETWEEN, UNKNOWN). Only prints a trade stream delivered: source SIP (consolidated), IEX (single venue, a few percent of the volume), SIMULATED, or NONE when no stream covers the symbol right now (streaming=false; the quote page's /topic/trades.{SYM} subscription asks for one). Prices are raw (as traded). Errors: SYMBOL_NOT_FOUND, VALIDATION_FAILED.
+         */
+        get: operations["trades"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/csrf": {
         parameters: {
             query?: never;
@@ -1205,6 +1245,26 @@ export interface paths {
          * @description GAINERS, LOSERS or ACTIVES (most active by volume), up to 50. changePct is a fraction (0.0123 = +1.23%).
          */
         get: operations["movers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/market/screener": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Screen stocks
+         * @description Screens the universe (S&P 500, Nasdaq-100 extras, popular stocks, ADRs and ETFs; ~690 symbols) with the latest quotes and 20-day volume and company statistics. A preset sets filters and a sort; an explicit parameter replaces the preset's value. changePct values are fractions (0.05 = +5%), market caps dollars. A filter on a column excludes rows where it is unknown; rows without a price are never returned. Null sort keys sort last; ties by symbol. warming=true while the first snapshot pass of the universe is still running. Errors: VALIDATION_FAILED.
+         */
+        get: operations["screen"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3478,6 +3538,29 @@ export interface components {
         ReauthRequest: {
             password: string | null;
         };
+        RecommendationPeriod: {
+            /** Format: int32 */
+            buy: number;
+            /** Format: int32 */
+            hold: number;
+            /** Format: date */
+            period: string | null;
+            /** Format: int32 */
+            sell: number;
+            /** Format: int32 */
+            strongBuy: number;
+            /** Format: int32 */
+            strongSell: number;
+            /** Format: int32 */
+            total: number;
+        };
+        Recommendations: {
+            /** Format: date-time */
+            asOf: string | null;
+            periods: components["schemas"]["RecommendationPeriod"][] | null;
+            source: string | null;
+            symbol: string | null;
+        };
         RefQuote: {
             /** Format: decimal */
             ask: string | null;
@@ -3728,6 +3811,60 @@ export interface components {
         RunJobRequest: {
             runKey?: string | null;
         };
+        ScreenCoverage: {
+            /** Format: int32 */
+            priced: number;
+            /** Format: int32 */
+            universe: number;
+            /** Format: int32 */
+            withAvgVolume: number;
+            /** Format: int32 */
+            withMarketCap: number;
+        };
+        ScreenResult: {
+            /** Format: date-time */
+            asOf: string | null;
+            coverage: components["schemas"]["ScreenCoverage"] | null;
+            items: components["schemas"]["ScreenerRow"][] | null;
+            nextCursor: string | null;
+            /** @enum {string|null} */
+            order: "ASC" | "DESC" | null;
+            /** @enum {string|null} */
+            preset: "TOP_GAINERS" | "TOP_LOSERS" | "MOST_ACTIVE" | "UNUSUAL_VOLUME" | "LARGE_CAPS_UNDER_50" | "MEGA_CAPS" | "ETFS" | null;
+            /** @enum {string|null} */
+            sort: "SYMBOL" | "PRICE" | "CHANGE_PCT" | "VOLUME" | "AVG_VOLUME" | "REL_VOLUME" | "MARKET_CAP" | null;
+            /** Format: int32 */
+            total: number;
+            warming: boolean;
+        };
+        ScreenerRow: {
+            /** Format: date-time */
+            asOf: string | null;
+            /** Format: int64 */
+            avgVolume: number | null;
+            /** Format: decimal */
+            change: string | null;
+            /** Format: decimal */
+            changePct: string | null;
+            exchange: string | null;
+            /** Format: decimal */
+            marketCap: string | null;
+            name: string | null;
+            /** Format: decimal */
+            price: string | null;
+            /** @enum {string|null} */
+            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            /** Format: decimal */
+            relVolume: string | null;
+            /** @enum {string|null} */
+            sector: "COMMUNICATION_SERVICES" | "CONSUMER_DISCRETIONARY" | "CONSUMER_STAPLES" | "ENERGY" | "FINANCIALS" | "HEALTH_CARE" | "INDUSTRIALS" | "INFORMATION_TECHNOLOGY" | "MATERIALS" | "REAL_ESTATE" | "UTILITIES" | null;
+            symbol: string | null;
+            /** @enum {string|null} */
+            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | null;
+            /** Format: int64 */
+            volume: number | null;
+            volumeIsPartial: boolean;
+        };
         SetPasswordRequest: {
             newPassword: string | null;
         };
@@ -3915,6 +4052,27 @@ export interface components {
             /** Format: date-time */
             startedAt: string | null;
             version: string | null;
+        };
+        TapePrint: {
+            id: string | null;
+            /** Format: decimal */
+            price: string | null;
+            /** @enum {string|null} */
+            side: "AT_ASK" | "AT_BID" | "BETWEEN" | "UNKNOWN" | null;
+            /** Format: int64 */
+            size: number;
+            /** Format: date-time */
+            t: string | null;
+            venue: string | null;
+        };
+        TimeAndSales: {
+            /** Format: date-time */
+            asOf: string | null;
+            prints: components["schemas"]["TapePrint"][] | null;
+            /** @enum {string|null} */
+            source: "SIP" | "IEX" | "SIMULATED" | "NONE" | null;
+            streaming: boolean;
+            symbol: string | null;
         };
         TradingDay: {
             /** Format: date */
@@ -5910,6 +6068,71 @@ export interface operations {
             };
         };
     };
+    recommendations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recommendations"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    trades: {
+        parameters: {
+            query?: {
+                /** @description 1–200, default 60 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimeAndSales"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getCsrf: {
         parameters: {
             query?: never;
@@ -6391,6 +6614,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Movers"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    screen: {
+        parameters: {
+            query?: {
+                /** @description TOP_GAINERS, TOP_LOSERS, MOST_ACTIVE, UNUSUAL_VOLUME, LARGE_CAPS_UNDER_50, MEGA_CAPS or ETFS */
+                preset?: "TOP_GAINERS" | "TOP_LOSERS" | "MOST_ACTIVE" | "UNUSUAL_VOLUME" | "LARGE_CAPS_UNDER_50" | "MEGA_CAPS" | "ETFS";
+                /** @description Minimum last price */
+                minPrice?: string;
+                /** @description Maximum last price */
+                maxPrice?: string;
+                /** @description Minimum market cap (dollars) */
+                minMarketCap?: string;
+                /** @description Maximum market cap (dollars) */
+                maxMarketCap?: string;
+                /** @description Minimum change vs the previous close, a fraction */
+                minChangePct?: string;
+                /** @description Maximum change vs the previous close, a fraction */
+                maxChangePct?: string;
+                /** @description Minimum volume today (shares) */
+                minVolume?: number;
+                /** @description Minimum 20-day average volume (shares) */
+                minAvgVolume?: number;
+                /** @description Minimum relative volume (volume ÷ 20-day average) */
+                minRelVolume?: string;
+                /** @description GICS sectors, comma-separated */
+                sectors?: ("COMMUNICATION_SERVICES" | "CONSUMER_DISCRETIONARY" | "CONSUMER_STAPLES" | "ENERGY" | "FINANCIALS" | "HEALTH_CARE" | "INDUSTRIALS" | "INFORMATION_TECHNOLOGY" | "MATERIALS" | "REAL_ESTATE" | "UTILITIES")[];
+                /** @description COMMON_STOCK, ETF and/or ADR, comma-separated */
+                types?: ("COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN")[];
+                /** @description Sort column (default: the preset's, else MARKET_CAP) */
+                sort?: "SYMBOL" | "PRICE" | "CHANGE_PCT" | "VOLUME" | "AVG_VOLUME" | "REL_VOLUME" | "MARKET_CAP";
+                /** @description ASC or DESC (default: the preset's, else DESC; SYMBOL defaults to ASC) */
+                order?: "ASC" | "DESC";
+                /** @description Opaque cursor from nextCursor */
+                cursor?: string;
+                /** @description 1–100, default 25 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScreenResult"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

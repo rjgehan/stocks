@@ -20,6 +20,9 @@ import com.stocks.contract.marketdata.model.NewsItem;
 import com.stocks.contract.marketdata.model.Quote;
 import com.stocks.contract.marketdata.model.Snapshot;
 import com.stocks.contract.marketdata.model.Trade;
+import com.stocks.contract.marketdata.model.RecommendationTrend;
+import com.stocks.contract.marketdata.RefreshPriority;
+import com.stocks.marketdata.spi.CompanyProfile;
 import com.stocks.marketdata.core.BarMath;
 import com.stocks.marketdata.core.Universe;
 import com.stocks.marketdata.spi.BarQuery;
@@ -329,7 +332,7 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
       }
     }
     long k = SimMath.mix(p.key(), 201);
-    BigDecimal shares = BigDecimal.valueOf(StrictMath.round(p.advShares() * (150 + 250 * SimMath.uniform(k))));
+    BigDecimal shares = shares(p);
     BigDecimal pe = SimMath.decimal6(10 + 35 * SimMath.uniform(SimMath.mix(k, 1))).setScale(2, RoundingMode.HALF_EVEN);
     BigDecimal eps = price.divide(pe, 2, RoundingMode.HALF_EVEN);
     BigDecimal yield = SimMath.decimal6(0.03 * SimMath.uniform(SimMath.mix(k, 2))).setScale(4, RoundingMode.HALF_EVEN);
@@ -338,6 +341,61 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
         etf ? null : pe, etf ? null : eps, yield, hi, lo,
         SimMath.decimal6(p.beta()).setScale(2, RoundingMode.HALF_EVEN), etf ? null : shares,
         etf ? "Exchange Traded Fund" : "Simulated", null, ID));
+  }
+
+  /**
+   * §15.10: simulated analyst recommendation trends for stocks (ETFs have none): the last four months, each a
+   * deterministic function of {@code (seed, symbol, month)} drifting slowly, so the UI can be exercised in dev and
+   * e2e. Labelled {@code simulated} like everything the SIM serves.
+   */
+  @Override
+  public List<RecommendationTrend> recommendations(String symbol) {
+    Optional<SimModel.Params> po = model.params(symbol);
+    if (po.isEmpty() || po.get().type() == AssetType.ETF) {
+      return List.of();
+    }
+    SimModel.Params p = po.get();
+    LocalDate month = Et.date(time.now()).withDayOfMonth(1);
+    long k = SimMath.mix(p.key(), 307);
+    int analysts = 6 + (int) StrictMath.floor(SimMath.uniform(k) * 40);
+    double tilt = SimMath.uniform(SimMath.mix(k, 1));                 // 0 bearish … 1 bullish
+    List<RecommendationTrend> out = new ArrayList<>();
+    for (int i = 0; i < 4; i++) {
+      LocalDate period = month.minusMonths(i);
+      long km = SimMath.mix(k, period.getYear() * 12L + period.getMonthValue());
+      double t = StrictMath.min(1, StrictMath.max(0, tilt + 0.08 * (SimMath.uniform(km) - 0.5)));
+      int n = analysts + (int) StrictMath.floor(SimMath.uniform(SimMath.mix(km, 1)) * 3);
+      int strongBuy = (int) StrictMath.round(n * 0.35 * t);
+      int buy = (int) StrictMath.round(n * 0.40 * t);
+      int sell = (int) StrictMath.round(n * 0.12 * (1 - t));
+      int strongSell = (int) StrictMath.round(n * 0.05 * (1 - t));
+      int hold = StrictMath.max(0, n - strongBuy - buy - sell - strongSell);
+      out.add(new RecommendationTrend(symbol, period, strongBuy, buy, hold, sell, strongSell));
+    }
+    return out;
+  }
+
+  /**
+   * §15.10 screener statistics: the SIM's shares outstanding and market cap now (stocks only; the same numbers as
+   * {@link #fundamentals}, without its 52-week scan); no industry label (sectors are static).
+   */
+  @Override
+  public Optional<CompanyProfile> profile(String symbol, RefreshPriority priority) {
+    Optional<SimModel.Params> po = model.params(symbol);
+    if (po.isEmpty() || po.get().type() == AssetType.ETF) {
+      return Optional.empty();
+    }
+    SimModel.Params p = po.get();
+    BigDecimal shares = shares(p);
+    BigDecimal price = model.priceAt(p, time.now()).orElse(null);
+    return Optional.of(new CompanyProfile(symbol, shares,
+        price == null ? null : price.multiply(shares).setScale(0, RoundingMode.HALF_EVEN), null, ID));
+  }
+
+  /** Shares outstanding: 150–400 days of average volume, a pure function of (seed, symbol). */
+  private static BigDecimal shares(SimModel.Params p) {
+    long k = SimMath.mix(p.key(), 201);
+    return BigDecimal.valueOf(StrictMath.round(p.advShares() * (150 + 250 * SimMath.uniform(k))));
   }
 
   @Override

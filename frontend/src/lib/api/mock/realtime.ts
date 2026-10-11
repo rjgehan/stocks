@@ -5,7 +5,7 @@
 import type { DriverHooks, RealtimeDriver } from '../../realtime/hub'
 import { mockServer } from './index'
 
-const QUOTE_RE = /^\/topic\/(quote|tick)\.(.+)$/
+const QUOTE_RE = /^\/topic\/(quote|tick|trades)\.(.+)$/
 
 export function createMockDriver(): RealtimeDriver {
   const server = mockServer()
@@ -32,6 +32,11 @@ export function createMockDriver(): RealtimeDriver {
       server.onMarketStep(symbol)
       if (subscribed.has(`/topic/quote.${symbol}`)) hooks.onMessage(`/topic/quote.${symbol}`, server.market.quote(symbol))
       if (subscribed.has(`/topic/tick.${symbol}`)) hooks.onMessage(`/topic/tick.${symbol}`, server.market.tick(symbol))
+      // §15.10 Time & Sales: a print per market step while someone watches the tape
+      if (subscribed.has(`/topic/trades.${symbol}`)) {
+        const print = server.phase2.step(symbol)
+        if (print) hooks.onMessage(`/topic/trades.${symbol}`, server.phase2.tradesMessage(symbol, print))
+      }
     }
     if (subscribed.has('/topic/feed') && Date.now() >= nextFeedAt) {
       nextFeedAt = Date.now() + 20_000 + Math.random() * 25_000

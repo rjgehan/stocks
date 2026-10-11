@@ -8,6 +8,9 @@ import com.stocks.contract.marketdata.BarSeries;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.MarketUpdateListener;
 import com.stocks.contract.marketdata.QuoteView;
+import com.stocks.contract.marketdata.Tape;
+import com.stocks.contract.marketdata.TapePrint;
+import com.stocks.contract.marketdata.dto.TimeAndSalesDto;
 import com.stocks.contract.marketdata.model.AdjustmentMode;
 import com.stocks.contract.marketdata.model.Bar;
 import java.time.Duration;
@@ -34,7 +37,9 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>{@code /topic/quote.{SYM}}: {@code QuoteDto}, coalesced to at most one per {@link #QUOTE_INTERVAL} (≤ 4/s);</li>
  *   <li>{@code /topic/tick.{SYM}}: {@code TickDto}, at most one per {@link #TICK_INTERVAL} (≤ 1/s);</li>
- *   <li>{@code /topic/bars.{SYM}.1Min}: the forming minute {@code Bar}, at most one per {@link #BARS_INTERVAL}.</li>
+ *   <li>{@code /topic/bars.{SYM}.1Min}: the forming minute {@code Bar}, at most one per {@link #BARS_INTERVAL};</li>
+ *   <li>{@code /topic/trades.{SYM}} (Phase 2, §15.10): a {@code TimeAndSalesDto} with only the prints that are new
+ *       since the previous message (none sent when nothing is new), at most one per {@link #TRADES_INTERVAL}.</li>
  * </ul>
  * Coalescing keeps the <b>latest</b> state: an update that arrives inside the interval is sent when the interval ends.
  * Every payload is built from {@code MarketDataService.quote} at send time, so all channels see one {@code QuoteBook}.
@@ -49,6 +54,9 @@ public class QuoteFanout implements MarketUpdateListener, SmartLifecycle {
   public static final Duration QUOTE_INTERVAL = Duration.ofMillis(250);
   public static final Duration TICK_INTERVAL = Duration.ofSeconds(1);
   public static final Duration BARS_INTERVAL = Duration.ofSeconds(1);
+  public static final Duration TRADES_INTERVAL = Duration.ofMillis(250);
+  /** The newest prints a Time &amp; Sales message may carry (a busy symbol's backlog is not replayed). */
+  static final int TRADES_BATCH = 50;
   public static final Duration FLUSH_EVERY = Duration.ofMillis(100);
   private static final Duration LEASE_SWEEP_EVERY = Duration.ofSeconds(5);
 
@@ -57,9 +65,14 @@ public class QuoteFanout implements MarketUpdateListener, SmartLifecycle {
     boolean quotePending;
     boolean tickPending;
     boolean barsPending;
+    boolean tradesPending;
     long lastQuoteNanos = Long.MIN_VALUE;
     long lastTickNanos = Long.MIN_VALUE;
     long lastBarsNanos = Long.MIN_VALUE;
+    long lastTradesNanos = Long.MIN_VALUE;
+    /** The newest print already sent on {@code /topic/trades.{SYM}} (trade time, then the ids sent at that time). */
+    Instant tradesCursor;
+    Set<String> tradesCursorIds = Set.of();
   }
 
   private final MarketDataService marketData;
@@ -105,6 +118,7 @@ public class QuoteFanout implements MarketUpdateListener, SmartLifecycle {
       s.quotePending = true;
       s.tickPending = true;
       s.barsPending = true;
+      s.tradesPending = true;
     }
     dirty.add(symbol);
   }
@@ -133,6 +147,7 @@ public class QuoteFanout implements MarketUpdateListener, SmartLifecycle {
       boolean quote;
       boolean tick;
       boolean bars;
+      boolean trades;
       synchronized (s) {
         quote = s.quotePending && due(s.lastQuoteNanos, QUOTE_INTERVAL, nowNanos)
             && tracker.subscribers(StompDestinations.quote(symbol)) > 0;
@@ -140,6 +155,8 @@ public class QuoteFanout implements MarketUpdateListener, SmartLifecycle {
             && tracker.subscribers(StompDestinations.tick(symbol)) > 0;
         bars = s.barsPending && due(s.lastBarsNanos, BARS_INTERVAL, nowNanos)
             && tracker.subscribers(StompDestinations.bars(symbol)) > 0;
+        trades = s.tradesPending && due(s.lastTradesNanos, TRADES_INTERVAL, nowNanos)
+            && tracker.subscribers(StompDestinations.trades(symbol)) > 0;
         if (quote) {
           s.quotePending = false;
           s.lastQuoteNanos = nowNanos;
@@ -152,6 +169,10 @@ public class QuoteFanout implements MarketUpdateListener, SmartLifecycle {
           s.barsPending = false;
           s.lastBarsNanos = nowNanos;
         }
+        if (trades) {
+          s.tradesPending = false;
+          s.lastTradesNanos = nowNanos;
+        }
         // a channel nobody subscribes to has nothing pending
         if (tracker.subscribers(StompDestinations.quote(symbol)) == 0) {
           s.quotePending = false;
@@ -162,11 +183,16 @@ public class QuoteFanout implements MarketUpdateListener, SmartLifecycle {
         if (tracker.subscribers(StompDestinations.bars(symbol)) == 0) {
           s.barsPending = false;
         }
-        if (!s.quotePending && !s.tickPending && !s.barsPending) {
+        if (tracker.subscribers(StompDestinations.trades(symbol)) == 0) {
+          s.tradesPending = false;
+          s.tradesCursor = null;                       // a new subscriber starts from the current tape
+          s.tradesCursorIds = Set.of();
+        }
+        if (!s.quotePending && !s.tickPending && !s.barsPending && !s.tradesPending) {
           dirty.remove(symbol);
         }
       }
-      if (!quote && !tick && !bars) {
+      if (!quote && !tick && !bars && !trades) {
         continue;
       }
       try {
@@ -191,11 +217,53 @@ public class QuoteFanout implements MarketUpdateListener, SmartLifecycle {
             sent++;
           }
         }
+        if (trades && sendNewPrints(symbol, s, now)) {
+          sent++;
+        }
       } catch (RuntimeException e) {
         log.warn("STOMP fan-out of {} failed: {}", symbol, e.toString());
       }
     }
     return sent;
+  }
+
+  /**
+   * §15.10: sends the prints newer than the symbol's cursor (by trade time; at the cursor's own time, the ids not sent
+   * yet), newest first, at most {@link #TRADES_BATCH}. Returns false when nothing is new (no message).
+   */
+  private boolean sendNewPrints(String symbol, SymbolState s, Instant now) {
+    Tape tape = marketData.timeAndSales(symbol, TRADES_BATCH);
+    Instant cursor;
+    Set<String> cursorIds;
+    synchronized (s) {
+      cursor = s.tradesCursor;
+      cursorIds = s.tradesCursorIds;
+    }
+    List<TapePrint> fresh = new ArrayList<>();
+    for (TapePrint p : tape.prints()) {
+      if (cursor == null || p.ts().isAfter(cursor) || p.ts().equals(cursor) && !cursorIds.contains(p.id())) {
+        fresh.add(p);
+      }
+    }
+    if (fresh.isEmpty()) {
+      return false;
+    }
+    Instant newest = fresh.get(0).ts();
+    Set<String> ids = new java.util.HashSet<>();
+    for (TapePrint p : tape.prints()) {
+      if (p.ts().equals(newest)) {
+        ids.add(p.id());
+      }
+    }
+    if (cursor != null && newest.equals(cursor)) {
+      ids.addAll(cursorIds);
+    }
+    synchronized (s) {
+      s.tradesCursor = newest;
+      s.tradesCursorIds = Set.copyOf(ids);
+    }
+    send(StompDestinations.trades(symbol), TimeAndSalesDto.of(tape, fresh, now));
+    return true;
   }
 
   private static boolean due(long lastNanos, Duration interval, long nowNanos) {

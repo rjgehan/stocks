@@ -84,8 +84,8 @@ class McpToolCatalogTest {
   }
 
   @Test
-  void theCatalogHasThe51ToolsOfSection20Point3AndNoAdminTool() {
-    assertThat(McpToolCatalog.ORDER).hasSize(51).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
+  void theCatalogHasThe53ToolsOfSection20Point3AndNoAdminTool() {
+    assertThat(McpToolCatalog.ORDER).hasSize(53).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
         .noneMatch(n -> n.contains("admin"));
     assertThat(McpToolCatalog.ORDER.get(37)).as("Phase 1 ends at #38").isEqualTo("mark_notifications_read");
   }
@@ -115,5 +115,13 @@ class McpToolCatalogTest {
         "create_alert", "delete_alert");
     assertThat(McpToolCatalog.SCOPES).containsEntry("list_alerts", Scopes.ACCOUNT_READ)
         .containsEntry("create_alert", Scopes.TRADE).containsEntry("delete_alert", Scopes.TRADE);
+  }
+
+  @Test
+  void phase2ResearchToolsFollowThePhase1Catalog() {       // §20.3 #52–#53, §15.10
+    assertThat(McpToolCatalog.ORDER.subList(38, McpToolCatalog.ORDER.size())).containsSubsequence("screen_stocks",
+        "get_recommendations");
+    assertThat(McpToolCatalog.SCOPES).containsEntry("screen_stocks", Scopes.MARKET_READ)
+        .containsEntry("get_recommendations", Scopes.MARKET_READ);
   }
 }

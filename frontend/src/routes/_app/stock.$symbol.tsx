@@ -12,10 +12,10 @@ interface StockSearch {
   ticket?: Side
 }
 
-const TABS: readonly QuoteTab[] = ['OVERVIEW', 'NEWS', 'POSITION']
+const TABS: readonly QuoteTab[] = ['OVERVIEW', 'NEWS', 'TRADES', 'POSITION']
 
 export const Route = createFileRoute('/_app/stock/$symbol')({
-  // §22.2: range=1D, tf?, tab=OVERVIEW|NEWS|POSITION, ticket=BUY|SELL?
+  // §22.2: range=1D, tf?, tab=OVERVIEW|NEWS|TRADES|POSITION (TRADES: phone and tablet, §22.10), ticket=BUY|SELL?
   validateSearch: (search: Record<string, unknown>): StockSearch => ({
     range: CHART_RANGES.find((r) => r === String(search.range ?? '').toUpperCase()),
     tf: parseTimeframe(search.tf),
