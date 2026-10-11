@@ -26,7 +26,7 @@ export function ConsentScreen({ requestId }: { requestId: string }) {
   const decide = useDecideOAuthRequest(requestId)
   const [actAs, setActAs] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string> | null>(null)
-  const [leaving, setLeaving] = useState<string | null>(null)
+  const [leaving, setLeaving] = useState<{ host: string; approved: boolean } | null>(null)
 
   if (!requestId) return <Problem title="Nothing to approve" body="This page needs a connection request. Start again from the app you want to connect." />
   if (request.isPending) return <Loading />
@@ -60,20 +60,20 @@ export function ConsentScreen({ requestId }: { requestId: string }) {
     else next.delete(scope)
     setSelected(next)
   }
-  const finish = (redirectUrl: string | null | undefined) => {
+  const finish = (redirectUrl: string | null | undefined, approved: boolean) => {
     const url = safeRedirect(redirectUrl)
     if (!url) return
-    setLeaving(new URL(url).host)
+    setLeaving({ host: new URL(url).host, approved })
     leaveTo(url)
   }
-  const allow = () => currentHandle && decide.mutate(approval(currentHandle, selection), { onSuccess: (r) => finish(r.redirectUrl) })
-  const deny = () => decide.mutate({ approve: false }, { onSuccess: (r) => finish(r.redirectUrl) })
+  const allow = () => currentHandle && decide.mutate(approval(currentHandle, selection), { onSuccess: (r) => finish(r.redirectUrl, true) })
+  const deny = () => decide.mutate({ approve: false }, { onSuccess: (r) => finish(r.redirectUrl, false) })
 
   if (leaving) {
     return (
-      <AuthCard title="Connected" subtitle={`Taking you back to ${leaving}…`}>
+      <AuthCard title={leaving.approved ? 'Connected' : 'Not connected'} subtitle={`Taking you back to ${leaving.host}…`}>
         <p role="status" className="text-caption text-text-2">
-          You can disconnect {name} at any time in Settings → Connected apps.
+          {leaving.approved ? `You can disconnect ${name} at any time in Settings → Connected apps.` : `${name} got no access to your league.`}
         </p>
       </AuthCard>
     )

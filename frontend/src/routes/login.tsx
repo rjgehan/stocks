@@ -9,7 +9,8 @@ import { AuthCard } from '@/features/auth/AuthCard'
 
 export const Route = createFileRoute('/login')({
   validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
-    redirect: typeof search.redirect === 'string' && search.redirect.startsWith('/') && !search.redirect.startsWith('//') ? search.redirect : undefined,
+    // same-origin paths only: no `//host` and no backslash (the URL parser reads `/\host` as `//host`)
+    redirect: typeof search.redirect === 'string' && search.redirect.startsWith('/') && !search.redirect.startsWith('//') && !search.redirect.includes('\\') ? search.redirect : undefined,
   }),
   component: LoginPage,
 })
