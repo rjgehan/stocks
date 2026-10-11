@@ -103,7 +103,7 @@ public final class SafeHttpsFetcher implements CimdFetcher {
         throw new FetchException("The client_id host resolves to a non-public address.");
       }
     }
-    try (Socket socket = connector.connect(addresses[0], port, host, remainingMillis(deadline))) {
+    try (Socket socket = connect(addresses, port, host, deadline)) {
       OutputStream out = socket.getOutputStream();
       String target = (url.getRawPath() == null || url.getRawPath().isEmpty() ? "/" : url.getRawPath())
           + (url.getRawQuery() == null ? "" : "?" + url.getRawQuery());
@@ -122,6 +122,24 @@ public final class SafeHttpsFetcher implements CimdFetcher {
     } catch (IOException e) {
       throw new FetchException("The client metadata document could not be fetched.", e);
     }
+  }
+
+  /**
+   * Connects to the first validated address that accepts the connection (all of them passed the policy), within the
+   * one deadline: a host with an IPv6 address first still works from a container without an IPv6 route.
+   */
+  private Socket connect(InetAddress[] addresses, int port, String host, long deadline) throws IOException {
+    IOException last = null;
+    for (InetAddress address : addresses) {
+      try {
+        return connector.connect(address, port, host, remainingMillis(deadline));
+      } catch (SocketTimeoutException e) {
+        throw e;
+      } catch (IOException e) {
+        last = e;
+      }
+    }
+    throw last;
   }
 
   private InetAddress[] resolve(String host, long deadline) throws FetchException {

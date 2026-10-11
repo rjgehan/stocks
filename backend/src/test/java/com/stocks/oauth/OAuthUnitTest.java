@@ -26,6 +26,7 @@ class OAuthUnitTest {
   @Test
   void redirectAllowlist() {
     assertThat(redirects.isAllowed("https://claude.ai/api/mcp/auth_callback")).isTrue();
+    assertThat(redirects.isAllowed("https://claude.com/api/mcp/auth_callback")).isTrue();
     assertThat(redirects.isAllowed("https://chatgpt.com/connector_platform_oauth_redirect")).isTrue();
     assertThat(redirects.isAllowed("https://chatgpt.com/connector/oauth/abc_123-X")).isTrue();
     assertThat(redirects.isAllowed("https://chatgpt.com/connector/oauth/a/b")).isFalse();
@@ -68,7 +69,13 @@ class OAuthUnitTest {
     assertThat(urls.isResource("https://stocks.gehan.cloud:443/mcp")).isTrue();
     assertThat(urls.isResource("https://stocks.gehan.cloud/MCP")).isFalse();
     assertThat(urls.isResource("https://stocks.gehan.cloud/mcp#x")).isFalse();
-    assertThat(urls.isResource("https://stocks.gehan.cloud")).isFalse();
+    // [D] the bare origin is an alias (ChatGPT's documented resource value); the token's aud stays .../mcp
+    assertThat(urls.isResource("https://stocks.gehan.cloud")).isTrue();
+    assertThat(urls.isResource("https://stocks.gehan.cloud/")).isTrue();
+    assertThat(urls.isResource("https://stocks.gehan.cloud/other")).isFalse();
+    assertThat(urls.isResource("https://stocks.gehan.cloud/mcp?x=1")).isFalse();
+    assertThat(urls.isResource("https://user@stocks.gehan.cloud/mcp")).isFalse();
+    assertThat(urls.isResource("http://stocks.gehan.cloud/mcp")).isFalse();
     assertThat(urls.isResource("https://evil.example/mcp")).isFalse();
   }
 

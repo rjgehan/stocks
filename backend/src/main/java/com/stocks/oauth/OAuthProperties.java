@@ -31,7 +31,7 @@ public record OAuthProperties(
     /* Loopback redirects (http://localhost, 127.0.0.1, [::1]) on any port: Claude Code, the MCP Inspector. */
     @DefaultValue("true") boolean allowLoopbackRedirects,
     /* Exact redirect URIs; a trailing "*" matches one path segment of [A-Za-z0-9_-]. */
-    @DefaultValue({"https://claude.ai/api/mcp/auth_callback",
+    @DefaultValue({"https://claude.ai/api/mcp/auth_callback", "https://claude.com/api/mcp/auth_callback",
         "https://chatgpt.com/connector_platform_oauth_redirect",
         "https://chatgpt.com/connector/oauth/*"}) List<String> redirectAllowlist,
     /* Per client IP and minute: /oauth2/authorize and /oauth2/token (each). */

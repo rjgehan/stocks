@@ -63,7 +63,10 @@ public class OAuthUrls {
 
   /**
    * True when {@code candidate} names {@link #resource()}: scheme and host compared case-insensitively (MCP: servers
-   * SHOULD accept uppercase scheme and host), one trailing slash ignored, no fragment allowed.
+   * SHOULD accept uppercase scheme and host), one trailing slash ignored, no query or fragment allowed. The bare
+   * origin ({@link #issuer()}) is accepted as an alias [D]: this server protects exactly one resource, and OpenAI's
+   * Apps SDK documents {@code resource=https://your-mcp.example.com} (the origin) as what ChatGPT sends. The token's
+   * {@code aud} is always {@link #resource()}.
    */
   public boolean isResource(String candidate) {
     if (candidate == null || candidate.isBlank()) {
@@ -72,14 +75,15 @@ public class OAuthUrls {
     try {
       URI given = URI.create(candidate.strip());
       URI ours = URI.create(resource());
-      if (given.getRawFragment() != null || given.getScheme() == null || given.getHost() == null) {
+      if (given.getRawFragment() != null || given.getRawQuery() != null || given.getScheme() == null
+          || given.getHost() == null || given.getRawUserInfo() != null) {
         return false;
       }
+      String path = trimSlash(given.getRawPath());
       return given.getScheme().equalsIgnoreCase(ours.getScheme())
           && given.getHost().toLowerCase(Locale.ROOT).equals(ours.getHost().toLowerCase(Locale.ROOT))
           && effectivePort(given) == effectivePort(ours)
-          && trimSlash(given.getRawPath()).equals(trimSlash(ours.getRawPath()))
-          && given.getRawQuery() == null;
+          && (path.equals(trimSlash(ours.getRawPath())) || path.equals(trimSlash(URI.create(issuer).getRawPath())));
     } catch (IllegalArgumentException e) {
       return false;
     }

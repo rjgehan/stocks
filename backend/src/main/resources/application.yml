@@ -91,6 +91,7 @@ stocks:
     allow-loopback-redirects: true          # Claude Code, the MCP Inspector
     redirect-allowlist:
       - https://claude.ai/api/mcp/auth_callback
+      - https://claude.com/api/mcp/auth_callback   # not in Claude's docs yet; reported by third-party guides
       - https://chatgpt.com/connector_platform_oauth_redirect
       - https://chatgpt.com/connector/oauth/*
     requests-per-min-per-ip: 60             # /oauth2/authorize and /oauth2/token, each

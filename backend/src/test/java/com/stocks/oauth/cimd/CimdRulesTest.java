@@ -28,7 +28,8 @@ public class CimdRulesTest {
 
   public static final OAuthProperties PROPS = new OAuthProperties(true, null, Duration.ofMinutes(30), Duration.ofDays(30),
       Duration.ofSeconds(10), Duration.ofMinutes(5), Duration.ofMinutes(15), Duration.ofSeconds(60), true,
-      List.of("https://claude.ai/api/mcp/auth_callback", "https://chatgpt.com/connector_platform_oauth_redirect",
+      List.of("https://claude.ai/api/mcp/auth_callback", "https://claude.com/api/mcp/auth_callback",
+          "https://chatgpt.com/connector_platform_oauth_redirect",
           "https://chatgpt.com/connector/oauth/*"), 60,
       new OAuthProperties.Cimd(true, Duration.ofSeconds(3), 8192, Duration.ofMinutes(5), Duration.ofHours(24)),
       new OAuthProperties.Dcr(true, 500, 20, Duration.ofHours(24), Duration.ofDays(90)));

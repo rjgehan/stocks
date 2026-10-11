@@ -228,6 +228,26 @@ class SafeHttpsFetcherTest {
   }
 
   @Test
+  void triesTheNextValidatedAddressWhenOneRefusesTheConnection() throws Exception {
+    String json = "{\"client_id\":\"x\"}";
+    int port = serve(out -> write(out, "HTTP/1.1 200 OK\r\nContent-Length: " + json.length() + "\r\n\r\n" + json));
+    InetAddress v6 = InetAddress.getByName("2606:4700::1");
+    InetAddress v4 = InetAddress.getByName("93.184.216.34");
+    List<InetAddress> tried = new ArrayList<>();
+    SafeHttpsFetcher f = new SafeHttpsFetcher(Duration.ofSeconds(3), 8192, AddressPolicy.PUBLIC_ONLY,
+        host -> new InetAddress[] {v6, v4}, (address, p, host, timeout) -> {
+          tried.add(address);
+          if (address.equals(v6)) {
+            throw new java.net.NoRouteToHostException("no IPv6 route");
+          }
+          return PLAIN.connect(InetAddress.getLoopbackAddress(), port, host, timeout);
+        }, "https");
+    assertThat(new String(f.fetch(URI.create("https://client.example/meta.json")).body(), StandardCharsets.UTF_8))
+        .isEqualTo(json);
+    assertThat(tried).containsExactly(v6, v4);
+  }
+
+  @Test
   void refusesOtherSchemes() {
     SafeHttpsFetcher f = new SafeHttpsFetcher(Duration.ofSeconds(1), 8192);
     assertThatThrownBy(() -> f.fetch(URI.create("http://client.example/meta.json")))

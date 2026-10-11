@@ -463,6 +463,14 @@ class OAuthFlowIT {
     // the resource matches with an upper-case host and a trailing slash
     assertThat(claude.authorize(a, null, Map.of("resource", "HTTP://LOCALHOST:5173/mcp/")).getResponse()
         .getHeader("Location")).startsWith("/oauth/consent?request=");
+    // [D] the bare origin is an alias of the MCP resource (OpenAI documents it as ChatGPT's resource value)
+    String code = OAuthTestClient.query(claude.approve(aliceSession, OAuthTestClient.requestId(
+        claude.authorize(a, null, Map.of("resource", OAuthTestClient.ISSUER))), bot.handle(), null)).get("code");
+    MvcResult token = claude.token(Map.of("grant_type", "authorization_code", "code", code, "code_verifier",
+        a.verifier(), "resource", OAuthTestClient.ISSUER + "/"));
+    assertThat(token.getResponse().getStatus()).isEqualTo(200);
+    assertThat(jwtClaims(body(token).get("access_token").asString()).get("aud").toString())
+        .contains(OAuthTestClient.RESOURCE);
     // CIMD documents are cached
     int before = Documents.FETCHES.get();
     claude.authorize(a, null, null);
