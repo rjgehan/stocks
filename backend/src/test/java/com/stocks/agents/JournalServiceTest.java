@@ -124,6 +124,10 @@ class JournalServiceTest {
     assertThat(code(() -> add(null))).isEqualTo(ErrorCode.VALIDATION_FAILED);
     assertThat(code(() -> add("x".repeat(501)))).isEqualTo(ErrorCode.VALIDATION_FAILED);
     assertThat(add("x".repeat(500)).note().untrusted().text()).hasSize(500);
+    // 500 characters outside the BMP are 1,000 UTF-16 units: the limit counts characters and the column holds them
+    String emoji = "📈".repeat(500);
+    assertThat(add(emoji).note().untrusted().text()).isEqualTo(emoji);
+    assertThat(code(() -> add(emoji + "x"))).isEqualTo(ErrorCode.VALIDATION_FAILED);
     assertThat(code(() -> add("ok", "ZZZZ"))).isEqualTo(ErrorCode.SYMBOL_NOT_FOUND);
     assertThat(code(() -> add("ok", "not a symbol"))).isEqualTo(ErrorCode.VALIDATION_FAILED);
     for (String s : List.of("A", "B", "C", "D", "E", "F")) {
