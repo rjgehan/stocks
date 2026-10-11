@@ -1,9 +1,13 @@
 package com.stocks.security;
 
+import com.stocks.common.error.BearerChallenge;
 import com.stocks.common.time.TimeSource;
 import com.stocks.config.StocksProperties;
 import com.stocks.contract.identity.PlayerQueries;
 import com.stocks.contract.security.Scopes;
+import com.stocks.oauth.AccessTokens;
+import com.stocks.oauth.OAuthProperties;
+import com.stocks.oauth.OAuthUrls;
 import java.util.Locale;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
@@ -16,12 +20,14 @@ import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
@@ -40,12 +46,15 @@ import tools.jackson.databind.json.JsonMapper;
  * <ol start="0">
  *   <li><b>actuator</b> (the management port 8081, never published or tunneled): the exposed endpoints (health,
  *       info, metrics, prometheus) are open on that internal port.</li>
+ *   <li><b>oauth</b> {@code /oauth2/**}, {@code /.well-known/**} (Phase 2, §17.9): the authorization server's public
+ *       endpoints; no CSRF, no session.</li>
  *   <li><b>admin</b> {@code /api/v1/admin/**}: {@link AdminSessionOnlyFilter} first (any {@code Authorization} header →
  *       403 {@code ADMIN_REQUIRES_SESSION}), then session + {@code ROLE_ADMIN} + CSRF.</li>
  *   <li><b>h2-console</b> (dev only, {@code spring.h2.console.enabled}).</li>
  *   <li><b>api</b> {@code /api/**} (incl. Swagger UI: {@code /api/docs} → {@code /api/swagger-ui/index.html}),
- *       {@code /mcp}, {@code /v3/**} (the OpenAPI JSON and YAML): {@code Bearer stk_…}
- *       ({@link BearerTokenFilter}: stateless, cookies ignored, no CSRF) or a session cookie + CSRF. Public: only
+ *       {@code /mcp}, {@code /v3/**} (the OpenAPI JSON and YAML): {@code Bearer stk_…}, or on {@code /mcp} an OAuth
+ *       access token (§17.9.5) ({@link BearerTokenFilter}: stateless, cookies ignored, no CSRF) or a session cookie +
+ *       CSRF. Public: only
  *       {@code GET /auth/csrf}, {@code POST /auth/login}, {@code POST /auth/signup}. Per-route scopes and
  *       session-only routes per §18 ({@link RouteAuthorization}).</li>
  *   <li><b>ws</b> {@code /ws}: session cookie at the handshake (STOMP CSRF is WS5's {@code csrfChannelInterceptor}).</li>
@@ -127,6 +136,23 @@ public class SecurityConfig {
     return new ApiKeyAuthenticationProvider(jdbc, time, properties, players);
   }
 
+  /** §17.9.5: OAuth access tokens on {@code /mcp} (used only while {@code stocks.oauth.enabled}). */
+  @Bean
+  OAuthTokenAuthenticationProvider oauthTokenAuthenticationProvider(AccessTokens tokens, JdbcClient jdbc,
+                                                                    PlayerQueries players, TimeSource time,
+                                                                    OAuthProperties oauth, ActivityRecorder activity) {
+    return new OAuthTokenAuthenticationProvider(tokens, jdbc, players, time, oauth.grantCacheTtl(), activity);
+  }
+
+  /**
+   * The chain-2 401 challenge (§17.1), with {@code resource_metadata} while OAuth is on (§17.9.5); also used by
+   * {@code ProblemDetailsAdvice} for the 401s controllers raise.
+   */
+  @Bean
+  BearerChallenge bearerChallenge(OAuthProperties oauth, OAuthUrls urls) {
+    return oauth.enabled() ? BearerChallenge.of(urls.protectedResourceMetadata()) : BearerChallenge.DEFAULT;
+  }
+
   // ----------------------------------------------------------------------------------------------- chains
 
   @Bean
@@ -144,8 +170,27 @@ public class SecurityConfig {
     return http.build();
   }
 
+  /**
+   * The OAuth 2.1 authorization server (§17.9): {@code /oauth2/**} and {@code /.well-known/**} are public. No CSRF
+   * (the token, register and revoke endpoints are server-to-server form and JSON posts; authorize is a GET that only
+   * stores a pending request) and no session is read or created; the controllers set their own
+   * {@code Cache-Control} (metadata cacheable, token answers {@code no-store}) and CORS.
+   */
   @Bean
   @Order(1)
+  SecurityFilterChain oauthChain(HttpSecurity http, ProblemWriter problems, SecurityContextRepository contexts)
+      throws Exception {
+    SecurityErrors errors = new SecurityErrors(problems, false, request -> false);
+    http.securityMatcher("/oauth2/**", "/.well-known/**")
+        .authorizeHttpRequests(a -> a.anyRequest().permitAll())
+        .csrf(AbstractHttpConfigurer::disable)
+        .sessionManagement(m -> m.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+    common(http, errors, new RequestAttributeSecurityContextRepository(), false);
+    return http.build();
+  }
+
+  @Bean
+  @Order(2)
   SecurityFilterChain adminChain(HttpSecurity http, ProblemWriter problems, CookieCsrfTokenRepository csrf,
                                  SecurityContextRepository contexts, PlayerQueries players) throws Exception {
     SecurityErrors errors = new SecurityErrors(problems, false, request -> false);
@@ -158,7 +203,7 @@ public class SecurityConfig {
   }
 
   @Bean
-  @Order(2)
+  @Order(3)
   @ConditionalOnBooleanProperty("spring.h2.console.enabled")
   SecurityFilterChain h2ConsoleChain(HttpSecurity http) throws Exception {
     // dev only: the console posts forms and uses frames and inline scripts, so no CSRF and no CSP here.
@@ -173,14 +218,17 @@ public class SecurityConfig {
   }
 
   @Bean
-  @Order(3)
+  @Order(4)
   SecurityFilterChain apiChain(HttpSecurity http, ProblemWriter problems, CookieCsrfTokenRepository csrf,
                                SecurityContextRepository contexts, ApiKeyAuthenticationProvider apiKeys,
-                               RateLimitServiceImpl rateLimits, ActivityRecorder activity) throws Exception {
-    SecurityErrors errors = new SecurityErrors(problems, true, PUBLIC_API);
+                               OAuthTokenAuthenticationProvider oauthTokens, OAuthProperties oauth,
+                               BearerChallenge challenge, RateLimitServiceImpl rateLimits, ActivityRecorder activity)
+      throws Exception {
+    SecurityErrors errors = new SecurityErrors(problems, challenge, PUBLIC_API);
     AuthFailureLimiter failures = new AuthFailureLimiter(rateLimits, problems);
     http.securityMatcher(API_PATHS)
-        .addFilterBefore(new BearerTokenFilter(apiKeys, problems, rateLimits), CsrfFilter.class)
+        .addFilterBefore(new BearerTokenFilter(apiKeys, oauth.enabled() ? oauthTokens : null, challenge, problems,
+            rateLimits), CsrfFilter.class)
         // §17.5: reads and per-IP limits, charged only for requests that passed authorization
         .addFilterAfter(new RateLimitFilter(rateLimits, activity, problems), AuthorizationFilter.class)
         .csrf(c -> c.spa().csrfTokenRepository(csrf).ignoringRequestMatchers(BearerTokenFilter.BEARER))
@@ -245,7 +293,7 @@ public class SecurityConfig {
   }
 
   @Bean
-  @Order(4)
+  @Order(5)
   SecurityFilterChain wsChain(HttpSecurity http, ProblemWriter problems, CookieCsrfTokenRepository csrf,
                               SecurityContextRepository contexts) throws Exception {
     SecurityErrors errors = new SecurityErrors(problems, false, request -> false);
@@ -257,7 +305,7 @@ public class SecurityConfig {
   }
 
   @Bean
-  @Order(5)
+  @Order(6)
   SecurityFilterChain webChain(HttpSecurity http, ProblemWriter problems, CookieCsrfTokenRepository csrf,
                                SecurityContextRepository contexts) throws Exception {
     SecurityErrors errors = new SecurityErrors(problems, false, request -> false);

@@ -17,6 +17,11 @@ export type ApiKeyInfo = S['ApiKeyInfo']
 export type ApiKeyCreated = S['ApiKeyCreated']
 export type PlayerSummary = S['PlayerSummary']
 export type Notification = S['Notification']
+// OAuth connectors (§17.9)
+export type OAuthConsent = S['OAuthConsent']
+export type OAuthActor = S['OAuthActor']
+export type OAuthClientInfo = S['OAuthClientInfo']
+export type ConnectedApp = S['ConnectedApp']
 // market
 export type Clock = S['Clock']
 export type Quote = S['Quote']

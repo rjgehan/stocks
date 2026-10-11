@@ -10,6 +10,7 @@
  * NOTE: this is a fake SERVER, so it does arithmetic on money (with the exact decimal helpers). The client
  * proper never computes money (§19).
  */
+import { MockOAuth } from './oauth'
 import {
   type Dec,
   add,
@@ -213,6 +214,12 @@ export class MockServer {
   })
   /** Phase 2 price alerts and Web Push settings (mock/alerts.ts). */
   private p2: ReturnType<typeof registerAlertsAndPush> | null = null
+  /** §17.9 consent and Connected apps (mock/oauth.ts). */
+  private readonly oauth = new MockOAuth({
+    me: () => this.mySummary(),
+    myBots: () => this.s.others.filter((p) => p.kind === 'AI' && p.status === 'ACTIVE' && p.ownerHandle === this.s.me.handle).map((p) => this.summary(p)),
+    apiTradingAllowed: () => this.s.apiTradingAllowed,
+  })
 
   constructor(market = new MockMarket()) {
     this.market = market
@@ -641,6 +648,11 @@ export class MockServer {
       k.revokedAt ??= iso()
       return noContent()
     })
+    // OAuth connectors (§17.9): the act-as consent and Settings → Connected apps
+    r('GET', '/me/oauth/requests/{requestId}', ({ params }) => this.oauth.consent(params[0]!))
+    r('POST', '/me/oauth/requests/{requestId}', ({ params, body }) => this.oauth.decide(params[0]!, body))
+    r('GET', '/me/connected-apps', () => this.oauth.list())
+    r('DELETE', '/me/connected-apps/{grantId}', ({ params }) => this.oauth.disconnect(params[0]!))
     r('GET', '/me/notifications', ({ url }) => {
       const unread = url.searchParams.get('unreadOnly') === 'true'
       const items = this.s.notifications.filter((n) => !unread || !n.readAt).toReversed()

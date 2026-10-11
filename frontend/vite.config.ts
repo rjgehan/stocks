@@ -53,6 +53,9 @@ export default defineConfig({
       '/mcp': { target: backend },
       '/v3': { target: backend },
       '/swagger-ui': { target: backend },
+      // Phase 2 OAuth (§17.9): the authorization server's endpoints and discovery documents
+      '/oauth2': { target: backend },
+      '/.well-known': { target: backend },
       '/ws': { target: backend.replace(/^http/, 'ws'), ws: true },
     },
   },

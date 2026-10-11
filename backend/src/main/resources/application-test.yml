@@ -36,6 +36,10 @@ stocks:
     login-per-min-ip: 100000
     signup-per-hour-ip: 100000
     anon-per-min-ip: 100000
+  oauth:
+    grant-cache-ttl: 0s                     # fixtures change grant rows directly
+    requests-per-min-per-ip: 100000         # the fixed clock never opens a new window; OAuthFlowIT tightens it
+    dcr.per-ip-per-hour: 100000
   engine:
     seed: test-seed
   marketdata:

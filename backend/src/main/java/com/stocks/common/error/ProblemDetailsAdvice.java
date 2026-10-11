@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
@@ -35,7 +37,8 @@ import tools.jackson.databind.exc.MismatchedInputException;
  *
  * <ul>
  *   <li>{@link ApiException} → its code, status, detail, hint, fields and {@code retryAfterS} (+ {@code Retry-After}).</li>
- *   <li>Every 401 carries {@code WWW-Authenticate: Bearer realm="stocks"} (§17.1, RFC 9110 §15.5.2), e.g.
+ *   <li>Every 401 carries {@code WWW-Authenticate: Bearer realm="stocks"} (§17.1, RFC 9110 §15.5.2; plus
+ *       {@code resource_metadata} while OAuth is on, {@link BearerChallenge}), e.g.
  *       {@code BAD_CREDENTIALS} from login or {@code UNAUTHENTICATED} from a controller, like the 401s the security
  *       layer writes itself.</li>
  *   <li>Malformed JSON, wrong types, unknown enum values, bean-validation failures, bad parameters
@@ -59,10 +62,28 @@ public class ProblemDetailsAdvice {
   private static final Logger log = LoggerFactory.getLogger(ProblemDetailsAdvice.class);
 
   /**
-   * The {@code WWW-Authenticate} challenge of every 401 (§17.1; Phase 2 adds {@code resource_metadata}). Lives here
-   * because {@code common} may not depend on {@code security} (§5.2 rule 8); {@code security.ProblemWriter} reuses it.
+   * The base {@code WWW-Authenticate} challenge of every 401 (§17.1). Lives here because {@code common} may not
+   * depend on {@code security} (§5.2 rule 8). The challenge actually sent is the {@link BearerChallenge} bean (with
+   * {@code resource_metadata} while OAuth is on, §17.9.5), or this value without one.
    */
   public static final String BEARER_CHALLENGE = "Bearer realm=\"stocks\"";
+
+  private final ObjectProvider<BearerChallenge> challenge;
+
+  /** Standalone setups (tests): the plain challenge. */
+  public ProblemDetailsAdvice() {
+    this.challenge = null;
+  }
+
+  @Autowired
+  public ProblemDetailsAdvice(ObjectProvider<BearerChallenge> challenge) {
+    this.challenge = challenge;
+  }
+
+  private String challenge() {
+    BearerChallenge c = challenge == null ? null : challenge.getIfAvailable();
+    return (c == null ? BearerChallenge.DEFAULT : c).value();
+  }
 
   @ExceptionHandler(ApiException.class)
   public ResponseEntity<Problem> apiException(ApiException e, HttpServletRequest request) {
@@ -172,11 +193,11 @@ public class ProblemDetailsAdvice {
     return respond(Problem.of(ErrorCode.VALIDATION_FAILED, 400, detail, null, fields, null, RequestIds.of(request)));
   }
 
-  private static ResponseEntity<Problem> respond(Problem problem) {
+  private ResponseEntity<Problem> respond(Problem problem) {
     return respond(problem, HttpHeaders.EMPTY);
   }
 
-  private static ResponseEntity<Problem> respond(Problem problem, HttpHeaders extraHeaders) {
+  private ResponseEntity<Problem> respond(Problem problem, HttpHeaders extraHeaders) {
     ResponseEntity.BodyBuilder builder = ResponseEntity.status(problem.status())
         .headers(h -> h.addAll(extraHeaders))
         .contentType(MediaType.APPLICATION_PROBLEM_JSON);
@@ -187,7 +208,7 @@ public class ProblemDetailsAdvice {
       builder.header(RequestIds.HEADER, problem.requestId());
     }
     if (problem.status() == 401 && !extraHeaders.containsHeader(HttpHeaders.WWW_AUTHENTICATE)) {
-      builder.header(HttpHeaders.WWW_AUTHENTICATE, BEARER_CHALLENGE);
+      builder.header(HttpHeaders.WWW_AUTHENTICATE, challenge());
     }
     return builder.body(problem);
   }

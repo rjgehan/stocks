@@ -2,7 +2,7 @@
 # stocks: defaults for every profile (docs/ARCHITECTURE.md §23.1). Profile files override (§23.2).
 # Key ownership (§27.3 rule 3): stocks.{public-url,security,ratelimit,bootstrap,jobs,single-instance} WS1
 # (config.StocksProperties) · stocks.marketdata WS2 · stocks.engine, stocks.rules WS3 · stocks.performance WS4 ·
-# spring.ai.mcp WS5. Structure changes go through WS1.
+# spring.ai.mcp WS5 · stocks.oauth Phase 2 OAuth (oauth.OAuthProperties). Structure changes go through WS1.
 # =====================================================================================================================
 spring:
   application.name: stocks
@@ -79,6 +79,24 @@ stocks:
     login-per-min-ip: 10
     signup-per-hour-ip: 5
     anon-per-min-ip: 300
+  oauth:                                    # §17.9.7 OAuth 2.1 for the claude.ai / ChatGPT connectors (oauth.OAuthProperties)
+    enabled: true                           # false: /oauth2 and /.well-known answer 404, JWTs are refused
+    jwk-pem-file: ${OAUTH_JWK_PEM_FILE:}    # empty: an RSA key generated on first boot, stored AES-GCM-encrypted
+    access-token-ttl: 30m
+    refresh-token-ttl: 30d                  # from each refresh token's issue; rotated on every use
+    refresh-reuse-grace: 10s
+    code-ttl: 5m
+    request-ttl: 15m
+    grant-cache-ttl: 60s                    # chain-2 grant check; revocation evicts at once
+    allow-loopback-redirects: true          # Claude Code, the MCP Inspector
+    redirect-allowlist:
+      - https://claude.ai/api/mcp/auth_callback
+      - https://claude.com/api/mcp/auth_callback   # not in Claude's docs yet; reported by third-party guides
+      - https://chatgpt.com/connector_platform_oauth_redirect
+      - https://chatgpt.com/connector/oauth/*
+    requests-per-min-per-ip: 60             # /oauth2/authorize and /oauth2/token, each
+    cimd: { enabled: true, timeout: 3s, max-bytes: 8192, min-cache: 5m, max-cache: 24h }
+    dcr: { enabled: true, max-clients: 500, per-ip-per-hour: 20, unused-client-ttl: 24h, idle-client-ttl: 90d }
   engine:
     seed: ${ENGINE_SEED:dev-seed-change-me}
     queue-capacity: 10000

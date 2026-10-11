@@ -51,3 +51,5 @@ excluded:
   /api/v1/orders/by-client-id/{clientOrderId}: get_order with client_order_id
   /api/v1/me/push: session only (this browser's Web Push settings; bots have no browser subscriptions)
   /api/v1/assets/{symbol}/trades: Time & Sales is a live UI tape that exists only while a viewer's stream covers the symbol (§15.10); bots use get_snapshot and get_bars
+  /api/v1/me/oauth/requests/{requestId}: session only (the human's OAuth consent screen, §17.9.3)
+  /api/v1/me/connected-apps: session only (the human's OAuth grants, §17.9.1)

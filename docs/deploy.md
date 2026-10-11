@@ -378,6 +378,15 @@ networks:
   Fight Mode with a Skip rule for `/api/*`, `/mcp`, `/oauth2/*`, `/.well-known/*`). No WAF challenge rules on those
   paths.
 - **AI Crawl Control**: set the "Agent" category to **Allow** on the app hostname.
+- **OAuth for the claude.ai and ChatGPT connectors** (Phase 2, ARCHITECTURE §17.9): Anthropic's cloud
+  (`160.79.104.0/21`) and OpenAI's fetch `/.well-known/oauth-protected-resource/mcp`,
+  `/.well-known/oauth-authorization-server` and `/oauth2/jwks`, and call `/oauth2/register`, `/oauth2/token` and
+  `/oauth2/revoke` server to server, with 10 s (token refresh: 30 s) timeouts. So `/oauth2/*` and `/.well-known/*`
+  get the same treatment as `/mcp`: **no** challenge (Bot Fight Mode off, no WAF managed challenge, no "Under
+  Attack" mode, no rate-limit rule that challenges), **no** Cloudflare Access application, **no** cache (the bypass
+  rule above; the app sends its own `Cache-Control`). `/oauth2/authorize` and the SPA page `/oauth/consent` are
+  ordinary browser pages (the human signs in there); never put Access in front of them either, or the connector's
+  sign-in tab ends on the Access login. Do not add response transforms that rewrite `Location` headers.
 - **Cloudflare Access for admin only** (free up to 50 users, with MFA): an Access application with an allow
   policy for you in front of `/admin*` and `/api/v1/admin/*`. Never put Access in front of `/api/*` or `/mcp`.
 - The league's own bots (Phase 1 agent runner) call `http://app:8080/mcp` inside Docker, so they work even if
@@ -392,8 +401,22 @@ host port is published: only containers on `stocks-edge` (cloudflared, the agent
 
 ```sh
 curl -i https://stocks.<your-domain>/api/v1/me     # 401 with a JSON problem body, never a challenge page
-curl -i https://stocks.<your-domain>/mcp            # 401 with WWW-Authenticate
+curl -i https://stocks.<your-domain>/mcp            # 401 with WWW-Authenticate: Bearer ..., resource_metadata="..."
+curl -s https://stocks.<your-domain>/.well-known/oauth-protected-resource/mcp   # JSON, "resource": ".../mcp"
+curl -s https://stocks.<your-domain>/.well-known/oauth-authorization-server     # JSON, "issuer": "https://stocks.<your-domain>"
 ```
+
+The `issuer` and `resource` come from `APP_PUBLIC_URL`, so it must be exactly the public `https://` hostname
+(no trailing path). Connector setup for claude.ai and ChatGPT: [`agents.md`](agents.md) §2.9.
+
+**OAuth signing key.** Nothing to configure: on first boot the app generates an RSA key, stores it in the
+`oauth_signing_key` table encrypted (AES-256-GCM) under a key derived from `API_KEY_PEPPER`, and reuses it after
+every restart and Watchtower upgrade; database backups include it. Trade-off: anyone with both a database dump and
+the pepper could mint access tokens (they could already forge API keys), and changing the pepper makes the stored
+key unreadable, so a new one is generated and connectors silently refresh their tokens. To keep the key out of the
+database instead, mount an RSA private key (PKCS#8 or PKCS#1 PEM, at least 2048 bits) into the `app` container and
+set `OAUTH_JWK_PEM_FILE` to its path (both need an edit of the app service in `docker-compose.yml`: a read-only
+volume and the environment line). With `stocks.oauth.enabled=false` the whole OAuth server is off.
 
 In the browser, the dev tools' Network tab shows `/ws` with status 101 after login.
 

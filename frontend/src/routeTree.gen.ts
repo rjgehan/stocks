@@ -23,6 +23,8 @@ import { Route as AppSearchRouteImport } from './routes/_app/search'
 import { Route as AppSettingsRouteRouteImport } from './routes/_app/settings/route'
 import { Route as AppWatchlistRouteImport } from './routes/_app/watchlist'
 import { Route as JoinCodeRouteImport } from './routes/join.$code'
+import { Route as OauthConsentRouteImport } from './routes/oauth.consent'
+import { Route as OauthErrorRouteImport } from './routes/oauth.error'
 import { Route as AppAccountIndexRouteImport } from './routes/_app/account/index'
 import { Route as AppAccountActivityRouteImport } from './routes/_app/account/activity'
 import { Route as AppAccountAnalysisRouteImport } from './routes/_app/account/analysis'
@@ -40,6 +42,7 @@ import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/ind
 import { Route as AppSettingsAccountRouteImport } from './routes/_app/settings/account'
 import { Route as AppSettingsApiKeysRouteImport } from './routes/_app/settings/api-keys'
 import { Route as AppSettingsAppearanceRouteImport } from './routes/_app/settings/appearance'
+import { Route as AppSettingsConnectedAppsRouteImport } from './routes/_app/settings/connected-apps'
 import { Route as AppSettingsNotificationsRouteImport } from './routes/_app/settings/notifications'
 import { Route as AppSettingsTradingRouteImport } from './routes/_app/settings/trading'
 import { Route as AppStockSymbolRouteImport } from './routes/_app/stock.$symbol'
@@ -115,6 +118,16 @@ const AppWatchlistRoute = AppWatchlistRouteImport.update({
 const JoinCodeRoute = JoinCodeRouteImport.update({
   id: '/join/$code',
   path: '/join/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthConsentRoute = OauthConsentRouteImport.update({
+  id: '/oauth/consent',
+  path: '/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthErrorRoute = OauthErrorRouteImport.update({
+  id: '/oauth/error',
+  path: '/oauth/error',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppAccountIndexRoute = AppAccountIndexRouteImport.update({
@@ -203,6 +216,12 @@ const AppSettingsAppearanceRoute = AppSettingsAppearanceRouteImport.update({
   path: '/appearance',
   getParentRoute: () => AppSettingsRouteRoute,
 } as any)
+const AppSettingsConnectedAppsRoute =
+  AppSettingsConnectedAppsRouteImport.update({
+    id: '/connected-apps',
+    path: '/connected-apps',
+    getParentRoute: () => AppSettingsRouteRoute,
+  } as any)
 const AppSettingsNotificationsRoute =
   AppSettingsNotificationsRouteImport.update({
     id: '/notifications',
@@ -254,6 +273,8 @@ export interface FileRoutesByFullPath {
   '/search': typeof AppSearchRoute
   '/watchlist': typeof AppWatchlistRoute
   '/join/$code': typeof JoinCodeRoute
+  '/oauth/consent': typeof OauthConsentRoute
+  '/oauth/error': typeof OauthErrorRoute
   '/account/activity': typeof AppAccountActivityRoute
   '/account/analysis': typeof AppAccountAnalysisRoute
   '/account/history': typeof AppAccountHistoryRoute
@@ -268,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/settings/account': typeof AppSettingsAccountRoute
   '/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/settings/appearance': typeof AppSettingsAppearanceRoute
+  '/settings/connected-apps': typeof AppSettingsConnectedAppsRoute
   '/settings/notifications': typeof AppSettingsNotificationsRoute
   '/settings/trading': typeof AppSettingsTradingRoute
   '/stock/$symbol': typeof AppStockSymbolRoute
@@ -289,6 +311,8 @@ export interface FileRoutesByTo {
   '/search': typeof AppSearchRoute
   '/watchlist': typeof AppWatchlistRoute
   '/join/$code': typeof JoinCodeRoute
+  '/oauth/consent': typeof OauthConsentRoute
+  '/oauth/error': typeof OauthErrorRoute
   '/': typeof AppIndexRoute
   '/account/activity': typeof AppAccountActivityRoute
   '/account/analysis': typeof AppAccountAnalysisRoute
@@ -304,6 +328,7 @@ export interface FileRoutesByTo {
   '/settings/account': typeof AppSettingsAccountRoute
   '/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/settings/appearance': typeof AppSettingsAppearanceRoute
+  '/settings/connected-apps': typeof AppSettingsConnectedAppsRoute
   '/settings/notifications': typeof AppSettingsNotificationsRoute
   '/settings/trading': typeof AppSettingsTradingRoute
   '/stock/$symbol': typeof AppStockSymbolRoute
@@ -330,6 +355,8 @@ export interface FileRoutesById {
   '/_app/search': typeof AppSearchRoute
   '/_app/watchlist': typeof AppWatchlistRoute
   '/join/$code': typeof JoinCodeRoute
+  '/oauth/consent': typeof OauthConsentRoute
+  '/oauth/error': typeof OauthErrorRoute
   '/_app/': typeof AppIndexRoute
   '/_app/account/activity': typeof AppAccountActivityRoute
   '/_app/account/analysis': typeof AppAccountAnalysisRoute
@@ -345,6 +372,7 @@ export interface FileRoutesById {
   '/_app/settings/account': typeof AppSettingsAccountRoute
   '/_app/settings/api-keys': typeof AppSettingsApiKeysRoute
   '/_app/settings/appearance': typeof AppSettingsAppearanceRoute
+  '/_app/settings/connected-apps': typeof AppSettingsConnectedAppsRoute
   '/_app/settings/notifications': typeof AppSettingsNotificationsRoute
   '/_app/settings/trading': typeof AppSettingsTradingRoute
   '/_app/stock/$symbol': typeof AppStockSymbolRoute
@@ -372,6 +400,8 @@ export interface FileRouteTypes {
     | '/search'
     | '/watchlist'
     | '/join/$code'
+    | '/oauth/consent'
+    | '/oauth/error'
     | '/account/activity'
     | '/account/analysis'
     | '/account/history'
@@ -386,6 +416,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/settings/api-keys'
     | '/settings/appearance'
+    | '/settings/connected-apps'
     | '/settings/notifications'
     | '/settings/trading'
     | '/stock/$symbol'
@@ -407,6 +438,8 @@ export interface FileRouteTypes {
     | '/search'
     | '/watchlist'
     | '/join/$code'
+    | '/oauth/consent'
+    | '/oauth/error'
     | '/'
     | '/account/activity'
     | '/account/analysis'
@@ -422,6 +455,7 @@ export interface FileRouteTypes {
     | '/settings/account'
     | '/settings/api-keys'
     | '/settings/appearance'
+    | '/settings/connected-apps'
     | '/settings/notifications'
     | '/settings/trading'
     | '/stock/$symbol'
@@ -447,6 +481,8 @@ export interface FileRouteTypes {
     | '/_app/search'
     | '/_app/watchlist'
     | '/join/$code'
+    | '/oauth/consent'
+    | '/oauth/error'
     | '/_app/'
     | '/_app/account/activity'
     | '/_app/account/analysis'
@@ -462,6 +498,7 @@ export interface FileRouteTypes {
     | '/_app/settings/account'
     | '/_app/settings/api-keys'
     | '/_app/settings/appearance'
+    | '/_app/settings/connected-apps'
     | '/_app/settings/notifications'
     | '/_app/settings/trading'
     | '/_app/stock/$symbol'
@@ -479,6 +516,8 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SignupRoute: typeof SignupRoute
   JoinCodeRoute: typeof JoinCodeRoute
+  OauthConsentRoute: typeof OauthConsentRoute
+  OauthErrorRoute: typeof OauthErrorRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -579,6 +618,20 @@ declare module '@tanstack/react-router' {
       path: '/join/$code'
       fullPath: '/join/$code'
       preLoaderRoute: typeof JoinCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/consent': {
+      id: '/oauth/consent'
+      path: '/oauth/consent'
+      fullPath: '/oauth/consent'
+      preLoaderRoute: typeof OauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/error': {
+      id: '/oauth/error'
+      path: '/oauth/error'
+      fullPath: '/oauth/error'
+      preLoaderRoute: typeof OauthErrorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/account/': {
@@ -700,6 +753,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsAppearanceRouteImport
       parentRoute: typeof AppSettingsRouteRoute
     }
+    '/_app/settings/connected-apps': {
+      id: '/_app/settings/connected-apps'
+      path: '/connected-apps'
+      fullPath: '/settings/connected-apps'
+      preLoaderRoute: typeof AppSettingsConnectedAppsRouteImport
+      parentRoute: typeof AppSettingsRouteRoute
+    }
     '/_app/settings/notifications': {
       id: '/_app/settings/notifications'
       path: '/notifications'
@@ -808,6 +868,7 @@ interface AppSettingsRouteRouteChildren {
   AppSettingsAccountRoute: typeof AppSettingsAccountRoute
   AppSettingsApiKeysRoute: typeof AppSettingsApiKeysRoute
   AppSettingsAppearanceRoute: typeof AppSettingsAppearanceRoute
+  AppSettingsConnectedAppsRoute: typeof AppSettingsConnectedAppsRoute
   AppSettingsNotificationsRoute: typeof AppSettingsNotificationsRoute
   AppSettingsTradingRoute: typeof AppSettingsTradingRoute
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute
@@ -817,6 +878,7 @@ const AppSettingsRouteRouteChildren: AppSettingsRouteRouteChildren = {
   AppSettingsAccountRoute: AppSettingsAccountRoute,
   AppSettingsApiKeysRoute: AppSettingsApiKeysRoute,
   AppSettingsAppearanceRoute: AppSettingsAppearanceRoute,
+  AppSettingsConnectedAppsRoute: AppSettingsConnectedAppsRoute,
   AppSettingsNotificationsRoute: AppSettingsNotificationsRoute,
   AppSettingsTradingRoute: AppSettingsTradingRoute,
   AppSettingsIndexRoute: AppSettingsIndexRoute,
@@ -862,6 +924,8 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SignupRoute: SignupRoute,
   JoinCodeRoute: JoinCodeRoute,
+  OauthConsentRoute: OauthConsentRoute,
+  OauthErrorRoute: OauthErrorRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

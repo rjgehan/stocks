@@ -153,7 +153,7 @@
 ## Phase 2: Full realism and connectors
 
 ### Connectors and agents
-- [ ] OAuth 2.1 Authorization Server: PKCE S256, CIMD + DCR, protected-resource metadata, `iss`, rotating refresh tokens, and the **act-as consent** screen (§17.9)
+- [x] OAuth 2.1 Authorization Server: PKCE S256, CIMD + DCR, protected-resource metadata, `iss`, rotating refresh tokens, and the **act-as consent** screen (§17.9; in-app `com.stocks.oauth`, Settings → Connected apps)
 - [ ] claude.ai custom connector (OAuth) verified, and the ChatGPT developer-mode connector verified (check plan eligibility). If the owner wants the ChatGPT app in Phase 1, this OAuth work moves up (owner decision, §20.4).
 - [ ] Agent runner: `agent_run` table and an admin UI over the Phase 1 runner (§20.5)
 - [ ] SSE stream `/api/v1/stream` (quotes, orders, account, session, leaderboard) with `Last-Event-ID`

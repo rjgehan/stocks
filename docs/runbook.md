@@ -262,6 +262,13 @@ more than 15 minutes old (`POST /api/v1/auth/reauth`).
   temporary password and ask them to change it under Settings.
 - **Personal API keys** of humans are read-only unless the player is allowed to trade by API (player →
   "allow API trading"); turning it off removes `trade` from their keys at once.
+- **claude.ai / ChatGPT connectors (OAuth, ARCHITECTURE §17.9)**: each human sees and disconnects their own under
+  Settings → Connected apps (immediate). A connector acts as the human or one of their bots and never gets admin
+  powers. Freezing a player blocks its connectors with `PLAYER_FROZEN` (they keep their grants); a password change,
+  an admin password reset, a role change or disabling the player revokes all of that player's connector grants.
+  A refresh token used twice revokes the whole grant (the connector must be connected again). Grants, token
+  exchanges, refreshes and revocations are audited as `OAUTH_GRANT`, `OAUTH_TOKEN`, `OAUTH_REFRESH`,
+  `OAUTH_REVOKE` and `OAUTH_REFRESH_REUSE`. Setup steps: `docs/agents.md` §2.9.
 - Every action above is in Admin → Audit (filter by category, action, player handle and time).
 
 If the `/admin` console is not deployed yet, the same calls work from a browser session with any HTTP client that
@@ -273,7 +280,12 @@ keeps cookies; the `XSRF-TOKEN` cookie value must be sent as `X-XSRF-TOKEN` on w
   `dc exec -T db psql -U stocks -d stocks -c "ALTER USER stocks PASSWORD '<new>'"`, edit `.env`, `dc up -d`.
   (`POSTGRES_PASSWORD` only matters when the database is first created.)
 - `API_KEY_PEPPER`: **do not rotate** casually: every API key is an HMAC with it, so all bot and personal keys stop
-  working and must be re-issued.
+  working and must be re-issued. It also encrypts the OAuth signing key (`oauth_signing_key`): after a change a new
+  signing key is generated at boot, and connectors refresh their tokens by themselves.
+- OAuth signing key: to rotate it (e.g. after a database leak together with the pepper), retire it and restart:
+  `dc exec -T db psql -U stocks -d stocks -c "UPDATE oauth_signing_key SET retired_at = now() WHERE retired_at IS NULL"`,
+  then `dc restart app`. Outstanding access tokens fail once with 401 and connectors refresh; refresh tokens stay
+  valid (they are database rows, not signed).
 - `ENGINE_SEED`: may change at any time (it only seeds latency jitter).
 - `ADMIN_BOOTSTRAP_*`: only used when no admin exists; keep them empty after the first login.
 - Alpaca/Finnhub keys: rotate at the provider, update `.env`, `dc up -d`.
