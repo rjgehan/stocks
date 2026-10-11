@@ -158,8 +158,19 @@ class LeagueStatsTest {
     golden.put("SPY", week.benchmark().points().stream().map(p -> p.t() + " " + p.ret().toPlainString()).toList());
     com.stocks.testkit.GoldenFiles.assertMatches("performance", "race_deposit", golden);
 
-    // kinds and the cache (same board → same chart)
-    assertThat(lk.stats.race(LeaderboardPeriod.WEEK, KindFilter.ALL)).isSameAs(week);
+    // the cache: same board → same chart, a new board → a new chart. The board itself is refreshed on wall-clock time
+    // (leaderboard-refresh, 5 s), so the identity check only runs while no refresh happened in between (a slow CI
+    // machine can take longer than that between two statements)
+    LeaderboardComputer.Board board = lk.leaderboard.refresh();
+    RaceChartDto cached = lk.stats.race(LeaderboardPeriod.WEEK, KindFilter.ALL);
+    RaceChartDto again = lk.stats.race(LeaderboardPeriod.WEEK, KindFilter.ALL);
+    if (lk.leaderboard.current() == board) {
+      assertThat(again).isSameAs(cached).isNotSameAs(week);
+    }
+    lk.leaderboard.refresh();
+    assertThat(lk.stats.race(LeaderboardPeriod.WEEK, KindFilter.ALL)).isNotSameAs(cached).isEqualTo(cached);
+
+    // kinds
     data.fx.status(carol, "DISABLED");
     assertThat(race(LeaderboardPeriod.WEEK, KindFilter.HUMAN).series()).extracting(s -> s.player().handle())
         .containsExactly("alice", "bob");

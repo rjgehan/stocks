@@ -337,6 +337,23 @@ class ValuationAndSnapshotsTest {
   }
 
   @Test
+  void aLeagueThatHasSpyBackfillsTheExtraBenchmarkUnderItsOwnRunKey() {
+    // production backfilled SPY before Phase 2: job_run(BENCHMARK_BACKFILL, 2025-12-31) is DONE and never runs again,
+    // so the QQQ backfill needs a key of its own (§16.6 extra benchmarks)
+    kit.benchmark.write(BenchmarkBackfillJob.ANCHOR, d("600.0000"), BigDecimal.ZERO);
+    BenchmarkBackfillJob job = new BenchmarkBackfillJob(kit.benchmark, kit.market, kit.pnlCalendar, kit.time);
+    Instant from = Instant.parse("2026-10-02T00:00:00Z");
+    assertThat(job.missing()).containsExactly("QQQ");
+    assertThat(job.occurrencesBetween(from, Instant.parse("2026-10-09T00:00:00Z"), kit.calendar)).singleElement()
+        .satisfies(o -> assertThat(o.runKey()).isEqualTo("2025-12-31:QQQ")
+            .matches(com.stocks.jobs.JobScheduler.RUN_KEY));
+    assertThat(job.runKey(List.of("SPY", "QQQ"))).isEqualTo("2025-12-31");
+    assertThat(job.runKey(List.of("QQQ", "DIA"))).isEqualTo("2025-12-31:QQQ+DIA");
+    kit.benchmark.write("QQQ", BenchmarkBackfillJob.ANCHOR, d("520.0000"), BigDecimal.ZERO);
+    assertThat(job.occurrencesBetween(from, Instant.parse("2026-10-09T00:00:00Z"), kit.calendar)).isEmpty();
+  }
+
+  @Test
   void theBackfillJobWritesTheChainFromDailyBars() {
     com.stocks.testkit.ScriptedMarketData bars = new com.stocks.testkit.ScriptedMarketData(kit.time) {
       @Override

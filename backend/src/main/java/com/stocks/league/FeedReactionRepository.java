@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -56,8 +57,17 @@ public class FeedReactionRepository {
         .optional();
   }
 
+  /**
+   * Upserts the player's reaction. PostgreSQL's MERGE is not an atomic upsert: two concurrent first reactions of the
+   * same player to the same item (a double tap, two tabs) can both take the INSERT branch, and the loser gets a
+   * primary-key violation; it then runs the MERGE again, which now takes the UPDATE branch (last write wins).
+   */
   public void set(long feedEventId, long playerId, Reaction reaction, Instant at) {
-    jdbc.sql(MERGE).params(feedEventId, playerId, reaction.name(), Jdbc.ts(at)).update();
+    try {
+      jdbc.sql(MERGE).params(feedEventId, playerId, reaction.name(), Jdbc.ts(at)).update();
+    } catch (DuplicateKeyException raced) {
+      jdbc.sql(MERGE).params(feedEventId, playerId, reaction.name(), Jdbc.ts(at)).update();
+    }
   }
 
   /** True if a row was removed. */

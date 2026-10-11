@@ -41,6 +41,8 @@ public class BenchmarkBackfillJob implements ScheduledJob {
 
   public static final String NAME = "BENCHMARK_BACKFILL";
   public static final LocalDate ANCHOR = LocalDate.of(2025, 12, 31);
+  /** {@code job_run.run_key} length limit (§25, {@code JobRunGuard.MAX_RUN_KEY}). */
+  static final int MAX_RUN_KEY = 48;
 
   private final BenchmarkService benchmark;
   private final MarketDataService marketData;
@@ -66,14 +68,28 @@ public class BenchmarkBackfillJob implements ScheduledJob {
     return CatchUpPolicy.ALL_MISSED;
   }
 
-  /** A single occurrence right after {@code fromExclusive} while the anchor row is missing (once per process). */
+  /** A single occurrence right after {@code fromExclusive} while an anchor row is missing (once per process). */
   @Override
   public List<JobOccurrence> occurrencesBetween(Instant fromExclusive, Instant toInclusive, MarketCalendar cal) {
-    if (attempted.get() || missing().isEmpty()) {
+    List<String> missing = attempted.get() ? List.of() : missing();
+    if (missing.isEmpty()) {
       return List.of();
     }
     Instant at = fromExclusive.plusMillis(1);
-    return at.isAfter(toInclusive) ? List.of() : List.of(new JobOccurrence(at, ANCHOR.toString()));
+    return at.isAfter(toInclusive) ? List.of() : List.of(new JobOccurrence(at, runKey(missing)));
+  }
+
+  /**
+   * The occurrence's run key: {@code 2025-12-31} while the main benchmark is missing (a new league), else
+   * {@code 2025-12-31:QQQ} naming the missing extras. A {@code DONE} key never runs again ({@code JobRunGuard}), and a
+   * league that backfilled SPY before Phase 2 has {@code 2025-12-31} DONE, so an extra benchmark needs its own key.
+   */
+  String runKey(List<String> missing) {
+    if (missing.contains(benchmark.symbol())) {
+      return ANCHOR.toString();
+    }
+    String key = ANCHOR + ":" + String.join("+", missing);
+    return key.length() <= MAX_RUN_KEY ? key : key.substring(0, MAX_RUN_KEY);
   }
 
   @Override
