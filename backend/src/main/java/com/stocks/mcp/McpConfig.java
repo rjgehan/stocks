@@ -1,6 +1,7 @@
 package com.stocks.mcp;
 
 import com.stocks.config.StocksProperties;
+import com.stocks.contract.agents.ApiAccessRecorder;
 import com.stocks.contract.security.CurrentPlayer;
 import com.stocks.contract.security.PlayerPrincipal;
 import com.stocks.contract.security.RequestMeta;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Locale;
 import org.springframework.ai.mcp.server.common.autoconfigure.properties.McpServerProperties;
 import org.springframework.ai.mcp.server.webmvc.transport.WebMvcStatelessServerTransport;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.config.BeanPostProcessor;
@@ -85,8 +87,9 @@ public class McpConfig {
   /** The §20.3 tools, in order (the server collects every {@code List<SyncToolSpecification>} bean). */
   @Bean
   List<SyncToolSpecification> stocksMcpTools(List<McpToolSet> toolSets,
-                                             @Qualifier("mcpServerJsonMapper") JsonMapper mcpServerJsonMapper) {
-    return McpToolCatalog.specifications(toolSets, mcpServerJsonMapper);
+                                             @Qualifier("mcpServerJsonMapper") JsonMapper mcpServerJsonMapper,
+                                             ObjectProvider<ApiAccessRecorder> apiAccessLog) {
+    return McpToolCatalog.specifications(toolSets, mcpServerJsonMapper, apiAccessLog.getIfAvailable());
   }
 
   /** Loads {@link #INSTRUCTIONS_RESOURCE} into {@link McpServerProperties} (after binding) unless already set. */

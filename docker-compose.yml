@@ -281,6 +281,8 @@ services:
       AGENT_MAX_RUN_SECONDS: ${AGENT_MAX_RUN_SECONDS:-300}
       AGENT_PRICE_CLAUDE: ${AGENT_PRICE_CLAUDE:-}
       AGENT_PRICE_CHATGPT: ${AGENT_PRICE_CHATGPT:-}
+      AGENT_REPORT_RUNS: ${AGENT_REPORT_RUNS:-true}   # Phase 2: run reports to the app (Admin -> Bots)
+      AGENT_REPORT_URL: ${AGENT_REPORT_URL:-}         # empty: http://app:8080/api/v1/agent-runs
     # SIGTERM cancels in-flight model requests at once; a tool call already sent to the app may take a few seconds.
     stop_grace_period: 30s
     volumes:

@@ -89,7 +89,9 @@ class ArchitectureTest {
           .filter(p -> !p.startsWith(calendar))
           .filter(p -> {
             try {
-              return Files.readString(p).toLowerCase(java.util.Locale.ROOT).contains("trading_day");
+              // "non_trading_day" is not the table: the agent runner's status SKIPPED_NON_TRADING_DAY (§20.6)
+              return Files.readString(p).toLowerCase(java.util.Locale.ROOT).replace("non_trading_day", "")
+                  .contains("trading_day");
             } catch (IOException e) {
               throw new java.io.UncheckedIOException(e);
             }

@@ -28,7 +28,7 @@ import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 /**
- * Phase 2 league-stats tools (§20.3 #39–#44): your stats and another player's (§16.8), the race chart (§16.9), your
+ * Phase 2 league-stats tools (§20.3 #43–#48): your stats and another player's (§16.8), the race chart (§16.9), your
  * P&amp;L calendar and analysis (§16.10), and reacting to a feed item (§16.11, scope {@code trade}). Built by the same
  * WS4 services as REST; other players' display names are clipped once more ({@link Untrusted}).
  */

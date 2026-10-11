@@ -67,11 +67,21 @@ class HousekeepingJobTest {
       n++;
     }
 
+    // Phase 2 (§17.10): API access log buckets older than 90 days
+    for (Instant hour : List.of(now.minus(Duration.ofDays(91)), now.minus(Duration.ofDays(89)))) {
+      db.jdbc().sql("""
+              INSERT INTO api_access_log (bucket_start, player_id, key_ref, channel, endpoint, outcome, calls, total_ms,
+                                          max_ms, first_at, last_at) VALUES (?, ?, 'k', 'MCP_KEY', 'whoami', 'OK', 1, 1,
+                                          1, ?, ?)""")
+          .params(Jdbc.ts(hour), p.id(), Jdbc.ts(hour), Jdbc.ts(hour)).update();
+    }
+
     new HousekeepingJob(db.jdbc(), time, new MockEnvironment()).run("2026-10-09");
 
     assertThat(db.jdbc().sql("SELECT COUNT(*) FROM idempotency_record").query(Long.class).single()).isEqualTo(1);
     assertThat(db.jdbc().sql("SELECT COUNT(*) FROM intraday_equity").query(Long.class).single()).isEqualTo(1);
     assertThat(db.jdbc().sql("SELECT public_id FROM notification ORDER BY public_id").query(String.class).list())
         .containsExactly("ntf_1", "ntf_2");
+    assertThat(db.jdbc().sql("SELECT COUNT(*) FROM api_access_log").query(Long.class).single()).isEqualTo(1);
   }
 }

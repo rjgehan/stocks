@@ -34,7 +34,11 @@ class McpToolsListTest {
       Map.entry("mark_notifications_read", false),
       Map.entry("place_order_group", false), Map.entry("cancel_order_group", true),   // Phase 2 orders
       Map.entry("react_to_feed_item", false),                                          // Phase 2 league
-      Map.entry("create_alert", false), Map.entry("delete_alert", true));              // Phase 2 alerts
+      Map.entry("create_alert", false), Map.entry("delete_alert", true),               // Phase 2 alerts
+      Map.entry("add_journal_note", false));                                           // Phase 2 journal
+
+  /** §20.3 #55: every note is a new note, so a retry writes another one. */
+  static final Set<String> NOT_IDEMPOTENT = Set.of("add_journal_note");
 
   static final Pattern SNAKE = Pattern.compile("^[a-z][a-z0-9]*(_[a-z0-9]+)*$");
 
@@ -59,7 +63,7 @@ class McpToolsListTest {
     for (Tool t : tools) {
       var a = t.annotations();
       assertThat(a.openWorldHint()).as(t.name()).isFalse();
-      assertThat(a.idempotentHint()).as(t.name() + " idempotent").isTrue();
+      assertThat(a.idempotentHint()).as(t.name() + " idempotent").isEqualTo(!NOT_IDEMPOTENT.contains(t.name()));
       if (WRITES.containsKey(t.name())) {
         assertThat(a.readOnlyHint()).as(t.name()).isFalse();
         assertThat(a.destructiveHint()).as(t.name() + " destructive").isEqualTo(WRITES.get(t.name()));

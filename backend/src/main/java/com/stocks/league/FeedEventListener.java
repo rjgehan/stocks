@@ -6,6 +6,7 @@ import com.stocks.common.domain.TransferType;
 import com.stocks.common.events.AccountChanged;
 import com.stocks.common.events.CashTransferPosted;
 import com.stocks.common.events.ExecutionCreated;
+import com.stocks.common.events.JournalNotePosted;
 import com.stocks.common.id.Prefix;
 import com.stocks.common.id.PublicId;
 import com.stocks.common.jdbc.Jdbc;
@@ -45,6 +46,9 @@ import tools.jackson.databind.json.JsonMapper;
  *       the INITIAL of a player's first run → {@code JOINED} ({@code JOIN:<ply>}), from that event or from
  *       {@code AccountChanged(reason=OPENED)};</li>
  *   <li>{@code AccountChanged(reason=RESET)} → {@code RESET} ({@code RESET:<new run's acc>});</li>
+ *   <li>{@code JournalNotePosted} (Phase 2, §20.7) → {@code JOURNAL} ({@code JNL:<jnl>}), visible at the note's
+ *       {@code visible_at} (written with the feed delay), the note clipped to 280 characters inside
+ *       {@code untrusted};</li>
  *   <li>the EOD writer → {@code NEW_LEADER} ({@code LEADER:<date>}).</li>
  * </ul>
  * Listeners hand off to their own executor and never block the engine thread (§5.3 events).
@@ -106,6 +110,11 @@ public class FeedEventListener {
     }
   }
 
+  @EventListener
+  public void on(JournalNotePosted e) {
+    async(() -> recordJournal(e.noteId()));
+  }
+
   private void async(Runnable work) {
     try {
       executor.execute(() -> {
@@ -151,7 +160,7 @@ public class FeedEventListener {
     String rationale = x.rationalePublic() ? Text.clip(x.rationale(), PublicProfileService.RATIONALE_MAX) : null;
     FeedPayloadDto payload = new FeedPayloadDto(x.side(), x.qty(), x.price(),
         x.side() == Side.SELL ? x.realizedPnl() : null, null, null,
-        rationale == null ? null : new UntrustedFeedTextDto(rationale, null));
+        rationale == null ? null : new UntrustedFeedTextDto(rationale, null, null));
     return feed.insertIfAbsent(publicIds.next(Prefix.FEED_EVENT), x.playerId(), x.accountId(),
         closed ? FeedItemKind.POSITION_CLOSED : FeedItemKind.FILL, x.symbol(), json.writeValueAsString(payload),
         ref, x.executedAt(), x.executedAt().plus(settings.tradeFeedDelay()));
@@ -207,7 +216,7 @@ public class FeedEventListener {
     }
     String memo = Text.clip(t.memo(), MEMO_MAX);
     FeedPayloadDto payload = new FeedPayloadDto(null, null, null, null, t.amount(), null,
-        memo == null ? null : new UntrustedFeedTextDto(null, memo));
+        memo == null ? null : new UntrustedFeedTextDto(null, memo, null));
     return feed.insertIfAbsent(publicIds.next(Prefix.FEED_EVENT), t.playerId(), t.accountId(), FeedItemKind.DEPOSIT,
         null, json.writeValueAsString(payload), "XFER:" + t.publicId(), t.effectiveAt(), t.effectiveAt());
   }
@@ -245,7 +254,37 @@ public class FeedEventListener {
         json.writeValueAsString(payload), "LEADER:" + date, at, at);
   }
 
-  /** Re-records every execution and transfer in {@code (fromExclusive, toInclusive]}; returns rows written. */
+  private record JournalRow(long playerId, String publicId, String body, String symbols, Instant createdAt,
+                            Instant visibleAt) {}
+
+  /** JOURNAL for one AI journal note (by public id, §20.7); true if a row was written. */
+  public boolean recordJournal(String notePublicId) {
+    String ref = "JNL:" + notePublicId;
+    if (feed.exists(ref)) {
+      return false;
+    }
+    Optional<JournalRow> found = jdbc.sql("""
+            SELECT player_id, public_id, body, symbols, created_at, visible_at FROM journal_note WHERE public_id = ?""")
+        .param(notePublicId)
+        .query((rs, n) -> new JournalRow(rs.getLong("player_id"), rs.getString("public_id"), rs.getString("body"),
+            rs.getString("symbols"), Jdbc.instant(rs, "created_at"), Jdbc.instant(rs, "visible_at")))
+        .optional();
+    if (found.isEmpty()) {
+      return false;
+    }
+    JournalRow j = found.get();
+    String note = Text.clip(j.body(), PublicProfileService.RATIONALE_MAX);
+    String symbol = j.symbols() == null || j.symbols().isBlank() ? null : j.symbols().split(",")[0].strip();
+    FeedPayloadDto payload = new FeedPayloadDto(null, null, null, null, null, null,
+        new UntrustedFeedTextDto(null, null, note));
+    return feed.insertIfAbsent(publicIds.next(Prefix.FEED_EVENT), j.playerId(), null, FeedItemKind.JOURNAL, symbol,
+        json.writeValueAsString(payload), ref, j.createdAt(), j.visibleAt());
+  }
+
+  /**
+   * Re-records every execution, transfer and (Phase 2) journal note in {@code (fromExclusive, toInclusive]}; returns
+   * rows written.
+   */
   public int backfill(Instant fromExclusive, Instant toInclusive) {
     int n = 0;
     List<String> executions = jdbc.sql("SELECT public_id FROM execution WHERE executed_at > ? AND executed_at <= ? "
@@ -259,6 +298,12 @@ public class FeedEventListener {
         .params(Jdbc.ts(fromExclusive), Jdbc.ts(toInclusive)).query(String.class).list();
     for (String id : transfers) {
       n += recordTransfer(id) ? 1 : 0;
+    }
+    List<String> notes = jdbc.sql("SELECT public_id FROM journal_note WHERE created_at > ? AND created_at <= ? "
+            + "ORDER BY created_at, id")
+        .params(Jdbc.ts(fromExclusive), Jdbc.ts(toInclusive)).query(String.class).list();
+    for (String id : notes) {
+      n += recordJournal(id) ? 1 : 0;
     }
     return n;
   }

@@ -13,8 +13,8 @@ import org.springframework.ai.mcp.annotation.McpTool;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * §20.3: the tool list follows the catalog order, rejects unknown and duplicate names, and has all 42 names (the 38 of
- * Phase 1, then the four Phase 2 group-order tools).
+ * §20.3: the tool list follows the catalog order, rejects unknown and duplicate names, and has all 55 names (the 38 of
+ * Phase 1, then the Phase 2 tools appended so the Phase 1 order never changes).
  */
 class McpToolCatalogTest {
 
@@ -84,8 +84,8 @@ class McpToolCatalogTest {
   }
 
   @Test
-  void theCatalogHasThe53ToolsOfSection20Point3AndNoAdminTool() {
-    assertThat(McpToolCatalog.ORDER).hasSize(53).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
+  void theCatalogHasThe55ToolsOfSection20Point3AndNoAdminTool() {
+    assertThat(McpToolCatalog.ORDER).hasSize(55).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
         .noneMatch(n -> n.contains("admin"));
     assertThat(McpToolCatalog.ORDER.get(37)).as("Phase 1 ends at #38").isEqualTo("mark_notifications_read");
   }
@@ -118,10 +118,17 @@ class McpToolCatalogTest {
   }
 
   @Test
-  void phase2ResearchToolsFollowThePhase1Catalog() {       // §20.3 #52–#53, §15.10
+  void phase2ResearchToolsFollowThePhase1Catalog() {       // §20.3 #52–#55, §15.10
     assertThat(McpToolCatalog.ORDER.subList(38, McpToolCatalog.ORDER.size())).containsSubsequence("screen_stocks",
         "get_recommendations");
     assertThat(McpToolCatalog.SCOPES).containsEntry("screen_stocks", Scopes.MARKET_READ)
         .containsEntry("get_recommendations", Scopes.MARKET_READ);
+  }
+
+  @Test
+  void phase2JournalToolsFollowThePhase1Catalog() {        // §20.3 #54–#55, §20.7
+    assertThat(McpToolCatalog.ORDER).endsWith("get_player_journal", "add_journal_note");
+    assertThat(McpToolCatalog.SCOPES).containsEntry("get_player_journal", Scopes.LEAGUE_READ)
+        .containsEntry("add_journal_note", Scopes.TRADE);
   }
 }

@@ -1,7 +1,9 @@
 package com.stocks.mcp;
 
+import com.stocks.common.domain.Channel;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
+import com.stocks.contract.agents.ApiAccessRecorder;
 import com.stocks.contract.security.CurrentPlayer;
 import com.stocks.contract.security.PlayerPrincipal;
 import com.stocks.contract.security.RequestMeta;
@@ -50,9 +52,17 @@ final class McpToolHandler implements BiFunction<McpTransportContext, CallToolRe
   private final Method method;
   private final JsonMapper mapper;
   private final List<Binder> binders;
+  private final ApiAccessRecorder recorder;
 
   /** {@code requiredScope}: a §7.1 scope, or {@code McpToolCatalog.NO_SCOPE}. */
   McpToolHandler(String toolName, String requiredScope, Object bean, Method method, JsonMapper mapper) {
+    this(toolName, requiredScope, bean, method, mapper, null);
+  }
+
+  /** With {@code recorder}, every call of an API key is counted in the API access log (§17.10). */
+  McpToolHandler(String toolName, String requiredScope, Object bean, Method method, JsonMapper mapper,
+                 ApiAccessRecorder recorder) {
+    this.recorder = recorder;
     this.toolName = toolName;
     this.requiredScope = requiredScope;
     this.bean = bean;
@@ -102,6 +112,32 @@ final class McpToolHandler implements BiFunction<McpTransportContext, CallToolRe
   @Override
   public CallToolResult apply(McpTransportContext ctx, CallToolRequest request) {
     McpTransportContext callContext = withTool(ctx);
+    long start = System.nanoTime();
+    String[] outcome = {"INTERNAL_ERROR"};
+    try {
+      return call(callContext, request, outcome);
+    } finally {
+      record(callContext, outcome[0], (System.nanoTime() - start) / 1_000_000);
+    }
+  }
+
+  /** §17.10: one call of an API key, with {@code OK} or the result's error code. */
+  private void record(McpTransportContext ctx, String outcome, long ms) {
+    if (recorder == null) {
+      return;
+    }
+    PlayerPrincipal principal = ctx != null && ctx.get(CurrentPlayer.PRINCIPAL_KEY) instanceof PlayerPrincipal p
+        ? p : null;
+    RequestMeta meta = CurrentPlayer.requestMeta(ctx).orElse(null);
+    try {
+      recorder.record(principal, meta == null || meta.channel() == null ? Channel.MCP_KEY : meta.channel(), toolName,
+          outcome, ms, meta == null ? null : meta.ip(), meta == null ? null : meta.mcpClient());
+    } catch (RuntimeException e) {
+      log.debug("API access log of {} failed: {}", toolName, e.toString());
+    }
+  }
+
+  private CallToolResult call(McpTransportContext callContext, CallToolRequest request, String[] outcome) {
     try {
       checkScope(callContext);
       Object[] args = new Object[binders.size()];
@@ -115,12 +151,15 @@ final class McpToolHandler implements BiFunction<McpTransportContext, CallToolRe
       }
       String json = mapper.writeValueAsString(result);
       Object structured = mapper.readValue(json, Object.class);
+      outcome[0] = "OK";
       return CallToolResult.builder().structuredContent(structured).addTextContent(json).build();
     } catch (ApiException e) {
+      outcome[0] = e.code().name();
       return McpErrors.of(e, mapper);
     } catch (InvocationTargetException e) {
       Throwable cause = e.getCause();
       if (cause instanceof ApiException api) {
+        outcome[0] = api.code().name();
         return McpErrors.of(api, mapper);
       }
       if (cause instanceof Error error) {

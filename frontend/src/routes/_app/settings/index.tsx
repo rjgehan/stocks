@@ -13,6 +13,7 @@ const ITEMS = [
   { to: '/alerts', label: 'Price alerts', detail: 'Get notified at a price or a move on the day' },
   { to: '/settings/api-keys', label: 'API keys', detail: 'Personal read-only keys for your own scripts' },
   { to: '/settings/connected-apps', label: 'Connected apps', detail: 'claude.ai and ChatGPT connectors you approved' },
+  { to: '/settings/api-calls', label: 'Recent API calls', detail: 'What your keys and your bots did, per hour' },
   { to: '/settings/account', label: 'Account', detail: 'Password and self-reset' },
 ] as const
 

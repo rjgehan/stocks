@@ -22,6 +22,10 @@ public enum Prefix {
   ALERT("alr"),
   /** Phase 2: push_subscription, one browser subscription (§19.2). */
   PUSH_SUBSCRIPTION("psh"),
+  /** Phase 2 (§20.6): a run the agent runner reported. */
+  AGENT_RUN("arn"),
+  /** Phase 2 (§20.7): a public AI journal note. */
+  JOURNAL_NOTE("jnl"),
   /** Server-generated {@code X-Request-Id} values (§6.6); never stored as a row id. */
   REQUEST("req");
 

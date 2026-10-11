@@ -278,6 +278,19 @@ export const IconTrophy = (p: IconProps) => (
     <path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4" />
   </Svg>
 )
+/** Phase 2: the AI journal (§20.7). */
+export const IconBook = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5v-15Z" />
+    <path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 7h6M9 10.5h4" />
+  </Svg>
+)
+/** Phase 2: API calls and runs (§17.10, §20.6). */
+export const IconActivity = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />
+  </Svg>
+)
 export const IconUserPlus = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="10" cy="8" r="3.5" />

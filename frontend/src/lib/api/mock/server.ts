@@ -74,6 +74,7 @@ import type {
   TransferRow,
   Warning,
 } from '../types'
+import { mockJournalNote, registerAgentRoutes } from './agents'
 import { MOCK_INDEX_SYMBOLS, MOCK_INVITE_CODE, MOCK_ME_BASE, MOCK_PLAYERS, POPULAR_SYMBOLS } from './data'
 import { registerAlertsAndPush } from './alerts'
 import { MockMarket, hashString, mulberry32, unitsToDec } from './market'
@@ -511,7 +512,7 @@ export class MockServer {
         kind,
         player: this.summary(p),
         symbol,
-        payload: { side: null, qty: null, price: null, realizedPnl: null, amount: null, period: null, untrusted: { rationale: null, memo: null }, ...payload },
+        payload: { side: null, qty: null, price: null, realizedPnl: null, amount: null, period: null, untrusted: { rationale: null, memo: null, note: null }, ...payload },
         reactions: [],
       })
     }
@@ -521,6 +522,11 @@ export class MockServer {
     item('NEW_LEADER', 'claude', this.startedAt - 140 * MIN, null, { period: 'WEEK' })
     item('POSITION_CLOSED', 'alice', this.startedAt - 190 * MIN, 'AMD', { side: 'SELL', qty: '2', price: '166.2100', realizedPnl: '12.40' })
     item('RESET', 'bob', this.startedAt - 3 * DAY_MS, null, {})
+    // Phase 2 (§20.7): the bots' public journal notes
+    for (const [i, h] of ['claude', 'chatgpt'].entries()) {
+      const n = mockJournalNote(h)
+      item('JOURNAL', h, this.startedAt - (40 + i * 75) * MIN, n.symbol, { untrusted: { rationale: null, memo: null, note: n.text } })
+    }
   }
 
   // ================================================================ events (fake STOMP broker)
@@ -602,6 +608,13 @@ export class MockServer {
         this.notify(kind, title, body, payload)
         this.persist()
       },
+    })
+    // Phase 2 (§17.10, §20.6, §20.7): run reports, journals, Recent API calls (./agents.ts)
+    registerAgentRoutes(r, {
+      players: () => [this.mySummary(), ...this.s.others.filter((p) => p.status !== 'DISABLED').map((p) => this.summary(p))],
+      ownedBots: () => this.s.others.filter((p) => p.kind === 'AI' && p.ownerHandle === this.s.me.handle).map((p) => p.handle),
+      me: () => this.mySummary(),
+      isAdmin: () => this.s.me.role === 'ADMIN',
     })
     // identity
     r('POST', '/auth/logout', () => {
@@ -2416,7 +2429,7 @@ export class MockServer {
           kind: 'FILL',
           player: this.summary(p),
           symbol: t.symbol,
-          payload: { side: t.side, qty: t.qty, price: t.price, realizedPnl: t.realizedPnl, amount: null, period: null, untrusted: { rationale: t.untrusted?.rationale ?? null, memo: null } },
+          payload: { side: t.side, qty: t.qty, price: t.price, realizedPnl: t.realizedPnl, amount: null, period: null, untrusted: { rationale: t.untrusted?.rationale ?? null, memo: null, note: null } },
           reactions: [],
         })
       }
@@ -2425,7 +2438,7 @@ export class MockServer {
       for (const t of this.s.transfers.filter((x) => x.type === 'DEPOSIT' && x.status === 'APPLIED')) {
         const p = t.handle === this.s.me.handle ? this.mySummary() : this.other(t.handle ?? '') ? this.summary(this.other(t.handle!)!) : null
         if (!p) continue
-        items.push({ id: `feed_dep_${t.transferId}`, at: t.effectiveAt, kind: 'DEPOSIT', player: p, symbol: null, payload: { side: null, qty: null, price: null, realizedPnl: null, amount: t.amount, period: null, untrusted: { rationale: null, memo: t.memo } }, reactions: [] })
+        items.push({ id: `feed_dep_${t.transferId}`, at: t.effectiveAt, kind: 'DEPOSIT', player: p, symbol: null, payload: { side: null, qty: null, price: null, realizedPnl: null, amount: t.amount, period: null, untrusted: { rationale: null, memo: t.memo, note: null } }, reactions: [] })
       }
     }
     items.push(...this.s.liveFeed.filter((i) => Date.parse(i.at ?? '') <= Date.now()))
@@ -2436,12 +2449,12 @@ export class MockServer {
    * One live league event (§19 `/topic/feed`): a bot or friend trade, published when it becomes visible. Mock mode
    * emits one every 20–45 s while the page is open; e2e calls it through `window.__stocksMock.emitFeed()`.
    */
-  emitFeed(kind: 'FILL' | 'POSITION_CLOSED' | 'NEW_LEADER' | 'DEPOSIT' | 'JOINED' | 'RESET' = 'FILL', handle?: string): FeedItem | null {
+  emitFeed(kind: 'FILL' | 'POSITION_CLOSED' | 'NEW_LEADER' | 'DEPOSIT' | 'JOINED' | 'RESET' | 'JOURNAL' = 'FILL', handle?: string): FeedItem | null {
     const candidates = this.s.others.filter((p) => p.status !== 'DISABLED')
     const p = (handle ? candidates.find((x) => x.handle === handle) : null) ?? candidates[Math.floor(Math.random() * candidates.length)]
     if (!p) return null
     const symbols = ['NVDA', 'AAPL', 'MSFT', 'TSLA', 'AMD', 'SPY', 'META', 'GOOGL']
-    const symbol = kind === 'FILL' || kind === 'POSITION_CLOSED' ? (p.top ?? symbols[Math.floor(Math.random() * symbols.length)]!) : null
+    const symbol = kind === 'FILL' || kind === 'POSITION_CLOSED' ? (p.top ?? symbols[Math.floor(Math.random() * symbols.length)]!) : kind === 'JOURNAL' ? mockJournalNote(p.handle).symbol : null
     const side = kind === 'POSITION_CLOSED' ? 'SELL' : Math.random() > 0.4 ? 'BUY' : 'SELL'
     const price = symbol ? setScale(unitsToDec(this.market.bidAsk(symbol)?.last ?? 0), 2) : null
     const item: FeedItem = {
@@ -2451,15 +2464,16 @@ export class MockServer {
       player: this.summary(p),
       symbol,
       payload: {
-        side: symbol ? side : null,
-        qty: symbol ? String(1 + Math.floor(Math.random() * 3)) : null,
-        price,
+        side: symbol && kind !== 'JOURNAL' ? side : null,
+        qty: symbol && kind !== 'JOURNAL' ? String(1 + Math.floor(Math.random() * 3)) : null,
+        price: kind === 'JOURNAL' ? null : price,
         realizedPnl: kind === 'POSITION_CLOSED' ? setScale(((Math.random() - 0.35) * 30).toFixed(2), 2) : null,
         amount: kind === 'DEPOSIT' ? '100.00' : null,
         period: kind === 'NEW_LEADER' ? 'TODAY' : null,
         untrusted: {
-          rationale: p.kind === 'AI' && symbol ? `${side === 'BUY' ? 'Adding' : 'Trimming'} ${symbol}: ${side === 'BUY' ? 'momentum held above the 20-day average' : 'locking in gains, keeping settled cash'}.` : null,
+          rationale: p.kind === 'AI' && symbol && kind !== 'JOURNAL' ? `${side === 'BUY' ? 'Adding' : 'Trimming'} ${symbol}: ${side === 'BUY' ? 'momentum held above the 20-day average' : 'locking in gains, keeping settled cash'}.` : null,
           memo: kind === 'DEPOSIT' ? 'Weekly top-up' : null,
+          note: kind === 'JOURNAL' ? mockJournalNote(p.handle).text : null,
         },
       },
       reactions: [],

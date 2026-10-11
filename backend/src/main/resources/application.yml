@@ -187,3 +187,22 @@ stocks:
     request-timeout: 10s
     max-attempts: 3
     max-devices-per-player: 10
+  # ---- Phase 2, WS5 (every key optional: these are the code defaults; production's .env needs nothing new) ----
+  agents:                                   # §20.6 run reports, §20.7 the public AI journal
+    max-report-bytes: 32768
+    max-reports-per-day: 100                # new runs per bot in any 24 h (a repeated runRef is free)
+    journal: { max-chars: 500, max-per-window: 3, window: 10m, max-per-day: 12, max-symbols: 5 }
+  api-log: { enabled: true, flush-interval: 15s, max-pending-buckets: 10000, retention-days: 90 }   # §17.10
+  stream:                                   # §19.3 GET /api/v1/stream (Server-Sent Events for API keys)
+    enabled: true
+    max-connections-per-player: 3
+    max-connections: 200
+    heartbeat: 15s
+    max-age: 30m
+    revalidate-every: 30s
+    buffer-size: 2000
+    buffer-max-age: 5m
+    quote-interval: 1s
+    queue-capacity: 1000
+    retry-ms: 3000
+    max-symbols: 50

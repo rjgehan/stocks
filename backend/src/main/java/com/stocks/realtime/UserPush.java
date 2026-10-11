@@ -1,9 +1,12 @@
 package com.stocks.realtime;
 
+import com.stocks.realtime.stream.StreamHub;
 import java.util.Optional;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
@@ -23,15 +26,33 @@ public class UserPush {
 
   private final SubscriptionTracker tracker;
   private final ObjectProvider<SimpMessageSendingOperations> messaging;
+  private final Supplier<StreamHub> streams;
 
+  @Autowired
+  public UserPush(SubscriptionTracker tracker, ObjectProvider<SimpMessageSendingOperations> messaging,
+                  ObjectProvider<StreamHub> streams) {
+    this.tracker = tracker;
+    this.messaging = messaging;
+    this.streams = streams::getIfAvailable;
+  }
+
+  /** Without the SSE stream (tests of the STOMP side). */
   public UserPush(SubscriptionTracker tracker, ObjectProvider<SimpMessageSendingOperations> messaging) {
     this.tracker = tracker;
     this.messaging = messaging;
+    this.streams = () -> null;
   }
 
-  /** True when the player has at least one STOMP session (pushes to anyone else are skipped). */
+  /**
+   * True when the player has at least one STOMP session, or an SSE stream wants their private events (an open stream
+   * or one closed within the reconnect window, §19.3); pushes to anyone else are skipped.
+   */
   public boolean isConnected(long playerId) {
-    return tracker.isConnected(playerId);
+    if (tracker.isConnected(playerId)) {
+      return true;
+    }
+    StreamHub hub = streams.get();
+    return hub != null && hub.wantsPrivate(playerId);
   }
 
   /**
@@ -46,6 +67,14 @@ public class UserPush {
    * open on a phone and a desktop would get order, account and notification pushes on one device only.
    */
   public boolean toPlayer(long playerId, String queue, Object payload) {
+    StreamHub hub = streams.get();
+    if (hub != null) {
+      try {
+        hub.publishPrivate(playerId, queue, payload);   // §19.3: the SSE stream gets the same payload
+      } catch (RuntimeException e) {
+        log.warn("SSE push to player {} {} failed: {}", playerId, queue, e.toString());
+      }
+    }
     Optional<String> user = tracker.userOf(playerId);
     if (user.isEmpty()) {
       return false;

@@ -22,7 +22,7 @@ import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 /**
- * Phase 2 research tools (§20.3 #39–#40, scope {@code market:read}, read-only): the stock screener and analyst
+ * Phase 2 research tools (§20.3 #52–#53, scope {@code market:read}, read-only): the stock screener and analyst
  * recommendation trends (§15.10). Thin adapters over {@code MarketDataService} with the REST DTOs.
  */
 @Component

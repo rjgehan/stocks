@@ -41,6 +41,7 @@ tools:
   # Phase 2 (§15.10)
   /api/v1/market/screener: screen_stocks
   /api/v1/assets/{symbol}/recommendations: get_recommendations
+  /api/v1/players/{handle}/journal: get_player_journal
 excluded:
   /api/v1/auth/csrf: browser CSRF bootstrap
   /api/v1/me: whoami returns the same Me
@@ -53,3 +54,6 @@ excluded:
   /api/v1/assets/{symbol}/trades: Time & Sales is a live UI tape that exists only while a viewer's stream covers the symbol (§15.10); bots use get_snapshot and get_bars
   /api/v1/me/oauth/requests/{requestId}: session only (the human's OAuth consent screen, §17.9.3)
   /api/v1/me/connected-apps: session only (the human's OAuth grants, §17.9.1)
+  /api/v1/players/{handle}/agent-runs: runner telemetry for profiles (Phase 2, §20.6), not trading data
+  /api/v1/me/api-calls: session only (Recent API calls in Settings, §17.10)
+  /api/v1/stream: Server-Sent Events for scripts (§19.3); MCP is request/response

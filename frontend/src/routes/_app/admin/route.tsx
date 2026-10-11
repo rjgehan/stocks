@@ -31,6 +31,7 @@ function AdminLayout() {
             { to: '/admin/settings', label: 'Settings' },
             { to: '/admin/system', label: 'System' },
             { to: '/admin/corporate-actions', label: 'Corp. actions' },
+            { to: '/admin/bots', label: 'Bots' },
             { to: '/admin/audit', label: 'Audit' },
           ]}
         />

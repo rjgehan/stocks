@@ -1,5 +1,6 @@
 package com.stocks.mcp;
 
+import com.stocks.contract.agents.ApiAccessRecorder;
 import com.stocks.contract.security.Scopes;
 import io.modelcontextprotocol.server.McpStatelessServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -48,7 +49,9 @@ public final class McpToolCatalog {
       // Phase 2 price alerts (§20.3)
       "list_alerts", "create_alert", "delete_alert",
       // Phase 2 market research (§15.10)
-      "screen_stocks", "get_recommendations");
+      "screen_stocks", "get_recommendations",
+      // Phase 2 public AI journal (§20.7)
+      "get_player_journal", "add_journal_note");
 
   /** {@link #SCOPES} value of a tool any authenticated caller may use ({@code whoami}). */
   public static final String NO_SCOPE = "";
@@ -73,12 +76,12 @@ public final class McpToolCatalog {
       m.put(t, Scopes.ACCOUNT_READ);
     }
     for (String t : List.of("get_leaderboard", "list_players", "get_player_profile", "get_player_history",
-        "get_player_trades", "get_league_feed")) {
+        "get_player_trades", "get_league_feed", "get_player_journal")) {
       m.put(t, Scopes.LEAGUE_READ);
     }
     for (String t : List.of("place_order", "replace_order", "cancel_order", "cancel_all_orders", "close_position",
         "update_watchlist", "delete_watchlist", "place_order_group", "cancel_order_group", "create_alert",
-        "delete_alert")) {
+        "delete_alert", "add_journal_note")) {
       m.put(t, Scopes.TRADE);
     }
     // Phase 2, league slice (§20.3 #43–#48)
@@ -99,6 +102,12 @@ public final class McpToolCatalog {
 
   /** One specification per {@code @McpTool} method of {@code toolBeans}, in §20.3 order. */
   public static List<SyncToolSpecification> specifications(List<?> toolBeans, JsonMapper mapper) {
+    return specifications(toolBeans, mapper, null);
+  }
+
+  /** As above; with {@code recorder}, every API-key call is counted in the API access log (§17.10). */
+  public static List<SyncToolSpecification> specifications(List<?> toolBeans, JsonMapper mapper,
+                                                           ApiAccessRecorder recorder) {
     Map<String, SyncToolSpecification> byName = new LinkedHashMap<>();
     for (Object bean : toolBeans) {
       Class<?> type = AopUtils.getTargetClass(bean);
@@ -110,7 +119,7 @@ public final class McpToolCatalog {
       }
       methods.sort(Comparator.comparing(Method::getName));
       for (Method m : methods) {
-        SyncToolSpecification spec = specification(bean, m, mapper);
+        SyncToolSpecification spec = specification(bean, m, mapper, recorder);
         if (byName.putIfAbsent(spec.tool().name(), spec) != null) {
           throw new IllegalStateException("Duplicate MCP tool name '" + spec.tool().name() + "' (" + m + ")");
         }
@@ -125,12 +134,17 @@ public final class McpToolCatalog {
 
   /** The specification of one catalog tool; its scope comes from {@link #SCOPES} (none = boot failure). */
   static SyncToolSpecification specification(Object bean, Method method, JsonMapper mapper) {
+    return specification(bean, method, mapper, (ApiAccessRecorder) null);
+  }
+
+  static SyncToolSpecification specification(Object bean, Method method, JsonMapper mapper,
+                                             ApiAccessRecorder recorder) {
     String name = toolName(method);
     String scope = SCOPES.get(name);
     if (scope == null) {
       throw new IllegalStateException("MCP tool " + name + " has no required scope in McpToolCatalog.SCOPES (§20.3)");
     }
-    return specification(bean, method, mapper, scope);
+    return specification(bean, method, mapper, scope, recorder);
   }
 
   /**
@@ -138,6 +152,11 @@ public final class McpToolCatalog {
    * through {@link #specification(Object, Method, JsonMapper)}; this overload exists for test-only tools.
    */
   static SyncToolSpecification specification(Object bean, Method method, JsonMapper mapper, String requiredScope) {
+    return specification(bean, method, mapper, requiredScope, null);
+  }
+
+  private static SyncToolSpecification specification(Object bean, Method method, JsonMapper mapper,
+                                                     String requiredScope, ApiAccessRecorder recorder) {
     McpTool annotation = method.getAnnotation(McpTool.class);
     String name = toolName(method);
     if (!Modifier.isPublic(method.getModifiers())) {
@@ -163,7 +182,7 @@ public final class McpToolCatalog {
             .build())
         .build();
     return SyncToolSpecification.builder().tool(tool)
-        .callHandler(new McpToolHandler(name, requiredScope, bean, method, mapper))
+        .callHandler(new McpToolHandler(name, requiredScope, bean, method, mapper, recorder))
         .build();
   }
 

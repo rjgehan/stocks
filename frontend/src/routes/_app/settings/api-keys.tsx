@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { describeError, errorBody } from '@/lib/api/errors'
 import { useCreateMyApiKey, useMyApiKeys, useRevokeMyApiKey } from '@/lib/api/hooks/identity'
 import type { ApiKeyCreated } from '@/lib/api/types'
@@ -50,7 +50,11 @@ function ApiKeysPage() {
       <SettingsHeader title="API keys" />
       <p className="text-caption text-text-2">
         Use a personal key to read your account from your own scripts or an AI assistant. Keys are read-only unless the league admin enabled API trading for you; trades placed with a key are
-        labeled “via API” on the league.
+        labeled “via API” on the league. See what they did under{' '}
+        <Link to="/settings/api-calls" className="text-accent">
+          Recent API calls
+        </Link>
+        .
       </p>
       <form onSubmit={submit} className="space-y-3 rounded-lg border border-divider bg-bg-1 p-4">
         <h2 className="text-section font-semibold">New key</h2>

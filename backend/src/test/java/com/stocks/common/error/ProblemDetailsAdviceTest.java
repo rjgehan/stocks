@@ -58,6 +58,12 @@ class ProblemDetailsAdviceTest {
       throw ApiException.notImplemented("OrderService.place");
     }
 
+    @GetMapping("/client-gone")
+    String clientGone() throws Exception {
+      throw new org.springframework.web.context.request.async.AsyncRequestNotUsableException(
+          "Response not usable after response errors.");
+    }
+
     @GetMapping("/boom")
     String boom() {
       throw new IllegalStateException("secret internals: password=hunter2");
@@ -112,6 +118,14 @@ class ProblemDetailsAdviceTest {
         .andExpect(jsonPath("$.fields[0].code").value("INSUFFICIENT_BUYING_POWER"))
         .andExpect(jsonPath("$.retryAfterS").value(nullValue()))
         .andExpect(jsonPath("$.requestId").value("req-abc"));
+  }
+
+  @Test
+  void aClientThatWentAwayGetsNothingWrittenAndNoErrorLogged() throws Exception {
+    // e.g. an SSE stream (§19.3) whose client disconnected: no 500 problem, no body
+    var result = mvc.perform(get("/client-gone")).andReturn();
+    assertThat(result.getResponse().getStatus()).isEqualTo(200);
+    assertThat(result.getResponse().getContentAsString()).isEmpty();
   }
 
   @Test

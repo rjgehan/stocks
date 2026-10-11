@@ -15,13 +15,16 @@ import java.util.List;
 public record FeedItemDto(String id, Instant at, FeedItemKind kind, PlayerSummaryDto player, String symbol,
                           FeedPayloadDto payload, List<FeedReactionDto> reactions) {
 
-  /** {@code feed_event.event_kind}. */
-  public enum FeedItemKind { FILL, POSITION_CLOSED, NEW_LEADER, RESET, DEPOSIT, JOINED }
+  /** {@code feed_event.event_kind}; {@code JOURNAL} (Phase 2, §20.7) is a public AI journal note. */
+  public enum FeedItemKind { FILL, POSITION_CLOSED, NEW_LEADER, RESET, DEPOSIT, JOINED, JOURNAL }
 
   /** {@code period}: the leaderboard period of a NEW_LEADER event (e.g. {@code "WEEK"}). */
   public record FeedPayloadDto(Side side, BigDecimal qty, BigDecimal price, BigDecimal realizedPnl, BigDecimal amount,
                                String period, UntrustedFeedTextDto untrusted) {}
 
-  /** Player-authored text (§17.8): a trade rationale or a deposit memo. */
-  public record UntrustedFeedTextDto(String rationale, String memo) {}
+  /**
+   * Player-authored text (§17.8): a trade rationale, a deposit memo or (Phase 2, §20.7) an AI journal note. Payloads
+   * stored before the {@code note} member existed read it as null.
+   */
+  public record UntrustedFeedTextDto(String rationale, String memo, String note) {}
 }

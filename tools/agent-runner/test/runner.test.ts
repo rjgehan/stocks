@@ -106,7 +106,7 @@ describe('Claude run (Messages API)', () => {
     expect(mcp.calls[2]?.args).toEqual(ORDER);
     expect(mcp.closed).toBe(1);
 
-    // The requests: all 38 MCP tools + save_notes as plain custom tools, the shared system prompt, caching on.
+    // The requests: all 40 MCP tools + save_notes as plain custom tools, the shared system prompt, caching on.
     const first = llm.calls[0];
     expect(first?.headers['x-api-key']).toBe(CLAUDE_LLM_KEY);
     expect(first?.body.model).toBe('claude-opus-5-5');
@@ -145,12 +145,41 @@ describe('Claude run (Messages API)', () => {
       'llm_response',
       'run_end',
     ]);
-    expect(log[0]).toMatchObject({ bot: 'claude', model: 'claude-opus-5-5', trigger: 'schedule', slot: '09:45', tools: 39 });
+    expect(log[0]).toMatchObject({ bot: 'claude', model: 'claude-opus-5-5', trigger: 'schedule', slot: '09:45', tools: 41 });
     expect(log[0]?.promptSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(log[3]).toMatchObject({ name: 'get_quotes', isError: false, code: null, executed: true });
     expect(log[8]).toMatchObject({ status: 'completed', costUsd: '0.021000', orders: 1, summary: expect.stringContaining('Placed') });
     expect(deps.sink.text).toMatch(/run bot=claude model=claude-opus-5-5 trigger=schedule@09:45 status=completed .*cost=\$0\.021000/);
     expectNoSecrets(deps.sink.text, readFileSync(s.logPath!, 'utf8'));
+
+    // §20.6: the run's summary went to the app with the bot's own key
+    expect(deps.reports).toHaveLength(1);
+    const r = deps.reports[0]!;
+    expect(r.url).toBe('http://127.0.0.1:9/api/v1/agent-runs');
+    expect(r.headers.authorization).toBe(`Bearer ${CLAUDE_STOCKS_KEY}`);
+    expect(r.headers['x-stocks-client']).toBe('agent-runner/claude');
+    expect(r.body).toMatchObject({
+      trigger: 'SCHEDULE',
+      slot: '09:45',
+      model: 'claude-opus-5-5',
+      status: 'completed',
+      turns: 3,
+      toolCalls: 3,
+      toolErrors: 0,
+      orders: 1,
+      costUsd: '0.021000',
+      daySpentUsd: '0.021000',
+      dailyCapUsd: '1.00',
+      runnerVersion: '1.0.0-test',
+      tokens: { input: 4000, cacheRead: 0, cacheWrite: 0, output: 250 },
+    });
+    expect(r.body.runRef).toMatch(/^20261012T134500Z-claude-[0-9a-f]{6}$/);
+    expect(r.body.tools).toEqual([
+      { tool: 'get_quotes', code: 'OK', calls: 1 },
+      { tool: 'place_order', code: 'OK', calls: 1 },
+      { tool: 'save_notes', code: 'OK', calls: 1 },
+    ]);
+    expect(Date.parse(r.body.endedAt)).toBeGreaterThanOrEqual(Date.parse(r.body.startedAt));
   });
 
   it('reports error results with is_error and keeps going; unknown tools and bad arguments are errors too', async () => {

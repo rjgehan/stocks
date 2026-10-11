@@ -15,7 +15,7 @@ import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 /**
- * Price-alert tools (§20.3 #39–41, Phase 2): list with {@code account:read}, create and delete with {@code trade}
+ * Price-alert tools (§20.3 #49–51, Phase 2): list with {@code account:read}, create and delete with {@code trade}
  * (as REST {@code /alerts}, §17.1), through the same {@link AlertService}. An alert only notifies (a
  * {@code PRICE_ALERT} notification, read with {@code get_notifications}); it never trades.
  */

@@ -39,7 +39,7 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 
 /**
- * The Phase 2 league-stats tools (§20.3 #39–#44) through the real handler: defaults, argument validation, scopes and
+ * The Phase 2 league-stats tools (§20.3 #43–#48) through the real handler: defaults, argument validation, scopes and
  * the {@code untrusted}-style clipping of other players' display names. The services are mocks; their numbers are
  * covered by {@code LeagueStatsTest}, {@code PnlAnalysisTest} and {@code FeedReactionTest}.
  */
