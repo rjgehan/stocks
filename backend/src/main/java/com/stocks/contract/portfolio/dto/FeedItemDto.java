@@ -2,15 +2,18 @@ package com.stocks.contract.portfolio.dto;
 
 import com.stocks.common.domain.Side;
 import com.stocks.contract.identity.dto.PlayerSummaryDto;
+import com.stocks.contract.portfolio.dto.FeedReactionsDto.FeedReactionDto;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * §18.3 {@code FeedItem} ({@code GET /feed}, {@code /topic/feed}, MCP {@code get_league_feed}). Payload fields that do
- * not apply to the {@code kind} are {@code null} (present, §6.3).
+ * not apply to the {@code kind} are {@code null} (present, §6.3). {@code reactions} (Phase 2, §16.11): the emoji
+ * reactions with at least one player, in {@code Reaction} order.
  */
 public record FeedItemDto(String id, Instant at, FeedItemKind kind, PlayerSummaryDto player, String symbol,
-                          FeedPayloadDto payload) {
+                          FeedPayloadDto payload, List<FeedReactionDto> reactions) {
 
   /** {@code feed_event.event_kind}. */
   public enum FeedItemKind { FILL, POSITION_CLOSED, NEW_LEADER, RESET, DEPOSIT, JOINED }

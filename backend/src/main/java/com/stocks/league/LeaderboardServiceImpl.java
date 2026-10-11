@@ -117,7 +117,11 @@ public class LeaderboardServiceImpl implements LeaderboardService, PeriodicTask 
     return h;
   }
 
-  private Board current() {
+  /**
+   * The cached board (recomputed when older than the refresh interval): the one computation the leaderboard, player
+   * stats and the race chart all read (§16.8, §16.9).
+   */
+  public Board current() {
     Board b = cached;
     if (b == null || System.nanoTime() - cachedAtNanos > refresh.toNanos()) {
       return refresh();

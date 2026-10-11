@@ -337,12 +337,32 @@ class ValuationAndSnapshotsTest {
   }
 
   @Test
+  void aLeagueThatHasSpyBackfillsTheExtraBenchmarkUnderItsOwnRunKey() {
+    // production backfilled SPY before Phase 2: job_run(BENCHMARK_BACKFILL, 2025-12-31) is DONE and never runs again,
+    // so the QQQ backfill needs a key of its own (§16.6 extra benchmarks)
+    kit.benchmark.write(BenchmarkBackfillJob.ANCHOR, d("600.0000"), BigDecimal.ZERO);
+    BenchmarkBackfillJob job = new BenchmarkBackfillJob(kit.benchmark, kit.market, kit.pnlCalendar, kit.time);
+    Instant from = Instant.parse("2026-10-02T00:00:00Z");
+    assertThat(job.missing()).containsExactly("QQQ");
+    assertThat(job.occurrencesBetween(from, Instant.parse("2026-10-09T00:00:00Z"), kit.calendar)).singleElement()
+        .satisfies(o -> assertThat(o.runKey()).isEqualTo("2025-12-31:QQQ")
+            .matches(com.stocks.jobs.JobScheduler.RUN_KEY));
+    assertThat(job.runKey(List.of("SPY", "QQQ"))).isEqualTo("2025-12-31");
+    assertThat(job.runKey(List.of("QQQ", "DIA"))).isEqualTo("2025-12-31:QQQ+DIA");
+    kit.benchmark.write("QQQ", BenchmarkBackfillJob.ANCHOR, d("520.0000"), BigDecimal.ZERO);
+    assertThat(job.occurrencesBetween(from, Instant.parse("2026-10-09T00:00:00Z"), kit.calendar)).isEmpty();
+  }
+
+  @Test
   void theBackfillJobWritesTheChainFromDailyBars() {
     com.stocks.testkit.ScriptedMarketData bars = new com.stocks.testkit.ScriptedMarketData(kit.time) {
       @Override
       public com.stocks.contract.marketdata.BarSeries bars(com.stocks.contract.marketdata.BarRequest r) {
-        assertThat(r.symbol()).isEqualTo("SPY");
         assertThat(r.adjustment()).isEqualTo(com.stocks.contract.marketdata.model.AdjustmentMode.RAW);
+        if (!r.symbol().equals("SPY")) {                            // the extra benchmark (QQQ) has no bars here
+          return new com.stocks.contract.marketdata.BarSeries(r.symbol(), com.stocks.common.domain.Timeframe.DAY1,
+              r.adjustment(), List.of(), null, "test");
+        }
         return new com.stocks.contract.marketdata.BarSeries("SPY", com.stocks.common.domain.Timeframe.DAY1,
             r.adjustment(), List.of(bar("2025-12-31", "600"), bar("2026-01-02", "606"), bar("2026-10-08", "660")),
             null, "test");

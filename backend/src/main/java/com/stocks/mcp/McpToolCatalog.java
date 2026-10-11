@@ -41,7 +41,10 @@ public final class McpToolCatalog {
       "place_order", "replace_order", "cancel_order", "cancel_all_orders", "close_position", "update_watchlist",
       "delete_watchlist", "mark_notifications_read",
       // Phase 2 group orders (§11.9), appended
-      "preview_order_group", "place_order_group", "get_order_group", "cancel_order_group");
+      "preview_order_group", "place_order_group", "get_order_group", "cancel_order_group",
+      // Phase 2, league slice (§20.3)
+      "get_my_stats", "get_player_stats", "get_race_chart", "get_pnl_calendar", "get_pnl_analysis",
+      "react_to_feed_item");
 
   /** {@link #SCOPES} value of a tool any authenticated caller may use ({@code whoami}). */
   public static final String NO_SCOPE = "";
@@ -72,6 +75,14 @@ public final class McpToolCatalog {
         "update_watchlist", "delete_watchlist", "place_order_group", "cancel_order_group")) {
       m.put(t, Scopes.TRADE);
     }
+    // Phase 2, league slice (§20.3 #39–#44)
+    for (String t : List.of("get_my_stats", "get_pnl_calendar", "get_pnl_analysis")) {
+      m.put(t, Scopes.ACCOUNT_READ);
+    }
+    for (String t : List.of("get_player_stats", "get_race_chart")) {
+      m.put(t, Scopes.LEAGUE_READ);
+    }
+    m.put("react_to_feed_item", Scopes.TRADE);
     if (!m.keySet().equals(new HashSet<>(ORDER))) {
       throw new IllegalStateException("McpToolCatalog.SCOPES must name exactly the tools of ORDER");
     }

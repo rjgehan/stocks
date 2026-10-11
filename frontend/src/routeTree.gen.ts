@@ -23,6 +23,7 @@ import { Route as AppWatchlistRouteImport } from './routes/_app/watchlist'
 import { Route as JoinCodeRouteImport } from './routes/join.$code'
 import { Route as AppAccountIndexRouteImport } from './routes/_app/account/index'
 import { Route as AppAccountActivityRouteImport } from './routes/_app/account/activity'
+import { Route as AppAccountAnalysisRouteImport } from './routes/_app/account/analysis'
 import { Route as AppAccountHistoryRouteImport } from './routes/_app/account/history'
 import { Route as AppAccountPositionsRouteImport } from './routes/_app/account/positions'
 import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
@@ -111,6 +112,11 @@ const AppAccountIndexRoute = AppAccountIndexRouteImport.update({
 const AppAccountActivityRoute = AppAccountActivityRouteImport.update({
   id: '/activity',
   path: '/activity',
+  getParentRoute: () => AppAccountRouteRoute,
+} as any)
+const AppAccountAnalysisRoute = AppAccountAnalysisRouteImport.update({
+  id: '/analysis',
+  path: '/analysis',
   getParentRoute: () => AppAccountRouteRoute,
 } as any)
 const AppAccountHistoryRoute = AppAccountHistoryRouteImport.update({
@@ -228,6 +234,7 @@ export interface FileRoutesByFullPath {
   '/watchlist': typeof AppWatchlistRoute
   '/join/$code': typeof JoinCodeRoute
   '/account/activity': typeof AppAccountActivityRoute
+  '/account/analysis': typeof AppAccountAnalysisRoute
   '/account/history': typeof AppAccountHistoryRoute
   '/account/positions': typeof AppAccountPositionsRoute
   '/admin/audit': typeof AppAdminAuditRoute
@@ -260,6 +267,7 @@ export interface FileRoutesByTo {
   '/join/$code': typeof JoinCodeRoute
   '/': typeof AppIndexRoute
   '/account/activity': typeof AppAccountActivityRoute
+  '/account/analysis': typeof AppAccountAnalysisRoute
   '/account/history': typeof AppAccountHistoryRoute
   '/account/positions': typeof AppAccountPositionsRoute
   '/admin/audit': typeof AppAdminAuditRoute
@@ -297,6 +305,7 @@ export interface FileRoutesById {
   '/join/$code': typeof JoinCodeRoute
   '/_app/': typeof AppIndexRoute
   '/_app/account/activity': typeof AppAccountActivityRoute
+  '/_app/account/analysis': typeof AppAccountAnalysisRoute
   '/_app/account/history': typeof AppAccountHistoryRoute
   '/_app/account/positions': typeof AppAccountPositionsRoute
   '/_app/admin/audit': typeof AppAdminAuditRoute
@@ -334,6 +343,7 @@ export interface FileRouteTypes {
     | '/watchlist'
     | '/join/$code'
     | '/account/activity'
+    | '/account/analysis'
     | '/account/history'
     | '/account/positions'
     | '/admin/audit'
@@ -366,6 +376,7 @@ export interface FileRouteTypes {
     | '/join/$code'
     | '/'
     | '/account/activity'
+    | '/account/analysis'
     | '/account/history'
     | '/account/positions'
     | '/admin/audit'
@@ -402,6 +413,7 @@ export interface FileRouteTypes {
     | '/join/$code'
     | '/_app/'
     | '/_app/account/activity'
+    | '/_app/account/analysis'
     | '/_app/account/history'
     | '/_app/account/positions'
     | '/_app/admin/audit'
@@ -530,6 +542,13 @@ declare module '@tanstack/react-router' {
       path: '/activity'
       fullPath: '/account/activity'
       preLoaderRoute: typeof AppAccountActivityRouteImport
+      parentRoute: typeof AppAccountRouteRoute
+    }
+    '/_app/account/analysis': {
+      id: '/_app/account/analysis'
+      path: '/analysis'
+      fullPath: '/account/analysis'
+      preLoaderRoute: typeof AppAccountAnalysisRouteImport
       parentRoute: typeof AppAccountRouteRoute
     }
     '/_app/account/history': {
@@ -677,6 +696,7 @@ declare module '@tanstack/react-router' {
 
 interface AppAccountRouteRouteChildren {
   AppAccountActivityRoute: typeof AppAccountActivityRoute
+  AppAccountAnalysisRoute: typeof AppAccountAnalysisRoute
   AppAccountHistoryRoute: typeof AppAccountHistoryRoute
   AppAccountPositionsRoute: typeof AppAccountPositionsRoute
   AppAccountIndexRoute: typeof AppAccountIndexRoute
@@ -686,6 +706,7 @@ interface AppAccountRouteRouteChildren {
 
 const AppAccountRouteRouteChildren: AppAccountRouteRouteChildren = {
   AppAccountActivityRoute: AppAccountActivityRoute,
+  AppAccountAnalysisRoute: AppAccountAnalysisRoute,
   AppAccountHistoryRoute: AppAccountHistoryRoute,
   AppAccountPositionsRoute: AppAccountPositionsRoute,
   AppAccountIndexRoute: AppAccountIndexRoute,

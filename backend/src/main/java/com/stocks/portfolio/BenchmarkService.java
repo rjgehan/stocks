@@ -25,6 +25,10 @@ import org.springframework.stereotype.Service;
  * </pre>
  * The chain starts at B = 1 on its first row: 2025-12-31 once {@link BenchmarkBackfillJob} ran, otherwise the first
  * EOD the league recorded (only ratios {@code B_b / B_a} are ever used). Ratios at scale 12, HALF_EVEN.
+ *
+ * <p>Phase 2: the <b>extra benchmarks</b> ({@code stocks.performance.extra-benchmarks}, default QQQ) are chained the
+ * same way under their own {@code symbol} (display only, P&amp;L Analysis §16.10); every method without a symbol
+ * argument is the main benchmark (SPY), which the leaderboard uses.
  */
 @Service
 public class BenchmarkService {
@@ -49,6 +53,7 @@ public class BenchmarkService {
   private final PnlCalendar calendar;
   private final TimeSource time;
   private final String symbol;
+  private final List<String> extras;
 
   public BenchmarkService(JdbcClient jdbc, MarkResolver marks, PnlCalendar calendar, TimeSource time,
                           PerformanceProperties properties) {
@@ -57,37 +62,87 @@ public class BenchmarkService {
     this.calendar = calendar;
     this.time = time;
     this.symbol = properties.benchmarkSymbol();
+    this.extras = properties.extraBenchmarkSymbols().stream().filter(s -> !s.equals(symbol)).toList();
   }
 
+  /** The main benchmark (SPY): the leaderboard's {@code excessVsBenchmark} (§16.6). */
   public String symbol() {
     return symbol;
+  }
+
+  /** The display-only extra benchmarks (QQQ), in configuration order, without the main one. */
+  public List<String> extraSymbols() {
+    return extras;
+  }
+
+  /** The main benchmark, then the extras. */
+  public List<String> symbols() {
+    List<String> all = new java.util.ArrayList<>();
+    all.add(symbol);
+    all.addAll(extras);
+    return List.copyOf(all);
   }
 
   // ------------------------------------------------------------------------------------------- reads
 
   public Optional<BenchmarkDay> day(LocalDate tradeDate) {
+    return day(symbol, tradeDate);
+  }
+
+  public Optional<BenchmarkDay> day(String benchmark, LocalDate tradeDate) {
     return jdbc.sql("SELECT trade_date, mark, dividend, index_value FROM benchmark_daily "
             + "WHERE symbol = ? AND trade_date = ?")
-        .params(symbol, tradeDate).query(BenchmarkService::row).optional();
+        .params(benchmark, tradeDate).query(BenchmarkService::row).optional();
   }
 
   /** The latest row with {@code trade_date ≤ date}. */
   public Optional<BenchmarkDay> latestOnOrBefore(LocalDate date) {
+    return latestOnOrBefore(symbol, date);
+  }
+
+  public Optional<BenchmarkDay> latestOnOrBefore(String benchmark, LocalDate date) {
     return jdbc.sql("SELECT trade_date, mark, dividend, index_value FROM benchmark_daily "
             + "WHERE symbol = ? AND trade_date <= ? ORDER BY trade_date DESC LIMIT 1")
-        .params(symbol, date).query(BenchmarkService::row).optional();
+        .params(benchmark, date).query(BenchmarkService::row).optional();
   }
 
   /** The latest row strictly before {@code date}. */
   public Optional<BenchmarkDay> latestBefore(LocalDate date) {
+    return latestBefore(symbol, date);
+  }
+
+  public Optional<BenchmarkDay> latestBefore(String benchmark, LocalDate date) {
     return jdbc.sql("SELECT trade_date, mark, dividend, index_value FROM benchmark_daily "
             + "WHERE symbol = ? AND trade_date < ? ORDER BY trade_date DESC LIMIT 1")
-        .params(symbol, date).query(BenchmarkService::row).optional();
+        .params(benchmark, date).query(BenchmarkService::row).optional();
   }
 
   /** B at the EOD cut-off of {@code tradeDate}, if recorded. */
   public Optional<BigDecimal> indexAtEod(LocalDate tradeDate) {
-    return day(tradeDate).map(BenchmarkDay::indexValue);
+    return indexAtEod(symbol, tradeDate);
+  }
+
+  public Optional<BigDecimal> indexAtEod(String benchmark, LocalDate tradeDate) {
+    return day(benchmark, tradeDate).map(BenchmarkDay::indexValue);
+  }
+
+  /** Every row of {@code benchmark} with {@code fromExclusive < trade_date ≤ toInclusive}, oldest first. */
+  public List<BenchmarkDay> between(String benchmark, LocalDate fromExclusive, LocalDate toInclusive) {
+    return jdbc.sql("SELECT trade_date, mark, dividend, index_value FROM benchmark_daily "
+            + "WHERE symbol = ? AND trade_date > ? AND trade_date <= ? ORDER BY trade_date")
+        .params(benchmark, fromExclusive, toInclusive).query(BenchmarkService::row).list();
+  }
+
+  /**
+   * B of an extra benchmark at an instant without a recorded mark (§16.6 extra benchmarks): the index of the last EOD
+   * whose cut-off is at or before {@code t}.
+   */
+  public Optional<BigDecimal> indexAtLastEod(String benchmark, Instant t) {
+    Optional<BenchmarkDay> base = latestOnOrBefore(benchmark, Et.date(t));
+    if (base.isPresent() && calendar.cutoff(base.get().tradeDate()).isAfter(t)) {
+      base = latestBefore(benchmark, base.get().tradeDate());
+    }
+    return base.map(BenchmarkDay::indexValue);
   }
 
   /**
@@ -95,23 +150,31 @@ public class BenchmarkService {
    * {@code t}, scaled by {@code spyMark / P_prevEOD}. Empty without a mark or an earlier EOD row.
    */
   public Optional<BigDecimal> indexAt(Instant t, BigDecimal spyMark) {
-    if (spyMark == null || spyMark.signum() <= 0) {
+    return indexAt(symbol, t, spyMark);
+  }
+
+  public Optional<BigDecimal> indexAt(String benchmark, Instant t, BigDecimal mark) {
+    if (mark == null || mark.signum() <= 0) {
       return Optional.empty();
     }
-    Optional<BenchmarkDay> base = latestOnOrBefore(Et.date(t));
+    Optional<BenchmarkDay> base = latestOnOrBefore(benchmark, Et.date(t));
     if (base.isPresent() && calendar.cutoff(base.get().tradeDate()).isAfter(t)) {
-      base = latestBefore(base.get().tradeDate());
+      base = latestBefore(benchmark, base.get().tradeDate());
     }
-    return base.map(b -> b.indexValue().multiply(spyMark).divide(b.mark(), INDEX_SCALE, RoundingMode.HALF_EVEN));
+    return base.map(b -> b.indexValue().multiply(mark).divide(b.mark(), INDEX_SCALE, RoundingMode.HALF_EVEN));
   }
 
   /** B now, from SPY's live mark; empty if SPY has no usable live mark or no EOD row exists yet. */
   public Optional<BigDecimal> liveIndex() {
-    Mark m = marks.live(symbol, null, null);
+    return liveIndex(symbol);
+  }
+
+  public Optional<BigDecimal> liveIndex(String benchmark) {
+    Mark m = marks.live(benchmark, null, null);
     if (!usable(m)) {
       return Optional.empty();
     }
-    return indexAt(time.now(), m.price());
+    return indexAt(benchmark, time.now(), m.price());
   }
 
   /**
@@ -128,36 +191,52 @@ public class BenchmarkService {
    * Appends (or rewrites) {@code B_D} (§16.4 step 4). Returns the row, or empty when SPY has no usable mark for D.
    */
   public Optional<BenchmarkDay> recordEod(LocalDate tradeDate) {
+    return recordEod(symbol, tradeDate);
+  }
+
+  public Optional<BenchmarkDay> recordEod(String benchmark, LocalDate tradeDate) {
     Instant cutoff = calendar.cutoff(tradeDate);
-    Mark m = marks.endOfDay(symbol, tradeDate, cutoff, null, null);
+    Mark m = marks.endOfDay(benchmark, tradeDate, cutoff, null, null);
     if (!usable(m)) {
       return Optional.empty();
     }
-    return Optional.of(write(tradeDate, m.price(), dividendEx(tradeDate)));
+    return Optional.of(write(benchmark, tradeDate, m.price(), dividendEx(benchmark, tradeDate)));
   }
 
   /** Writes D chained from the latest earlier row ({@code B = 1} when there is none). */
   public BenchmarkDay write(LocalDate tradeDate, BigDecimal mark, BigDecimal dividend) {
+    return write(symbol, tradeDate, mark, dividend);
+  }
+
+  public BenchmarkDay write(String benchmark, LocalDate tradeDate, BigDecimal mark, BigDecimal dividend) {
     BigDecimal div = dividend == null ? BigDecimal.ZERO : dividend;
-    Optional<BenchmarkDay> prev = latestBefore(tradeDate);
+    Optional<BenchmarkDay> prev = latestBefore(benchmark, tradeDate);
     BigDecimal index = prev.map(p -> p.indexValue().multiply(mark.add(div))
             .divide(p.mark(), INDEX_SCALE, RoundingMode.HALF_EVEN))
         .orElse(BigDecimal.ONE.setScale(INDEX_SCALE));
-    jdbc.sql(MERGE).params(symbol, tradeDate, mark, div, index).update();
+    jdbc.sql(MERGE).params(benchmark, tradeDate, mark, div, index).update();
     return new BenchmarkDay(tradeDate, mark, div, index);
   }
 
   /** Rows after {@code fromExclusive}, oldest first. */
   public List<BenchmarkDay> after(LocalDate fromExclusive) {
+    return after(symbol, fromExclusive);
+  }
+
+  public List<BenchmarkDay> after(String benchmark, LocalDate fromExclusive) {
     return jdbc.sql("SELECT trade_date, mark, dividend, index_value FROM benchmark_daily "
             + "WHERE symbol = ? AND trade_date > ? ORDER BY trade_date")
-        .params(symbol, fromExclusive).query(BenchmarkService::row).list();
+        .params(benchmark, fromExclusive).query(BenchmarkService::row).list();
   }
 
   /** {@code daily_mark.dividend_ex} of the benchmark for D (WS3 sets it when it applies a cash dividend, §14). */
   BigDecimal dividendEx(LocalDate tradeDate) {
+    return dividendEx(symbol, tradeDate);
+  }
+
+  BigDecimal dividendEx(String benchmark, LocalDate tradeDate) {
     return jdbc.sql("SELECT dividend_ex FROM daily_mark WHERE symbol = ? AND trade_date = ?")
-        .params(symbol, tradeDate).query(BigDecimal.class).optional().orElse(BigDecimal.ZERO);
+        .params(benchmark, tradeDate).query(BigDecimal.class).optional().orElse(BigDecimal.ZERO);
   }
 
   private static BenchmarkDay row(ResultSet rs, int n) throws SQLException {

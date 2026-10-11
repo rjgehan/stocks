@@ -144,3 +144,4 @@ stocks:
     intraday-retention-days: 14
     benchmark-symbol: SPY
     leaderboard-refresh: 5s
+    extra-benchmarks: QQQ                   # Phase 2: display-only indexes (P&L Analysis, §16.6); blank for none

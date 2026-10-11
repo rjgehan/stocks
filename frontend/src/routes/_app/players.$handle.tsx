@@ -16,6 +16,7 @@ import { cx } from '@/components/ui/cx'
 import { HISTORY_RANGES, rebase } from '@/features/account/EquityCurve'
 import { AiChip, Avatar } from '@/features/league/PlayerBadge'
 import { DIRECTION_TEXT } from '@/features/market/Change'
+import { PlayerStatsSection } from '@/features/stats/StatsSections'
 
 const LineChart = lazy(() => import('@/features/account/LineChart'))
 
@@ -175,6 +176,8 @@ function PlayerPage() {
             )
           })}
         </section>
+
+        {p ? <PlayerStatsSection handle={handle} /> : null}
 
         <div className="grid gap-4 desktop:grid-cols-[1fr_320px]">
           <section className="rounded-lg border border-divider bg-bg-1 p-4">

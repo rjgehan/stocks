@@ -7,6 +7,8 @@ import { Pill } from '@/components/ui/Pill'
 import { Sparkline } from '@/components/ui/Sparkline'
 import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
+import type { ExtraColumn } from '@/features/stats/columns'
+import { ExtraStatValue, columnLabel } from '@/features/stats/ExtraStat'
 import { FormulaPopover } from './MetricInfoPopover'
 import { AiChip, Avatar } from './PlayerBadge'
 
@@ -81,7 +83,23 @@ function Name({ row, me }: { row: LeaderboardRow; me: boolean }) {
  * Leaderboard (§22.4): medals for 1–3, rank arrows, AI chip, return, P&L, vs SPY, net contributions with a deposit chip,
  * fills, sparkline; unranked rows greyed with their eligibility note; my row pinned at the bottom. Cards on phones.
  */
-export function LeaderboardTable({ rows, me, metric, myHandle }: { rows: LeaderboardRow[]; me: LeaderboardRow | null; metric: LeaderboardMetric; myHandle?: string | null }) {
+export function LeaderboardTable({
+  rows,
+  me,
+  metric,
+  myHandle,
+  extraColumns = [],
+  phoneStat = null,
+}: {
+  rows: LeaderboardRow[]
+  me: LeaderboardRow | null
+  metric: LeaderboardMetric
+  myHandle?: string | null
+  /** Phase 2 (§16.8): optional stat columns on tablet and desktop. */
+  extraColumns?: readonly ExtraColumn[]
+  /** Phase 2: one optional stat on each phone card. */
+  phoneStat?: ExtraColumn | null
+}) {
   const isMe = (r: LeaderboardRow) => Boolean(myHandle && r.player?.handle === myHandle)
   // My row is pinned at the bottom when the board does not already list it (§22.4).
   const pinned = me && !rows.some(isMe) ? me : null
@@ -103,6 +121,11 @@ export function LeaderboardTable({ rows, me, metric, myHandle }: { rows: Leaderb
           <Metric row={r} metric={metric} />
         </div>
         <div className="text-caption text-text-3">{metric === 'RETURN' ? formatMoney(r.pnl, { signed: true }) : formatPct(r.return)}</div>
+        {phoneStat ? (
+          <div className="text-micro text-text-3">
+            {columnLabel(phoneStat)} <ExtraStatValue row={r} column={phoneStat} />
+          </div>
+        ) : null}
       </div>
     </li>
   )
@@ -130,6 +153,11 @@ export function LeaderboardTable({ rows, me, metric, myHandle }: { rows: Leaderb
       </td>
       <td className="hidden px-2 text-right wide:table-cell">{r.equity ? formatMoney(r.equity) : <span className="text-text-3">hidden</span>}</td>
       <td className="hidden px-2 text-right tablet:table-cell">{r.fills}</td>
+      {extraColumns.map((c) => (
+        <td key={c} className="hidden px-2 text-right tablet:table-cell">
+          <ExtraStatValue row={r} column={c} />
+        </td>
+      ))}
       <td className="hidden pr-4 pl-2 desktop:table-cell">
         <Sparkline values={r.spark} />
       </td>
@@ -178,6 +206,11 @@ export function LeaderboardTable({ rows, me, metric, myHandle }: { rows: Leaderb
               </th>
               <th className="hidden px-2 text-right font-medium wide:table-cell">Equity</th>
               <th className="hidden px-2 text-right font-medium tablet:table-cell">Fills</th>
+              {extraColumns.map((c) => (
+                <th key={c} className="hidden px-2 text-right font-medium tablet:table-cell">
+                  {columnLabel(c)}
+                </th>
+              ))}
               <th className="hidden pr-4 pl-2 font-medium desktop:table-cell">Trend</th>
             </tr>
           </thead>

@@ -28,7 +28,7 @@ import org.springframework.stereotype.Component;
  * <ol>
  *   <li>{@code DailyMarkService.ensureDayEndMarks(D, held ∪ {SPY})} (WS2; skipped while it is the Day-0 stub);</li>
  *   <li>for every run open at the cut-off: {@link EodValuator} → {@code equity_snapshot} + {@code snapshot_holding};</li>
- *   <li>{@code benchmark_daily(SPY, D)};</li>
+ *   <li>{@code benchmark_daily(SPY, D)}, and the same for every extra benchmark (QQQ, §16.6);</li>
  *   <li>{@link EodSnapshotsWritten}: the league writes {@code leaderboard_snapshot}, NEW_LEADER and backfills the
  *       feed.</li>
  * </ol>
@@ -113,7 +113,7 @@ public class EodSnapshotJob implements ScheduledJob {
     }
     List<AccountRow> accounts = repository.accountsOpenAt(cutoff);
     Set<String> symbols = new TreeSet<>();
-    symbols.add(benchmark.symbol());
+    symbols.addAll(benchmark.symbols());
     for (AccountRow a : accounts) {
       symbols.addAll(holdings.holdingsAt(a.id(), cutoff).keySet());
     }
@@ -126,8 +126,10 @@ public class EodSnapshotJob implements ScheduledJob {
         written++;
       }
     }
-    if (benchmark.recordEod(tradeDate).isEmpty()) {
-      log.warn("EOD {}: no usable {} mark, benchmark_daily not written", tradeDate, benchmark.symbol());
+    for (String symbol : benchmark.symbols()) {
+      if (benchmark.recordEod(symbol, tradeDate).isEmpty()) {
+        log.warn("EOD {}: no usable {} mark, benchmark_daily not written", tradeDate, symbol);
+      }
     }
     anchors.invalidate();
     events.publishEvent(new EodSnapshotsWritten(tradeDate, cutoff));

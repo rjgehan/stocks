@@ -22,6 +22,7 @@ import type {
   TransferRow,
   Watchlist,
 } from '../types'
+import type { MockReaction } from './stats'
 
 export interface Lot {
   symbol: string
@@ -105,6 +106,8 @@ export interface MockState {
   corporateActions: CorporateAction[]
   /** league feed items that are not derived from transfers or trades (joins, leaders, resets, live bot trades) */
   liveFeed: FeedItem[]
+  /** Phase 2 (§16.11) feed reactions by item id (optional: states saved by older mock builds lack it) */
+  reactions?: Record<string, MockReaction[]>
   /** epoch ms of the last password confirmation (`@RecentAuth`, 15 min) */
   reauthAt: number
   /** Phase 2 group orders (§11.9; optional: states saved by older mock builds lack it) */

@@ -9,8 +9,11 @@ import com.stocks.contract.marketdata.CorporateActionSource;
 import com.stocks.contract.marketdata.DailyMarkService;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.SplitAdjustments;
+import com.stocks.contract.portfolio.FeedReactionService;
 import com.stocks.contract.portfolio.LeaderboardService;
+import com.stocks.contract.portfolio.LeagueStatsQueries;
 import com.stocks.contract.portfolio.PerformanceQueries;
+import com.stocks.contract.portfolio.PnlAnalysisQueries;
 import com.stocks.contract.portfolio.ValuationService;
 import com.stocks.contract.security.RateLimitService;
 import com.stocks.contract.trading.AccountQueries;
@@ -43,7 +46,9 @@ final class ContractServices {
       OrderService.class, AdminOrderService.class, OrderQueries.class, AccountService.class, AccountQueries.class,
       CashTransferService.class, EngineControl.class, CorporateActionQueries.class, CorporateActionService.class,
       // WS4
-      ValuationService.class, LeaderboardService.class, PerformanceQueries.class, WatchlistService.class);
+      ValuationService.class, LeaderboardService.class, PerformanceQueries.class, WatchlistService.class,
+      // WS4, Phase 2 league slice (§16.8–16.11)
+      LeagueStatsQueries.class, PnlAnalysisQueries.class, FeedReactionService.class);
 
   private ContractServices() {}
 }

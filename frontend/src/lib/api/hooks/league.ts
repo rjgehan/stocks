@@ -4,6 +4,7 @@ import { api, unwrap } from '../client'
 import { queryKeys } from '../queryKeys'
 import type { FeedItem, HistoryRange, KindFilter, LeaderboardMetric, LeaderboardPeriod } from '../types'
 import { realtime } from '../../realtime/stomp'
+import { applyFeedReactions, isFeedReactions } from './stats'
 
 /** `GET /leaderboard`: refetched on `/topic/leaderboard` (§19); polls every 30 s as a fallback. */
 export function useLeaderboard(period: LeaderboardPeriod, metric: LeaderboardMetric, kind: KindFilter) {
@@ -82,7 +83,8 @@ export function prependFeedItem(qc: QueryClient, item: FeedItem): boolean {
 
 /**
  * Live league feed while the feed view is open: subscribes to `/topic/feed` and prepends each new item (deduplicated
- * by id). Returns the ids that arrived live, so the list can highlight them. A reconnect resyncs by refetching.
+ * by id); a `FeedReactions` message updates its item in place. Returns the ids that arrived live, so the list can
+ * highlight them. A reconnect resyncs by refetching.
  */
 export function useLiveFeed(enabled = true): ReadonlySet<string> {
   const qc = useQueryClient()
@@ -92,6 +94,11 @@ export function useLiveFeed(enabled = true): ReadonlySet<string> {
     const hub = realtime()
     const offs = [
       hub.subscribe('/topic/feed', (body) => {
+        // Phase 2 (§16.11): a reaction change updates the item in place
+        if (isFeedReactions(body)) {
+          if (body.itemId) applyFeedReactions(qc, body.itemId, body.reactions ?? [])
+          return
+        }
         const item = body as FeedItem
         if (!item?.id) return
         if (prependFeedItem(qc, item)) setFresh((prev) => new Set(prev).add(item.id!))

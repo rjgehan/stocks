@@ -12,6 +12,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { IconBolt, IconCash, IconRotate, IconTrophy, IconUserPlus } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
+import { ReactionBar } from '@/features/stats/ReactionBar'
 import { AiChip, Avatar } from './PlayerBadge'
 
 type Kind = NonNullable<FeedItem['kind']>
@@ -122,10 +123,13 @@ function FeedRow({ i, fresh }: { i: FeedItem; fresh: boolean }) {
           </p>
         ) : null}
         {memo ? <p className="mt-1 text-caption text-text-2">“{memo}”</p> : null}
-        <p className="mt-0.5 text-micro text-text-3">
-          {formatTimeEt(i.at)}
-          {fresh ? <span className="ml-1.5 font-semibold text-accent">New</span> : null}
-        </p>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-micro text-text-3">
+            {formatTimeEt(i.at)}
+            {fresh ? <span className="ml-1.5 font-semibold text-accent">New</span> : null}
+          </p>
+          <ReactionBar item={i} />
+        </div>
       </div>
     </li>
   )

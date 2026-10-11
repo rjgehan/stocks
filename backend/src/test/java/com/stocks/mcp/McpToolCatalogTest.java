@@ -82,13 +82,28 @@ class McpToolCatalogTest {
   }
 
   @Test
-  void theCatalogHasThe42ToolsOfSection20Point3AndNoAdminTool() {
-    assertThat(McpToolCatalog.ORDER).hasSize(42).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
-        .endsWith("mark_notifications_read", "preview_order_group", "place_order_group", "get_order_group",
-            "cancel_order_group")
+  void theCatalogHasThe48ToolsOfSection20Point3AndNoAdminTool() {
+    assertThat(McpToolCatalog.ORDER).hasSize(48).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
         .noneMatch(n -> n.contains("admin"));
+    assertThat(McpToolCatalog.ORDER.get(37)).as("Phase 1 ends at #38").isEqualTo("mark_notifications_read");
+  }
+
+  @Test
+  void phase2OrderGroupToolsFollowThePhase1Catalog() {     // §20.3 #39–#42
+    assertThat(McpToolCatalog.ORDER.subList(38, 42)).containsExactly("preview_order_group", "place_order_group",
+        "get_order_group", "cancel_order_group");
     assertThat(McpToolCatalog.SCOPES).containsEntry("place_order_group", Scopes.TRADE)
         .containsEntry("cancel_order_group", Scopes.TRADE).containsEntry("preview_order_group", Scopes.ACCOUNT_READ)
         .containsEntry("get_order_group", Scopes.ACCOUNT_READ);
+  }
+
+  @Test
+  void phase2LeagueToolsFollowThePhase1Catalog() {         // §20.3 #43–#48
+    assertThat(McpToolCatalog.ORDER.subList(38, McpToolCatalog.ORDER.size())).containsSubsequence("get_my_stats",
+        "get_player_stats", "get_race_chart", "get_pnl_calendar", "get_pnl_analysis", "react_to_feed_item");
+    assertThat(McpToolCatalog.SCOPES).containsEntry("get_my_stats", Scopes.ACCOUNT_READ)
+        .containsEntry("get_player_stats", Scopes.LEAGUE_READ).containsEntry("get_race_chart", Scopes.LEAGUE_READ)
+        .containsEntry("get_pnl_calendar", Scopes.ACCOUNT_READ).containsEntry("get_pnl_analysis", Scopes.ACCOUNT_READ)
+        .containsEntry("react_to_feed_item", Scopes.TRADE);
   }
 }

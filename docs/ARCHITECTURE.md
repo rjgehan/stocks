@@ -413,12 +413,16 @@ com.stocks
 │                                                              AccountPerformance, MetricsCalculator,
 │                                                              PeriodResolver, PnlCalendar, RunAnchors, PublicProfileService,
 │                                                              PlayerDirectory, LeagueSettings, web/PerformanceController
-│                                                              (UnitMath is the pure contract class itself, no Impl)
+│                                                              (UnitMath is the pure contract class itself, no Impl);
+│                                                              Phase 2: ClosedLots, TradeHistoryRepository, PnlAnalysisService,
+│                                                              web/PnlAnalysisController
 ├── league/                                             [WS4]  PerformanceQueriesImpl (fronts portfolio and league; league → portfolio only),
 │                                                              LeaderboardServiceImpl (+ 5 s PeriodicTask), LeaderboardComputer,
 │                                                              LeaderboardRowMapper, Eligibility, LeaderboardSnapshotWriter,
 │                                                              FeedService (+ /topic/feed publisher), FeedEventListener (sole feed_event writer),
-│                                                              web/{LeaderboardController, PlayerController, FeedController}
+│                                                              web/{LeaderboardController, PlayerController, FeedController};
+│                                                              Phase 2: PlayerStatsService (stats + race chart), FeedReactionRepository,
+│                                                              FeedReactionServiceImpl, web/{LeagueStatsController, FeedReactionController}
 ├── watchlist/                                          [WS4]  WatchlistServiceImpl, web/WatchlistController
 ├── realtime/                                           [WS5]  StompConfig, StompAuthInterceptor (incl. STOMP CSRF), SubscriptionTracker,
 │                                                              QuoteFanout (a MarketUpdateListener), UserEventPublisher,
@@ -764,6 +768,20 @@ public interface PerformanceQueries {
   Map<String, PositionDayPnl> positionDayPnl(long accountId);     // maps NAME_CHANGE symbol_before → symbol_after (§16.4)
   Page<FeedItemDto> feed(Cursor cursor, int limit);               // GET /feed and MCP get_league_feed: visible_at ≤ now
 }
+// Phase 2, league slice (§16.8–16.11; REST and MCP #43–#48 share them)
+public interface LeagueStatsQueries {
+  PlayerStatsDto playerStats(String handle, LeaderboardPeriod period, Long viewerPlayerId);  // delayed best/worst unless self
+  PlayerStatsDto myStats(long playerId, LeaderboardPeriod period);                            // ACCOUNT_NOT_FOUND without a run
+  RaceChartDto race(LeaderboardPeriod period, KindFilter kind);                               // cached per board computation
+}
+public interface PnlAnalysisQueries {
+  PnlAnalysisDto analysis(long accountId, HistoryRange range);
+  PnlCalendarDto calendar(long accountId, CalendarView view, YearMonth monthOrNull, Integer yearOrNull);
+}
+public interface FeedReactionService {
+  FeedReactionsDto react(long playerId, String itemId, Reaction reaction);   // NOT_FOUND unless visible; pushes /topic/feed
+  FeedReactionsDto unreact(long playerId, String itemId);                    // idempotent
+}
 
 // ===== com.stocks.contract.watchlist [WS4] =====
 public interface WatchlistService {
@@ -1083,6 +1101,21 @@ ALTER TABLE trade_order ADD COLUMN cancel_effective_at TIMESTAMP WITH TIME ZONE;
 --   ((group_id IS NULL) = (group_role IS NULL)), ck_order_held (held = FALSE OR parent_order_id IS NOT NULL),
 --   ck_order_cancel_req ((cancel_requested_at IS NULL) = (cancel_effective_at IS NULL)), ix_order_group(group_id)
 ```
+
+**Phase 2 schema, league slice (`common/V4__p2_league.sql`, provisional version; the integrator renumbers it).** One table, portable H2 + PostgreSQL, upserted with the cast-everything `MERGE` (tested on both, §26):
+
+```sql
+CREATE TABLE feed_reaction (                         -- §16.11: one reaction per player per feed item
+  feed_event_id  BIGINT      NOT NULL REFERENCES feed_event(id),
+  player_id      BIGINT      NOT NULL REFERENCES player(id),
+  reaction       VARCHAR(8)  NOT NULL CHECK (reaction IN ('ROCKET','FIRE','GEM','CLAP','LAUGH','SKULL')),
+  created_at     TIMESTAMP WITH TIME ZONE NOT NULL,
+  PRIMARY KEY (feed_event_id, player_id)
+);
+CREATE INDEX ix_feed_reaction_player ON feed_reaction(player_id);
+```
+
+Stats, the race chart and P&L analysis need no new tables: they read `equity_snapshot`, `snapshot_holding`, `intraday_equity`, `leaderboard_snapshot`, `benchmark_daily` (QQQ rows, §16.6), `execution`, `position_adjustment` and `cash_ledger`.
 
 ### 8.1 `db/migration/common/V1__init.sql`
 
@@ -2952,6 +2985,7 @@ excessVsBenchmark(a,b) = TWR(a,b) − (B_b / B_a − 1)      (live B_b uses SPY'
 - **Backfill.** `BenchmarkBackfillJob` (WS4) runs once at boot when `benchmark_daily` lacks 2025-12-31: SPY SIP daily bars (`adjustment=raw`) and Alpaca SPY dividends from 2025-12-31 to the last trading day (2026-01-02 … 2026-10-09 at launch). Under SIM it uses SIM bars. After that, the EOD job appends one row per day.
 - `SPY_mark(a)` is stored on the row that creates the anchor: `cash_transfer.spy_mark` on INITIAL (account opening) and on every transfer.
 - The ratio arithmetic uses scale 12 `HALF_EVEN` (`index_value NUMERIC(28,12)`).
+- **Extra benchmarks (Phase 2).** `stocks.performance.extra-benchmarks` (default `QQQ`) are chained in `benchmark_daily` exactly like SPY, under their own `symbol`: `BenchmarkBackfillJob` backfills each one that lacks the 2025-12-31 anchor (one boot occurrence while any symbol is missing; it fails only if every missing symbol fails; its run key is `2025-12-31` while SPY is missing and `2025-12-31:QQQ` otherwise, because a league that backfilled SPY before Phase 2 already has the `2025-12-31` occurrence DONE), and the EOD job adds them to `ensureDayEndMarks` and writes their row for D. They are display only (P&L Analysis, §16.10): the leaderboard and `excessVsBenchmark` stay on SPY. Their dividends are whatever `daily_mark.dividend_ex` records (usually none: price return). No transfer records their mark, so an intraday anchor (a run opened mid-day) uses the extra index of the last EOD at or before it.
 
 ### 16.7 Visibility and fairness charter (published in `GET /rules` and on the League page)
 
@@ -2960,6 +2994,80 @@ excessVsBenchmark(a,b) = TWR(a,b) − (B_b / B_a − 1)      (live B_b uses SPY'
 3. **No live copying of others.** Other players' trades appear in the feed and on profiles **after `social.tradeFeedDelay` (15 min)**, labeled "via API" when an API key placed them. Holdings are shown as **previous-EOD weights only** (`social.holdingsVisibility=EOD_WEIGHTS`); with `HIDDEN`, holdings are not shown and the `equity` field is null on profiles and leaderboard rows. **`HIDDEN` hides holdings, not account size**: dollar P&L and net contributions stay public (item 2), and `equity = netContributions + pnl(ALL)`, so the admin Settings page says so. Working orders are never visible to other players. The admin, who is also a player, sees another player's live positions and orders only through an audited **break-glass** view that the affected player sees in their activity (§21.3); the admin cannot issue API keys for humans (§21.1), so there is no other path.
 4. **Rationales.** AI rationales become public together with the delayed trade. A human's order note stays private unless they tick "Share note" (`shareNote`), which sets `trade_order.rationale_public`.
 5. **Kill switch.** The admin can freeze any player (§10.5), and every such action is audited.
+
+### 16.8 Player stats (Phase 2: Sharpe, profit factor, win rate, hold time, best and worst trade)
+
+Stats are **league stats**: per player and leaderboard period, across runs, from the same anchors, EOD series and end values as the board (§16.3, §16.5), so a profile's return and P&L always equal the player's leaderboard row. The live board (`LeaderboardComputer`) computes the unit-value metrics for every row every 5 s; the trade metrics that need a FIFO replay are computed on request (`PlayerStatsService`, WS4). `PlayerStats.periodStart` is the player's own anchor (the period's EOD, or the opening of a player who joined during the period); `asOf` is the board's end; `rank`/`rankChange` are the RETURN/ALL view's.
+
+| Metric | Formula | Notes |
+|---|---|---|
+| **Daily returns** | `r_i = U_i / U_{i−1} − 1` over the path anchor, then every EOD unit value in `(a, b]` (one per trading day, from `equity_snapshot` of the run open at that cut-off) | The live end point is **not** a daily return (a partial day). A step across a rebase (the unit series changes) is `r = −1`. A trading day without a snapshot merges into the next one. |
+| **Sharpe ratio** | `n ≥ 20`: `mean(r) / sd(r) × √252`, with `sd` the sample standard deviation (`n − 1`); risk-free rate 0 | Null below 20 daily returns (`dailyReturns` says how many there are, `sharpeMinDays = 20`) or when `sd = 0`. Computed in `BigDecimal` with `MathContext.DECIMAL128`, published at scale 4 `HALF_EVEN`. `TODAY` and `WEEK` never have 20 returns, so their Sharpe is always null. |
+| **Volatility** | `sd(r) × √252` (annualized), same `n ≥ 20` rule | A fraction at scale 10. |
+| **Win rate** | closing sells with `realized_pnl > 0` ÷ closing sells (`side = SELL`, `realized_pnl IS NOT NULL`) executed in `(a, b]` | Identical to `LeaderboardRow.winRate` (§16.5). |
+| **Profit factor** | `grossProfit / grossLoss`; `grossProfit = Σ realized_pnl > 0`, `grossLoss = −Σ realized_pnl < 0` over the same closing sells | Scale 4. Null when `grossLoss = 0` (the SPA shows "∞" when `grossProfit > 0`, "--" without closing sells). |
+| **Closed lots** | A FIFO replay of the player's executions and `position_adjustment` rows (`ClosedLots`, below) yields one **closed lot** per (buy lot, sell execution) pair: `qty`, `openedAt` (the buy), `closedAt` (the sell), `cost` (the relieved lot cost, buy fees included), `proceeds` (the sell's net cash pro rata), `realizedPnl = proceeds − cost`, `return = realizedPnl / cost` | The broker "closed lots" report. A lot sold in three sells is three closed lots. Splits and renames move the lot (quantity, cost, symbol) exactly like the engine (§14); a lot that a corporate action closes (dust, cash in lieu) is not a trade. |
+| **Average hold time** | mean of `closedAt − openedAt` over the closed lots with `closedAt ∈ (a, b]` | `avgHoldSeconds`, an integer; null without closed lots. |
+| **Best / worst trade** | the closed lot with the highest / lowest `realizedPnl` (ties: the earliest `closedAt`) | For another player, only lots closed at or before `now − social.tradeFeedDelay` (`tradesAsOf`), so a profile never shows a sell before the feed does (§16.7 item 3). |
+
+`ClosedLots` (pure, `portfolio`) mirrors the engine's relief (§12.8): lots open per BUY execution (`cost = −net_amount`), a SELL relieves the open lots of its symbol FIFO by `(opened_at, execution id)`, each slice costs `cost_remaining × q / qty_remaining` (HALF_EVEN to cents; a full relief takes the whole remainder), and its proceeds are `net_amount × q / qty` (HALF_EVEN; the last slice takes the rest), so the slices of a sell add up to `execution.realized_pnl` exactly (any difference is put on the last slice: the ledger stays the source of truth). A `position_adjustment` (joined to `position_lot.open_execution_id`) sets the lot's quantity, cost and symbol to its `*_after` values.
+
+**Rank history.** `leaderboard_snapshot` (RETURN, kind ALL, §16.4 step 4) gives one rank per EOD: `RankPoint {date, rank, ranked}` (`ranked` = how many rows were ranked that day), the latest 30 snapshots of the period. The arrows of `rankChange` (§16.5) compare the live rank with the latest of them.
+
+**Leaderboard columns.** `LeaderboardRow` adds `sharpe` and `profitFactor` for its period (same formulas, from the board's series and `LeagueRepository.activity`, which also sums `grossProfit` and `grossLoss`). They are optional columns in the SPA (§22.4); ranks stay by RETURN or PNL.
+
+Golden vectors (`golden/performance/`, WS4): `sharpe.json` (24 EOD unit values, a deposit in the middle that does not change U, the expected daily returns, `sharpe`, `volatility`; and a 19-day series whose Sharpe is null), `closed_lots.json` (three buys and two sells on one symbol with fees, a 2-for-1 split between them: the closed lots, `profitFactor`, `winRate`, `avgHoldSeconds`, best and worst; the slices add up to each sell's `realized_pnl`).
+
+### 16.9 Race chart (Phase 2)
+
+`GET /league/race?period&kind` draws everyone's **unit-value curve normalized to 0% at the period start**, which is exactly what the board ranks: `R_i(t) = U_i(t) / U_i(a) − 1` (−1 after a rebase in the window), so deposits never move a line (TWR) and the last point of every line equals the player's `LeaderboardRow.return`.
+
+- **Points per player.** The anchor (0%), each EOD in the window (`equity_snapshot`, across runs), and the live end. `TODAY` uses the 5-minute `intraday_equity` samples of the active run instead of EODs. A player whose first run opened after the anchor starts at its opening (0%, `partialPeriod`). `ALL` starts every line at its own first opening.
+- **Benchmark.** SPY's total-return index over the same window, `B(t) / B(a) − 1`: anchor, each `benchmark_daily` row in the window, live (`ALL`: from the league's first opening, like the board).
+- **Kind filter** `ALL | HUMAN | AI` as on the board (`league.humanKindExcludesApiTraders` applies). Series are ordered by the RETURN rank of that view (unranked last) and carry `rank`, `return`, `rebased`, `partialPeriod` and the player's rank history for the period (`ranks`, §16.8).
+- It reads the board's cached computation (§16.5), so it costs nothing extra per refresh (`PlayerStatsService` caches each chart per board computation, period and kind); `/topic/leaderboard` tells the SPA to refetch. The benchmark curve is a `BenchmarkCurve` (the same DTO as P&L Analysis): the period start, each `benchmark_daily` cut-off inside the window, then the live value.
+
+### 16.10 P&L analysis (Phase 2, Webull "P&L Analysis")
+
+The analysis is **run-relative**, like the account page (§16.3): it covers the caller's ACTIVE run, and a range that starts before the run's opening starts at the opening. Three parts:
+
+**My Earnings** (`GET /account/pnl-analysis?range`, ranges `1W|1M|3M|YTD|1Y|ALL` as `GET /account/history`; `1D` is accepted). The account curve is `GET /account/history`'s points as returns `U(t) / U(a) − 1` with `pnl(t)`; benchmarks are **SPY and QQQ** total-return indexes over the same window, `B(t) / B(a) − 1`, with their period return. QQQ is kept in `benchmark_daily` exactly like SPY (§16.6 *Extra benchmarks*).
+
+**P&L calendar** (`GET /account/pnl-calendar?view=DAY&month=YYYY-MM` or `?view=MONTH&year=YYYY`; defaults DAY and the current ET month).
+
+| Cell | `pnl` | `return` | Notes |
+|---|---|---|---|
+| Day D (a trading day with the run's EOD snapshot) | `equity_snapshot.pnl_day = E(c_D) − E(c_{D−1}) − flows in (c_{D−1}, c_D]` | `U_D / U_{D−1} − 1` (−1 across a rebase); `U_{D−1}` is the previous snapshot or the run's opening U | **Deposits and withdrawals never count** (`flows` shows them separately). **Corporate actions are not P&L**: a split, a reverse split or a rename leaves equity and U unchanged at the cut-off (§14, golden `split_continuity.json`), so its day shows only market moves; a cash dividend shows on its ex-date (the receivable) and the payment day nets to 0. |
+| Today (no snapshot yet) | `Account.dayPnl` (§16.2, the TODAY anchor) | `Account.dayReturn` | `live: true`; replaced by the snapshot after the 20:20 EOD job. |
+| Month m (MONTH view) | Σ of its day cells | `U_last / U_beforeFirst − 1` | Months with no cell are omitted. |
+| `total` | Σ cells | `U_last / U_beforeFirst − 1` over all cells | |
+
+Days on which the run was not open have no cell. A day cell's `flows` is `flows_in_day` without the run's own INITIAL funding (the opening day's P&L is `E − F₀ − deposits`; its funding is the anchor, not a deposit), so `flows` only ever shows deposits, withdrawals and contribution adjustments. Today's live cell exists only while the active run opened before D's cut-off (a run opened on a weekend gets its first cell on the next trading day). Colors in the SPA come from `pnl` (the §22.8 heatmap ramp, clamped at ±3% of the cell's `return`).
+
+**P&L by symbol** (part of `PnlAnalysis`, same window `(a, b]`). Per symbol `s` (symbols renamed in the window are reported under their current symbol, §16.4):
+
+```
+total(s)      = MV_b(s) − MV_a(s) + Σ net_amount of executions of s in (a, b]
+                + dividends(s) + Σ CASH_IN_LIEU of s in (a, b]
+dividends(s)  = Σ DIVIDEND ledger rows of s in (a, b] + receivable_b(s) − receivable_a(s)     (§16.1 point-in-time)
+realized(s)   = Σ realized_pnl of the sells of s in (a, b] + Σ CASH_IN_LIEU of s in (a, b]
+                + Σ (cost_after − cost_before) of the position_adjustments of s in (a, b]    (a split's cash in lieu
+                  minus the cost it relieved, §14; renames move cost unchanged and add 0)
+unrealized(s) = total(s) − realized(s) − dividends(s)          (the change of unrealized P&L over the window)
+MV_a = snapshot_holding at the anchor (0 at an opening); MV_b = live qty × live mark (Valuation.marks)
+```
+
+**Reconciliation:** `Σ_s total(s) + other = PnL(a, b)` of the run, where `other` = Σ PNL_CORRECTION adjustments in the window (the only performance that belongs to no symbol). Rows are sorted by `total` descending; `held` marks symbols still held at `b`. **Renames are time-aware:** a symbol seen at `t` (an anchor holding at `a`, a fill, an entitlement's accrual, a cash-in-lieu posting, an adjustment) is reported under the name the account's NAME_CHANGE adjustments after `t` (up to `b`) gave it, so a dividend accrued before a rename lands on the new name and a ticker later reused by another company stays apart. An opening anchor includes everything of the run, even what shares the opening's instant (the run's first fill).
+
+Golden tests (WS4): a deposit and a split inside the calendar month (the deposit's day shows only the price move; the split day shows $0.00 and an unchanged U), and the by-symbol reconciliation with a buy, a partial sell, a dividend accrued and paid, a rename and a P&L correction.
+
+### 16.11 Feed reactions (Phase 2)
+
+Players react to league feed items with one emoji from a fixed set: `ROCKET` 🚀, `FIRE` 🔥, `GEM` 💎, `CLAP` 👏, `LAUGH` 😂, `SKULL` 💀. **One reaction per player per item** (`feed_reaction` primary key `(feed_event_id, player_id)`): reacting again with another emoji replaces it, and the SPA's toggle removes it.
+
+- `PUT /feed/{itemId}/reaction {reaction}` sets the caller's reaction (idempotent MERGE); `DELETE /feed/{itemId}/reaction` removes it (idempotent; removing nothing is fine). Both answer the item's `FeedReactions {itemId, reactions}`. Only an item the caller can see (`visible_at ≤ now`, its player listed) can be reacted to, else 404 `NOT_FOUND`. Scope `trade` (the only write scope); every channel, so **bots may react** through the MCP tool `react_to_feed_item` (§20.3), within the normal per-player rate limits (each call is one read token, §17.5).
+- `FeedItem.reactions` lists the reactions with at least one player, in the fixed order above, with `count` and who (`players: {handle, displayName, kind}`, listed players only, oldest first). The SPA highlights the viewer's own by handle.
+- **Live.** After each change the service publishes `FeedReactions` on **`/topic/feed`** (§19); clients tell it from a `FeedItem` by `itemId` and update the item in place (never prepend it). Reactions are social data, not money: they are written on the request thread in a normal transaction, not through the engine (D2 covers money tables only), and not audited.
 
 ---
 
@@ -3018,13 +3126,13 @@ Phase 2 adds a chain before chain 1 (`/oauth2/**`, `/.well-known/**`, the Author
 | Bucket | Web session | API key / MCP (humans and bots alike) |
 |---|---|---|
 | Reads (GET, preview, read tools) | 600/min | **120/min, burst 30** |
-| Heavy reads (bars, history, leaderboard, profiles) | 120/min | 30/min |
+| Heavy reads (bars, history, leaderboard, profiles; Phase 2: race, stats, P&L analysis) | 120/min | 30/min |
 | Order writes (place, replace, cancel, close) | **20/min and 300/day** | **20/min and 300/day** |
 | Open orders per account | 50 | 50 |
 | STOMP | 5 sessions per player, 60 quote/tick subscriptions per session | n/a |
 
 - **Who charges which bucket.** `RateLimitFilter` charges the read and heavy-read buckets. The order-write bucket is charged **only** by `OrderGate` (§11.2), once per write and after the idempotency fast path, so an idempotent replay is free and a preview never costs a write token.
-- **Implementation (WS1, Phase 1).** `RateLimitFilter` sits in chain 2 after authorization, so only requests that would be served are charged. Heavy reads are `GET /bars/**`, `/account/history`, `/leaderboard`, `/players/{handle}` and `/players/{handle}/history|trades`; every other request of an authenticated player is one read, except the order writes (`POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close`), which only `OrderGate` charges. Every `/mcp` call counts as one read (order tools additionally go through `OrderGate`). Web sessions and API keys/MCP have separate read buckets, each shared by all of a player's sessions or keys. The write buckets (20/min, 300/day) are one pair per player for every channel; `consumeWrite` takes a token from both and gives the minute token back when the day bucket refuses. Buckets refill greedily on `TimeSource` time, so the fixed test clock never refills one. `whoami.rateLimits` reports the API-key read bucket and the write buckets.
+- **Implementation (WS1, Phase 1).** `RateLimitFilter` sits in chain 2 after authorization, so only requests that would be served are charged. Heavy reads are `GET /bars/**`, `/account/history`, `/leaderboard`, `/players/{handle}` and `/players/{handle}/history|trades`, and in Phase 2 `/league/race`, `/players/{handle}/stats` and `/account/stats|pnl-analysis|pnl-calendar`; every other request of an authenticated player is one read, except the order writes (`POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close`), which only `OrderGate` charges. Every `/mcp` call counts as one read (order tools additionally go through `OrderGate`). Web sessions and API keys/MCP have separate read buckets, each shared by all of a player's sessions or keys. The write buckets (20/min, 300/day) are one pair per player for every channel; `consumeWrite` takes a token from both and gives the minute token back when the day bucket refuses. Buckets refill greedily on `TimeSource` time, so the fixed test clock never refills one. `whoami.rateLimits` reports the API-key read bucket and the write buckets.
 - Before authentication, limits are per IP: login 10/min, signup 5/hour, everything else 300/min. **`POST /auth/login` and `POST /auth/signup` are always charged to the per-IP login/signup buckets, signed in or not** (a session must not buy the 600/min read budget for password guessing). **Failed authentications** (a bad API key, answered by `BearerTokenFilter`; an anonymous 401 from the API chain's entry point) are charged to the IP's anonymous bucket (`AuthFailureLimiter`), and once that bucket is empty a bearer key is refused with 429 before it is looked up.
 - Requests are classified on the **decoded, normalized path** (`UrlPathHelper.getPathWithinApplication`: percent-decoding, no `;` parameters, `//` collapsed), the one Spring Security and MVC route by, so `/api/v1/auth/logi%6E` is a login and `/api/v1/le%61derboard` a heavy read.
 - Responses carry `X-RateLimit-Limit` (the bucket's rate per period), `X-RateLimit-Remaining` and `X-RateLimit-Reset` (seconds until the bucket is full again). Exceeding a limit returns **429 `RATE_LIMITED`** with `Retry-After` (seconds until one token is back) and the same value in `retryAfterS`; MCP tools return `retry_after_s`.
@@ -3179,6 +3287,13 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `GET /players/{handle}/history?range` | league:read | → `PublicHistory` (unit values, plus equity unless HIDDEN) | |
 | `GET /players/{handle}/trades?cursor&limit` | league:read | → `Page<PublicTrade>` (delayed) | |
 | `GET /feed?cursor&limit` | league:read | → `Page<FeedItem>` (only `visible_at ≤ now`) | |
+| `PUT /feed/{itemId}/reaction` (Phase 2) | trade | `SetReactionRequest {reaction}` → `FeedReactions` (§16.11) | `NOT_FOUND`, `VALIDATION_FAILED` |
+| `DELETE /feed/{itemId}/reaction` (Phase 2) | trade | → `FeedReactions` (idempotent) | `NOT_FOUND` |
+| `GET /league/race?period&kind` (Phase 2) | league:read | defaults WEEK, ALL → `RaceChart` (§16.9) | `VALIDATION_FAILED` |
+| `GET /players/{handle}/stats?period` (Phase 2) | league:read | default ALL → `PlayerStats` (§16.8; best/worst trade delayed) | `PLAYER_NOT_FOUND`, `ACCOUNT_NOT_FOUND` (no active run) |
+| `GET /account/stats?period` (Phase 2) | account:read | default ALL → `PlayerStats` (the caller's league stats, nothing delayed) | `ACCOUNT_NOT_FOUND` |
+| `GET /account/pnl-analysis?range` (Phase 2) | account:read | default 1M → `PnlAnalysis` (§16.10: earnings vs SPY and QQQ, P&L by symbol) | `ACCOUNT_NOT_FOUND` |
+| `GET /account/pnl-calendar?view=DAY&month=YYYY-MM` or `?view=MONTH&year=YYYY` (Phase 2) | account:read | defaults DAY, the current ET month → `PnlCalendar` (§16.10) | `ACCOUNT_NOT_FOUND`, `VALIDATION_FAILED` |
 
 ### 18.3 DTOs (TypeScript notation; JSON on the wire)
 
@@ -3193,7 +3308,7 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `calendar.dto` (WS2) | `CalendarOverrideDto` |
 | `marketdata.dto` (WS2) | `ClockDto`, `TradingDayDto`, `AssetSummaryDto`, `AssetDto`, `FundamentalsDto`, `ExtendedLineDto`, `QuoteDto`, `BarDto`, `SnapshotDto`, `BarsDto`, `MoversDto`, `NewsItemDto`; `QuotesDto` (`{quotes}`), `NewsListDto` (`{items}`); §19 `TickDto` |
 | `trading.dto` (WS3) | `FeesDto`, `PlaceOrderRequest`, `ReplaceOrderRequest`, `OrderDto`, `ExecutionDto` (+ `RefQuoteDto`), `OrderEventDto`, `EstimateDto`, `PlaceOrderResponse`, `PreviewDto`, `AccountDto`, `PositionDto`, `ActivityDto`, `ActivityDetailDto` (sealed: `SplitDetailDto`, `NameChangeDetailDto`, `GfvDetailDto`, `ResetDetailDto`, `RestrictionDetailDto`, `AdminViewDetailDto`), `ViolationDto`, `ViolationsDto` (`GET /account/violations`), `RunDto`, `CancelledOrdersDto` (`{cancelled}`), `ClosePositionRequest`, `ResetAccountRequest`; §21.1 `CorporateActionDto`, `CashTransferRequest` (+ sealed `TransferTargetRequest`: `SingleTargetRequest`, `AllTargetRequest`), `CashTransferPreviewDto`, `TransferBatchResultDto`, `TransferRowDto` |
-| `portfolio.dto` (WS4) | `PortfolioHistoryDto`, `LeaderboardRowDto`, `LeaderboardDto`, `PublicTradeDto`, `PlayerProfileDto`, `PublicHistoryDto`, `FeedItemDto` |
+| `portfolio.dto` (WS4) | `PortfolioHistoryDto`, `LeaderboardRowDto`, `LeaderboardDto`, `PublicTradeDto`, `PlayerProfileDto`, `PublicHistoryDto`, `FeedItemDto`; Phase 2 (§16.8–16.11): `PlayerStatsDto` (+ `ClosedLotDto`, `RankPointDto`), `RaceChartDto` (+ `RaceSeriesDto`, `RacePointDto`), `BenchmarkCurveDto` (the race chart's benchmark and P&L Analysis's), `PnlAnalysisDto` (+ `EarningsPointDto`, `SymbolPnlDto`), `PnlCalendarDto` (+ `PnlCalendarCellDto`, `PnlCalendarTotalDto`, enum `CalendarView`), `FeedReactionsDto` (+ `FeedReactionDto`, `ReactorDto`, enum `Reaction`), `SetReactionRequest` |
 | `watchlist.dto` (WS4) | `WatchlistDto`; requests `CreateWatchlistRequest`, `UpdateWatchlistRequest`, `AddWatchlistSymbolRequest` |
 | `realtime.dto` (WS5) | `NotificationDto`, `MarkNotificationsReadRequest`; §19 `MarketSessionDto`, `LeaderboardUpdateDto`, `OrderUpdateDto`, `AdminAlertDto` |
 | `rules.dto` (WS5) | `RulesDto` |
@@ -3364,7 +3479,8 @@ type LeaderboardRow = { rank: number|null; rankChange: number|null; eligible: bo
   partialPeriod: boolean; rebased: boolean; player: PlayerSummary; apiTrader: boolean; return: Dec; pnl: Dec;
   excessVsBenchmark: Dec|null; maxDrawdown: Dec|null;
   equity: Dec|null /* null when holdingsVisibility=HIDDEN */; netContributions: Dec; flowsInPeriod: Dec;
-  fills: number; symbolsTraded: number; winRate: Dec|null; topHolding: string|null; spark: Dec[] };
+  fills: number; symbolsTraded: number; winRate: Dec|null; topHolding: string|null; spark: Dec[];
+  sharpe: Dec|null /* Phase 2, §16.8 */; profitFactor: Dec|null /* Phase 2 */ };
 type Leaderboard = { period: LeaderboardPeriod; metric: LeaderboardMetric; kind: KindFilter; periodStart: Ts; asOf: Ts;
   benchmark: { symbol: string; return: Dec|null };
   arena: { humansMedianReturn: Dec|null; aiMedianReturn: Dec|null };
@@ -3382,7 +3498,38 @@ type PublicHistory = { range: string; points: { t: Ts; unitValue: Dec; equity: D
 type FeedItem = { id: string; at: Ts; kind: "FILL"|"POSITION_CLOSED"|"NEW_LEADER"|"RESET"|"DEPOSIT"|"JOINED";
   player: PlayerSummary; symbol: string|null;
   payload: { side?: Side; qty?: Dec; price?: Dec; realizedPnl?: Dec; amount?: Dec; period?: string;
-             untrusted?: { rationale?: string|null; memo?: string|null } } };
+             untrusted?: { rationale?: string|null; memo?: string|null } };
+  reactions: FeedReaction[] /* Phase 2, §16.11: count ≥ 1 only, in Reaction order */ };
+
+// ---- league, Phase 2 (§16.8–16.11)
+type Reaction = "ROCKET"|"FIRE"|"GEM"|"CLAP"|"LAUGH"|"SKULL";
+type Reactor = { handle: string; displayName: string; kind: PlayerKind };
+type FeedReaction = { reaction: Reaction; count: number; players: Reactor[] };
+type FeedReactions = { itemId: string; reactions: FeedReaction[] };   // PUT/DELETE response and /topic/feed update
+type SetReactionRequest = { reaction: Reaction };
+type ClosedLot = { symbol: string; qty: Dec; openedAt: Ts; closedAt: Ts; holdSeconds: number; cost: Dec;
+  proceeds: Dec; realizedPnl: Dec; return: Dec|null };
+type RankPoint = { date: DateEt; rank: number|null; ranked: number };
+type PlayerStats = { player: PlayerSummary; period: LeaderboardPeriod; periodStart: Ts; asOf: Ts;
+  return: Dec; pnl: Dec; maxDrawdown: Dec|null; partialPeriod: boolean; rebased: boolean;
+  sharpe: Dec|null; volatility: Dec|null; dailyReturns: number; sharpeMinDays: number;
+  closingSells: number; wins: number; winRate: Dec|null; grossProfit: Dec; grossLoss: Dec; profitFactor: Dec|null;
+  closedLots: number; avgHoldSeconds: number|null; tradesAsOf: Ts; bestTrade: ClosedLot|null; worstTrade: ClosedLot|null;
+  rank: number|null; rankChange: number|null; rankHistory: RankPoint[] };
+type RacePoint = { t: Ts; return: Dec };
+type RaceSeries = { player: PlayerSummary; rank: number|null; return: Dec; rebased: boolean; partialPeriod: boolean;
+  points: RacePoint[]; ranks: RankPoint[] };
+type RaceChart = { period: LeaderboardPeriod; kind: KindFilter; periodStart: Ts; asOf: Ts;
+  benchmark: BenchmarkCurve; series: RaceSeries[] };
+type EarningsPoint = { t: Ts; return: Dec; pnl: Dec };
+type BenchmarkCurve = { symbol: string; return: Dec|null; points: RacePoint[] };
+type SymbolPnl = { symbol: string; realized: Dec; unrealized: Dec; dividends: Dec; total: Dec; held: boolean };
+type PnlAnalysis = { range: HistoryRange; from: Ts; asOf: Ts; return: Dec; pnl: Dec; points: EarningsPoint[];
+  benchmarks: BenchmarkCurve[] /* SPY, then the extra benchmarks (QQQ) */; bySymbol: SymbolPnl[]; other: Dec };
+type PnlCalendarCell = { date: DateEt /* the day, or the month's first day */; pnl: Dec; return: Dec|null;
+  flows: Dec; live: boolean };
+type PnlCalendar = { view: "DAY"|"MONTH"; from: DateEt; to: DateEt; asOf: Ts; cells: PnlCalendarCell[];
+  total: { pnl: Dec; return: Dec|null } };
 
 // ---- rules (bots read this first)
 type Rules = { version: string; asOf: Ts;
@@ -3473,7 +3620,7 @@ The controller is absent from production by construction (`@Profile("test")`), a
 | `/topic/bars.{SYM}.1Min` | `Bar` (the forming minute bar; the suffix is the `Timeframe` wire value) | ≤ 1/s |
 | `/topic/market.session` | `MarketSessionDto` `{session, tradingDate, endsAt, nextSession, nextSessionAt, earlyClose}` | On change and every 60 s |
 | `/topic/leaderboard` | `LeaderboardUpdateDto` `{asOf}`. Clients refetch `GET /leaderboard`, which is cached for 5 s. | ≤ every 5 s when anything changed |
-| `/topic/feed` | `FeedItem` | When it becomes visible (a 5 s `PeriodicTask` over `visible_at`; off when `stocks.jobs.enabled=false`) |
+| `/topic/feed` | `FeedItem`, or `FeedReactions` `{itemId, reactions}` (Phase 2, §16.11: tell them apart by `itemId`; update the item in place) | A `FeedItem` when it becomes visible (a 5 s `PeriodicTask` over `visible_at`; off when `stocks.jobs.enabled=false`); `FeedReactions` right after a reaction changes |
 | `/user/queue/orders` | `OrderUpdateDto` `{event: OrderEventType, order: Order, execution: Execution\|null}` | After commit |
 | `/user/queue/account` | `Account` | After fills and transfers, plus ≤ 1 per 5 s while marks move during sessions |
 | `/user/queue/notifications` | `Notification` | After commit |
@@ -3606,6 +3753,17 @@ Phase 2 group orders (§11.9), appended to the catalog; `place_order`, `preview_
 | 42 | `cancel_order_group` | `trade` | RO=false, destructive=true, idempotent=true | `{group_id*}` | `OrderGroup` |
 
 A single leg is replaced or cancelled with `replace_order` / `cancel_order` (§11.9 rules apply); `GET /order-groups` has no list endpoint (every `Order` carries its `group`).
+
+Phase 2 tools, league slice (appended after #42 in `McpToolCatalog.ORDER`; read tools RO as above):
+
+| # | Tool | Scope | Input schema | Output |
+|---|---|---|---|---|
+| 43 | `get_my_stats` | `account:read` | `{period?: LeaderboardPeriod = "ALL"}` | `PlayerStats` (yours, nothing delayed, §16.8) |
+| 44 | `get_player_stats` | `league:read` | `{handle: string, period?: LeaderboardPeriod = "ALL"}` | `PlayerStats` (best/worst trade after the feed delay) |
+| 45 | `get_race_chart` | `league:read` | `{period?: LeaderboardPeriod = "WEEK", kind?: KindFilter = "ALL"}` | `RaceChart` (§16.9) |
+| 46 | `get_pnl_calendar` | `account:read` | `{view?: "DAY"\|"MONTH" = "DAY", month?: "YYYY-MM", year?: int}` | `PnlCalendar` (§16.10) |
+| 47 | `get_pnl_analysis` | `account:read` | `{range?: HistoryRange = "1M"}` | `PnlAnalysis` (earnings vs SPY/QQQ, P&L by symbol) |
+| 48 | `react_to_feed_item` | `trade` | RO=false, destructive=false, idempotent=true; `{item_id: string, reaction: Reaction \| "NONE"}` (`NONE` removes yours) | `FeedReactions` (§16.11) |
 
 Decimal inputs are accepted as strings or numbers, and numbers are parsed as `BigDecimal` (§6.3). There are no admin tools. A tool whose backing contract is still a Day-0 stub (or a default method a workstream has not overridden yet, e.g. `PerformanceQueries.feed`) answers the error result `NOT_IMPLEMENTED`; the catalog, schemas and order never change with what has shipped.
 
@@ -3823,9 +3981,9 @@ frontend/src/
 | `/markets` | `tab=MOVERS\|NEWS` | Index cards, movers tabs (Gainers / Losers / Most Active), news | **Tab: Markets** |
 | `/stock/$symbol` | `range=1D`, `tf?`, `tab=OVERVIEW\|NEWS\|POSITION`, `ticket=BUY\|SELL?` | 3-pane: watchlist, quote and chart, docked ticket, plus a bottom dock | Pushed screen with a sticky header and a Trade bar that opens a bottom sheet |
 | `/search` | `q` | ⌘K palette (the route exists for deep links: `?q=` prefills the field, and typing keeps it current with `replace`) | Full-screen search |
-| `/league` | `period=WEEK`, `metric=RETURN`, `kind=ALL`, `view=BOARD\|FEED` | Full-width board, Arena card, my pinned row | **Tab: League** (cards) |
+| `/league` | `period=WEEK`, `metric=RETURN`, `kind=ALL`, `view=BOARD\|RACE\|FEED` | Full-width board, Arena card, my pinned row; the race chart (Phase 2) | **Tab: League** (cards) |
 | `/players/$handle` | `range` | Profile | Stacked profile |
-| `/account` (+ `/positions`, `/orders?status=OPEN`, `/orders/$orderId`, `/activity?types`, `/history?range`) | | Overview with tabs; the watchlist panel stays | **Tab: Account** |
+| `/account` (+ `/positions`, `/orders?status=OPEN`, `/orders/$orderId`, `/activity?types`, `/history?range`, Phase 2 `/analysis?range&cal=DAY\|MONTH&month&year`) | | Overview with tabs; the watchlist panel stays | **Tab: Account** |
 | `/settings` (+ `/appearance`, `/trading`, `/api-keys`, `/account`) | | Settings page | **Tab: Menu** |
 | `/admin` (+ `/players`, `/players/$handle`, `/money`, `/invites`, `/settings`, `/system`, `/corporate-actions?status`, `/audit`) | | Admin console with tabs | Card lists; ADMIN only |
 
@@ -3875,6 +4033,12 @@ frontend/src/
   - `MetricInfoPopover` shows the exact formulas from §16.
   - A Feed sub-view.
 - **Player profile**: header (AI tag with model, member since, resets), stats per period, a unit-value curve vs SPY, EOD holdings as weights, delayed trades with rationales.
+- **Phase 2, league slice (§16.8–16.11):**
+  - **Profile stats card** (`GET /players/{handle}/stats`, period chips Week · Month · YTD · All): Sharpe ("needs 20 days · 12/20" below the minimum), volatility, profit factor (∞ when there are no losing sells), win rate with wins/sells, average hold, max drawdown, best and worst trade (symbol, P&L, return, hold), and the **rank history**: a small inverted sparkline of the latest 30 EOD ranks with ▲/▼ arrows for each change.
+  - **Leaderboard columns** (tablet and desktop): a "Columns" popover adds Sharpe, profit factor, win rate and max drawdown (remembered per browser); phones pick one extra stat for the card's second line. Ranks stay RETURN or P&L.
+  - **Race chart** (`/league?view=RACE`, `GET /league/race`): one line per player, normalized to 0% at the period start, **humans in blue shades and AI players in violet shades** (`--human` / `--ai` families), SPY dashed, the viewer's line thicker. The legend lists players by rank with the current return, rank arrows and the rank-history sparkline; hovering or tapping a legend row highlights that line and dims the others. Period tabs and the kind filter are the board's.
+  - **Feed reactions**: a reaction bar under each feed item (chips "🚀 3", the viewer's own highlighted, `aria-pressed`) and a "+" picker with the six emojis; a chip's title lists who reacted. Optimistic update, live from `/topic/feed`.
+  - **P&L Analysis** (`/account/analysis`, an Account tab): *My Earnings* (range chips 1W · 1M · 3M · YTD · 1Y · ALL; you vs SPY vs QQQ as returns, with the three period returns), *P&L calendar* (Day view: a month grid Mon–Fri with colored cells, ◀ ▶ month navigation; Month view: 12 month cells for a year; the §22.8 heatmap ramp, sign and value in every cell, today marked live, deposits never colored), *P&L by symbol* (diverging horizontal bars sorted by total, realized vs unrealized vs dividends split on tap/hover; "Other" for P&L corrections), and *Your stats* (`GET /account/stats`). Phones stack the cards; desktop puts earnings and the calendar side by side.
 - **Settings**: theme (Dark default / Light / System), up/down colors (green-up / red-up), order confirmation, default order type, TIF and quantity mode, personal API keys, self-reset if enabled.
 - **Admin**: §21.3.
 
@@ -4115,6 +4279,7 @@ stocks:
     intraday-sample-interval: 5m
     intraday-retention-days: 14
     benchmark-symbol: SPY
+    extra-benchmarks: QQQ                   # Phase 2: display-only indexes (P&L Analysis, §16.6)
     leaderboard-refresh: 5s
 ```
 
@@ -4501,9 +4666,9 @@ Actions are pinned to their current major versions: `actions/checkout@v7`, `acti
 | 16:00 (13:00) | `RTH_CLOSE` transition | Scheduled (`SESSION_TRANSITION`) | WS3 | **yes** | `date:RTH_CLOSE` | ALL_MISSED |
 | 16:20 (13:20) | `DailyMarkJob` official close | Scheduled | WS2 | no | `date:OFFICIAL` | ALL_MISSED |
 | 20:00 (17:00) | `POST_CLOSE` transition | Scheduled (`SESSION_TRANSITION`) | WS3 | **yes** | `date:POST_CLOSE` | ALL_MISSED |
-| 20:20 (17:20) | `DailyMarkJob` day-end, then `EodSnapshotJob` (+ benchmark, `leaderboard_snapshot`, NEW_LEADER, feed backfill) | Scheduled | WS2 → WS4 | no | date | ALL_MISSED |
+| 20:20 (17:20) | `DailyMarkJob` day-end, then `EodSnapshotJob` (+ benchmarks SPY and the extras such as QQQ, `leaderboard_snapshot`, NEW_LEADER, feed backfill) | Scheduled | WS2 → WS4 | no | date | ALL_MISSED |
 | 09:00 next trading day | Re-mark PROVISIONAL marks; re-run the EOD snapshot for that date if any mark changed | Scheduled | WS2 → WS4 | no | `date:REMARK` | LATEST_ONLY |
-| at boot, once | `BenchmarkBackfillJob` (§16.6) | Scheduled (single occurrence) | WS4 | no | `2025-12-31` | ALL_MISSED |
+| at boot, once | `BenchmarkBackfillJob` (§16.6; SPY and every extra benchmark that lacks 2025-12-31) | Scheduled (single occurrence) | WS4 | no | `2025-12-31` | ALL_MISSED |
 | every 5 s | Leaderboard recompute; feed visibility publisher | Periodic | WS4 | no | — | — |
 | rolling, 16 min after each execution | `FillQualityAudit` (I10, warnings only; `FILL_QUALITY_AUDIT`, every 60 s) | Periodic (scans executions 16–30 min old) | WS3 | no | — | — |
 

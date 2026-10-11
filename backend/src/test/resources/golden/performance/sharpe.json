@@ -1,0 +1,174 @@
+{
+  "section": "ARCHITECTURE \u00a716.8 sharpe",
+  "description": "A $500 run fully invested in 5 shares bought at $100.00 (no fees), 24 EOD closes. A $500.00 deposit lands between the 12th and 13th EOD at the live mark 107.60: it buys units at the pre-flow U, so U does not jump and the daily returns stay pure performance (diluted by the idle cash afterwards). Daily returns r_i = U_i / U_(i-1) - 1 over the opening (U = 1) and the 24 EODs; Sharpe = mean / sample sd x sqrt(252) (risk-free 0, DECIMAL128, scale 4), volatility = sd x sqrt(252) (scale 10). The first 19 EODs alone give 19 returns: below the 20-return minimum, Sharpe and volatility are null.",
+  "openingCash": "500.00",
+  "shares": "5",
+  "buyPrice": "100.00",
+  "eods": [
+    {
+      "close": "101.00",
+      "equity": "505.00",
+      "unitValue": "1.010000000000000000"
+    },
+    {
+      "close": "99.50",
+      "equity": "497.50",
+      "unitValue": "0.995000000000000000"
+    },
+    {
+      "close": "100.20",
+      "equity": "501.00",
+      "unitValue": "1.002000000000000000"
+    },
+    {
+      "close": "102.40",
+      "equity": "512.00",
+      "unitValue": "1.024000000000000000"
+    },
+    {
+      "close": "101.10",
+      "equity": "505.50",
+      "unitValue": "1.011000000000000000"
+    },
+    {
+      "close": "103.00",
+      "equity": "515.00",
+      "unitValue": "1.030000000000000000"
+    },
+    {
+      "close": "104.25",
+      "equity": "521.25",
+      "unitValue": "1.042500000000000000"
+    },
+    {
+      "close": "103.10",
+      "equity": "515.50",
+      "unitValue": "1.031000000000000000"
+    },
+    {
+      "close": "105.00",
+      "equity": "525.00",
+      "unitValue": "1.050000000000000000"
+    },
+    {
+      "close": "106.30",
+      "equity": "531.50",
+      "unitValue": "1.063000000000000000"
+    },
+    {
+      "close": "105.90",
+      "equity": "529.50",
+      "unitValue": "1.059000000000000000"
+    },
+    {
+      "close": "107.20",
+      "equity": "536.00",
+      "unitValue": "1.072000000000000000"
+    },
+    {
+      "close": "108.00",
+      "equity": "1040.00",
+      "unitValue": "1.078073217726396917"
+    },
+    {
+      "close": "106.40",
+      "equity": "1032.00",
+      "unitValue": "1.069780346820809249"
+    },
+    {
+      "close": "107.70",
+      "equity": "1038.50",
+      "unitValue": "1.076518304431599229"
+    },
+    {
+      "close": "109.10",
+      "equity": "1045.50",
+      "unitValue": "1.083774566473988439"
+    },
+    {
+      "close": "108.30",
+      "equity": "1041.50",
+      "unitValue": "1.079628131021194605"
+    },
+    {
+      "close": "110.00",
+      "equity": "1050.00",
+      "unitValue": "1.088439306358381503"
+    },
+    {
+      "close": "111.25",
+      "equity": "1056.25",
+      "unitValue": "1.094918111753371869"
+    },
+    {
+      "close": "110.40",
+      "equity": "1052.00",
+      "unitValue": "1.090512524084778420"
+    },
+    {
+      "close": "112.10",
+      "equity": "1060.50",
+      "unitValue": "1.099323699421965318"
+    },
+    {
+      "close": "111.00",
+      "equity": "1055.00",
+      "unitValue": "1.093622350674373796"
+    },
+    {
+      "close": "113.30",
+      "equity": "1066.50",
+      "unitValue": "1.105543352601156069"
+    },
+    {
+      "close": "114.20",
+      "equity": "1071.00",
+      "unitValue": "1.110208092485549133"
+    }
+  ],
+  "deposit": {
+    "afterEod": 12,
+    "mark": "107.60",
+    "equityBefore": "538.00",
+    "amount": "500.00",
+    "unitValue": "1.076000000000000000",
+    "unitsDelta": "464.684014869888475836"
+  },
+  "expected": {
+    "dailyReturns": [
+      "0.0100000000",
+      "-0.0148514851",
+      "0.0070351759",
+      "0.0219560878",
+      "-0.0126953125",
+      "0.0187932740",
+      "0.0121359223",
+      "-0.0110311751",
+      "0.0184287100",
+      "0.0123809524",
+      "-0.0037629351",
+      "0.0122757318",
+      "0.0056653150",
+      "-0.0076923077",
+      "0.0062984496",
+      "0.0067404911",
+      "-0.0038259206",
+      "0.0081613058",
+      "0.0059523810",
+      "-0.0040236686",
+      "0.0080798479",
+      "-0.0051862329",
+      "0.0109004739",
+      "0.0042194093"
+    ],
+    "dailyReturnCount": 24,
+    "sharpe": "6.9135",
+    "volatility": "0.1609212454"
+  },
+  "short": {
+    "eods": 19,
+    "dailyReturnCount": 19,
+    "sharpe": null,
+    "volatility": null
+  }
+}

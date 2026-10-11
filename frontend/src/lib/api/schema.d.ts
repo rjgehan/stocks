@@ -104,6 +104,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account/pnl-analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * P&L analysis of the active run
+         * @description My Earnings: your time-weighted return and P&L over the range vs SPY and QQQ (total-return indexes), and the P&L by symbol (realized, change of unrealized, dividends); the symbols' totals plus `other` (P&L corrections) add up to `pnl`.
+         */
+        get: operations["getPnlAnalysis"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/pnl-calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * P&L calendar of the active run
+         * @description DAY: one cell per trading day of `month` (YYYY-MM, default the current ET month); MONTH: one cell per month of `year`. A day's P&L never counts deposits or withdrawals (shown as `flows`) nor splits or renames; today's cell is live until the EOD snapshot.
+         */
+        get: operations["getPnlCalendar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/account/positions": {
         parameters: {
             query?: never;
@@ -187,6 +227,26 @@ export interface paths {
         };
         /** Every run (resets open a new one) */
         get: operations["runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your league stats
+         * @description The same as /players/{handle}/stats for yourself, with nothing delayed.
+         */
+        get: operations["getMyStats"];
         put?: never;
         post?: never;
         delete?: never;
@@ -924,6 +984,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feed/{itemId}/reaction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * React to a feed item
+         * @description Sets your reaction (ROCKET, FIRE, GEM, CLAP, LAUGH or SKULL), replacing any other one; idempotent. NOT_FOUND for an item you cannot see.
+         */
+        put: operations["setReaction"];
+        post?: never;
+        /**
+         * Remove your reaction
+         * @description Idempotent: removing nothing is fine.
+         */
+        delete: operations["removeReaction"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/leaderboard": {
         parameters: {
             query?: never;
@@ -936,6 +1020,26 @@ export interface paths {
          * @description RETURN ranks by time-weighted return from unit values (admin deposits never move it; a reset never erases a loss); PNL by net-contribution P&L (equity − net deposits), which favours larger accounts. Ties: P&L, then first opening. Rows that miss the minimum fills/symbols follow unranked. `me` is the caller's row. Recomputed every 5 s.
          */
         get: operations["getLeaderboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/league/race": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The race chart
+         * @description Every player's unit-value curve normalized to 0% at the period start (deposits never move a line; the last point equals the leaderboard return), ordered by RETURN rank, with each player's EOD rank history and SPY's total return over the same window.
+         */
+        get: operations["getRaceChart"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1379,6 +1483,26 @@ export interface paths {
          * @description Unit values across runs, plus equity unless holdings visibility is HIDDEN.
          */
         get: operations["getPlayerHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's league stats
+         * @description Return, P&L and drawdown as on the leaderboard; Sharpe ratio and volatility (annualized, from daily unit-value returns, at least 20 of them), win rate, profit factor, closed lots with the average hold, best and worst trade (closed after the feed delay), rank and the EOD rank history.
+         */
+        get: operations["getPlayerStats"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1883,6 +2007,12 @@ export interface components {
             /** @enum {string|null} */
             timeframe: "1Min" | "5Min" | "15Min" | "30Min" | "1Hour" | "1Day" | "1Week" | "1Month" | null;
         };
+        BenchmarkCurve: {
+            points: components["schemas"]["RacePoint"][] | null;
+            /** Format: decimal */
+            return: string | null;
+            symbol: string | null;
+        };
         BenchmarkReturn: {
             /** Format: decimal */
             return: string | null;
@@ -1967,6 +2097,25 @@ export interface components {
             clientOrderId: string | null;
             rationale?: string | null;
         };
+        ClosedLot: {
+            /** Format: date-time */
+            closedAt: string | null;
+            /** Format: decimal */
+            cost: string | null;
+            /** Format: int64 */
+            holdSeconds: number;
+            /** Format: date-time */
+            openedAt: string | null;
+            /** Format: decimal */
+            proceeds: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            /** Format: decimal */
+            realizedPnl: string | null;
+            /** Format: decimal */
+            return: string | null;
+            symbol: string | null;
+        };
         CorporateAction: {
             /** Format: date-time */
             appliedAt: string | null;
@@ -2044,6 +2193,14 @@ export interface components {
             /** Format: decimal */
             total: string | null;
         };
+        EarningsPoint: {
+            /** Format: decimal */
+            pnl: string | null;
+            /** Format: decimal */
+            return: string | null;
+            /** Format: date-time */
+            t: string | null;
+        };
         EodHolding: {
             /** Format: decimal */
             mark: string | null;
@@ -2115,6 +2272,7 @@ export interface components {
             kind: "FILL" | "POSITION_CLOSED" | "NEW_LEADER" | "RESET" | "DEPOSIT" | "JOINED" | null;
             payload: components["schemas"]["FeedPayload"] | null;
             player: components["schemas"]["PlayerSummary"] | null;
+            reactions: components["schemas"]["FeedReaction"][] | null;
             symbol: string | null;
         };
         FeedPayload: {
@@ -2130,6 +2288,17 @@ export interface components {
             /** @enum {string|null} */
             side: "BUY" | "SELL" | null;
             untrusted: components["schemas"]["UntrustedFeedText"] | null;
+        };
+        FeedReaction: {
+            /** Format: int32 */
+            count: number;
+            players: components["schemas"]["Reactor"][] | null;
+            /** @enum {string|null} */
+            reaction: "ROCKET" | "FIRE" | "GEM" | "CLAP" | "LAUGH" | "SKULL" | null;
+        };
+        FeedReactions: {
+            itemId: string | null;
+            reactions: components["schemas"]["FeedReaction"][] | null;
         };
         Fees: {
             /** Format: decimal */
@@ -2302,6 +2471,8 @@ export interface components {
             player: components["schemas"]["PlayerSummary"] | null;
             /** Format: decimal */
             pnl: string | null;
+            /** Format: decimal */
+            profitFactor: string | null;
             /** Format: int32 */
             rank: number | null;
             /** Format: int32 */
@@ -2309,6 +2480,8 @@ export interface components {
             rebased: boolean;
             /** Format: decimal */
             return: string | null;
+            /** Format: decimal */
+            sharpe: string | null;
             spark: string[] | null;
             /** Format: int32 */
             symbolsTraded: number;
@@ -2664,6 +2837,56 @@ export interface components {
             /** Format: decimal */
             winRate: string | null;
         };
+        PlayerStats: {
+            /** Format: date-time */
+            asOf: string | null;
+            /** Format: int64 */
+            avgHoldSeconds: number | null;
+            bestTrade: components["schemas"]["ClosedLot"] | null;
+            /** Format: int32 */
+            closedLots: number;
+            /** Format: int32 */
+            closingSells: number;
+            /** Format: int32 */
+            dailyReturns: number;
+            /** Format: decimal */
+            grossLoss: string | null;
+            /** Format: decimal */
+            grossProfit: string | null;
+            /** Format: decimal */
+            maxDrawdown: string | null;
+            partialPeriod: boolean;
+            /** @enum {string|null} */
+            period: "TODAY" | "WEEK" | "MONTH" | "YTD" | "SEASON" | "ALL" | null;
+            /** Format: date-time */
+            periodStart: string | null;
+            player: components["schemas"]["PlayerSummary"] | null;
+            /** Format: decimal */
+            pnl: string | null;
+            /** Format: decimal */
+            profitFactor: string | null;
+            /** Format: int32 */
+            rank: number | null;
+            /** Format: int32 */
+            rankChange: number | null;
+            rankHistory: components["schemas"]["RankPoint"][] | null;
+            rebased: boolean;
+            /** Format: decimal */
+            return: string | null;
+            /** Format: decimal */
+            sharpe: string | null;
+            /** Format: int32 */
+            sharpeMinDays: number;
+            /** Format: date-time */
+            tradesAsOf: string | null;
+            /** Format: decimal */
+            volatility: string | null;
+            /** Format: decimal */
+            winRate: string | null;
+            /** Format: int32 */
+            wins: number;
+            worstTrade: components["schemas"]["ClosedLot"] | null;
+        };
         PlayerSummary: {
             aiModel: string | null;
             avatarSeed: string | null;
@@ -2676,6 +2899,52 @@ export interface components {
             playerId: string | null;
             /** Format: int32 */
             resets: number;
+        };
+        PnlAnalysis: {
+            /** Format: date-time */
+            asOf: string | null;
+            benchmarks: components["schemas"]["BenchmarkCurve"][] | null;
+            bySymbol: components["schemas"]["SymbolPnl"][] | null;
+            /** Format: date-time */
+            from: string | null;
+            /** Format: decimal */
+            other: string | null;
+            /** Format: decimal */
+            pnl: string | null;
+            points: components["schemas"]["EarningsPoint"][] | null;
+            /** @enum {string|null} */
+            range: "1D" | "1W" | "1M" | "3M" | "YTD" | "1Y" | "ALL" | null;
+            /** Format: decimal */
+            return: string | null;
+        };
+        PnlCalendar: {
+            /** Format: date-time */
+            asOf: string | null;
+            cells: components["schemas"]["PnlCalendarCell"][] | null;
+            /** Format: date */
+            from: string | null;
+            /** Format: date */
+            to: string | null;
+            total: components["schemas"]["PnlCalendarTotal"] | null;
+            /** @enum {string|null} */
+            view: "DAY" | "MONTH" | null;
+        };
+        PnlCalendarCell: {
+            /** Format: date */
+            date: string | null;
+            /** Format: decimal */
+            flows: string | null;
+            live: boolean;
+            /** Format: decimal */
+            pnl: string | null;
+            /** Format: decimal */
+            return: string | null;
+        };
+        PnlCalendarTotal: {
+            /** Format: decimal */
+            pnl: string | null;
+            /** Format: decimal */
+            return: string | null;
         };
         PortfolioHistory: {
             flows: components["schemas"]["HistoryFlow"][] | null;
@@ -2860,6 +3129,49 @@ export interface components {
         };
         Quotes: {
             quotes: components["schemas"]["Quote"][] | null;
+        };
+        RaceChart: {
+            /** Format: date-time */
+            asOf: string | null;
+            benchmark: components["schemas"]["BenchmarkCurve"] | null;
+            /** @enum {string|null} */
+            kind: "ALL" | "HUMAN" | "AI" | null;
+            /** @enum {string|null} */
+            period: "TODAY" | "WEEK" | "MONTH" | "YTD" | "SEASON" | "ALL" | null;
+            /** Format: date-time */
+            periodStart: string | null;
+            series: components["schemas"]["RaceSeries"][] | null;
+        };
+        RacePoint: {
+            /** Format: decimal */
+            return: string | null;
+            /** Format: date-time */
+            t: string | null;
+        };
+        RaceSeries: {
+            partialPeriod: boolean;
+            player: components["schemas"]["PlayerSummary"] | null;
+            points: components["schemas"]["RacePoint"][] | null;
+            /** Format: int32 */
+            rank: number | null;
+            ranks: components["schemas"]["RankPoint"][] | null;
+            rebased: boolean;
+            /** Format: decimal */
+            return: string | null;
+        };
+        RankPoint: {
+            /** Format: date */
+            date: string | null;
+            /** Format: int32 */
+            rank: number | null;
+            /** Format: int32 */
+            ranked: number;
+        };
+        Reactor: {
+            displayName: string | null;
+            handle: string | null;
+            /** @enum {string|null} */
+            kind: "HUMAN" | "AI" | null;
         };
         ReauthRequest: {
             password: string | null;
@@ -3117,6 +3429,10 @@ export interface components {
         SetPasswordRequest: {
             newPassword: string | null;
         };
+        SetReactionRequest: {
+            /** @enum {string|null} */
+            reaction: "ROCKET" | "FIRE" | "GEM" | "CLAP" | "LAUGH" | "SKULL" | null;
+        };
         Settings: {
             "bots.requireRationale": boolean;
             "league.allowSelfReset": boolean;
@@ -3224,6 +3540,18 @@ export interface components {
              * @enum {string}
              */
             type: "SPLIT";
+        };
+        SymbolPnl: {
+            /** Format: decimal */
+            dividends: string | null;
+            held: boolean;
+            /** Format: decimal */
+            realized: string | null;
+            symbol: string | null;
+            /** Format: decimal */
+            total: string | null;
+            /** Format: decimal */
+            unrealized: string | null;
         };
         SystemEngine: {
             haltReason: string | null;
@@ -3645,6 +3973,74 @@ export interface operations {
             };
         };
     };
+    getPnlAnalysis: {
+        parameters: {
+            query?: {
+                /** @description 1D, 1W, 1M (default), 3M, YTD, 1Y or ALL */
+                range?: "1D" | "1W" | "1M" | "3M" | "YTD" | "1Y" | "ALL";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PnlAnalysis"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPnlCalendar: {
+        parameters: {
+            query?: {
+                /** @description DAY (default) or MONTH */
+                view?: "DAY" | "MONTH";
+                /** @description YYYY-MM (DAY view) */
+                month?: string;
+                /** @description 2000..2100 (MONTH view) */
+                year?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PnlCalendar"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     positions: {
         parameters: {
             query?: never;
@@ -3791,6 +4187,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Run"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getMyStats: {
+        parameters: {
+            query?: {
+                /** @description TODAY, WEEK, MONTH, YTD, SEASON or ALL (default) */
+                period?: "TODAY" | "WEEK" | "MONTH" | "YTD" | "SEASON" | "ALL";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerStats"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
@@ -5202,6 +5630,72 @@ export interface operations {
             };
         };
     };
+    setReaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetReactionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedReactions"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    removeReaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                itemId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedReactions"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getLeaderboard: {
         parameters: {
             query?: {
@@ -5227,6 +5721,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Leaderboard"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getRaceChart: {
+        parameters: {
+            query?: {
+                /** @description TODAY, WEEK (default), MONTH, YTD, SEASON or ALL */
+                period?: "TODAY" | "WEEK" | "MONTH" | "YTD" | "SEASON" | "ALL";
+                /** @description ALL (default), HUMAN or AI */
+                kind?: "ALL" | "HUMAN" | "AI";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RaceChart"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
@@ -6161,6 +6689,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicHistory"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlayerStats: {
+        parameters: {
+            query?: {
+                /** @description TODAY, WEEK, MONTH, YTD, SEASON or ALL (default) */
+                period?: "TODAY" | "WEEK" | "MONTH" | "YTD" | "SEASON" | "ALL";
+            };
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerStats"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

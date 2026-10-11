@@ -85,6 +85,24 @@ class ContractDtoJsonTest {
     SPEC_TYPES.put("PlayerProfile", pf + "PlayerProfileDto");
     SPEC_TYPES.put("PublicHistory", pf + "PublicHistoryDto");
     SPEC_TYPES.put("FeedItem", pf + "FeedItemDto");
+    // league, Phase 2 (§16.8–16.11)
+    SPEC_TYPES.put("PlayerStats", pf + "PlayerStatsDto");
+    SPEC_TYPES.put("ClosedLot", pf + "PlayerStatsDto$ClosedLotDto");
+    SPEC_TYPES.put("RankPoint", pf + "PlayerStatsDto$RankPointDto");
+    SPEC_TYPES.put("RaceChart", pf + "RaceChartDto");
+    SPEC_TYPES.put("RaceSeries", pf + "RaceChartDto$RaceSeriesDto");
+    SPEC_TYPES.put("RacePoint", pf + "RaceChartDto$RacePointDto");
+    SPEC_TYPES.put("BenchmarkCurve", pf + "BenchmarkCurveDto");
+    SPEC_TYPES.put("PnlAnalysis", pf + "PnlAnalysisDto");
+    SPEC_TYPES.put("EarningsPoint", pf + "PnlAnalysisDto$EarningsPointDto");
+    SPEC_TYPES.put("SymbolPnl", pf + "PnlAnalysisDto$SymbolPnlDto");
+    SPEC_TYPES.put("PnlCalendar", pf + "PnlCalendarDto");
+    SPEC_TYPES.put("PnlCalendarCell", pf + "PnlCalendarDto$PnlCalendarCellDto");
+    SPEC_TYPES.put("PnlCalendarTotal", pf + "PnlCalendarDto$PnlCalendarTotalDto");
+    SPEC_TYPES.put("FeedReactions", pf + "FeedReactionsDto");
+    SPEC_TYPES.put("FeedReaction", pf + "FeedReactionsDto$FeedReactionDto");
+    SPEC_TYPES.put("Reactor", pf + "FeedReactionsDto$ReactorDto");
+    SPEC_TYPES.put("SetReactionRequest", pf + "SetReactionRequest");
     // rules
     SPEC_TYPES.put("Rules", "com.stocks.contract.rules.dto.RulesDto");
     // §21.1 admin

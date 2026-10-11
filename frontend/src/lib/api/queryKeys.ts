@@ -1,5 +1,5 @@
 /** TanStack Query keys (§22.6). One place, so invalidations from STOMP events stay consistent. */
-import type { ChartRange, HistoryRange, KindFilter, LeaderboardMetric, LeaderboardPeriod, MoverList, Timeframe } from './types'
+import type { CalendarView, ChartRange, HistoryRange, KindFilter, LeaderboardMetric, LeaderboardPeriod, MoverList, Timeframe } from './types'
 
 export type OrdersFilter = 'OPEN' | 'CLOSED' | 'ALL'
 
@@ -28,6 +28,12 @@ export const queryKeys = {
   playerHistory: (handle: string, range: HistoryRange) => ['player', handle, 'history', range] as const,
   playerTrades: (handle: string) => ['player', handle, 'trades'] as const,
   feed: ['feed'] as const,
+  // Phase 2 league stats (§16.8–16.10)
+  race: (period: LeaderboardPeriod, kind: KindFilter) => ['race', period, kind] as const,
+  playerStats: (handle: string, period: LeaderboardPeriod) => ['player', handle, 'stats', period] as const,
+  myStats: (period: LeaderboardPeriod) => ['myStats', period] as const,
+  pnlAnalysis: (range: HistoryRange) => ['pnlAnalysis', range] as const,
+  pnlCalendar: (view: CalendarView, key: string) => ['pnlCalendar', view, key] as const,
   notifications: ['notifications'] as const,
   apiKeys: ['apiKeys'] as const,
   admin: (...rest: unknown[]) => ['admin', ...rest] as const,

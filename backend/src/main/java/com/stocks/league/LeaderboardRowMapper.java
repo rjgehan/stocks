@@ -69,7 +69,8 @@ public final class LeaderboardRowMapper {
       out.add(new LeaderboardRowDto(r, change, e.eligible(), e.eligibilityNote(), e.partialPeriod(), e.rebased(),
           e.player().summary(), e.apiTrader(), e.twr(), e.pnl(), e.excess(), e.maxDrawdown(),
           hidden ? null : e.equity(), e.netContributions(), e.flowsInPeriod(), e.fills(), e.symbolsTraded(),
-          e.winRate(), hidden ? null : e.topHolding(), e.spark()));
+          e.winRate(), hidden ? null : e.topHolding(), e.spark(), e.extras().risk().sharpe(),
+          e.extras().profitFactor()));
     }
     return out;
   }

@@ -30,6 +30,9 @@ import org.springframework.stereotype.Component;
  * historical dividends are not available through {@code MarketDataService} (the EOD job adds
  * {@code daily_mark.dividend_ex} from then on). Fails (and is retried by the next boot's catch-up, or "Run now")
  * when no bars are available.
+ *
+ * <p>Phase 2: the same for every extra benchmark (QQQ, §16.6) that lacks the anchor, so a deploy that adds one
+ * backfills it at the next boot; the job fails only when every missing symbol failed.
  */
 @Component
 public class BenchmarkBackfillJob implements ScheduledJob {
@@ -38,6 +41,8 @@ public class BenchmarkBackfillJob implements ScheduledJob {
 
   public static final String NAME = "BENCHMARK_BACKFILL";
   public static final LocalDate ANCHOR = LocalDate.of(2025, 12, 31);
+  /** {@code job_run.run_key} length limit (§25, {@code JobRunGuard.MAX_RUN_KEY}). */
+  static final int MAX_RUN_KEY = 48;
 
   private final BenchmarkService benchmark;
   private final MarketDataService marketData;
@@ -63,30 +68,63 @@ public class BenchmarkBackfillJob implements ScheduledJob {
     return CatchUpPolicy.ALL_MISSED;
   }
 
-  /** A single occurrence right after {@code fromExclusive} while the anchor row is missing (once per process). */
+  /** A single occurrence right after {@code fromExclusive} while an anchor row is missing (once per process). */
   @Override
   public List<JobOccurrence> occurrencesBetween(Instant fromExclusive, Instant toInclusive, MarketCalendar cal) {
-    if (attempted.get() || benchmark.day(ANCHOR).isPresent()) {
+    List<String> missing = attempted.get() ? List.of() : missing();
+    if (missing.isEmpty()) {
       return List.of();
     }
     Instant at = fromExclusive.plusMillis(1);
-    return at.isAfter(toInclusive) ? List.of() : List.of(new JobOccurrence(at, ANCHOR.toString()));
+    return at.isAfter(toInclusive) ? List.of() : List.of(new JobOccurrence(at, runKey(missing)));
+  }
+
+  /**
+   * The occurrence's run key: {@code 2025-12-31} while the main benchmark is missing (a new league), else
+   * {@code 2025-12-31:QQQ} naming the missing extras. A {@code DONE} key never runs again ({@code JobRunGuard}), and a
+   * league that backfilled SPY before Phase 2 has {@code 2025-12-31} DONE, so an extra benchmark needs its own key.
+   */
+  String runKey(List<String> missing) {
+    if (missing.contains(benchmark.symbol())) {
+      return ANCHOR.toString();
+    }
+    String key = ANCHOR + ":" + String.join("+", missing);
+    return key.length() <= MAX_RUN_KEY ? key : key.substring(0, MAX_RUN_KEY);
   }
 
   @Override
   public void run(String runKey) {
     attempted.set(true);
+    List<String> missing = missing();
     int n = backfill();
-    if (n == 0) {
-      throw new IllegalStateException("no " + benchmark.symbol() + " daily bars available for the backfill");
+    if (n == 0 && !missing.isEmpty()) {
+      throw new IllegalStateException("no " + String.join(", ", missing) + " daily bars available for the backfill");
     }
   }
 
-  /** Writes the chain from the bars; returns the number of rows written. */
+  /** The benchmark symbols (main first, then the extras) whose chain lacks the 2025-12-31 anchor. */
+  List<String> missing() {
+    return benchmark.symbols().stream().filter(s -> benchmark.day(s, ANCHOR).isEmpty()).toList();
+  }
+
+  /** Writes the chain of every benchmark that lacks the anchor; returns the number of rows written. */
   public int backfill() {
+    int n = 0;
+    for (String symbol : missing()) {
+      try {
+        n += backfill(symbol);
+      } catch (RuntimeException e) {
+        log.warn("Benchmark backfill of {} failed: {}", symbol, e.toString());
+      }
+    }
+    return n;
+  }
+
+  /** Writes one benchmark's chain from its bars; returns the number of rows written. */
+  int backfill(String symbol) {
     LocalDate today = Et.date(time.now());
     LocalDate lastDay = calendar.previousTradingDay(today);
-    BarSeries series = marketData.bars(new BarRequest(benchmark.symbol(), null, Timeframe.DAY1,
+    BarSeries series = marketData.bars(new BarRequest(symbol, null, Timeframe.DAY1,
         Et.startOfDay(ANCHOR), calendar.cutoff(lastDay), 1000, AdjustmentMode.RAW, false));
     TreeMap<LocalDate, BigDecimal> closes = new TreeMap<>();
     for (Bar b : series.bars()) {
@@ -96,20 +134,20 @@ public class BenchmarkBackfillJob implements ScheduledJob {
       }
     }
     if (closes.isEmpty() || !closes.firstKey().equals(ANCHOR)) {
-      log.warn("Benchmark backfill: no {} bar for {} ({} bars)", benchmark.symbol(), ANCHOR, closes.size());
+      log.warn("Benchmark backfill: no {} bar for {} ({} bars)", symbol, ANCHOR, closes.size());
       return 0;
     }
     int n = 0;
     for (var e : closes.entrySet()) {
-      benchmark.write(e.getKey(), e.getValue(), e.getKey().equals(ANCHOR) ? BigDecimal.ZERO
-          : benchmark.dividendEx(e.getKey()));
+      benchmark.write(symbol, e.getKey(), e.getValue(), e.getKey().equals(ANCHOR) ? BigDecimal.ZERO
+          : benchmark.dividendEx(symbol, e.getKey()));
       n++;
     }
     // re-chain rows the EOD job wrote after the backfilled range onto the new chain
-    for (BenchmarkDay later : benchmark.after(closes.lastKey())) {
-      benchmark.write(later.tradeDate(), later.mark(), later.dividend());
+    for (BenchmarkDay later : benchmark.after(symbol, closes.lastKey())) {
+      benchmark.write(symbol, later.tradeDate(), later.mark(), later.dividend());
     }
-    log.info("Benchmark backfill: {} {} rows from {} to {}", n, benchmark.symbol(), ANCHOR, closes.lastKey());
+    log.info("Benchmark backfill: {} {} rows from {} to {}", n, symbol, ANCHOR, closes.lastKey());
     return n;
   }
 }

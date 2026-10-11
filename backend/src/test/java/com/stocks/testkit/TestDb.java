@@ -51,7 +51,9 @@ public record TestDb(DataSource dataSource, JdbcClient jdbc, String vendor) impl
     // H2 needs the migrating connection kept (see above); on PostgreSQL an idle pool must not pin a server slot
     // forever, since most tests never close their TestDb
     config.setMinimumIdle(url.startsWith("jdbc:h2:") ? 1 : 0);
-    config.setIdleTimeout(10_000);
+    // H2: never retire idle connections. Once a slow test grew the pool, the housekeeper could retire the migrating
+    // connection after 10 s idle (keeping a newer one as the minimum), and the next CHECK failed as above
+    config.setIdleTimeout(url.startsWith("jdbc:h2:") ? 0 : 10_000);
     config.setPoolName("testdb-" + POOLS.incrementAndGet());
     return new HikariDataSource(config);
   }
