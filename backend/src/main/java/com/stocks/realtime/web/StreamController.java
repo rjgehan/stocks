@@ -86,8 +86,10 @@ public class StreamController {
       throw ApiException.validation("symbols", "The quotes topic needs symbols, e.g. symbols=AAPL,MSFT.");
     }
     ResponseBodyEmitter emitter = new ResponseBodyEmitter(hub.properties().maxAge().toMillis() + ASYNC_SLACK_MS);
+    EmitterSink sink = new EmitterSink(emitter);
     AtomicReference<StreamConnection> connection = new AtomicReference<>();
     Runnable end = () -> {
+      sink.gone();                                    // the container is done with the response: write nothing more
       StreamConnection c = connection.get();
       if (c != null) {
         c.close(StreamByeDto.Reason.SHUTDOWN);       // the client went away or the async request timed out
@@ -97,7 +99,7 @@ public class StreamController {
     emitter.onTimeout(end);
     emitter.onError(e -> end.run());
     String resumeFrom = lastEventIdHeader != null && !lastEventIdHeader.isBlank() ? lastEventIdHeader : lastEventId;
-    connection.set(hub.open(caller, topicSet, symbolList, resumeFrom, new EmitterSink(emitter)));
+    connection.set(hub.open(caller, topicSet, symbolList, resumeFrom, sink));
     return ResponseEntity.ok()
         .contentType(EVENT_STREAM)
         .header(HttpHeaders.CACHE_CONTROL, "no-store, no-transform")
@@ -170,16 +172,38 @@ public class StreamController {
     return s.length() <= 20 ? s : s.substring(0, 20) + "…";
   }
 
-  /** Frames to the HTTP response, flushed one by one (the emitter flushes after every send). */
-  record EmitterSink(ResponseBodyEmitter emitter) implements StreamSink {
+  /**
+   * Frames to the HTTP response, flushed one by one (the emitter flushes after every send). Once the container has
+   * finished the response (the client went away, an error or the async timeout), nothing is written or completed any
+   * more: completing an errored response would only dispatch a second "response not usable" error.
+   */
+  static final class EmitterSink implements StreamSink {
+
+    private final ResponseBodyEmitter emitter;
+    private volatile boolean gone;
+
+    EmitterSink(ResponseBodyEmitter emitter) {
+      this.emitter = emitter;
+    }
+
+    /** The container finished the response; the sender then stops at its next write. */
+    void gone() {
+      gone = true;
+    }
 
     @Override
     public void send(String frame) throws IOException {
+      if (gone) {
+        throw new IOException("The client is gone");
+      }
       emitter.send(frame, EVENT_STREAM);
     }
 
     @Override
     public void close() {
+      if (gone) {
+        return;
+      }
       try {
         emitter.complete();
       } catch (RuntimeException e) {

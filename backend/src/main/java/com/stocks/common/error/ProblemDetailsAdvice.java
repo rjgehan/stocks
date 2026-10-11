@@ -23,6 +23,7 @@ import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import tools.jackson.databind.DatabindException;
@@ -142,6 +143,18 @@ public class ProblemDetailsAdvice {
     List<ProblemField> fields = List.of(
         new ProblemField(e.getParameterName(), ErrorCode.VALIDATION_FAILED.name(), "Required"));
     return validation(request, "Missing parameter '" + e.getParameterName() + "'", fields);
+  }
+
+  /**
+   * The client went away while its response was still being written (an SSE stream closed by its client, §19.1, or
+   * an aborted download): nobody is left to answer, so nothing is written and it is not an error (Spring's own
+   * {@code ResponseEntityExceptionHandler} does the same). A {@code null} entity marks the request handled.
+   */
+  @ExceptionHandler(AsyncRequestNotUsableException.class)
+  public ResponseEntity<Problem> clientGone(AsyncRequestNotUsableException e, HttpServletRequest request) {
+    log.debug("Client gone [requestId={}] {} {}: {}", RequestIds.of(request), request.getMethod(),
+        request.getRequestURI(), e.getMessage());
+    return null;
   }
 
   @ExceptionHandler(Exception.class)

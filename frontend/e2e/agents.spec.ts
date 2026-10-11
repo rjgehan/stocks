@@ -130,9 +130,11 @@ test('a bot reports its run and writes a journal note; the admin sees both', asy
   await page.goto('/settings/api-calls')
   await page.getByRole('radiogroup', { name: 'Whose calls' }).getByRole('radio', { name: 'Everyone' }).click()
   await page.getByLabel('Player').fill(handle)
-  const calls = page.getByRole('list', { name: 'API calls' })
-  await expect(calls.getByText('POST /api/v1/agent-runs')).toBeVisible()
-  await expect(calls.getByText('POST /api/v1/journal')).toBeVisible()
+  // the bot's rows (other viewports' bots may be listed until the debounced filter applies)
+  const botRows = page.getByRole('list', { name: 'API calls' }).getByRole('listitem').filter({ hasText: new RegExp(`@${handle}\\b`) })
+  await expect(botRows.filter({ hasText: 'POST /api/v1/agent-runs' }).first()).toBeVisible()
+  await expect(botRows.filter({ hasText: 'POST /api/v1/journal' }).first()).toBeVisible()
+  await expect(botRows.filter({ hasText: 'GET /api/v1/stream' }).first()).toBeVisible()
 })
 
 test('Admin → Bots shows each bot against its daily cap, with its runs', async ({ page }) => {
