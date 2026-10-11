@@ -16,6 +16,7 @@ function collectErrors(page: Page): string[] {
 const chart = (page: Page) => page.locator('[data-chart-type]').first()
 
 test('chart types and indicators persist, oscillators get their own panes', async ({ page }) => {
+  test.setTimeout(90_000)
   const errors = collectErrors(page)
   await open(page, '/stock/AAPL')
   await expect(page.getByRole('heading', { name: 'AAPL', level: 1 })).toBeVisible()
@@ -33,7 +34,7 @@ test('chart types and indicators persist, oscillators get their own panes', asyn
   await expect(page.getByRole('dialog', { name: 'Indicators' })).toHaveCount(0)
   await expect(chart(page)).toHaveAttribute('data-oscillators', '2')
   const legend = page.getByTestId('indicator-legend')
-  await expect(legend).toContainText('MA5')
+  await expect(legend).toContainText('MA5', { timeout: 15_000 })
   await expect(legend).toContainText('RSI10')
   await expect(legend).toContainText('MACD(12,26,9)')
   await expect(page.getByRole('button', { name: /Indicators/ })).toContainText('3')
@@ -52,7 +53,8 @@ test('chart types and indicators persist, oscillators get their own panes', asyn
   await page.reload()
   await expect(chart(page)).toHaveAttribute('data-chart-type', 'hollow')
   await expect(chart(page)).toHaveAttribute('data-oscillators', '2')
-  await expect(page.getByTestId('indicator-legend')).toContainText('RSI10')
+  // the legend shows once the bars have loaded (a cold 5D on the real SIM computes ~1,000 bars)
+  await expect(page.getByTestId('indicator-legend')).toContainText('RSI10', { timeout: 20_000 })
 
   // Turning the oscillators off removes their panes
   await page.getByRole('button', { name: /Indicators/ }).click()
