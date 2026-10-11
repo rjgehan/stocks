@@ -3071,7 +3071,7 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `GET /me/push` (Phase 2, §19.2) | session | → `PushSettings` | |
 | `PATCH /me/push/preferences` | session | `UpdatePushPreferencesRequest` (`Partial<PushPreferences>`) → `PushPreferences` | `PUSH_UNAVAILABLE` |
 | `POST /me/push/subscriptions` | session | `PushSubscriptionRequest {endpoint, p256dh, auth}` → 201 `PushDevice` (this device; moves it from another player) | `VALIDATION_FAILED`, `PUSH_UNAVAILABLE` |
-| `POST /me/push/sync` | session | `{endpoint}` → `PushSync` (`registered` false: the SPA unsubscribes the browser; re-binds this session) | `PUSH_UNAVAILABLE` |
+| `POST /me/push/sync` | session | `{endpoint}` → `PushSync` (`registered` false: the SPA registers it again if the player turned push on on this device, else unsubscribes the browser; re-binds this session) | `PUSH_UNAVAILABLE` |
 | `POST /me/push/unsubscribe` | session | `{endpoint}` → 204 (this device) | |
 | `DELETE /me/push/subscriptions/{deviceId}` | session | → 204 | `NOT_FOUND` |
 | `POST /me/push/test` | session | → `PushTestResult` (waits ≤ 15 s) | `RATE_LIMITED` (1 per 10 s), `PUSH_UNAVAILABLE` |
