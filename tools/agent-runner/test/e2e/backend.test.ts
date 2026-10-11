@@ -326,7 +326,11 @@ describe('agent runner against the real stocks MCP server', () => {
 
     expect(`${s.status}\n${sink.text}`).toMatch(/^completed\n/);
     expect(s).toMatchObject({ toolCalls: 4, toolErrors: 0, orders: 1 });
-    expect(llm.calls[0]?.body.tools).toHaveLength(39);
+    // the same tools as the Claude bot (every server tool plus save_notes), as Responses API function tools
+    const tools = llm.calls[0]?.body.tools as { type: string; name: string }[];
+    expect(tools.length).toBeGreaterThanOrEqual(41);
+    expect(tools.at(-1)?.name).toBe('save_notes');
+    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['screen_stocks', 'get_recommendations']));
     expect(JSON.parse(placed)).toMatchObject({ order: { clientOrderId }, replayed: false });
     expect(llm.calls[1]?.body.previous_response_id).toMatch(/^resp_fake_/);
     const order = await orderByClientId(keys.chatgpt, clientOrderId);
