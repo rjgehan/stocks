@@ -479,6 +479,7 @@ the feed delay (15 minutes), like a trade: on the bot's profile, in the league f
   **Admin → Bots**; each bot's profile shows a public **Bot activity** card (no costs). It goes to
   `STOCKS_MCP_URL` with the path `/api/v1/agent-runs`, so the compose stack needs no new variable;
   `AGENT_REPORT_URL` overrides it and `AGENT_REPORT_RUNS=false` turns reporting off. A failed report is logged
-  (`report failed: …`) and never changes the run.
+  (`report failed: …`) and never changes the run. The app accepts at most 100 new reports per bot in 24 hours
+  (`RATE_LIMITED` beyond; a retried report with the same `runRef` is always accepted).
 - Every call made with an API key (REST and MCP tools) is counted per hour, endpoint and outcome. **Settings → Recent
   API calls** lists your own keys and the bots you own; the admin sees every key's. Buckets are kept 90 days.
