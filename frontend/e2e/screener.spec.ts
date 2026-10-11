@@ -9,6 +9,12 @@ import { open, viewport } from './support/app'
 
 const results = (page: Page) => page.getByTestId('screener-results')
 
+/** The results of the current filters (the previous screen stays visible, aria-busy, while the new one loads). */
+async function settledResults(page: Page): Promise<void> {
+  await expect(results(page)).toBeVisible({ timeout: 15_000 })
+  await expect(results(page)).not.toHaveAttribute('aria-busy', 'true', { timeout: 15_000 })
+}
+
 /** The `%` change cells (table) or pills (cards) of the results, as numbers. */
 async function changes(page: Page): Promise<number[]> {
   const texts = await results(page).getByText(/^[+−]?\d+\.\d{2}%$/).allTextContents()
@@ -36,6 +42,7 @@ test('presets, filters and sorting', async ({ page }, testInfo) => {
   await presets.getByRole('radio', { name: 'Top gainers' }).click()
   await expect(page).toHaveURL(/preset=TOP_GAINERS/)
   await expect(presets.getByRole('radio', { name: 'Top gainers' })).toHaveAttribute('aria-checked', 'true')
+  await settledResults(page)
   await expect.poll(async () => {
     const c = await changes(page)
     return c.length > 0 && c.every((x) => x > 0)
@@ -51,6 +58,7 @@ test('presets, filters and sorting', async ({ page }, testInfo) => {
   await expect(page).toHaveURL(/type=ETF/)
   await presets.getByRole('radio', { name: 'Large caps under $50' }).click() // clear the preset (ETFs have no cap)
   await expect(page).not.toHaveURL(/preset=/)
+  await settledResults(page)
   await expect(results(page).getByRole('link').first()).toBeVisible({ timeout: 15_000 })
   await expect(page.getByTestId('screener-footer')).toContainText('symbols priced')
 
@@ -65,6 +73,7 @@ test('presets, filters and sorting', async ({ page }, testInfo) => {
   }
 
   // a result opens its quote page
+  await settledResults(page)
   const first = results(page).locator('a[data-symbol]').first()
   const symbol = (await first.getAttribute('data-symbol'))!
   await first.click()

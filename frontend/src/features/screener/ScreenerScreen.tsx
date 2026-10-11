@@ -150,6 +150,8 @@ export function ScreenerScreen({ search, breakpoint, onSearch }: { search: Scree
   const onSort = (c: ScreenSort) => onSearch(nextSort(search, c, { sort, order }))
   const partial = rows.some((r) => r.volumeIsPartial)
   const filters = activeFilterCount(search)
+  // the previous screen stays on screen (dimmed, aria-busy) until the new one arrives
+  const stale = q.isPlaceholderData
 
   const body = (
     <div className="mx-auto w-full max-w-6xl space-y-3 px-4 py-4 desktop:px-6">
@@ -201,7 +203,7 @@ export function ScreenerScreen({ search, breakpoint, onSearch }: { search: Scree
       ) : rows.length === 0 ? (
         <EmptyState title="No stocks match these filters" body="Loosen a filter or pick another preset." />
       ) : phone ? (
-        <ul className="divide-y divide-divider" aria-label="Screener results" data-testid="screener-results">
+        <ul className={cx('divide-y divide-divider transition-opacity', stale && 'opacity-60')} aria-label="Screener results" aria-busy={stale} data-testid="screener-results">
           {rows.map((r) => (
             <li key={r.symbol} className="flex items-center gap-2">
               <Link to="/stock/$symbol" params={{ symbol: r.symbol! }} data-symbol={r.symbol} className="flex min-h-16 min-w-0 flex-1 items-center gap-3 py-2">
@@ -220,8 +222,8 @@ export function ScreenerScreen({ search, breakpoint, onSearch }: { search: Scree
           ))}
         </ul>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-table tabular-nums" aria-label="Screener results" data-testid="screener-results">
+        <div className={cx('overflow-x-auto transition-opacity', stale && 'opacity-60')}>
+          <table className="w-full min-w-[720px] text-table tabular-nums" aria-label="Screener results" aria-busy={stale} data-testid="screener-results">
             <thead className="border-b border-divider text-micro text-text-3">
               <tr>
                 <SortHeader column="SYMBOL" label="Symbol" sort={sort} order={order} onSort={onSort} className="text-left" />
