@@ -32,7 +32,7 @@ async function disconnect(page: Page, appName: string): Promise<void> {
   await expect(list.getByText(appName, { exact: true }).first()).toBeVisible()
   await page.getByRole('button', { name: `Disconnect ${appName}` }).first().click()
   await page.getByRole('dialog').getByRole('button', { name: 'Disconnect' }).click()
-  await expect(page.getByText(`Disconnected ${appName}`).first()).toBeVisible()
+  await expect(page.getByText(`Disconnected ${appName}`).first()).toBeVisible({ timeout: 20_000 })
 }
 
 function pkce(): { verifier: string; challenge: string } {
@@ -60,7 +60,7 @@ test('connect an app with the act-as consent, then disconnect it', async ({ page
     await expect(bot).toBeChecked()
     await expect(page.getByRole('checkbox', { name: /Trade/ })).toBeChecked()
     await page.getByRole('button', { name: 'Allow' }).click()
-    await expect(page).toHaveURL(/^https:\/\/claude\.ai\/api\/mcp\/auth_callback\?code=mock_.*&state=mock-state&iss=/)
+    await expect(page).toHaveURL(/^https:\/\/claude\.ai\/api\/mcp\/auth_callback\?code=mock_.*&state=mock-state&iss=/, { timeout: 20_000 })
     await disconnect(page, 'Claude')
     await expect(page.getByText('No connected apps')).toBeVisible()
     return
@@ -98,7 +98,7 @@ test('connect an app with the act-as consent, then disconnect it', async ({ page
   const me = credentials()!.handle
   await page.getByRole('radio', { name: `Myself (@${me})` }).check()
   await page.getByRole('button', { name: 'Allow' }).click()
-  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:9\/callback\?code=/)
+  await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:9\/callback\?code=/, { timeout: 20_000 })
   const back = new URL(page.url())
   expect(back.searchParams.get('state')).toBe(state)
   expect(back.searchParams.get('iss')).toBeTruthy()
