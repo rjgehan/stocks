@@ -4031,6 +4031,7 @@ stocks:
       rest-per-minute: 55
     sim: { seed: 42, clock: wall, offset: P0D, anchor: null, speed: 1.0, always-open: false, scenarios: [] }
                                             # clock=offset with an anchor: the offset is computed at boot so now = anchor
+    screener: { profiles-per-minute: 3 }    # Phase 2 (§15.10): Finnhub profile2 calls per minute (0..30; 0 = no caps)
   performance:
     low-equity-warning: 1.00                # admin preview warning only; flows are always applied (§16.2)
     eod-delay: 20m

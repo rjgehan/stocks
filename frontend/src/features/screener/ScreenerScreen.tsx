@@ -210,8 +210,9 @@ export function ScreenerScreen({ search, breakpoint, onSearch }: { search: Scree
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold">{r.symbol}</span>
                   <span className="block truncate text-caption text-text-3">{r.name ?? ''}</span>
-                  <span className="block truncate text-micro text-text-3">
-                    Vol {vol(r)} · RV {relVol(r)} · Cap {abbreviate(r.marketCap)}
+                  {/* wraps instead of truncating, so the market cap is never cut off on narrow phones */}
+                  <span className="block text-micro text-text-3">
+                    {r.marketCap ? `Cap ${abbreviate(r.marketCap)} · ` : ''}Vol {vol(r)} · RV {relVol(r)}
                   </span>
                 </span>
                 <span className="text-body font-semibold tabular-nums">{formatPrice(r.price)}</span>
