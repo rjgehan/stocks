@@ -3,6 +3,7 @@ package com.stocks.contract.rules.dto;
 import com.stocks.common.domain.AccountType;
 import com.stocks.common.domain.FeeCode;
 import com.stocks.common.domain.HoldingsVisibility;
+import com.stocks.common.domain.OrderGroupType;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.TimeInForce;
 import java.math.BigDecimal;
@@ -34,11 +35,20 @@ public record RulesDto(String version, Instant asOf, RulesAccountDto account, Ru
   public record RulesSessionsDto(String timezone, String pre, String regular, String post, String earlyClose,
                                  String liveIexWindow, boolean overnight) {}
 
+  /**
+   * Phase 2: {@code groups} (§11.9, the group types accepted), {@code cancelLatency} (§11.10; null when off, the
+   * default) and {@code dividendAdjustment} (§14 FINRA 5330).
+   */
   public record RulesOrdersDto(List<OrderMatrixRowDto> matrix, int gtcDays, int maxOpenOrders, BigDecimal maxQty,
                                String tick, BigDecimal collarPct, BigDecimal holdPctRegular,
                                BigDecimal holdPctQueued, BigDecimal fatFingerWarnPct, BigDecimal priceTooFarPct,
                                String clientOrderIdPattern, boolean rationaleRequiredForAi,
-                               RulesFractionalDto fractional) {}
+                               RulesFractionalDto fractional, List<OrderGroupRuleDto> groups, String cancelLatency,
+                               String dividendAdjustment) {}
+
+  /** One group order type (§11.9): its legs, the entry types it accepts, its time in force and notes. */
+  public record OrderGroupRuleDto(OrderGroupType type, String legs, List<OrderType> entryTypes,
+                                  List<TimeInForce> timeInForce, String notes) {}
 
   /** One row of the §11.1 order matrix. */
   public record OrderMatrixRowDto(OrderType type, String sessions, List<TimeInForce> timeInForce,

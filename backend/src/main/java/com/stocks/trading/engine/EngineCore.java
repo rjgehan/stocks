@@ -19,6 +19,7 @@ import com.stocks.trading.engine.EngineCommand.ApplyCashTransfersCmd;
 import com.stocks.trading.engine.EngineCommand.ApplyCorporateActionCmd;
 import com.stocks.trading.engine.EngineCommand.CancelAllCmd;
 import com.stocks.trading.engine.EngineCommand.CancelOrderCmd;
+import com.stocks.trading.engine.EngineCommand.CancelOrderGroupCmd;
 import com.stocks.trading.engine.EngineCommand.CheckInvariantsCmd;
 import com.stocks.trading.engine.EngineCommand.DailyMaintenanceCmd;
 import com.stocks.trading.engine.EngineCommand.HaltEngineCmd;
@@ -26,8 +27,10 @@ import com.stocks.trading.engine.EngineCommand.LiftRestrictionCmd;
 import com.stocks.trading.engine.EngineCommand.OpenAccountCmd;
 import com.stocks.trading.engine.EngineCommand.PayDividendsCmd;
 import com.stocks.trading.engine.EngineCommand.PlaceOrderCmd;
+import com.stocks.trading.engine.EngineCommand.PlaceOrderGroupCmd;
 import com.stocks.trading.engine.EngineCommand.RecordAdminViewCmd;
 import com.stocks.trading.engine.EngineCommand.ReplaceOrderCmd;
+import com.stocks.trading.engine.EngineCommand.ReplaceOrderGroupCmd;
 import com.stocks.trading.engine.EngineCommand.ResetAccountCmd;
 import com.stocks.trading.engine.EngineCommand.ResolveCorporateActionCmd;
 import com.stocks.trading.engine.EngineCommand.RestrictAccountCmd;
@@ -81,6 +84,7 @@ public class EngineCore {
   private final OpenOrderIndex index;
   private final JdbcClient jdbc;
   private final CorporateActionApplier corporateActions;
+  private final GroupOrderEntry groups;
   private final PrintBuffer prints = new PrintBuffer();
   private final Set<String> dirty = ConcurrentHashMap.newKeySet();
 
@@ -96,7 +100,7 @@ public class EngineCore {
                     Evaluator evaluator, AccountCommands accountCommands, TransferCommands transferCommands,
                     InvariantChecker invariants, OrderStore orderStore, AccountStore accountStore, TradingClock clock,
                     MarketDataService marketData, OpenOrderIndex index, JdbcClient jdbc,
-                    CorporateActionApplier corporateActions) {
+                    CorporateActionApplier corporateActions, GroupOrderEntry groups) {
     this.tx = new TransactionTemplate(txManager);
     this.publisher = publisher;
     this.orders = orders;
@@ -111,6 +115,7 @@ public class EngineCore {
     this.index = index;
     this.jdbc = jdbc;
     this.corporateActions = corporateActions;
+    this.groups = groups;
   }
 
   // ------------------------------------------------------------------------------------------- bootstrap
@@ -202,7 +207,10 @@ public class EngineCore {
     Instant now = clock.now();
     return switch (cmd) {
       case PlaceOrderCmd c -> orders.place(c, t);
-      case ReplaceOrderCmd c -> orders.replace(c, t);
+      case ReplaceOrderCmd c -> isGroupLeg(c) ? groups.replaceLeg(c, t) : orders.replace(c, t);
+      case PlaceOrderGroupCmd c -> groups.place(c, t);
+      case ReplaceOrderGroupCmd c -> groups.replaceGroup(c, t);
+      case CancelOrderGroupCmd c -> groups.cancelGroup(c, t);
       case CancelOrderCmd c -> orders.cancel(c, t);
       case CancelAllCmd c -> orders.cancelAll(c, t);
       case SweepCmd c -> null;
@@ -259,6 +267,11 @@ public class EngineCore {
         yield status(0);
       }
     };
+  }
+
+  /** A replace of a group leg follows the group rules (§11.9). */
+  private boolean isGroupLeg(ReplaceOrderCmd c) {
+    return orderStore.byPublicId(c.accountId(), c.orderId()).map(OrderRow::inGroup).orElse(false);
   }
 
   private Long reset(ResetAccountCmd c, Instant now, EngineTx t) {
@@ -412,6 +425,9 @@ public class EngineCore {
   boolean needsAttention(OpenOrderIndex.Entry e, Instant now, SessionState session) {
     if (!now.isBefore(e.expiresAt)) {
       return true;
+    }
+    if (e.cancelEffectiveAt != null && !now.isBefore(e.cancelEffectiveAt)) {
+      return true;                                  // a requested cancel takes effect (§11.10)
     }
     boolean open = evaluator.windowOpen(e.extendedHours, session, now);
     if (!open) {

@@ -1014,7 +1014,7 @@
     "/api/v1/admin/cash-transfers/preview": {
       "post": {
         "description": "Per affected account: cash, withdrawable, equity before, unit value, worst mark quality, whether it would apply and warnings (ACCOUNT_EQUITY_TOO_LOW, MARKS_DEGRADED). Errors: VALIDATION_FAILED, PLAYER_NOT_FOUND.",
-        "operationId": "preview_1",
+        "operationId": "preview_2",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1357,7 +1357,7 @@
     "/api/v1/admin/orders/{orderId}": {
       "delete": {
         "description": "Recent password check. Errors: ORDER_NOT_FOUND, ORDER_NOT_CANCELLABLE.",
-        "operationId": "cancel_1",
+        "operationId": "cancel_2",
         "parameters": [
           {
             "in": "path",
@@ -3275,6 +3275,221 @@
         "summary": "Recent news, newest first",
         "tags": [
           "news"
+        ]
+      }
+    },
+    "/api/v1/order-groups": {
+      "post": {
+        "description": "OCO, OTO, OTOCO or BRACKET: every leg or nothing. 201 with the group (children of an entry wait, held, until it executes); 200 with Idempotent-Replay: true when this clientOrderId was already used for the same group; 409 for a different request.",
+        "operationId": "place_1",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceOrderGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceOrderGroupResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Place a group order",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/v1/order-groups/preview": {
+      "post": {
+        "description": "Runs the group rules and every leg's checks against the current account and market without placing anything; always 200 (valid=false lists the error, its field prefixed with the leg, e.g. takeProfit.limitPrice). clientOrderId is optional.",
+        "operationId": "preview_1",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceOrderGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupPreview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Preview a group order",
+        "tags": [
+          "orders"
+        ]
+      }
+    },
+    "/api/v1/order-groups/{groupId}": {
+      "delete": {
+        "description": "Cancels every open leg, children first; idempotent.",
+        "operationId": "cancel_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "groupId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderGroup"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Cancel a group order",
+        "tags": [
+          "orders"
+        ]
+      },
+      "get": {
+        "operationId": "get_2",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "groupId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderGroup"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "One group order with its current legs",
+        "tags": [
+          "orders"
+        ]
+      },
+      "patch": {
+        "description": "One cancel-replace of the changed legs (prices, the quantity while nothing has filled, the time in force) with a NEW group clientOrderId; 201 with the group.",
+        "operationId": "replace_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "groupId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceOrderGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceOrderGroupResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Replace a group order",
+        "tags": [
+          "orders"
         ]
       }
     },
@@ -7361,6 +7576,185 @@
           "violationId"
         ]
       },
+      "GroupLegChange": {
+        "type": "object",
+        "properties": {
+          "limitPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "stopPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "limitPrice",
+          "stopPrice"
+        ]
+      },
+      "GroupLegPreview": {
+        "type": "object",
+        "properties": {
+          "estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Estimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ENTRY",
+              "TAKE_PROFIT",
+              "STOP_LOSS",
+              "SECONDARY",
+              null
+            ]
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "BUY",
+              "SELL",
+              null
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "MARKET",
+              "LIMIT",
+              "STOP",
+              "STOP_LIMIT",
+              "TRAILING_STOP",
+              null
+            ]
+          }
+        },
+        "required": [
+          "estimate",
+          "role",
+          "side",
+          "type"
+        ]
+      },
+      "GroupLegRequest": {
+        "type": "object",
+        "properties": {
+          "limitPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "stopPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "MARKET",
+              "LIMIT",
+              "STOP",
+              "STOP_LIMIT",
+              "TRAILING_STOP",
+              null
+            ]
+          }
+        }
+      },
+      "GroupPreview": {
+        "type": "object",
+        "properties": {
+          "buyingPowerAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "buyingPowerBefore": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "errors": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PreviewError"
+            }
+          },
+          "legs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/GroupLegPreview"
+            }
+          },
+          "sessionNote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            }
+          }
+        },
+        "required": [
+          "buyingPowerAfter",
+          "buyingPowerBefore",
+          "errors",
+          "legs",
+          "sessionNote",
+          "valid",
+          "warnings"
+        ]
+      },
       "HaltEngineRequest": {
         "type": "object",
         "properties": {
@@ -8356,6 +8750,13 @@
             ],
             "format": "decimal"
           },
+          "cancelRequestedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
           "channel": {
             "type": [
               "string",
@@ -8383,6 +8784,9 @@
               "null"
             ],
             "format": "decimal"
+          },
+          "doNotReduce": {
+            "type": "boolean"
           },
           "doneAt": {
             "type": [
@@ -8449,6 +8853,16 @@
           },
           "fractional": {
             "type": "boolean"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderGroupRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "limitPrice": {
             "type": [
@@ -8548,6 +8962,7 @@
               "EXPIRED",
               "REPLACED",
               "REJECTED",
+              "PENDING_CANCEL",
               null
             ]
           },
@@ -8635,6 +9050,7 @@
               "CORPORATE_ACTION_HOLD",
               "BEYOND_COLLAR",
               "LIMIT_NOT_REACHED",
+              "AWAITING_PARENT",
               null
             ]
           },
@@ -8651,9 +9067,11 @@
           "accountId",
           "activatedAt",
           "avgFillPrice",
+          "cancelRequestedAt",
           "channel",
           "clientOrderId",
           "collarPrice",
+          "doNotReduce",
           "doneAt",
           "eligibleAt",
           "events",
@@ -8664,6 +9082,7 @@
           "filledPrincipal",
           "filledQty",
           "fractional",
+          "group",
           "limitPrice",
           "notional",
           "orderId",
@@ -8725,6 +9144,7 @@
               "EXPIRED",
               "REPLACED",
               "REJECTED",
+              "PENDING_CANCEL",
               null
             ]
           },
@@ -8749,6 +9169,10 @@
               "EXPIRED",
               "REPLACED",
               "HOLD_ADJUSTED",
+              "ACTIVATED",
+              "QTY_ADJUSTED",
+              "PRICE_ADJUSTED",
+              "CANCEL_REQUESTED",
               null
             ]
           }
@@ -8758,6 +9182,227 @@
           "detail",
           "seq",
           "statusAfter",
+          "type"
+        ]
+      },
+      "OrderGroup": {
+        "type": "object",
+        "properties": {
+          "clientOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "groupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "legs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Order"
+            }
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACTIVE",
+              "COMPLETED",
+              "CANCELLED",
+              "EXPIRED",
+              null
+            ]
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeInForce": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "GTC",
+              null
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "OCO",
+              "OTO",
+              "OTOCO",
+              "BRACKET",
+              null
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "clientOrderId",
+          "createdAt",
+          "groupId",
+          "legs",
+          "qty",
+          "status",
+          "symbol",
+          "timeInForce",
+          "type",
+          "updatedAt"
+        ]
+      },
+      "OrderGroupRef": {
+        "type": "object",
+        "properties": {
+          "groupId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "held": {
+            "type": "boolean"
+          },
+          "parentOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ENTRY",
+              "TAKE_PROFIT",
+              "STOP_LOSS",
+              "SECONDARY",
+              null
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "OCO",
+              "OTO",
+              "OTOCO",
+              "BRACKET",
+              null
+            ]
+          }
+        },
+        "required": [
+          "groupId",
+          "held",
+          "parentOrderId",
+          "role",
+          "type"
+        ]
+      },
+      "OrderGroupRule": {
+        "type": "object",
+        "properties": {
+          "entryTypes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "MARKET",
+                "LIMIT",
+                "STOP",
+                "STOP_LIMIT",
+                "TRAILING_STOP"
+              ]
+            }
+          },
+          "legs": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeInForce": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "DAY",
+                "GTC"
+              ]
+            }
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "OCO",
+              "OTO",
+              "OTOCO",
+              "BRACKET",
+              null
+            ]
+          }
+        },
+        "required": [
+          "entryTypes",
+          "legs",
+          "notes",
+          "timeInForce",
           "type"
         ]
       },
@@ -9037,6 +9682,198 @@
           "nextCursor"
         ]
       },
+      "PlaceOrderGroupRequest": {
+        "type": "object",
+        "properties": {
+          "acknowledge": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "clientOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "doNotReduce": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "entry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroupLegRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secondary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroupLegRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shareNote": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "BUY",
+              "SELL",
+              null
+            ]
+          },
+          "stopLoss": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroupLegRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "takeProfit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroupLegRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeInForce": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "GTC",
+              null
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "OCO",
+              "OTO",
+              "OTOCO",
+              "BRACKET",
+              null
+            ]
+          }
+        },
+        "required": [
+          "clientOrderId",
+          "qty",
+          "symbol",
+          "type"
+        ]
+      },
+      "PlaceOrderGroupResponse": {
+        "type": "object",
+        "properties": {
+          "buyingPowerAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "buyingPowerBefore": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Estimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderGroup"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            }
+          }
+        },
+        "required": [
+          "buyingPowerAfter",
+          "buyingPowerBefore",
+          "estimate",
+          "group",
+          "replayed",
+          "warnings"
+        ]
+      },
       "PlaceOrderRequest": {
         "type": "object",
         "properties": {
@@ -9053,6 +9890,12 @@
           "clientOrderId": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "doNotReduce": {
+            "type": [
+              "boolean",
               "null"
             ]
           },
@@ -10465,12 +11308,96 @@
           "source"
         ]
       },
+      "ReplaceOrderGroupRequest": {
+        "type": "object",
+        "properties": {
+          "clientOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroupLegChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secondary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroupLegChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stopLoss": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroupLegChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "takeProfit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroupLegChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeInForce": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "GTC",
+              null
+            ]
+          }
+        },
+        "required": [
+          "clientOrderId"
+        ]
+      },
       "ReplaceOrderRequest": {
         "type": "object",
         "properties": {
           "clientOrderId": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "doNotReduce": {
+            "type": [
+              "boolean",
               "null"
             ]
           },
@@ -11183,6 +12110,12 @@
       "RulesOrders": {
         "type": "object",
         "properties": {
+          "cancelLatency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "clientOrderIdPattern": {
             "type": [
               "string",
@@ -11195,6 +12128,12 @@
               "null"
             ],
             "format": "decimal"
+          },
+          "dividendAdjustment": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "fatFingerWarnPct": {
             "type": [
@@ -11212,6 +12151,15 @@
                 "type": "null"
               }
             ]
+          },
+          "groups": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/OrderGroupRule"
+            }
           },
           "gtcDays": {
             "type": "integer",
@@ -11269,10 +12217,13 @@
           }
         },
         "required": [
+          "cancelLatency",
           "clientOrderIdPattern",
           "collarPct",
+          "dividendAdjustment",
           "fatFingerWarnPct",
           "fractional",
+          "groups",
           "gtcDays",
           "holdPctQueued",
           "holdPctRegular",

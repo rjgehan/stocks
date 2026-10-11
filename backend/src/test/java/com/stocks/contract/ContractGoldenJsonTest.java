@@ -79,7 +79,7 @@ class ContractGoldenJsonTest {
           "eligibleAt": "2026-10-09T14:31:02.729Z", "activatedAt": null, "triggeredAt": null,
           "expiresAt": "2026-10-09T20:00:00.000Z", "doneAt": null, "replacesOrderId": null, "replacedByOrderId": null,
           "channel": "REST_KEY", "rationale": "Momentum after guidance raise; …",
-          "executions": null, "events": null },
+          "executions": null, "events": null, "group": null, "doNotReduce": false, "cancelRequestedAt": null },
         "estimate": { "price": "131.2000", "qty": "0.95274", "principal": "125.00",
           "fees": { "sec": "0.00", "taf": "0.00", "cat": "0.00", "total": "0.00" }, "hold": "125.00",
           "quoteAsOf": "2026-10-09T14:31:01.904Z", "quoteQuality": "REALTIME_SINGLE_VENUE" },
@@ -92,7 +92,7 @@ class ContractGoldenJsonTest {
         false, OrderStatus.PENDING, WaitReason.LATENCY, null, false, d("0"), d("0.00"), null, d("0.00"),
         d("125.00"), d("0"), LocalDate.of(2026, 10, 9), ts("2026-10-09T14:31:02.120Z"),
         ts("2026-10-09T14:31:02.126Z"), ts("2026-10-09T14:31:02.729Z"), null, null, ts("2026-10-09T20:00:00Z"),
-        null, null, null, Channel.REST_KEY, "Momentum after guidance raise; …", null, null);
+        null, null, null, Channel.REST_KEY, "Momentum after guidance raise; …", null, null, null, false, null);
     EstimateDto estimate = new EstimateDto(d("131.2000"), d("0.95274"), d("125.00"), FeesDto.zero(), d("125.00"),
         ts("2026-10-09T14:31:01.904Z"), DataQuality.REALTIME_SINGLE_VENUE);
     return new PlaceOrderResponse(order, estimate, d("500.00"), d("375.00"), List.of(), false);

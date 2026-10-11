@@ -5,6 +5,7 @@ import {
   defaultLimitPrice,
   defaultStopPrice,
   defaultTrail,
+  dividendAdjustable,
   gtcAllowed,
   initialTicket,
   midPrice,
@@ -70,6 +71,24 @@ describe('trade ticket rules (§22.5)', () => {
     s = ticketReducer(s, { type: 'shareNote', value: true })
     s = ticketReducer(s, { type: 'gfvAck', value: true })
     expect(buildOrderRequest(s, 'AAPL', ctx)).toMatchObject({ rationale: 'earnings beat', shareNote: true, acknowledge: ['GFV_RISK'] })
+  })
+
+  it("sends Don't reduce only for the orders a dividend reduces (FINRA 5330)", () => {
+    let s = initialTicket({ clientOrderId: 'web-1' })
+    s = ticketReducer(s, { type: 'field', field: 'qty', value: '2' })
+    s = ticketReducer(s, { type: 'field', field: 'limitPrice', value: '100.00' })
+    s = ticketReducer(s, { type: 'field', field: 'stopPrice', value: '95.00' })
+    expect(buildOrderRequest(s, 'AAPL', ctx)).not.toHaveProperty('doNotReduce')
+    s = ticketReducer(s, { type: 'doNotReduce', value: true })
+    expect(dividendAdjustable(s)).toBe(true)
+    expect(buildOrderRequest(s, 'AAPL', ctx)).toMatchObject({ type: 'LIMIT', side: 'BUY', doNotReduce: true })
+    // a SELL LIMIT and a BUY STOP are never reduced, so the flag is left out
+    expect(buildOrderRequest(ticketReducer(s, { type: 'side', side: 'SELL' }), 'AAPL', { fractionable: true, availableQty: '5' })).not.toHaveProperty('doNotReduce')
+    expect(buildOrderRequest(ticketReducer(s, { type: 'orderType', orderType: 'STOP' }), 'AAPL', ctx)).not.toHaveProperty('doNotReduce')
+    // SELL STOP and STOP_LIMIT are
+    const sellStop = ticketReducer(ticketReducer(s, { type: 'side', side: 'SELL' }), { type: 'orderType', orderType: 'STOP_LIMIT' })
+    expect(buildOrderRequest(sellStop, 'AAPL', { fractionable: true, availableQty: '5' })).toMatchObject({ doNotReduce: true })
+    expect(dividendAdjustable(ticketReducer(s, { type: 'qtyMode', mode: 'AMOUNT' }))).toBe(false)
   })
 
   it('sizes the quick chips without floating point', () => {

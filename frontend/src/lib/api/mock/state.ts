@@ -4,6 +4,7 @@
  * Prices are not persisted: the fake market restarts its random walks on every load.
  */
 import type { Dec } from '../../format/decimal'
+import type { StoredGroup } from './groups'
 import type {
   Activity,
   ApiKeyInfo,
@@ -106,6 +107,8 @@ export interface MockState {
   liveFeed: FeedItem[]
   /** epoch ms of the last password confirmation (`@RecentAuth`, 15 min) */
   reauthAt: number
+  /** Phase 2 group orders (§11.9; optional: states saved by older mock builds lack it) */
+  orderGroups?: StoredGroup[]
   seq: number
 }
 

@@ -286,6 +286,14 @@
     "$defs" : {
       "Map_String.Object_" : {
         "type" : "object"
+      },
+      "OrderType" : {
+        "type" : "string",
+        "enum" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP" ]
+      },
+      "TimeInForce" : {
+        "type" : "string",
+        "enum" : [ "DAY", "GTC" ]
       }
     },
     "type" : "object",
@@ -465,12 +473,18 @@
       "orders" : {
         "type" : [ "object", "null" ],
         "properties" : {
+          "cancelLatency" : {
+            "type" : [ "string", "null" ]
+          },
           "clientOrderIdPattern" : {
             "type" : [ "string", "null" ]
           },
           "collarPct" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
+          },
+          "dividendAdjustment" : {
+            "type" : [ "string", "null" ]
           },
           "fatFingerWarnPct" : {
             "type" : [ "string", "null" ],
@@ -506,6 +520,37 @@
             },
             "required" : [ "minBuyNotional", "minSellNotional", "minQty", "marketOnly", "dayOnly", "rthOnly", "replaceable" ]
           },
+          "groups" : {
+            "type" : [ "array", "null" ],
+            "items" : {
+              "type" : "object",
+              "properties" : {
+                "entryTypes" : {
+                  "type" : [ "array", "null" ],
+                  "items" : {
+                    "$ref" : "#/$defs/OrderType"
+                  }
+                },
+                "legs" : {
+                  "type" : [ "string", "null" ]
+                },
+                "notes" : {
+                  "type" : [ "string", "null" ]
+                },
+                "timeInForce" : {
+                  "type" : [ "array", "null" ],
+                  "items" : {
+                    "$ref" : "#/$defs/TimeInForce"
+                  }
+                },
+                "type" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET", null ]
+                }
+              },
+              "required" : [ "type", "legs", "entryTypes", "timeInForce", "notes" ]
+            }
+          },
           "gtcDays" : {
             "type" : "integer",
             "format" : "int32"
@@ -538,13 +583,15 @@
                 "timeInForce" : {
                   "type" : [ "array", "null" ],
                   "items" : {
-                    "type" : "string",
-                    "enum" : [ "DAY", "GTC" ]
+                    "$ref" : "#/$defs/TimeInForce"
                   }
                 },
                 "type" : {
-                  "type" : [ "string", "null" ],
-                  "enum" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP", null ]
+                  "anyOf" : [ {
+                    "$ref" : "#/$defs/OrderType"
+                  }, {
+                    "type" : "null"
+                  } ]
                 }
               },
               "required" : [ "type", "sessions", "timeInForce", "qtyForms", "notes" ]
@@ -569,7 +616,7 @@
             "type" : [ "string", "null" ]
           }
         },
-        "required" : [ "matrix", "gtcDays", "maxOpenOrders", "maxQty", "tick", "collarPct", "holdPctRegular", "holdPctQueued", "fatFingerWarnPct", "priceTooFarPct", "clientOrderIdPattern", "rationaleRequiredForAi", "fractional" ]
+        "required" : [ "matrix", "gtcDays", "maxOpenOrders", "maxQty", "tick", "collarPct", "holdPctRegular", "holdPctQueued", "fatFingerWarnPct", "priceTooFarPct", "clientOrderIdPattern", "rationaleRequiredForAi", "fractional", "groups", "cancelLatency", "dividendAdjustment" ]
       },
       "rateLimits" : {
         "anyOf" : [ {
@@ -1970,7 +2017,7 @@
     "$defs" : {
       "OrderStatus" : {
         "type" : "string",
-        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED" ]
+        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED", "PENDING_CANCEL" ]
       },
       "Side" : {
         "type" : "string",
@@ -1999,6 +2046,10 @@
               "type" : [ "string", "null" ],
               "format" : "decimal"
             },
+            "cancelRequestedAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
             "channel" : {
               "type" : [ "string", "null" ],
               "enum" : [ "WEB", "REST_KEY", "MCP_KEY", "MCP_OAUTH", "SYSTEM", "ADMIN", null ]
@@ -2009,6 +2060,9 @@
             "collarPrice" : {
               "type" : [ "string", "null" ],
               "format" : "decimal"
+            },
+            "doNotReduce" : {
+              "type" : "boolean"
             },
             "doneAt" : {
               "type" : [ "string", "null" ],
@@ -2043,7 +2097,7 @@
                   },
                   "type" : {
                     "type" : [ "string", "null" ],
-                    "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", null ]
+                    "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", "ACTIVATED", "QTY_ADJUSTED", "PRICE_ADJUSTED", "CANCEL_REQUESTED", null ]
                   }
                 },
                 "required" : [ "seq", "type", "statusAfter", "at", "detail" ]
@@ -2198,6 +2252,29 @@
             "fractional" : {
               "type" : "boolean"
             },
+            "group" : {
+              "type" : [ "object", "null" ],
+              "properties" : {
+                "groupId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "held" : {
+                  "type" : "boolean"
+                },
+                "parentOrderId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "role" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "ENTRY", "TAKE_PROFIT", "STOP_LOSS", "SECONDARY", null ]
+                },
+                "type" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET", null ]
+                }
+              },
+              "required" : [ "groupId", "type", "role", "parentOrderId", "held" ]
+            },
             "limitPrice" : {
               "type" : [ "string", "null" ],
               "format" : "decimal"
@@ -2287,14 +2364,14 @@
             },
             "waitReason" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", null ]
+              "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", "AWAITING_PARENT", null ]
             },
             "watermarkPrice" : {
               "type" : [ "string", "null" ],
               "format" : "decimal"
             }
           },
-          "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events" ]
+          "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events", "group", "doNotReduce", "cancelRequestedAt" ]
         }
       },
       "nextCursor" : {
@@ -2334,7 +2411,7 @@
     "$defs" : {
       "OrderStatus" : {
         "type" : "string",
-        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED" ]
+        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED", "PENDING_CANCEL" ]
       },
       "Side" : {
         "type" : "string",
@@ -2358,6 +2435,10 @@
         "type" : [ "string", "null" ],
         "format" : "decimal"
       },
+      "cancelRequestedAt" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
       "channel" : {
         "type" : [ "string", "null" ],
         "enum" : [ "WEB", "REST_KEY", "MCP_KEY", "MCP_OAUTH", "SYSTEM", "ADMIN", null ]
@@ -2368,6 +2449,9 @@
       "collarPrice" : {
         "type" : [ "string", "null" ],
         "format" : "decimal"
+      },
+      "doNotReduce" : {
+        "type" : "boolean"
       },
       "doneAt" : {
         "type" : [ "string", "null" ],
@@ -2402,7 +2486,7 @@
             },
             "type" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", null ]
+              "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", "ACTIVATED", "QTY_ADJUSTED", "PRICE_ADJUSTED", "CANCEL_REQUESTED", null ]
             }
           },
           "required" : [ "seq", "type", "statusAfter", "at", "detail" ]
@@ -2557,6 +2641,29 @@
       "fractional" : {
         "type" : "boolean"
       },
+      "group" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "groupId" : {
+            "type" : [ "string", "null" ]
+          },
+          "held" : {
+            "type" : "boolean"
+          },
+          "parentOrderId" : {
+            "type" : [ "string", "null" ]
+          },
+          "role" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "ENTRY", "TAKE_PROFIT", "STOP_LOSS", "SECONDARY", null ]
+          },
+          "type" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET", null ]
+          }
+        },
+        "required" : [ "groupId", "type", "role", "parentOrderId", "held" ]
+      },
       "limitPrice" : {
         "type" : [ "string", "null" ],
         "format" : "decimal"
@@ -2646,14 +2753,14 @@
       },
       "waitReason" : {
         "type" : [ "string", "null" ],
-        "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", null ]
+        "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", "AWAITING_PARENT", null ]
       },
       "watermarkPrice" : {
         "type" : [ "string", "null" ],
         "format" : "decimal"
       }
     },
-    "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events" ]
+    "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events", "group", "doNotReduce", "cancelRequestedAt" ]
   }
 }, {
   "name" : "get_executions",
@@ -3407,6 +3514,10 @@
           "type" : "string"
         },
         "description" : "Warnings you accept; [\"GFV_RISK\"] to sell despite a good-faith-violation risk"
+      },
+      "do_not_reduce" : {
+        "type" : "boolean",
+        "description" : "Keep your limit and stop prices on ex-dividend dates (FINRA 5330 \"do not reduce\"); default false: a BUY LIMIT or SELL STOP is reduced by the dividend"
       }
     },
     "required" : [ "symbol", "side", "type" ]
@@ -4444,6 +4555,10 @@
           "type" : "string"
         },
         "description" : "Warnings you accept; [\"GFV_RISK\"] to sell despite a good-faith-violation risk"
+      },
+      "do_not_reduce" : {
+        "type" : "boolean",
+        "description" : "Keep your limit and stop prices on ex-dividend dates (FINRA 5330 \"do not reduce\"); default false: a BUY LIMIT or SELL STOP is reduced by the dividend"
       }
     },
     "required" : [ "client_order_id", "symbol", "side", "type" ]
@@ -4479,7 +4594,7 @@
       },
       "OrderStatus" : {
         "type" : "string",
-        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED" ]
+        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED", "PENDING_CANCEL" ]
       },
       "Side" : {
         "type" : "string",
@@ -4554,6 +4669,10 @@
             "type" : [ "string", "null" ],
             "format" : "decimal"
           },
+          "cancelRequestedAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
           "channel" : {
             "type" : [ "string", "null" ],
             "enum" : [ "WEB", "REST_KEY", "MCP_KEY", "MCP_OAUTH", "SYSTEM", "ADMIN", null ]
@@ -4564,6 +4683,9 @@
           "collarPrice" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
+          },
+          "doNotReduce" : {
+            "type" : "boolean"
           },
           "doneAt" : {
             "type" : [ "string", "null" ],
@@ -4598,7 +4720,7 @@
                 },
                 "type" : {
                   "type" : [ "string", "null" ],
-                  "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", null ]
+                  "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", "ACTIVATED", "QTY_ADJUSTED", "PRICE_ADJUSTED", "CANCEL_REQUESTED", null ]
                 }
               },
               "required" : [ "seq", "type", "statusAfter", "at", "detail" ]
@@ -4741,6 +4863,29 @@
           "fractional" : {
             "type" : "boolean"
           },
+          "group" : {
+            "type" : [ "object", "null" ],
+            "properties" : {
+              "groupId" : {
+                "type" : [ "string", "null" ]
+              },
+              "held" : {
+                "type" : "boolean"
+              },
+              "parentOrderId" : {
+                "type" : [ "string", "null" ]
+              },
+              "role" : {
+                "type" : [ "string", "null" ],
+                "enum" : [ "ENTRY", "TAKE_PROFIT", "STOP_LOSS", "SECONDARY", null ]
+              },
+              "type" : {
+                "type" : [ "string", "null" ],
+                "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET", null ]
+              }
+            },
+            "required" : [ "groupId", "type", "role", "parentOrderId", "held" ]
+          },
           "limitPrice" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
@@ -4830,14 +4975,14 @@
           },
           "waitReason" : {
             "type" : [ "string", "null" ],
-            "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", null ]
+            "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", "AWAITING_PARENT", null ]
           },
           "watermarkPrice" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
           }
         },
-        "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events" ]
+        "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events", "group", "doNotReduce", "cancelRequestedAt" ]
       },
       "replayed" : {
         "type" : "boolean"
@@ -4915,6 +5060,10 @@
       "rationale" : {
         "type" : "string",
         "description" : "Why you are trading (1-1000 characters). Required for AI players; it becomes public with the delayed trade."
+      },
+      "do_not_reduce" : {
+        "type" : "boolean",
+        "description" : "Keep your limit and stop prices on ex-dividend dates (FINRA 5330 \"do not reduce\"); default false: a BUY LIMIT or SELL STOP is reduced by the dividend"
       }
     },
     "required" : [ "order_id", "client_order_id" ]
@@ -4950,7 +5099,7 @@
       },
       "OrderStatus" : {
         "type" : "string",
-        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED" ]
+        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED", "PENDING_CANCEL" ]
       },
       "Side" : {
         "type" : "string",
@@ -5025,6 +5174,10 @@
             "type" : [ "string", "null" ],
             "format" : "decimal"
           },
+          "cancelRequestedAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
           "channel" : {
             "type" : [ "string", "null" ],
             "enum" : [ "WEB", "REST_KEY", "MCP_KEY", "MCP_OAUTH", "SYSTEM", "ADMIN", null ]
@@ -5035,6 +5188,9 @@
           "collarPrice" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
+          },
+          "doNotReduce" : {
+            "type" : "boolean"
           },
           "doneAt" : {
             "type" : [ "string", "null" ],
@@ -5069,7 +5225,7 @@
                 },
                 "type" : {
                   "type" : [ "string", "null" ],
-                  "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", null ]
+                  "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", "ACTIVATED", "QTY_ADJUSTED", "PRICE_ADJUSTED", "CANCEL_REQUESTED", null ]
                 }
               },
               "required" : [ "seq", "type", "statusAfter", "at", "detail" ]
@@ -5212,6 +5368,29 @@
           "fractional" : {
             "type" : "boolean"
           },
+          "group" : {
+            "type" : [ "object", "null" ],
+            "properties" : {
+              "groupId" : {
+                "type" : [ "string", "null" ]
+              },
+              "held" : {
+                "type" : "boolean"
+              },
+              "parentOrderId" : {
+                "type" : [ "string", "null" ]
+              },
+              "role" : {
+                "type" : [ "string", "null" ],
+                "enum" : [ "ENTRY", "TAKE_PROFIT", "STOP_LOSS", "SECONDARY", null ]
+              },
+              "type" : {
+                "type" : [ "string", "null" ],
+                "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET", null ]
+              }
+            },
+            "required" : [ "groupId", "type", "role", "parentOrderId", "held" ]
+          },
           "limitPrice" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
@@ -5301,14 +5480,14 @@
           },
           "waitReason" : {
             "type" : [ "string", "null" ],
-            "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", null ]
+            "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", "AWAITING_PARENT", null ]
           },
           "watermarkPrice" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
           }
         },
-        "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events" ]
+        "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events", "group", "doNotReduce", "cancelRequestedAt" ]
       },
       "replayed" : {
         "type" : "boolean"
@@ -5358,7 +5537,7 @@
     "$defs" : {
       "OrderStatus" : {
         "type" : "string",
-        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED" ]
+        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED", "PENDING_CANCEL" ]
       },
       "Side" : {
         "type" : "string",
@@ -5382,6 +5561,10 @@
         "type" : [ "string", "null" ],
         "format" : "decimal"
       },
+      "cancelRequestedAt" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
       "channel" : {
         "type" : [ "string", "null" ],
         "enum" : [ "WEB", "REST_KEY", "MCP_KEY", "MCP_OAUTH", "SYSTEM", "ADMIN", null ]
@@ -5392,6 +5575,9 @@
       "collarPrice" : {
         "type" : [ "string", "null" ],
         "format" : "decimal"
+      },
+      "doNotReduce" : {
+        "type" : "boolean"
       },
       "doneAt" : {
         "type" : [ "string", "null" ],
@@ -5426,7 +5612,7 @@
             },
             "type" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", null ]
+              "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", "ACTIVATED", "QTY_ADJUSTED", "PRICE_ADJUSTED", "CANCEL_REQUESTED", null ]
             }
           },
           "required" : [ "seq", "type", "statusAfter", "at", "detail" ]
@@ -5581,6 +5767,29 @@
       "fractional" : {
         "type" : "boolean"
       },
+      "group" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "groupId" : {
+            "type" : [ "string", "null" ]
+          },
+          "held" : {
+            "type" : "boolean"
+          },
+          "parentOrderId" : {
+            "type" : [ "string", "null" ]
+          },
+          "role" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "ENTRY", "TAKE_PROFIT", "STOP_LOSS", "SECONDARY", null ]
+          },
+          "type" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET", null ]
+          }
+        },
+        "required" : [ "groupId", "type", "role", "parentOrderId", "held" ]
+      },
       "limitPrice" : {
         "type" : [ "string", "null" ],
         "format" : "decimal"
@@ -5670,14 +5879,14 @@
       },
       "waitReason" : {
         "type" : [ "string", "null" ],
-        "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", null ]
+        "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", "AWAITING_PARENT", null ]
       },
       "watermarkPrice" : {
         "type" : [ "string", "null" ],
         "format" : "decimal"
       }
     },
-    "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events" ]
+    "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events", "group", "doNotReduce", "cancelRequestedAt" ]
   }
 }, {
   "name" : "cancel_all_orders",
@@ -5706,7 +5915,7 @@
     "$defs" : {
       "OrderStatus" : {
         "type" : "string",
-        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED" ]
+        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED", "PENDING_CANCEL" ]
       },
       "Side" : {
         "type" : "string",
@@ -5735,6 +5944,10 @@
               "type" : [ "string", "null" ],
               "format" : "decimal"
             },
+            "cancelRequestedAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
             "channel" : {
               "type" : [ "string", "null" ],
               "enum" : [ "WEB", "REST_KEY", "MCP_KEY", "MCP_OAUTH", "SYSTEM", "ADMIN", null ]
@@ -5745,6 +5958,9 @@
             "collarPrice" : {
               "type" : [ "string", "null" ],
               "format" : "decimal"
+            },
+            "doNotReduce" : {
+              "type" : "boolean"
             },
             "doneAt" : {
               "type" : [ "string", "null" ],
@@ -5779,7 +5995,7 @@
                   },
                   "type" : {
                     "type" : [ "string", "null" ],
-                    "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", null ]
+                    "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", "ACTIVATED", "QTY_ADJUSTED", "PRICE_ADJUSTED", "CANCEL_REQUESTED", null ]
                   }
                 },
                 "required" : [ "seq", "type", "statusAfter", "at", "detail" ]
@@ -5934,6 +6150,29 @@
             "fractional" : {
               "type" : "boolean"
             },
+            "group" : {
+              "type" : [ "object", "null" ],
+              "properties" : {
+                "groupId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "held" : {
+                  "type" : "boolean"
+                },
+                "parentOrderId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "role" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "ENTRY", "TAKE_PROFIT", "STOP_LOSS", "SECONDARY", null ]
+                },
+                "type" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET", null ]
+                }
+              },
+              "required" : [ "groupId", "type", "role", "parentOrderId", "held" ]
+            },
             "limitPrice" : {
               "type" : [ "string", "null" ],
               "format" : "decimal"
@@ -6023,14 +6262,14 @@
             },
             "waitReason" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", null ]
+              "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", "AWAITING_PARENT", null ]
             },
             "watermarkPrice" : {
               "type" : [ "string", "null" ],
               "format" : "decimal"
             }
           },
-          "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events" ]
+          "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events", "group", "doNotReduce", "cancelRequestedAt" ]
         }
       }
     },
@@ -6097,7 +6336,7 @@
       },
       "OrderStatus" : {
         "type" : "string",
-        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED" ]
+        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED", "PENDING_CANCEL" ]
       },
       "Side" : {
         "type" : "string",
@@ -6172,6 +6411,10 @@
             "type" : [ "string", "null" ],
             "format" : "decimal"
           },
+          "cancelRequestedAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
           "channel" : {
             "type" : [ "string", "null" ],
             "enum" : [ "WEB", "REST_KEY", "MCP_KEY", "MCP_OAUTH", "SYSTEM", "ADMIN", null ]
@@ -6182,6 +6425,9 @@
           "collarPrice" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
+          },
+          "doNotReduce" : {
+            "type" : "boolean"
           },
           "doneAt" : {
             "type" : [ "string", "null" ],
@@ -6216,7 +6462,7 @@
                 },
                 "type" : {
                   "type" : [ "string", "null" ],
-                  "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", null ]
+                  "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", "ACTIVATED", "QTY_ADJUSTED", "PRICE_ADJUSTED", "CANCEL_REQUESTED", null ]
                 }
               },
               "required" : [ "seq", "type", "statusAfter", "at", "detail" ]
@@ -6359,6 +6605,29 @@
           "fractional" : {
             "type" : "boolean"
           },
+          "group" : {
+            "type" : [ "object", "null" ],
+            "properties" : {
+              "groupId" : {
+                "type" : [ "string", "null" ]
+              },
+              "held" : {
+                "type" : "boolean"
+              },
+              "parentOrderId" : {
+                "type" : [ "string", "null" ]
+              },
+              "role" : {
+                "type" : [ "string", "null" ],
+                "enum" : [ "ENTRY", "TAKE_PROFIT", "STOP_LOSS", "SECONDARY", null ]
+              },
+              "type" : {
+                "type" : [ "string", "null" ],
+                "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET", null ]
+              }
+            },
+            "required" : [ "groupId", "type", "role", "parentOrderId", "held" ]
+          },
           "limitPrice" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
@@ -6448,14 +6717,14 @@
           },
           "waitReason" : {
             "type" : [ "string", "null" ],
-            "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", null ]
+            "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", "AWAITING_PARENT", null ]
           },
           "watermarkPrice" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
           }
         },
-        "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events" ]
+        "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events", "group", "doNotReduce", "cancelRequestedAt" ]
       },
       "replayed" : {
         "type" : "boolean"
@@ -6608,5 +6877,1723 @@
       }
     },
     "required" : [ "marked" ]
+  }
+}, {
+  "name" : "preview_order_group",
+  "title" : "Preview a group order",
+  "description" : "Checks a BRACKET, OCO, OTO or OTOCO order without placing it (always succeeds as a call): valid, the first rule it breaks (code, the field named after the leg such as stopLoss.stopPrice, and a hint), warnings, each leg's estimate, and buying power before and after. Same inputs as place_order_group; client_order_id and rationale are optional here.",
+  "annotations" : {
+    "title" : "Preview a group order",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "client_order_id" : {
+        "type" : "string",
+        "description" : "Optional here; the id you would place it with"
+      },
+      "group_type" : {
+        "type" : "string",
+        "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET" ],
+        "description" : "BRACKET (entry + take profit + stop loss with price rules), OCO (take profit + stop loss, one cancels the other), OTO (entry + secondary) or OTOCO (entry + take profit + stop loss)"
+      },
+      "symbol" : {
+        "type" : "string",
+        "description" : "Ticker, e.g. AAPL"
+      },
+      "side" : {
+        "type" : "string",
+        "enum" : [ "BUY", "SELL" ],
+        "description" : "OCO: SELL (default) or BUY for both legs. Other types: the entry side, BUY (default; the children sell)"
+      },
+      "qty" : {
+        "type" : [ "string", "number" ],
+        "description" : "Whole shares as a decimal string, e.g. \"10\", for every leg"
+      },
+      "time_in_force" : {
+        "type" : "string",
+        "enum" : [ "DAY", "GTC" ],
+        "description" : "DAY (default) or GTC (60 days) for every leg; a MARKET entry is always DAY"
+      },
+      "entry_type" : {
+        "type" : "string",
+        "enum" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP" ],
+        "description" : "BRACKET: MARKET or LIMIT; OTO and OTOCO: MARKET, LIMIT, STOP or STOP_LIMIT (not for OCO)"
+      },
+      "entry_limit_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "The entry's limit price (LIMIT, STOP_LIMIT), on tick"
+      },
+      "entry_stop_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "The entry's stop price (STOP, STOP_LIMIT; a buy stop above the market)"
+      },
+      "take_profit_limit_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "Take profit limit price (BRACKET, OTOCO, OCO), on tick"
+      },
+      "stop_loss_stop_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "Stop loss stop (trigger) price (BRACKET, OTOCO, OCO), on tick"
+      },
+      "stop_loss_limit_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "Optional: makes the stop loss a STOP_LIMIT with this limit price"
+      },
+      "secondary_type" : {
+        "type" : "string",
+        "enum" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP" ],
+        "description" : "OTO only: the secondary's type, LIMIT, STOP or STOP_LIMIT"
+      },
+      "secondary_limit_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "OTO only: the secondary's limit price (LIMIT, STOP_LIMIT)"
+      },
+      "secondary_stop_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "OTO only: the secondary's stop price (STOP, STOP_LIMIT)"
+      },
+      "rationale" : {
+        "type" : "string",
+        "description" : "Optional here"
+      },
+      "share_note" : {
+        "type" : "boolean",
+        "description" : "Humans only: publish your rationale with the delayed trades"
+      },
+      "do_not_reduce" : {
+        "type" : "boolean",
+        "description" : "Keep your limit and stop prices on ex-dividend dates (FINRA 5330 \"do not reduce\"); default false"
+      },
+      "acknowledge" : {
+        "type" : "array",
+        "items" : {
+          "type" : "string"
+        },
+        "description" : "Warnings you accept; [\"GFV_RISK\"] to sell despite a good-faith-violation risk"
+      }
+    },
+    "required" : [ "group_type", "symbol", "qty" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "buyingPowerAfter" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "buyingPowerBefore" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "errors" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "code" : {
+              "type" : [ "string", "null" ]
+            },
+            "field" : {
+              "type" : [ "string", "null" ]
+            },
+            "hint" : {
+              "type" : [ "string", "null" ]
+            },
+            "message" : {
+              "type" : [ "string", "null" ]
+            }
+          },
+          "required" : [ "code", "field", "message", "hint" ]
+        }
+      },
+      "legs" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "estimate" : {
+              "type" : [ "object", "null" ],
+              "properties" : {
+                "fees" : {
+                  "type" : [ "object", "null" ],
+                  "properties" : {
+                    "cat" : {
+                      "type" : [ "string", "null" ],
+                      "format" : "decimal"
+                    },
+                    "sec" : {
+                      "type" : [ "string", "null" ],
+                      "format" : "decimal"
+                    },
+                    "taf" : {
+                      "type" : [ "string", "null" ],
+                      "format" : "decimal"
+                    },
+                    "total" : {
+                      "type" : [ "string", "null" ],
+                      "format" : "decimal"
+                    }
+                  },
+                  "required" : [ "sec", "taf", "cat", "total" ]
+                },
+                "hold" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "price" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "principal" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "qty" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "quoteAsOf" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "date-time"
+                },
+                "quoteQuality" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+                }
+              },
+              "required" : [ "price", "qty", "principal", "fees", "hold", "quoteAsOf", "quoteQuality" ]
+            },
+            "role" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "ENTRY", "TAKE_PROFIT", "STOP_LOSS", "SECONDARY", null ]
+            },
+            "side" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "BUY", "SELL", null ]
+            },
+            "type" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP", null ]
+            }
+          },
+          "required" : [ "role", "type", "side", "estimate" ]
+        }
+      },
+      "sessionNote" : {
+        "type" : [ "string", "null" ]
+      },
+      "valid" : {
+        "type" : "boolean"
+      },
+      "warnings" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "code" : {
+              "type" : [ "string", "null" ]
+            },
+            "message" : {
+              "type" : [ "string", "null" ]
+            }
+          },
+          "required" : [ "code", "message" ]
+        }
+      }
+    },
+    "required" : [ "valid", "errors", "warnings", "legs", "buyingPowerBefore", "buyingPowerAfter", "sessionNote" ]
+  }
+}, {
+  "name" : "place_order_group",
+  "title" : "Place a group order",
+  "description" : "Places Webull-style advanced orders, every leg or nothing. BRACKET: entry_type MARKET or LIMIT (BUY) + take_profit_limit_price + stop_loss_stop_price (add stop_loss_limit_price for a stop-limit); the take profit and stop loss wait until the entry fills, then work for the shares it bought, and the first of them to execute cancels the other; take profit > entry price > stop loss, at least 0.1% of the entry price apart. OTOCO: the same with a STOP or STOP_LIMIT entry allowed and no price-distance rule. OTO: an entry + one secondary (secondary_type LIMIT, STOP or STOP_LIMIT, SELL) that waits for the entry. OCO: take_profit_limit_price (LIMIT) + stop_loss_stop_price (STOP) on side SELL (default; protect shares you hold, reserved once) or BUY. qty is whole shares for every leg; time_in_force DAY (default) or GTC for every leg. Required: a unique client_order_id, and a rationale for AI players. Returns the group with its legs (each an ordinary order: get_order, cancel_order and replace_order work on a leg), the estimate, buying power and warnings, and replayed=true when this client_order_id was already used.",
+  "annotations" : {
+    "title" : "Place a group order",
+    "readOnlyHint" : false,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "client_order_id" : {
+        "type" : "string",
+        "description" : "Unique id you choose for this group, e.g. claude-20261009-0008"
+      },
+      "group_type" : {
+        "type" : "string",
+        "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET" ],
+        "description" : "BRACKET (entry + take profit + stop loss with price rules), OCO (take profit + stop loss, one cancels the other), OTO (entry + secondary) or OTOCO (entry + take profit + stop loss)"
+      },
+      "symbol" : {
+        "type" : "string",
+        "description" : "Ticker, e.g. AAPL"
+      },
+      "side" : {
+        "type" : "string",
+        "enum" : [ "BUY", "SELL" ],
+        "description" : "OCO: SELL (default) or BUY for both legs. Other types: the entry side, BUY (default; the children sell)"
+      },
+      "qty" : {
+        "type" : [ "string", "number" ],
+        "description" : "Whole shares as a decimal string, e.g. \"10\", for every leg"
+      },
+      "time_in_force" : {
+        "type" : "string",
+        "enum" : [ "DAY", "GTC" ],
+        "description" : "DAY (default) or GTC (60 days) for every leg; a MARKET entry is always DAY"
+      },
+      "entry_type" : {
+        "type" : "string",
+        "enum" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP" ],
+        "description" : "BRACKET: MARKET or LIMIT; OTO and OTOCO: MARKET, LIMIT, STOP or STOP_LIMIT (not for OCO)"
+      },
+      "entry_limit_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "The entry's limit price (LIMIT, STOP_LIMIT), on tick"
+      },
+      "entry_stop_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "The entry's stop price (STOP, STOP_LIMIT; a buy stop above the market)"
+      },
+      "take_profit_limit_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "Take profit limit price (BRACKET, OTOCO, OCO), on tick"
+      },
+      "stop_loss_stop_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "Stop loss stop (trigger) price (BRACKET, OTOCO, OCO), on tick"
+      },
+      "stop_loss_limit_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "Optional: makes the stop loss a STOP_LIMIT with this limit price"
+      },
+      "secondary_type" : {
+        "type" : "string",
+        "enum" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP" ],
+        "description" : "OTO only: the secondary's type, LIMIT, STOP or STOP_LIMIT"
+      },
+      "secondary_limit_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "OTO only: the secondary's limit price (LIMIT, STOP_LIMIT)"
+      },
+      "secondary_stop_price" : {
+        "type" : [ "string", "number" ],
+        "description" : "OTO only: the secondary's stop price (STOP, STOP_LIMIT)"
+      },
+      "rationale" : {
+        "type" : "string",
+        "description" : "Why you are trading (1-1000 characters), one for the whole group. Required for AI players; it becomes public with the delayed trades."
+      },
+      "share_note" : {
+        "type" : "boolean",
+        "description" : "Humans only: publish your rationale with the delayed trades"
+      },
+      "do_not_reduce" : {
+        "type" : "boolean",
+        "description" : "Keep your limit and stop prices on ex-dividend dates (FINRA 5330 \"do not reduce\"); default false"
+      },
+      "acknowledge" : {
+        "type" : "array",
+        "items" : {
+          "type" : "string"
+        },
+        "description" : "Warnings you accept; [\"GFV_RISK\"] to sell despite a good-faith-violation risk"
+      }
+    },
+    "required" : [ "client_order_id", "group_type", "symbol", "qty" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "$defs" : {
+      "DataQuality" : {
+        "type" : "string",
+        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE" ]
+      },
+      "FeesDto" : {
+        "type" : "object",
+        "properties" : {
+          "cat" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "sec" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "taf" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "total" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          }
+        },
+        "required" : [ "sec", "taf", "cat", "total" ]
+      },
+      "OrderGroupType" : {
+        "type" : "string",
+        "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET" ]
+      },
+      "OrderStatus" : {
+        "type" : "string",
+        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED", "PENDING_CANCEL" ]
+      },
+      "Side" : {
+        "type" : "string",
+        "enum" : [ "BUY", "SELL" ]
+      },
+      "TimeInForce" : {
+        "type" : "string",
+        "enum" : [ "DAY", "GTC" ]
+      }
+    },
+    "type" : "object",
+    "properties" : {
+      "buyingPowerAfter" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "buyingPowerBefore" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "estimate" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "fees" : {
+            "anyOf" : [ {
+              "$ref" : "#/$defs/FeesDto"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "hold" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "price" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "principal" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "qty" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "quoteAsOf" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "quoteQuality" : {
+            "anyOf" : [ {
+              "$ref" : "#/$defs/DataQuality"
+            }, {
+              "type" : "null"
+            } ]
+          }
+        },
+        "required" : [ "price", "qty", "principal", "fees", "hold", "quoteAsOf", "quoteQuality" ]
+      },
+      "group" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "clientOrderId" : {
+            "type" : [ "string", "null" ]
+          },
+          "createdAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "groupId" : {
+            "type" : [ "string", "null" ]
+          },
+          "legs" : {
+            "type" : [ "array", "null" ],
+            "items" : {
+              "type" : "object",
+              "properties" : {
+                "acceptedAt" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "date-time"
+                },
+                "accountId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "activatedAt" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "date-time"
+                },
+                "avgFillPrice" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "cancelRequestedAt" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "date-time"
+                },
+                "channel" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "WEB", "REST_KEY", "MCP_KEY", "MCP_OAUTH", "SYSTEM", "ADMIN", null ]
+                },
+                "clientOrderId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "collarPrice" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "doNotReduce" : {
+                  "type" : "boolean"
+                },
+                "doneAt" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "date-time"
+                },
+                "eligibleAt" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "date-time"
+                },
+                "events" : {
+                  "type" : [ "array", "null" ],
+                  "items" : {
+                    "type" : "object",
+                    "properties" : {
+                      "at" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "date-time"
+                      },
+                      "detail" : {
+                        "type" : [ "object", "null" ]
+                      },
+                      "seq" : {
+                        "type" : "integer",
+                        "format" : "int32"
+                      },
+                      "statusAfter" : {
+                        "anyOf" : [ {
+                          "$ref" : "#/$defs/OrderStatus"
+                        }, {
+                          "type" : "null"
+                        } ]
+                      },
+                      "type" : {
+                        "type" : [ "string", "null" ],
+                        "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", "ACTIVATED", "QTY_ADJUSTED", "PRICE_ADJUSTED", "CANCEL_REQUESTED", null ]
+                      }
+                    },
+                    "required" : [ "seq", "type", "statusAfter", "at", "detail" ]
+                  }
+                },
+                "executions" : {
+                  "type" : [ "array", "null" ],
+                  "items" : {
+                    "type" : "object",
+                    "properties" : {
+                      "executedAt" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "date-time"
+                      },
+                      "executionId" : {
+                        "type" : [ "string", "null" ]
+                      },
+                      "fees" : {
+                        "anyOf" : [ {
+                          "$ref" : "#/$defs/FeesDto"
+                        }, {
+                          "type" : "null"
+                        } ]
+                      },
+                      "liquidity" : {
+                        "type" : [ "string", "null" ],
+                        "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+                      },
+                      "netAmount" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "orderId" : {
+                        "type" : [ "string", "null" ]
+                      },
+                      "price" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "principal" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "qty" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "realizedPnl" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "refQuote" : {
+                        "type" : [ "object", "null" ],
+                        "properties" : {
+                          "ask" : {
+                            "type" : [ "string", "null" ],
+                            "format" : "decimal"
+                          },
+                          "askSize" : {
+                            "type" : [ "integer", "null" ],
+                            "format" : "int64"
+                          },
+                          "bid" : {
+                            "type" : [ "string", "null" ],
+                            "format" : "decimal"
+                          },
+                          "bidSize" : {
+                            "type" : [ "integer", "null" ],
+                            "format" : "int64"
+                          },
+                          "clamped" : {
+                            "type" : "boolean"
+                          },
+                          "confirmedAt" : {
+                            "type" : [ "string", "null" ],
+                            "format" : "date-time"
+                          },
+                          "last" : {
+                            "type" : [ "string", "null" ],
+                            "format" : "decimal"
+                          },
+                          "quality" : {
+                            "anyOf" : [ {
+                              "$ref" : "#/$defs/DataQuality"
+                            }, {
+                              "type" : "null"
+                            } ]
+                          },
+                          "quoteAt" : {
+                            "type" : [ "string", "null" ],
+                            "format" : "date-time"
+                          },
+                          "source" : {
+                            "type" : [ "string", "null" ]
+                          }
+                        },
+                        "required" : [ "bid", "ask", "bidSize", "askSize", "last", "quoteAt", "confirmedAt", "source", "quality", "clamped" ]
+                      },
+                      "settleDate" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "date"
+                      },
+                      "side" : {
+                        "anyOf" : [ {
+                          "$ref" : "#/$defs/Side"
+                        }, {
+                          "type" : "null"
+                        } ]
+                      },
+                      "symbol" : {
+                        "type" : [ "string", "null" ]
+                      },
+                      "tradeDate" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "date"
+                      }
+                    },
+                    "required" : [ "executionId", "orderId", "symbol", "side", "qty", "price", "principal", "fees", "netAmount", "realizedPnl", "liquidity", "executedAt", "tradeDate", "settleDate", "refQuote" ]
+                  }
+                },
+                "expiresAt" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "date-time"
+                },
+                "extendedHours" : {
+                  "type" : "boolean"
+                },
+                "fees" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "filledPrincipal" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "filledQty" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "fractional" : {
+                  "type" : "boolean"
+                },
+                "group" : {
+                  "type" : [ "object", "null" ],
+                  "properties" : {
+                    "groupId" : {
+                      "type" : [ "string", "null" ]
+                    },
+                    "held" : {
+                      "type" : "boolean"
+                    },
+                    "parentOrderId" : {
+                      "type" : [ "string", "null" ]
+                    },
+                    "role" : {
+                      "type" : [ "string", "null" ],
+                      "enum" : [ "ENTRY", "TAKE_PROFIT", "STOP_LOSS", "SECONDARY", null ]
+                    },
+                    "type" : {
+                      "anyOf" : [ {
+                        "$ref" : "#/$defs/OrderGroupType"
+                      }, {
+                        "type" : "null"
+                      } ]
+                    }
+                  },
+                  "required" : [ "groupId", "type", "role", "parentOrderId", "held" ]
+                },
+                "limitPrice" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "notional" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "orderId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "qty" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "rationale" : {
+                  "type" : [ "string", "null" ]
+                },
+                "receivedAt" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "date-time"
+                },
+                "replacedByOrderId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "replacesOrderId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "reservedCash" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "reservedQty" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "sessionDate" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "date"
+                },
+                "side" : {
+                  "anyOf" : [ {
+                    "$ref" : "#/$defs/Side"
+                  }, {
+                    "type" : "null"
+                  } ]
+                },
+                "status" : {
+                  "anyOf" : [ {
+                    "$ref" : "#/$defs/OrderStatus"
+                  }, {
+                    "type" : "null"
+                  } ]
+                },
+                "statusReason" : {
+                  "type" : [ "string", "null" ]
+                },
+                "stopPrice" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "symbol" : {
+                  "type" : [ "string", "null" ]
+                },
+                "timeInForce" : {
+                  "anyOf" : [ {
+                    "$ref" : "#/$defs/TimeInForce"
+                  }, {
+                    "type" : "null"
+                  } ]
+                },
+                "trailAmount" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "trailPercent" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                },
+                "triggered" : {
+                  "type" : "boolean"
+                },
+                "triggeredAt" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "date-time"
+                },
+                "type" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP", null ]
+                },
+                "waitReason" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", "AWAITING_PARENT", null ]
+                },
+                "watermarkPrice" : {
+                  "type" : [ "string", "null" ],
+                  "format" : "decimal"
+                }
+              },
+              "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events", "group", "doNotReduce", "cancelRequestedAt" ]
+            }
+          },
+          "qty" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "status" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "ACTIVE", "COMPLETED", "CANCELLED", "EXPIRED", null ]
+          },
+          "symbol" : {
+            "type" : [ "string", "null" ]
+          },
+          "timeInForce" : {
+            "anyOf" : [ {
+              "$ref" : "#/$defs/TimeInForce"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "type" : {
+            "anyOf" : [ {
+              "$ref" : "#/$defs/OrderGroupType"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "updatedAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          }
+        },
+        "required" : [ "groupId", "clientOrderId", "type", "symbol", "qty", "timeInForce", "status", "createdAt", "updatedAt", "legs" ]
+      },
+      "replayed" : {
+        "type" : "boolean"
+      },
+      "warnings" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "code" : {
+              "type" : [ "string", "null" ]
+            },
+            "message" : {
+              "type" : [ "string", "null" ]
+            }
+          },
+          "required" : [ "code", "message" ]
+        }
+      }
+    },
+    "required" : [ "group", "estimate", "buyingPowerBefore", "buyingPowerAfter", "warnings", "replayed" ]
+  }
+}, {
+  "name" : "get_order_group",
+  "title" : "Group order details",
+  "description" : "One of your group orders (grp_…) with its status (ACTIVE, COMPLETED, CANCELLED, EXPIRED) and its current legs (entry, take profit, stop loss, secondary): each leg's status, held (waiting for the entry) and fills. Use get_order on a leg for its timeline. NOT_FOUND if it is not yours.",
+  "annotations" : {
+    "title" : "Group order details",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "group_id" : {
+        "type" : "string",
+        "description" : "The group id (grp_…)"
+      }
+    },
+    "required" : [ "group_id" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "$defs" : {
+      "OrderGroupType" : {
+        "type" : "string",
+        "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET" ]
+      },
+      "OrderStatus" : {
+        "type" : "string",
+        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED", "PENDING_CANCEL" ]
+      },
+      "Side" : {
+        "type" : "string",
+        "enum" : [ "BUY", "SELL" ]
+      },
+      "TimeInForce" : {
+        "type" : "string",
+        "enum" : [ "DAY", "GTC" ]
+      }
+    },
+    "type" : "object",
+    "properties" : {
+      "clientOrderId" : {
+        "type" : [ "string", "null" ]
+      },
+      "createdAt" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "groupId" : {
+        "type" : [ "string", "null" ]
+      },
+      "legs" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "acceptedAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "accountId" : {
+              "type" : [ "string", "null" ]
+            },
+            "activatedAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "avgFillPrice" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "cancelRequestedAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "channel" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "WEB", "REST_KEY", "MCP_KEY", "MCP_OAUTH", "SYSTEM", "ADMIN", null ]
+            },
+            "clientOrderId" : {
+              "type" : [ "string", "null" ]
+            },
+            "collarPrice" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "doNotReduce" : {
+              "type" : "boolean"
+            },
+            "doneAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "eligibleAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "events" : {
+              "type" : [ "array", "null" ],
+              "items" : {
+                "type" : "object",
+                "properties" : {
+                  "at" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "date-time"
+                  },
+                  "detail" : {
+                    "type" : [ "object", "null" ]
+                  },
+                  "seq" : {
+                    "type" : "integer",
+                    "format" : "int32"
+                  },
+                  "statusAfter" : {
+                    "anyOf" : [ {
+                      "$ref" : "#/$defs/OrderStatus"
+                    }, {
+                      "type" : "null"
+                    } ]
+                  },
+                  "type" : {
+                    "type" : [ "string", "null" ],
+                    "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", "ACTIVATED", "QTY_ADJUSTED", "PRICE_ADJUSTED", "CANCEL_REQUESTED", null ]
+                  }
+                },
+                "required" : [ "seq", "type", "statusAfter", "at", "detail" ]
+              }
+            },
+            "executions" : {
+              "type" : [ "array", "null" ],
+              "items" : {
+                "type" : "object",
+                "properties" : {
+                  "executedAt" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "date-time"
+                  },
+                  "executionId" : {
+                    "type" : [ "string", "null" ]
+                  },
+                  "fees" : {
+                    "type" : [ "object", "null" ],
+                    "properties" : {
+                      "cat" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "sec" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "taf" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "total" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      }
+                    },
+                    "required" : [ "sec", "taf", "cat", "total" ]
+                  },
+                  "liquidity" : {
+                    "type" : [ "string", "null" ],
+                    "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+                  },
+                  "netAmount" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "decimal"
+                  },
+                  "orderId" : {
+                    "type" : [ "string", "null" ]
+                  },
+                  "price" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "decimal"
+                  },
+                  "principal" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "decimal"
+                  },
+                  "qty" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "decimal"
+                  },
+                  "realizedPnl" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "decimal"
+                  },
+                  "refQuote" : {
+                    "type" : [ "object", "null" ],
+                    "properties" : {
+                      "ask" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "askSize" : {
+                        "type" : [ "integer", "null" ],
+                        "format" : "int64"
+                      },
+                      "bid" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "bidSize" : {
+                        "type" : [ "integer", "null" ],
+                        "format" : "int64"
+                      },
+                      "clamped" : {
+                        "type" : "boolean"
+                      },
+                      "confirmedAt" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "date-time"
+                      },
+                      "last" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "quality" : {
+                        "type" : [ "string", "null" ],
+                        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+                      },
+                      "quoteAt" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "date-time"
+                      },
+                      "source" : {
+                        "type" : [ "string", "null" ]
+                      }
+                    },
+                    "required" : [ "bid", "ask", "bidSize", "askSize", "last", "quoteAt", "confirmedAt", "source", "quality", "clamped" ]
+                  },
+                  "settleDate" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "date"
+                  },
+                  "side" : {
+                    "anyOf" : [ {
+                      "$ref" : "#/$defs/Side"
+                    }, {
+                      "type" : "null"
+                    } ]
+                  },
+                  "symbol" : {
+                    "type" : [ "string", "null" ]
+                  },
+                  "tradeDate" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "date"
+                  }
+                },
+                "required" : [ "executionId", "orderId", "symbol", "side", "qty", "price", "principal", "fees", "netAmount", "realizedPnl", "liquidity", "executedAt", "tradeDate", "settleDate", "refQuote" ]
+              }
+            },
+            "expiresAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "extendedHours" : {
+              "type" : "boolean"
+            },
+            "fees" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "filledPrincipal" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "filledQty" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "fractional" : {
+              "type" : "boolean"
+            },
+            "group" : {
+              "type" : [ "object", "null" ],
+              "properties" : {
+                "groupId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "held" : {
+                  "type" : "boolean"
+                },
+                "parentOrderId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "role" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "ENTRY", "TAKE_PROFIT", "STOP_LOSS", "SECONDARY", null ]
+                },
+                "type" : {
+                  "anyOf" : [ {
+                    "$ref" : "#/$defs/OrderGroupType"
+                  }, {
+                    "type" : "null"
+                  } ]
+                }
+              },
+              "required" : [ "groupId", "type", "role", "parentOrderId", "held" ]
+            },
+            "limitPrice" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "notional" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "orderId" : {
+              "type" : [ "string", "null" ]
+            },
+            "qty" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "rationale" : {
+              "type" : [ "string", "null" ]
+            },
+            "receivedAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "replacedByOrderId" : {
+              "type" : [ "string", "null" ]
+            },
+            "replacesOrderId" : {
+              "type" : [ "string", "null" ]
+            },
+            "reservedCash" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "reservedQty" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "sessionDate" : {
+              "type" : [ "string", "null" ],
+              "format" : "date"
+            },
+            "side" : {
+              "anyOf" : [ {
+                "$ref" : "#/$defs/Side"
+              }, {
+                "type" : "null"
+              } ]
+            },
+            "status" : {
+              "anyOf" : [ {
+                "$ref" : "#/$defs/OrderStatus"
+              }, {
+                "type" : "null"
+              } ]
+            },
+            "statusReason" : {
+              "type" : [ "string", "null" ]
+            },
+            "stopPrice" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "symbol" : {
+              "type" : [ "string", "null" ]
+            },
+            "timeInForce" : {
+              "anyOf" : [ {
+                "$ref" : "#/$defs/TimeInForce"
+              }, {
+                "type" : "null"
+              } ]
+            },
+            "trailAmount" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "trailPercent" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "triggered" : {
+              "type" : "boolean"
+            },
+            "triggeredAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "type" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP", null ]
+            },
+            "waitReason" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", "AWAITING_PARENT", null ]
+            },
+            "watermarkPrice" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            }
+          },
+          "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events", "group", "doNotReduce", "cancelRequestedAt" ]
+        }
+      },
+      "qty" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "status" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "ACTIVE", "COMPLETED", "CANCELLED", "EXPIRED", null ]
+      },
+      "symbol" : {
+        "type" : [ "string", "null" ]
+      },
+      "timeInForce" : {
+        "anyOf" : [ {
+          "$ref" : "#/$defs/TimeInForce"
+        }, {
+          "type" : "null"
+        } ]
+      },
+      "type" : {
+        "anyOf" : [ {
+          "$ref" : "#/$defs/OrderGroupType"
+        }, {
+          "type" : "null"
+        } ]
+      },
+      "updatedAt" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      }
+    },
+    "required" : [ "groupId", "clientOrderId", "type", "symbol", "qty", "timeInForce", "status", "createdAt", "updatedAt", "legs" ]
+  }
+}, {
+  "name" : "cancel_order_group",
+  "title" : "Cancel a group order",
+  "description" : "Cancels every open leg of one of your group orders (children first). Legs that already filled stay filled; cancelling a finished group returns it unchanged.",
+  "annotations" : {
+    "title" : "Cancel a group order",
+    "readOnlyHint" : false,
+    "destructiveHint" : true,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "group_id" : {
+        "type" : "string",
+        "description" : "The group to cancel (grp_…)"
+      }
+    },
+    "required" : [ "group_id" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "$defs" : {
+      "OrderGroupType" : {
+        "type" : "string",
+        "enum" : [ "OCO", "OTO", "OTOCO", "BRACKET" ]
+      },
+      "OrderStatus" : {
+        "type" : "string",
+        "enum" : [ "PENDING", "WORKING", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "EXPIRED", "REPLACED", "REJECTED", "PENDING_CANCEL" ]
+      },
+      "Side" : {
+        "type" : "string",
+        "enum" : [ "BUY", "SELL" ]
+      },
+      "TimeInForce" : {
+        "type" : "string",
+        "enum" : [ "DAY", "GTC" ]
+      }
+    },
+    "type" : "object",
+    "properties" : {
+      "clientOrderId" : {
+        "type" : [ "string", "null" ]
+      },
+      "createdAt" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "groupId" : {
+        "type" : [ "string", "null" ]
+      },
+      "legs" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "object",
+          "properties" : {
+            "acceptedAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "accountId" : {
+              "type" : [ "string", "null" ]
+            },
+            "activatedAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "avgFillPrice" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "cancelRequestedAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "channel" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "WEB", "REST_KEY", "MCP_KEY", "MCP_OAUTH", "SYSTEM", "ADMIN", null ]
+            },
+            "clientOrderId" : {
+              "type" : [ "string", "null" ]
+            },
+            "collarPrice" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "doNotReduce" : {
+              "type" : "boolean"
+            },
+            "doneAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "eligibleAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "events" : {
+              "type" : [ "array", "null" ],
+              "items" : {
+                "type" : "object",
+                "properties" : {
+                  "at" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "date-time"
+                  },
+                  "detail" : {
+                    "type" : [ "object", "null" ]
+                  },
+                  "seq" : {
+                    "type" : "integer",
+                    "format" : "int32"
+                  },
+                  "statusAfter" : {
+                    "anyOf" : [ {
+                      "$ref" : "#/$defs/OrderStatus"
+                    }, {
+                      "type" : "null"
+                    } ]
+                  },
+                  "type" : {
+                    "type" : [ "string", "null" ],
+                    "enum" : [ "ACCEPTED", "QUEUED", "WORKING", "PAUSED", "RESUMED", "TRIGGERED", "TRAIL_UPDATED", "AWAITING_QUOTE", "BEYOND_COLLAR", "PARTIAL_FILL", "FILL", "CANCELLED", "EXPIRED", "REPLACED", "HOLD_ADJUSTED", "ACTIVATED", "QTY_ADJUSTED", "PRICE_ADJUSTED", "CANCEL_REQUESTED", null ]
+                  }
+                },
+                "required" : [ "seq", "type", "statusAfter", "at", "detail" ]
+              }
+            },
+            "executions" : {
+              "type" : [ "array", "null" ],
+              "items" : {
+                "type" : "object",
+                "properties" : {
+                  "executedAt" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "date-time"
+                  },
+                  "executionId" : {
+                    "type" : [ "string", "null" ]
+                  },
+                  "fees" : {
+                    "type" : [ "object", "null" ],
+                    "properties" : {
+                      "cat" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "sec" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "taf" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "total" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      }
+                    },
+                    "required" : [ "sec", "taf", "cat", "total" ]
+                  },
+                  "liquidity" : {
+                    "type" : [ "string", "null" ],
+                    "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+                  },
+                  "netAmount" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "decimal"
+                  },
+                  "orderId" : {
+                    "type" : [ "string", "null" ]
+                  },
+                  "price" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "decimal"
+                  },
+                  "principal" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "decimal"
+                  },
+                  "qty" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "decimal"
+                  },
+                  "realizedPnl" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "decimal"
+                  },
+                  "refQuote" : {
+                    "type" : [ "object", "null" ],
+                    "properties" : {
+                      "ask" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "askSize" : {
+                        "type" : [ "integer", "null" ],
+                        "format" : "int64"
+                      },
+                      "bid" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "bidSize" : {
+                        "type" : [ "integer", "null" ],
+                        "format" : "int64"
+                      },
+                      "clamped" : {
+                        "type" : "boolean"
+                      },
+                      "confirmedAt" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "date-time"
+                      },
+                      "last" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "decimal"
+                      },
+                      "quality" : {
+                        "type" : [ "string", "null" ],
+                        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+                      },
+                      "quoteAt" : {
+                        "type" : [ "string", "null" ],
+                        "format" : "date-time"
+                      },
+                      "source" : {
+                        "type" : [ "string", "null" ]
+                      }
+                    },
+                    "required" : [ "bid", "ask", "bidSize", "askSize", "last", "quoteAt", "confirmedAt", "source", "quality", "clamped" ]
+                  },
+                  "settleDate" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "date"
+                  },
+                  "side" : {
+                    "anyOf" : [ {
+                      "$ref" : "#/$defs/Side"
+                    }, {
+                      "type" : "null"
+                    } ]
+                  },
+                  "symbol" : {
+                    "type" : [ "string", "null" ]
+                  },
+                  "tradeDate" : {
+                    "type" : [ "string", "null" ],
+                    "format" : "date"
+                  }
+                },
+                "required" : [ "executionId", "orderId", "symbol", "side", "qty", "price", "principal", "fees", "netAmount", "realizedPnl", "liquidity", "executedAt", "tradeDate", "settleDate", "refQuote" ]
+              }
+            },
+            "expiresAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "extendedHours" : {
+              "type" : "boolean"
+            },
+            "fees" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "filledPrincipal" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "filledQty" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "fractional" : {
+              "type" : "boolean"
+            },
+            "group" : {
+              "type" : [ "object", "null" ],
+              "properties" : {
+                "groupId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "held" : {
+                  "type" : "boolean"
+                },
+                "parentOrderId" : {
+                  "type" : [ "string", "null" ]
+                },
+                "role" : {
+                  "type" : [ "string", "null" ],
+                  "enum" : [ "ENTRY", "TAKE_PROFIT", "STOP_LOSS", "SECONDARY", null ]
+                },
+                "type" : {
+                  "anyOf" : [ {
+                    "$ref" : "#/$defs/OrderGroupType"
+                  }, {
+                    "type" : "null"
+                  } ]
+                }
+              },
+              "required" : [ "groupId", "type", "role", "parentOrderId", "held" ]
+            },
+            "limitPrice" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "notional" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "orderId" : {
+              "type" : [ "string", "null" ]
+            },
+            "qty" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "rationale" : {
+              "type" : [ "string", "null" ]
+            },
+            "receivedAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "replacedByOrderId" : {
+              "type" : [ "string", "null" ]
+            },
+            "replacesOrderId" : {
+              "type" : [ "string", "null" ]
+            },
+            "reservedCash" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "reservedQty" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "sessionDate" : {
+              "type" : [ "string", "null" ],
+              "format" : "date"
+            },
+            "side" : {
+              "anyOf" : [ {
+                "$ref" : "#/$defs/Side"
+              }, {
+                "type" : "null"
+              } ]
+            },
+            "status" : {
+              "anyOf" : [ {
+                "$ref" : "#/$defs/OrderStatus"
+              }, {
+                "type" : "null"
+              } ]
+            },
+            "statusReason" : {
+              "type" : [ "string", "null" ]
+            },
+            "stopPrice" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "symbol" : {
+              "type" : [ "string", "null" ]
+            },
+            "timeInForce" : {
+              "anyOf" : [ {
+                "$ref" : "#/$defs/TimeInForce"
+              }, {
+                "type" : "null"
+              } ]
+            },
+            "trailAmount" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "trailPercent" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            },
+            "triggered" : {
+              "type" : "boolean"
+            },
+            "triggeredAt" : {
+              "type" : [ "string", "null" ],
+              "format" : "date-time"
+            },
+            "type" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP", null ]
+            },
+            "waitReason" : {
+              "type" : [ "string", "null" ],
+              "enum" : [ "LATENCY", "QUEUED_FOR_OPEN", "QUEUED_FOR_EXT_OPEN", "SESSION_CLOSED", "NOT_TRIGGERED", "AWAITING_QUOTE", "HALTED", "CORPORATE_ACTION_HOLD", "BEYOND_COLLAR", "LIMIT_NOT_REACHED", "AWAITING_PARENT", null ]
+            },
+            "watermarkPrice" : {
+              "type" : [ "string", "null" ],
+              "format" : "decimal"
+            }
+          },
+          "required" : [ "orderId", "clientOrderId", "accountId", "symbol", "side", "type", "qty", "notional", "fractional", "limitPrice", "stopPrice", "trailAmount", "trailPercent", "watermarkPrice", "collarPrice", "timeInForce", "extendedHours", "status", "waitReason", "statusReason", "triggered", "filledQty", "filledPrincipal", "avgFillPrice", "fees", "reservedCash", "reservedQty", "sessionDate", "receivedAt", "acceptedAt", "eligibleAt", "activatedAt", "triggeredAt", "expiresAt", "doneAt", "replacesOrderId", "replacedByOrderId", "channel", "rationale", "executions", "events", "group", "doNotReduce", "cancelRequestedAt" ]
+        }
+      },
+      "qty" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "status" : {
+        "type" : [ "string", "null" ],
+        "enum" : [ "ACTIVE", "COMPLETED", "CANCELLED", "EXPIRED", null ]
+      },
+      "symbol" : {
+        "type" : [ "string", "null" ]
+      },
+      "timeInForce" : {
+        "anyOf" : [ {
+          "$ref" : "#/$defs/TimeInForce"
+        }, {
+          "type" : "null"
+        } ]
+      },
+      "type" : {
+        "anyOf" : [ {
+          "$ref" : "#/$defs/OrderGroupType"
+        }, {
+          "type" : "null"
+        } ]
+      },
+      "updatedAt" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      }
+    },
+    "required" : [ "groupId", "clientOrderId", "type", "symbol", "qty", "timeInForce", "status", "createdAt", "updatedAt", "legs" ]
   }
 } ]

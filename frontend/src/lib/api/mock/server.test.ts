@@ -14,6 +14,8 @@ const ORDER_KEYS = [
   'triggered', 'filledQty', 'filledPrincipal', 'avgFillPrice', 'fees', 'reservedCash', 'reservedQty', 'sessionDate', 'receivedAt',
   'acceptedAt', 'eligibleAt', 'activatedAt', 'triggeredAt', 'expiresAt', 'doneAt', 'replacesOrderId', 'replacedByOrderId', 'channel',
   'rationale', 'executions', 'events',
+  // Phase 2 (§11.9 group, §14 doNotReduce, §11.10 cancelRequestedAt)
+  'group', 'doNotReduce', 'cancelRequestedAt',
 ]
 const ACCOUNT_KEYS = [
   'accountId', 'runNo', 'type', 'status', 'restriction', 'restrictionUntil', 'restrictionReason', 'equity', 'longMarketValue',

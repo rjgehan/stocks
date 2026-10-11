@@ -32,6 +32,7 @@ import com.stocks.mcp.tools.LeagueTools;
 import com.stocks.mcp.tools.MarketTools;
 import com.stocks.mcp.tools.McpToolSet;
 import com.stocks.mcp.tools.NotificationTools;
+import com.stocks.mcp.tools.OrderGroupTools;
 import com.stocks.mcp.tools.OrderTools;
 import com.stocks.mcp.tools.WatchlistTools;
 import com.stocks.realtime.NotificationService;
@@ -130,6 +131,7 @@ final class McpToolHarness implements AutoCloseable {
         new MarketTools(rules, calendar, marketData, quoteMessages, tracker, time),
         new AccountTools(accounts, orders, performance, time),
         new OrderTools(orderService, orders, accounts),
+        new OrderGroupTools(orderService, orders, accounts),
         new LeagueTools(leaderboard, players, performance),
         new WatchlistTools(watchlists),
         new NotificationTools(notifications));

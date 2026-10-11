@@ -22,6 +22,7 @@ tools:
   /api/v1/account/runs: get_runs
   /api/v1/orders: get_orders
   /api/v1/orders/{orderId}: get_order
+  /api/v1/order-groups/{groupId}: get_order_group
   /api/v1/watchlists: get_watchlists
   /api/v1/leaderboard: get_leaderboard
   /api/v1/players: list_players

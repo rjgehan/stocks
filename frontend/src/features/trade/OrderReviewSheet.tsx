@@ -37,6 +37,7 @@ export function OrderReviewSheet({
   rows.push(['Time in force', request.timeInForce === 'GTC' ? 'GTC (60 days)' : 'Day'])
   const explanation = request.type && request.side && isStopType(request.type) ? stopExplanation({ ...request, side: request.side, type: request.type, symbol: request.symbol ?? '' }) : null
   if (request.extendedHours) rows.push(['Extended hours', 'Yes'])
+  if (request.doNotReduce) rows.push(['Dividends', "Don't reduce my prices"])
   if (request.rationale) rows.push(['Note', request.shareNote ? 'Shared publicly' : 'Private'])
   const side = buy ? 'buy' : 'sell'
 

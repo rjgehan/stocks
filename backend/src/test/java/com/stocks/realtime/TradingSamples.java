@@ -36,7 +36,7 @@ public final class TradingSamples {
         false, status, null, statusReason, false, dec(filledQty == null ? "0" : filledQty),
         new BigDecimal("0.00"), dec(avgFillPrice), new BigDecimal("0.00"), new BigDecimal("0.00"), BigDecimal.ZERO,
         TestTimes.TRADE_DATE, at, at, at.plusMillis(600), null, null, at.plusSeconds(21600), null, null, null,
-        Channel.MCP_KEY, "momentum", executions, events);
+        Channel.MCP_KEY, "momentum", executions, events, null, false, null);
   }
 
   public static ExecutionDto execution(String executionId, String orderId, String symbol, Side side, String qty,

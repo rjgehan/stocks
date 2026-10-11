@@ -111,6 +111,8 @@ stocks:
     pdt.enforced: false
     ext-hours.require-real-quotes: false
     fill.resting-requires-print: false
+    # Phase 2 (§11.10): a user cancel of a working order takes 150 ms + 0–100 ms seeded jitter (PENDING_CANCEL)
+    cancel-latency: { enabled: "${STOCKS_RULES_CANCEL_LATENCY_ENABLED:false}", base: 150ms, jitter-max: 100ms }
   marketdata:
     profile: ${MARKETDATA_PROFILE:simulated}
     allow-simulated-in-prod: false

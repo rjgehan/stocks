@@ -22,6 +22,7 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
   EXPIRED: 'Expired',
   REPLACED: 'Replaced',
   REJECTED: 'Rejected',
+  PENDING_CANCEL: 'Pending cancel',
 }
 
 export const STATUS_TONE: Record<OrderStatus, PillTone> = {
@@ -33,6 +34,7 @@ export const STATUS_TONE: Record<OrderStatus, PillTone> = {
   EXPIRED: 'flat',
   REPLACED: 'flat',
   REJECTED: 'down',
+  PENDING_CANCEL: 'warn',
 }
 
 export const WAIT_LABEL: Record<WaitReason, string> = {
@@ -46,6 +48,7 @@ export const WAIT_LABEL: Record<WaitReason, string> = {
   CORPORATE_ACTION_HOLD: 'corporate-action hold',
   BEYOND_COLLAR: 'price moved beyond the 5% collar',
   LIMIT_NOT_REACHED: 'waiting for your price',
+  AWAITING_PARENT: 'waiting for the entry to fill',
 }
 
 export const CANCEL_REASON_LABEL: Record<string, string> = {
@@ -58,6 +61,8 @@ export const CANCEL_REASON_LABEL: Record<string, string> = {
   INSUFFICIENT_BUYING_POWER_AT_EXECUTION: 'Cancelled: not enough buying power at execution',
   DUST: 'Cancelled: the amount was below the minimum share size',
   REPLACED_BY_USER: 'Replaced by a new order',
+  OCO_FILLED: 'Cancelled: the other order of the pair executed',
+  PARENT_NOT_FILLED: 'Cancelled: the entry ended without a fill',
 }
 
 /** "Working · waiting for your price" */
@@ -112,9 +117,12 @@ export function orderTitle(o: Order): string {
   return `${side} ${orderSizeLabel(o)} ${o.symbol ?? ''} · ${type}${price ? ` ${price}` : ''}`
 }
 
-/** A stop order that has not triggered yet: the ticket, list and detail show its live stop (§12.7). */
-export const isArmedStop = (o: Pick<Order, 'type' | 'triggered' | 'status'>): boolean =>
-  (o.type === 'STOP' || o.type === 'STOP_LIMIT' || o.type === 'TRAILING_STOP') && !o.triggered && (o.status === 'PENDING' || o.status === 'WORKING')
+/**
+ * A stop order that has not triggered yet: the ticket, list and detail show its live stop (§12.7). A group child still
+ * waiting for its entry (§11.9 `held`) is not armed yet.
+ */
+export const isArmedStop = (o: Pick<Order, 'type' | 'triggered' | 'status'> & { group?: Order['group'] }): boolean =>
+  (o.type === 'STOP' || o.type === 'STOP_LIMIT' || o.type === 'TRAILING_STOP') && !o.triggered && (o.status === 'PENDING' || o.status === 'WORKING') && !o.group?.held
 
 /** What triggered a stop (`TRIGGERED` event `detail.basis`, §12.7). */
 export const TRIGGER_BASIS_LABEL: Record<string, string> = {
@@ -156,6 +164,30 @@ export function eventDetailLine(ev: OrderEvent): string | null {
       const price = str(d.price)
       return qty && price ? `${formatQty(qty)} @ ${formatPrice(price)}` : null
     }
+    // Phase 2 group orders (§11.9), FINRA 5330 (§14) and cancel latency (§11.10)
+    case 'ACTIVATED': {
+      const w = str(d.workingQty)
+      return w ? `The entry filled: working ${formatQty(w)} sh` : 'The entry filled'
+    }
+    case 'QTY_ADJUSTED': {
+      const qty = str(d.qty)
+      const w = str(d.workingQty)
+      return qty ? `Quantity follows the entry: ${formatQty(qty)} sh` : w ? `Now working ${formatQty(w)} sh` : null
+    }
+    case 'PRICE_ADJUSTED': {
+      const parts = [
+        str(d.limitAfter) ? `limit ${formatPrice(str(d.limitBefore))} → ${formatPrice(str(d.limitAfter))}` : null,
+        str(d.stopAfter) ? `stop ${formatPrice(str(d.stopBefore))} → ${formatPrice(str(d.stopAfter))}` : null,
+      ].filter(Boolean)
+      const div = str(d.dividend)
+      return `${div ? `$${div} dividend` : 'Dividend'} (FINRA 5330)${parts.length ? `: ${parts.join(' · ')}` : ''}`
+    }
+    case 'CANCEL_REQUESTED':
+      return 'The cancel takes effect in a moment; the order can still fill until then'
+    case 'CANCELLED':
+      if (d.reason === 'OCO_FILLED') return 'The other order of the pair executed'
+      if (d.reason === 'PARENT_NOT_FILLED') return 'The entry ended without a fill'
+      return typeof d.reason === 'string' ? d.reason.toLowerCase().replaceAll('_', ' ') : null
     default:
       return typeof d.reason === 'string' ? d.reason.toLowerCase().replaceAll('_', ' ') : null
   }

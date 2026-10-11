@@ -6,7 +6,9 @@ import com.stocks.common.domain.TransitionType;
 import com.stocks.contract.trading.CashTransferCommand;
 import com.stocks.contract.trading.CorporateActionResolution;
 import com.stocks.contract.trading.IdempotencyRef;
+import com.stocks.contract.trading.dto.ReplaceOrderGroupRequest;
 import com.stocks.contract.trading.dto.ReplaceOrderRequest;
+import com.stocks.trading.order.NormalizedGroup;
 import com.stocks.trading.order.NormalizedOrder;
 import com.stocks.trading.order.OrderOrigin;
 import java.math.BigDecimal;
@@ -41,6 +43,17 @@ public sealed interface EngineCommand {
   /** Result: the cancelled {@code OrderDto}s. */
   record CancelAllCmd(long accountId, String symbolOrNull, CancelReason reason, long actorPlayerId)
       implements EngineCommand {}
+
+  /** §11.9 a group order, checks 1–27 for every leg (authoritative); result: {@code PlaceOrderGroupResponse}. */
+  record PlaceOrderGroupCmd(long accountId, OrderOrigin origin, NormalizedGroup group, String requestHash,
+                            Instant receivedAt) implements EngineCommand {}
+
+  /** §11.9 cancel-replace of a group's changed legs; result: {@code PlaceOrderGroupResponse}. */
+  record ReplaceOrderGroupCmd(long accountId, OrderOrigin origin, String groupId, ReplaceOrderGroupRequest request,
+                              Instant receivedAt) implements EngineCommand {}
+
+  /** §11.9 cancels every open leg of a group (user cancel, §11.10 latency applies); result: {@code OrderGroupDto}. */
+  record CancelOrderGroupCmd(long accountId, String groupId, long actorPlayerId) implements EngineCommand {}
 
   /** An explicit sweep (activation, expiry, re-evaluation, §12.2); the loop also sweeps on its own. */
   record SweepCmd() implements EngineCommand {}

@@ -107,7 +107,33 @@ There is no overnight session.
   `notional: "500.00"`.
 - Fractional and dollar orders cannot be replaced: cancel and place again.
 
-### 4.4 Limits and checks
+### 4.4 Advanced (group) orders: BRACKET, OCO, OTO, OTOCO [D: after Webull's "Advanced" orders]
+
+| Type | Legs | How it works |
+|---|---|---|
+| **BRACKET** | a buy entry (MARKET or LIMIT) + a take-profit sell LIMIT + a stop-loss sell STOP (or STOP_LIMIT) | The take profit and the stop loss **wait** until the entry fills, then work for the shares it bought; the first of them to execute cancels the other. Take profit > entry price > stop loss, at least **0.1%** of the entry price apart (entry price: your limit, or the ask for a market entry). |
+| **OTOCO** | a buy entry (MARKET, LIMIT, STOP or STOP_LIMIT) + take profit + stop loss | A bracket with stop entries allowed and no price-distance rule. |
+| **OTO** | a buy entry + one sell order (LIMIT, STOP or STOP_LIMIT) | The second order waits until the entry fills. |
+| **OCO** | a LIMIT + a STOP (or STOP_LIMIT), both sells (default) or both buys | Both work at once; the first execution (**even a partial fill**) cancels the other. A sell OCO reserves your shares **once**; a buy OCO holds the larger of its two holds once. |
+
+- Whole shares only, the same quantity and time in force (DAY or GTC; a market entry is DAY) for every leg; no
+  extended hours, fractional, dollar or trailing legs. AI players send one rationale for the group.
+- If the entry fills in parts, the waiting orders work for what it bought so far and follow each new fill; if the rest
+  of the entry is cancelled or expires, they shrink to what it bought. An entry that ends without any fill cancels them.
+- Every leg is an ordinary order (it shows its group in your orders); you can cancel or replace one leg, or the whole
+  group. Once the entry has filled you may move the stop loss above your entry price to lock in a gain.
+
+### 4.5 Ex-dividend dates and cancels
+
+- **FINRA Rule 5330** [V rule]: on a cash dividend's ex-date, your open **buy limit** orders and **sell stop / stop
+  limit** orders entered before the ex-date are reduced by the dividend, rounded down to the tick (a $25.03 buy limit
+  with a $0.125 dividend becomes $24.90). Mark an order **"Don't reduce"** (`doNotReduce: true`) to keep its prices.
+  Splits and symbol changes cancel open orders instead.
+- **Cancel latency** is off in this league (`GET /rules` → `orders.cancelLatency` is null). When the owner enables it on
+  the server, a cancel of a working order takes about 150–250 ms and shows **Pending cancel**; a fill in that window
+  wins.
+
+### 4.6 Limits and checks
 
 | Rule | Value |
 |---|---|

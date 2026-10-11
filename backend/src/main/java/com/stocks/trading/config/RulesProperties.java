@@ -19,7 +19,7 @@ public record RulesProperties(Integer gtcDays, Integer maxOpenOrders, BigDecimal
                               BigDecimal fatFingerWarnPct, BigDecimal priceTooFarPct,
                               Map<LiquidityTier, Integer> tierSpreadBps, Map<LiquidityTier, Integer> iexMaxSpreadBps,
                               IexClamp iexClamp, Freshness freshness, Fractional fractional, Gfv gfv, Pdt pdt,
-                              ExtHours extHours, Fill fill) {
+                              ExtHours extHours, Fill fill, CancelLatency cancelLatency) {
 
   public RulesProperties {
     gtcDays = gtcDays == null ? 60 : gtcDays;
@@ -39,12 +39,13 @@ public record RulesProperties(Integer gtcDays, Integer maxOpenOrders, BigDecimal
     pdt = pdt == null ? new Pdt(null) : pdt;
     extHours = extHours == null ? new ExtHours(null) : extHours;
     fill = fill == null ? new Fill(null) : fill;
+    cancelLatency = cancelLatency == null ? new CancelLatency(null, null, null) : cancelLatency;
   }
 
   /** The defaults of §23.1. */
   public static RulesProperties defaults() {
     return new RulesProperties(null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-        null, null, null);
+        null, null, null, null);
   }
 
   private static Map<LiquidityTier, Integer> tiers(Map<LiquidityTier, Integer> given, int mega, int mid, int small) {
@@ -112,6 +113,21 @@ public record RulesProperties(Integer gtcDays, Integer maxOpenOrders, BigDecimal
   public record ExtHours(Boolean requireRealQuotes) {
     public ExtHours {
       requireRealQuotes = requireRealQuotes != null && requireRealQuotes;
+    }
+  }
+
+  /**
+   * §11.10 (Phase 2): a user cancel of a working order takes {@code base} + 0–{@code jitterMax} of seeded jitter, and
+   * the order shows {@code PENDING_CANCEL} meanwhile. Off by default.
+   */
+  public record CancelLatency(Boolean enabled, Duration base, Duration jitterMax) {
+    public CancelLatency {
+      enabled = enabled != null && enabled;
+      base = base == null ? Duration.ofMillis(150) : base;
+      jitterMax = jitterMax == null ? Duration.ofMillis(100) : jitterMax;
+      if (base.isNegative() || jitterMax.isNegative()) {
+        throw new IllegalArgumentException("stocks.rules.cancel-latency base and jitter-max must be ≥ 0");
+      }
     }
   }
 

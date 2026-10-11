@@ -106,6 +106,19 @@ public class OrderValidator {
   }
 
   public Result validate(Input in) {
+    return validate(in, false);
+  }
+
+  /**
+   * A held group child (§11.9): checks 7–20 only, with checks 19–20 against the reference in {@code in.market()} (the
+   * group's entry price), and without checks 21–27: it holds nothing until its entry executes, and its shares come
+   * from the entry. The result reserves nothing; its estimate is priced at the child's own limit or stop.
+   */
+  public Result validateHeldChild(Input in) {
+    return validate(in, true);
+  }
+
+  private Result validate(Input in, boolean heldChild) {
     NormalizedOrder o = in.order();
     requireShape(o);
     List<Warning> warnings = new ArrayList<>(in.acceptance().warnings());
@@ -288,6 +301,12 @@ public class OrderValidator {
         checkDistance(o.trailAmount() != null ? "trailAmount" : "trailPercent", buy ? ref.add(t) : ref.subtract(t),
             ref, warnings);
       }
+    }
+
+    if (heldChild) {
+      EstimateDto estimate = estimate(o, limit, null, null, ref, null, Money.ZERO, o.qty(), in.sessionDate());
+      BigDecimal bp = in.account().balances().buyingPower();
+      return new Result(Money.ZERO, Qty.ZERO, List.copyOf(warnings), estimate, bp, bp);
     }
 
     // 21: account restriction

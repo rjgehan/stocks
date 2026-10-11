@@ -43,7 +43,7 @@ public final class RateLimitFilter extends OncePerRequestFilter {
   private static final Pattern HEAVY = Pattern.compile(
       "^/api/v1/(bars/.*|account/history|leaderboard|players/[^/]+(/history|/trades)?)$");
   private static final Pattern ORDER_WRITE_PATH = Pattern.compile(
-      "^/api/v1/(orders|orders/[^/]+|account/positions/[^/]+/close)$");
+      "^/api/v1/(orders|orders/[^/]+|order-groups|order-groups/[^/]+|account/positions/[^/]+/close)$");
 
   private final RateLimitServiceImpl limits;
   private final ActivityRecorder activity;
@@ -97,8 +97,12 @@ public final class RateLimitFilter extends OncePerRequestFilter {
   }
 
   static boolean isOrderWrite(String method, String path) {
-    if (!ORDER_WRITE_PATH.matcher(path).matches() || "/api/v1/orders/preview".equals(path)) {
+    if (!ORDER_WRITE_PATH.matcher(path).matches() || "/api/v1/orders/preview".equals(path)
+        || "/api/v1/order-groups/preview".equals(path)) {
       return false;
+    }
+    if ("/api/v1/order-groups".equals(path)) {
+      return HttpMethod.POST.matches(method);                 // a group order (§11.9): OrderGate charges it
     }
     if (path.endsWith("/close")) {
       return HttpMethod.POST.matches(method);

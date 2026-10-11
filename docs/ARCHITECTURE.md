@@ -82,7 +82,7 @@ The final design takes **mvp-first's skeleton**, raises it to **realism-first's 
 **Explicitly rejected for Phase 1:**
 - double-entry house accounts
 - the ChangeSet pure-function engine
-- `PENDING_CANCEL` with cancel latency
+- `PENDING_CANCEL` with cancel latency (Phase 2 adds it behind a flag that is off by default, §11.10)
 - league and competition tables
 - hash-chained audit
 - SSE and Sharpe (both Phase 2)
@@ -389,11 +389,15 @@ com.stocks
 │   ├── config/      EngineProperties ("stocks.engine"), RulesProperties ("stocks.rules")
 │   ├── order/       OrderGate (checks 1–6, write token), OrderValidator (pure, checks 7–27), HoldCalculator,
 │   │                SessionOrderMatrix, ExpiryCalculator, OrderStateMachine, OrderServiceImpl, AdminOrderServiceImpl,
-│   │                OrderQueriesImpl, RequestHasher, mapper/{OrderDtoMapper, ExecutionDtoMapper}
+│   │                OrderQueriesImpl, RequestHasher, mapper/{OrderDtoMapper, ExecutionDtoMapper, OrderGroupDtoMapper};
+│   │                Phase 2 groups (§11.9): NormalizedGroup, GroupRules (pure shape + bracket rules), GroupEvaluation,
+│   │                GroupReplay, GroupOrderService
 │   ├── engine/      TradingEngine, EngineControlImpl, EngineThread, EngineCommand (sealed), OpenOrderIndex, LatencyModel,
-│   │                Evaluator, FillModel, TriggerEvaluator, OpeningHandler, PostingService, InvariantChecker, EngineBootstrap
+│   │                Evaluator, FillModel, TriggerEvaluator, OpeningHandler, PostingService, InvariantChecker, EngineBootstrap,
+│   │                OrderTracker (index + leases); Phase 2: GroupHandler (§11.9 rules after every leg change),
+│   │                GroupOrderEntry (place/replace/cancel a group), EngineOrderOps (incl. FINRA 5330, §14)
 │   │   └── write/   OrderWriter, LedgerWriter, PositionWriter, TransferWriter, ViolationWriter, AccountEventWriter,
-│   │                AdjustmentWriter, DividendWriter   (called only on the engine thread)
+│   │                AdjustmentWriter, DividendWriter, OrderGroupWriter   (called only on the engine thread)
 │   ├── fees/        FeeSchedule, FeeCalculator
 │   ├── account/     AccountServiceImpl, AccountQueriesImpl, BalanceCalculator, BuyingPowerCalculator, GfvService,
 │   │                CashTransferServiceImpl, ActivityQueries
@@ -823,6 +827,7 @@ public record SessionChanged(SessionState state) {}
 | `vio` | account_violation | `cac` | corporate_action |
 | `fde` | feed_event | `ntf` | notification |
 | `led` | cash_ledger | `aev` | account_event |
+| `grp` | order_group (Phase 2, §11.9) | | |
 
 - API keys use their own public `key_id` (§17.2).
 - `clientOrderId` is chosen by the client and must match `^[A-Za-z0-9._:-]{1,64}$`.
@@ -922,14 +927,22 @@ enum AccountRestriction { NONE, SETTLED_CASH_ONLY, LIQUIDATION_ONLY, FROZEN }
 enum Side            { BUY, SELL }
 enum OrderType       { MARKET, LIMIT, STOP, STOP_LIMIT, TRAILING_STOP }
 enum TimeInForce     { DAY, GTC }
-enum OrderStatus     { PENDING, WORKING, PARTIALLY_FILLED, FILLED, CANCELLED, EXPIRED, REPLACED, REJECTED }
-                     // open = PENDING | WORKING | PARTIALLY_FILLED; REJECTED reserved (not produced in Phase 1)
+enum OrderStatus     { PENDING, WORKING, PARTIALLY_FILLED, FILLED, CANCELLED, EXPIRED, REPLACED, REJECTED,
+                       PENDING_CANCEL }
+                     // open = PENDING | WORKING | PARTIALLY_FILLED | PENDING_CANCEL; REJECTED reserved (not produced in
+                     // Phase 1); PENDING_CANCEL is an API status only (§11.10: never stored)
 enum WaitReason      { LATENCY, QUEUED_FOR_OPEN, QUEUED_FOR_EXT_OPEN, SESSION_CLOSED, NOT_TRIGGERED,
-                       AWAITING_QUOTE, HALTED, CORPORATE_ACTION_HOLD, BEYOND_COLLAR, LIMIT_NOT_REACHED }
+                       AWAITING_QUOTE, HALTED, CORPORATE_ACTION_HOLD, BEYOND_COLLAR, LIMIT_NOT_REACHED,
+                       AWAITING_PARENT }                                                   // AWAITING_PARENT: §11.9
 enum OrderEventType  { ACCEPTED, QUEUED, WORKING, PAUSED, RESUMED, TRIGGERED, TRAIL_UPDATED, AWAITING_QUOTE,
-                       BEYOND_COLLAR, PARTIAL_FILL, FILL, CANCELLED, EXPIRED, REPLACED, HOLD_ADJUSTED }
+                       BEYOND_COLLAR, PARTIAL_FILL, FILL, CANCELLED, EXPIRED, REPLACED, HOLD_ADJUSTED,
+                       ACTIVATED, QTY_ADJUSTED, PRICE_ADJUSTED, CANCEL_REQUESTED }         // Phase 2: §11.9, §11.10, §14
 enum CancelReason    { USER, ADMIN, PLAYER_FROZEN, PLAYER_DISABLED, ACCOUNT_RESET, CORPORATE_ACTION,
-                       INSUFFICIENT_BUYING_POWER_AT_EXECUTION, DUST, REPLACED_BY_USER }
+                       INSUFFICIENT_BUYING_POWER_AT_EXECUTION, DUST, REPLACED_BY_USER,
+                       OCO_FILLED, PARENT_NOT_FILLED }                                      // Phase 2: §11.9
+enum OrderGroupType  { OCO, OTO, OTOCO, BRACKET }                                         // Phase 2: §11.9
+enum OrderGroupRole  { ENTRY, TAKE_PROFIT, STOP_LOSS, SECONDARY }
+enum OrderGroupStatus { ACTIVE, COMPLETED, CANCELLED, EXPIRED }
 enum Liquidity       { TOUCH, WALK, RESTING, PRINT, OPEN }
 enum LedgerEntryType { INITIAL_FUNDING, DEPOSIT, WITHDRAWAL, ADJUSTMENT, TRADE_BUY, TRADE_SELL, DIVIDEND, CASH_IN_LIEU }
 enum TransferType    { INITIAL, DEPOSIT, WITHDRAWAL, ADJUSTMENT }
@@ -975,7 +988,7 @@ enum NotificationKind { FILL, PARTIAL_FILL, ORDER_CANCELLED, ORDER_EXPIRED, DEPO
 | 403 | `FORBIDDEN`, `FORBIDDEN_SCOPE`, `ADMIN_REQUIRES_SESSION`, `RECENT_AUTH_REQUIRED`, `CSRF_INVALID`, `PLAYER_DISABLED`, `PLAYER_FROZEN` |
 | 404 | `NOT_FOUND`, `SYMBOL_NOT_FOUND`, `ORDER_NOT_FOUND`, `PLAYER_NOT_FOUND`, `ACCOUNT_NOT_FOUND` |
 | 409 | `CLIENT_ORDER_ID_CONFLICT`, `IDEMPOTENCY_KEY_CONFLICT`, `ORDER_NOT_CANCELLABLE`, `ORDER_NOT_REPLACEABLE`, `HANDLE_TAKEN` |
-| 422 (orders) | `CLIENT_ORDER_ID_INVALID`, `RATIONALE_REQUIRED`, `SYMBOL_NOT_TRADABLE`, `INVALID_QTY`, `QTY_OR_NOTIONAL_REQUIRED`, `NOT_FRACTIONABLE`, `FRACTIONAL_MARKET_ONLY`, `FRACTIONAL_DAY_ONLY`, `FRACTIONAL_NOT_REPLACEABLE`, `NOTIONAL_TOO_SMALL`, `INVALID_TICK`, `LIMIT_PRICE_REQUIRED`, `STOP_PRICE_REQUIRED`, `TRAIL_REQUIRED`, `PRICE_NOT_ALLOWED`, `EXT_HOURS_LIMIT_ONLY`, `TIF_NOT_ALLOWED`, `SESSION_NOT_ALLOWED`, `STOP_PRICE_WRONG_SIDE`, `PRICE_TOO_FAR`, `SHORT_SELLING_NOT_ALLOWED`, `INSUFFICIENT_POSITION`, `INSUFFICIENT_BUYING_POWER`, `ACCOUNT_RESTRICTED`, `TOO_MANY_OPEN_ORDERS`, `GFV_ACK_REQUIRED`, `MARKET_DATA_UNAVAILABLE` |
+| 422 (orders) | `CLIENT_ORDER_ID_INVALID`, `RATIONALE_REQUIRED`, `SYMBOL_NOT_TRADABLE`, `INVALID_QTY`, `QTY_OR_NOTIONAL_REQUIRED`, `NOT_FRACTIONABLE`, `FRACTIONAL_MARKET_ONLY`, `FRACTIONAL_DAY_ONLY`, `FRACTIONAL_NOT_REPLACEABLE`, `NOTIONAL_TOO_SMALL`, `INVALID_TICK`, `LIMIT_PRICE_REQUIRED`, `STOP_PRICE_REQUIRED`, `TRAIL_REQUIRED`, `PRICE_NOT_ALLOWED`, `EXT_HOURS_LIMIT_ONLY`, `TIF_NOT_ALLOWED`, `SESSION_NOT_ALLOWED`, `STOP_PRICE_WRONG_SIDE`, `PRICE_TOO_FAR`, `SHORT_SELLING_NOT_ALLOWED`, `INSUFFICIENT_POSITION`, `INSUFFICIENT_BUYING_POWER`, `ACCOUNT_RESTRICTED`, `TOO_MANY_OPEN_ORDERS`, `GFV_ACK_REQUIRED`, `MARKET_DATA_UNAVAILABLE`, `ORDER_GROUP_INVALID` (Phase 2, §11.9) |
 | 422 (other) | `INSUFFICIENT_WITHDRAWABLE`, `MARKS_DEGRADED`, `SELF_RESET_DISABLED`, `INVITE_INVALID`, `WEAK_PASSWORD`, `SETTING_INVALID`, `CORPORATE_ACTION_NOT_RESOLVABLE` |
 | 429 | `RATE_LIMITED`, `LOGIN_LOCKED` |
 | 500 | `INTERNAL_ERROR` (any unmapped exception; the body carries only `requestId`, never a stack trace) |
@@ -1029,6 +1042,47 @@ enum NotificationKind { FILL, PARTIAL_FILL, ORDER_CANCELLED, ORDER_EXPIRED, DEPO
 **Migrations after V1.** Until the first production deploy, V1 is the baseline. WS1 owns `V1__init.sql` and the vendor `V1_0_1` files. Each workstream adds its own `V1_<ws>_<nn>__<desc>.sql` (for example `V1_3_01__order_index.sql`) under `db/migration/**`, reviewed by WS1, so parallel branches never collide. Dev and test set `spring.flyway.out-of-order=true` (§23.2). **Merge the files into a clean V1 just before the first production deploy.** The squash changes V1's checksum, so every existing dev H2 database fails `flyway validate` afterwards: **delete `backend/.data/` after the squash** (README and `docs/runbook.md` say so; the dev seed is idempotent, so a fresh database costs nothing). After that, use normal `V2…` numbering.
 
 **As deployed (2026-10).** The first production deploy shipped without the squash: production applied `V1__init`, `V1_0_1`, `V1_3_01` and `V1_4_01`, and runs `spring.flyway.out-of-order=false`. Those four files are frozen (never edit, rename or delete them), and the per-workstream `V1_<ws>_<nn>` lanes are closed: a file that sorts before `V1_4_01` is "ignored" by Flyway and fails validation at boot. Every new migration is the next whole version (`V2__…`, `V3__…`), numbered at merge time by the integrator. `MigrationOrderTest` enforces this and upgrades a production-baseline database with out-of-order off.
+
+**Phase 2 group orders and order realism** (`common/V3__p2_orders.sql`, provisional number; §11.9, §11.10, §14), portable H2 + PostgreSQL:
+
+```sql
+CREATE TABLE order_group (                            -- §11.9; legs are trade_order rows with group_id
+  id               BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  public_id        VARCHAR(32)   NOT NULL UNIQUE,      -- 'grp_…'
+  account_id       BIGINT        NOT NULL REFERENCES account(id),
+  player_id        BIGINT        NOT NULL REFERENCES player(id),
+  client_order_id  VARCHAR(64)   NOT NULL,             -- the group's current id (a group replace sets a new one)
+  request_hash     VARCHAR(64)   NOT NULL,
+  group_type       VARCHAR(8)    NOT NULL CHECK (group_type IN ('OCO','OTO','OTOCO','BRACKET')),
+  symbol           VARCHAR(12)   NOT NULL,
+  qty              NUMERIC(18,5) NOT NULL CHECK (qty > 0),
+  time_in_force    VARCHAR(4)    NOT NULL CHECK (time_in_force IN ('DAY','GTC')),
+  created_at       TIMESTAMP WITH TIME ZONE NOT NULL,
+  updated_at       TIMESTAMP WITH TIME ZONE NOT NULL,
+  version          BIGINT NOT NULL DEFAULT 0,
+  UNIQUE (account_id, client_order_id)
+);
+CREATE TABLE order_group_request (                    -- every group clientOrderId ever used (placement or replace)
+  id               BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  account_id       BIGINT        NOT NULL REFERENCES account(id),
+  group_id         BIGINT        NOT NULL REFERENCES order_group(id),
+  client_order_id  VARCHAR(64)   NOT NULL,
+  request_hash     VARCHAR(64)   NOT NULL,
+  kind             VARCHAR(8)    NOT NULL CHECK (kind IN ('PLACE','REPLACE')),
+  created_at       TIMESTAMP WITH TIME ZONE NOT NULL,
+  UNIQUE (account_id, client_order_id)                -- a retry of either replays, even after a replace
+);
+ALTER TABLE trade_order ADD COLUMN group_id BIGINT;
+ALTER TABLE trade_order ADD COLUMN group_role VARCHAR(12);
+ALTER TABLE trade_order ADD COLUMN parent_order_id BIGINT;              -- a child's entry (§11.9)
+ALTER TABLE trade_order ADD COLUMN held BOOLEAN DEFAULT FALSE NOT NULL; -- a child its entry has not released yet
+ALTER TABLE trade_order ADD COLUMN do_not_reduce BOOLEAN DEFAULT FALSE NOT NULL;   -- FINRA 5330 opt-out (§14)
+ALTER TABLE trade_order ADD COLUMN cancel_requested_at TIMESTAMP WITH TIME ZONE;   -- §11.10
+ALTER TABLE trade_order ADD COLUMN cancel_effective_at TIMESTAMP WITH TIME ZONE;
+-- + FKs (group_id → order_group, parent_order_id → trade_order), ck_order_group_role, ck_order_group_link
+--   ((group_id IS NULL) = (group_role IS NULL)), ck_order_held (held = FALSE OR parent_order_id IS NOT NULL),
+--   ck_order_cancel_req ((cancel_requested_at IS NULL) = (cancel_effective_at IS NULL)), ix_order_group(group_id)
+```
 
 ### 8.1 `db/migration/common/V1__init.sql`
 
@@ -2105,6 +2159,65 @@ The authoritative lookup runs inside `PlaceOrderCmd` (and `ReplaceOrderCmd`; clo
 - If the quantity is fractional, the order is a fractional market order, so it only executes in RTH; outside RTH it queues for the open.
 - Validation and idempotency are the same as `POST /orders`.
 
+### 11.9 Group orders: OCO, OTO, OTOCO and BRACKET (Phase 2) (CONTRACT)
+
+Webull's "Advanced" orders [D: semantics after Webull's help pages; details below are our design]. A group is an `order_group` row plus two or three ordinary `trade_order` legs that carry `group_id`, `group_role` and (children) `parent_order_id`. Every leg is a normal order for the engine (state machine, holds, fills, events, the `/orders` endpoints); the group only adds the rules of this section, enforced on the engine thread by `GroupHandler` in the same transaction as the change that triggered them.
+
+| Type | Legs (role: allowed types) | Behavior |
+|---|---|---|
+| `OCO` | `TAKE_PROFIT`: LIMIT · `STOP_LOSS`: STOP or STOP_LIMIT. Both on the group's `side` (default SELL; BUY allowed: "buy the dip or the breakout") | Both legs work at once. The first execution of either leg (**a partial fill is enough**) cancels the other (`OCO_FILLED`); the filling leg keeps working its remainder. |
+| `OTO` | `ENTRY`: MARKET, LIMIT, STOP or STOP_LIMIT (BUY) · `SECONDARY`: LIMIT, STOP or STOP_LIMIT (SELL) | The secondary is **held** until the entry executes, then works for the entry's filled quantity. |
+| `OTOCO` | `ENTRY` as OTO · `TAKE_PROFIT`: LIMIT (SELL) · `STOP_LOSS`: STOP or STOP_LIMIT (SELL) | OTO whose secondary is an OCO pair. |
+| `BRACKET` | `ENTRY`: MARKET or LIMIT (BUY) · `TAKE_PROFIT`, `STOP_LOSS` as OTOCO | OTOCO plus the bracket price rules below. |
+
+**Common rules** [D]:
+- One symbol and one whole-share `qty` (≥ 1) for every leg. No notional or fractional legs, no `extendedHours`, no TRAILING_STOP leg (later).
+- Wave A entries are BUY only (the children SELL what the entry bought). A SELL entry (sell, then buy back) needs buy-back holds at release and comes later; it is rejected with `ORDER_GROUP_INVALID`.
+- `timeInForce` (DAY or GTC, default DAY) applies to every leg, except that a MARKET entry is always DAY.
+- `rationale`, `shareNote`, `doNotReduce` and `acknowledge` apply to every leg (one rationale per group; AI players must send it, check 7).
+- **Entry price** (`entryPrice`): the entry's limit (LIMIT, STOP_LIMIT), its stop (STOP), or for MARKET the ask, else the reference price of check 19 (none → `MARKET_DATA_UNAVAILABLE`).
+- **Bracket price rules:** `takeProfit.limitPrice > entryPrice > stopLoss.stopPrice`, and `takeProfit.limitPrice − stopLoss.stopPrice ≥ 0.1% × entryPrice` (`ORDER_GROUP_INVALID` on the field that breaks it).
+
+**Validation** (one `PlaceOrderGroupCmd`, all or nothing; the first failure wins):
+1. Group shape (type, roles present and absent, leg types and sides, whole `qty`, no `extendedHours`, entry side): `ORDER_GROUP_INVALID` (422) with the field (`entry.type`, `takeProfit.limitPrice`, …). Then the bracket price rules.
+2. Checks 1–6 once for the group (one write token; idempotency on the group's `clientOrderId`, below). Check 22 counts every leg: `open + legs ≤ maxOpenOrders`.
+3. **Live legs** (the entry, both legs of an OCO) run checks 7–27 like single orders, with two OCO rules: a SELL OCO reserves its shares once (the second leg's check 24 does not count the first leg's reservation), and a BUY OCO's check 26 compares `max(hold A, hold B)` with buying power once.
+4. **Held children** (OTO secondary, OTOCO and BRACKET TP/SL) run checks 7–18, with checks 19–20 against `entryPrice` instead of the market reference (a stop loss must be below the entry, not below today's market) and without checks 21–27: they hold nothing until release, and the shares come from the entry. A GFV caused by a child is still determined at execution (§10.4).
+- Field names in errors are prefixed with the leg (`entry.limitPrice`, `stopLoss.stopPrice`).
+
+**Activation and quantity sync** (the entry executes):
+- In the fill's transaction every held child is **released**: `held = false`, event `ACTIVATED {entryOrderId, workingQty}`, `session_date`/`expires_at` computed now (§11.4: a DAY child lives until today's close, a GTC child 60 days from its release), a fresh latency window (`eligible_at = now + latency`, or the next open when released outside its window), and its index entry and lease (stops arm with `trackedAt = now`).
+- A child works `working = entry.filled_qty − child.filled_qty`. Its `qty` stays the group quantity while the entry is open; a later entry fill raises `working` (`QTY_ADJUSTED {workingQty}`). A child with `working = 0` waits with `wait_reason = AWAITING_PARENT` (it is never cancelled as dust).
+- When the entry becomes terminal **with fills**, its children are trimmed to `qty = entry.filled_qty` (`QTY_ADJUSTED {qty}`; a child that already sold that much becomes FILLED); **without fills** (cancelled, expired, a corporate action) the held children are cancelled (`PARENT_NOT_FILLED`).
+- SELL children reserve the shares the entry bought, in the same transaction as the entry fill, so no other sell can take them (I6).
+
+**One reservation per OCO pair** (the OCO group, and the TP/SL pair of OTOCO and BRACKET):
+- SELL legs: the pair's open legs reserve `max(working)` shares once, on one leg (the holder, initially TAKE_PROFIT); the sibling reserves 0. BUY legs (OCO only): `max(hold A, hold B)` cash once, on the holder.
+- Before a leg executes, `GroupHandler.prepareFill` moves the pair's reservation onto it, so the §10.3 execution-time guard and the share release see the full reservation. After any change (fill, cancel, release, replace, dividend adjustment) the reservation is rebalanced onto the open legs. I6 and I7 hold by construction.
+
+**Cancel and replace:**
+- `DELETE /order-groups/{groupId}` cancels every open leg (held children at once; §11.6 cancel latency applies to working legs). `DELETE /orders/{id}` on a leg cancels only that leg: an unfilled entry takes its held children with it (`PARENT_NOT_FILLED`), a partially filled entry leaves its children working for the filled quantity, and one OCO leg leaves the other working alone (it becomes the holder).
+- `PATCH /orders/{id}` on a leg and `PATCH /order-groups/{groupId}` are one operation (`GroupHandler.replace`): every changed leg must be open and unfilled (PENDING, WORKING or held; else `ORDER_NOT_REPLACEABLE`); the changed legs are REPLACED and new legs inherit `group_id`, `group_role`, `held` and the parent link (children are re-pointed to a replaced entry); the merged group is validated again (shape, bracket rules, checks 7–27 with the replaced holds credited back) before anything is committed. `qty` changes only through the entry or the group, and only while no leg has filled (children follow; OCO legs change together). A leg replaced through `PATCH /orders/{id}` takes the request's new `clientOrderId`; legs replaced by a group replace get `<grp>:<ROLE>:<n>`.
+- Group idempotency: every group `clientOrderId` (the placement's and each group replace's) is recorded in `order_group_request` (unique per account, its own namespace) with its kind and a `request_hash`: a placement hashes the normalized group (§11.7 rules, plus `type` and the leg fields), a replace the group id and its normalized body. Same id, kind and hash → 200 replay (`replayed: true`, free); otherwise 409 `CLIENT_ORDER_ID_CONFLICT`. A group replace takes a **new** group `clientOrderId`, which becomes the group's `clientOrderId`; the placement's id still replays. Leg client ids are `<grp public id>:<ROLE>` (`grp_…:TAKE_PROFIT`).
+- **As built (Phase 2 wave A):** `PATCH /orders/{id}` on a leg changes its prices (and the quantity through the entry, or either leg of an OCO); `timeInForce`, `extendedHours` and trails there are `ORDER_GROUP_INVALID` (the time in force is the group's). The bracket price rules bind only while the entry has not executed: once it has, a stop loss may be moved above the entry to lock in a gain, and a replaced child that already works runs checks 7–20 against the **market** (a stop on the wrong side would trigger at once) and takes its shares from the group's reservation (no position check). A replaced leg that is held stays held. A failing replace rolls everything back.
+- Children of an entry ended without fills by an account- or symbol-wide system cancel (admin, freeze, disable, reset, corporate action) are cancelled with that reason; otherwise `PARENT_NOT_FILLED`. When one leg of a BUY OCO pair ends, the other keeps `min(pair hold, its own hold)`.
+
+**Sessions, expiry, corporate actions, restart:**
+- Live legs follow §11.3 (outside REGULAR they queue for the open; stops arm in REGULAR); held children have no window until released. Expiry is per leg (§11.4); an entry that expires unfilled cancels its children.
+- A split or a symbol change cancels every leg like any open order (`CORPORATE_ACTION`, §14). A cash dividend adjusts leg prices under FINRA 5330 like single orders (§14); the bracket rules are not re-checked afterwards.
+- Everything is in the database (`held`, links, reservations, `working` is derived), so a restart reloads every non-held open leg into the index and continues; held children are not indexed. Golden scenarios: `GroupOrderScenarioTest` (every type, partial fills, gaps through both legs, restart).
+
+**Group status** (`OrderGroupStatus`, derived from the current legs): `ACTIVE` while any leg is open; then `COMPLETED` if any leg executed, else `CANCELLED` or `EXPIRED` (the entry's, or the OCO's first leg's, terminal status).
+
+**Events.** Leg timelines show `ACCEPTED {group, role, held}`, `ACTIVATED`, `QTY_ADJUSTED`, `CANCELLED {reason: OCO_FILLED | PARENT_NOT_FILLED, sibling | parent}` besides the usual events; every change publishes `OrderChanged` for the leg (§19 `/user/queue/orders`).
+
+### 11.10 Cancel latency (Phase 2, off by default)
+
+`stocks.rules.cancel-latency.enabled` (default **false**; env `STOCKS_RULES_CANCEL_LATENCY_ENABLED`, read through a placeholder in `application.yml`, so production keeps it off without any `.env` change; `GET /rules` `orders.cancelLatency` is null while off). When on, a **user** cancel (`DELETE /orders/{id}`, `DELETE /orders`, `DELETE /order-groups/{id}`, MCP `cancel_*`) of a WORKING or PARTIALLY_FILLED order is not immediate:
+- The order gets `cancel_requested_at = now` and `cancel_effective_at = now + base + jitter` (`base` 150 ms, `jitter = hash64(ENGINE_SEED, order, "cancel") mod (jitter-max + 1)` ms, `jitter-max` 100 ms), the event `CANCEL_REQUESTED {effectiveAt}`, and shows the API status **`PENDING_CANCEL`** (the stored status stays WORKING or PARTIALLY_FILLED, so holds and every "open" query are unchanged).
+- Until `cancel_effective_at` it is evaluated normally and **can still fill**; a full fill wins (FILLED). Then the sweep cancels it (`USER`), restart-safe because both instants are stored.
+- PENDING orders (not working yet), held children, admin and system cancels (freeze, reset, corporate actions, OCO, parent) stay immediate. Cancelling a PENDING_CANCEL order returns it unchanged (200); replacing it is `409 ORDER_NOT_REPLACEABLE`.
+
 ---
 
 ## 12. Trading engine and fill simulation
@@ -2114,6 +2227,7 @@ The authoritative lookup runs inside `PlaceOrderCmd` (and `ReplaceOrderCmd`; clo
 ```java
 public sealed interface EngineCommand permits
     PlaceOrderCmd, ReplaceOrderCmd, CancelOrderCmd, CancelAllCmd,          // order entry (WS3)
+    PlaceOrderGroupCmd, ReplaceOrderGroupCmd, CancelOrderGroupCmd,         // group orders (Phase 2, §11.9)
     SweepCmd,                                                               // internal timer
     TransitionCmd,                                                          // §9.4
     ApplyCashTransfersCmd, OpenAccountCmd, ResetAccountCmd,                 // money / accounts (carry IdempotencyRef, §17.6)
@@ -2359,7 +2473,7 @@ for each fee row r applicable to (side, trade_date of this execution):
 | Type | Effect |
 |---|---|
 | `FORWARD_SPLIT` / `REVERSE_SPLIT` | See **Split arithmetic** below. Cost is unchanged per lot except where quantity is removed. **All open orders on the symbol are cancelled** (`CORPORATE_ACTION`) [V]. `SplitAdjustments.record(symbol, ex_date, old_rate, new_rate)` writes `price_adjustment`. Charts use split-adjusted bars; equity stays continuous. |
-| `CASH_DIVIDEND` | On the ex-date: `dividend_entitlement(amount = DIVIDEND(qty × cash_rate), status=ACCRUED, accrued_at=now)` for each active account holding the symbol (none when the amount floors to $0.00; a dividend without a positive rate or a payable date → NEEDS_ADMIN). **The receivable counts in equity** (point-in-time rule in §16.1), so the ex-date price drop is not a leaderboard loss. On the payable date at 06:00 ET (job `PAY_DIVIDENDS`, trading days, run key = date, ALL_MISSED; pays every ACCRUED row with `payable_date ≤ date`, so a weekend payable date is paid on the next trading day), `PayDividendsCmd` posts `DIVIDEND` ledger rows (`trade_date = settle_date` = the run's date, key `DIV:<entitlement>`, `dividend_id` and `corporate_action_id` set) and sets PAID with `paid_at` = the ledger row's `posted_at`. A reset before the payable date sets VOID with `voided_at`. Open orders are not adjusted (FINRA 5330 is Phase 2). Also adds the rate to `daily_mark.dividend_ex` (symbol, ex-date) for the benchmark (a MERGE that creates a PROVISIONAL row without marks when the day has none yet). |
+| `CASH_DIVIDEND` | On the ex-date: `dividend_entitlement(amount = DIVIDEND(qty × cash_rate), status=ACCRUED, accrued_at=now)` for each active account holding the symbol (none when the amount floors to $0.00; a dividend without a positive rate or a payable date → NEEDS_ADMIN). **The receivable counts in equity** (point-in-time rule in §16.1), so the ex-date price drop is not a leaderboard loss. On the payable date at 06:00 ET (job `PAY_DIVIDENDS`, trading days, run key = date, ALL_MISSED; pays every ACCRUED row with `payable_date ≤ date`, so a weekend payable date is paid on the next trading day), `PayDividendsCmd` posts `DIVIDEND` ledger rows (`trade_date = settle_date` = the run's date, key `DIV:<entitlement>`, `dividend_id` and `corporate_action_id` set) and sets PAID with `paid_at` = the ledger row's `posted_at`. A reset before the payable date sets VOID with `voided_at`. Open orders on the symbol are adjusted under FINRA Rule 5330 in the same transaction (**Order adjustments** below). Also adds the rate to `daily_mark.dividend_ex` (symbol, ex-date) for the benchmark (a MERGE that creates a PROVISIONAL row without marks when the day has none yet). |
 | `NAME_CHANGE` | Requires an `asset` row for `new_symbol`; if missing, it is created by copying the flags. Until the new symbol has a price of its own (03:45 until its first close or print), valuation falls back to the former symbol's mark and fills (`MarkResolver`), so a rename is never a gain or a loss on the live board. Cancels open orders, then moves `position` and `position_lot` rows to the new symbol (one `position_adjustment` per lot with `symbol_before ≠ symbol_after`, quantities unchanged; an account that already holds the new symbol gets one merged position) and calls `WatchlistService.renameSymbol` (WS4, same transaction). History keeps the old symbol. Day P&L and snapshot lookups map `symbol_before → symbol_after` (§16.4). The market-data asset cache learns the new symbol at its next reload (the 03:00 asset sync usually has it already). |
 | `CASH_MERGER`, `STOCK_MERGER`, `SPIN_OFF`, `DELISTING` | `status=NEEDS_ADMIN`, plus an admin alert on `/user/queue/admin` and the System page. A manual application tool comes in Phase 2. |
 
@@ -2375,6 +2489,20 @@ for each fee row r applicable to (side, trade_date of this execution):
 5. Write one `position_adjustment` per lot with the exact before and after quantity and cost, and `cil_ledger_id` on the lot that absorbed the cash in lieu. Then assert I5 for the symbol before commit.
 
 Golden tests (WS3, `golden/engine`): 2:1 mid-GTC (orders cancelled, quantity doubled, cost unchanged, equity continuous), and **3:2, 1:3 and 1:8 on multi-lot fractional positions** (for example two lots of 0.33333: under 3:2 each becomes 0.49999 and the entitlement is 0.99999; under 1:8 each becomes 0.04166 and the entitlement is 0.08333), each asserting I5, the dust amount and equity continuity (`split-math.json` for the pure arithmetic including the non-fractionable cases, `split-scenarios.json` through the engine).
+
+**Order adjustments on the ex-date (FINRA Rule 5330, Phase 2)** [V rule; D implementation]. When a `CASH_DIVIDEND` is applied (03:45 ET on its ex-date, or late), the same transaction adjusts every open order on the symbol that was received before the ex cut-off (orders entered later were priced ex-dividend) and is not marked `doNotReduce`:
+
+| Order | Adjusted | Not adjusted |
+|---|---|---|
+| BUY LIMIT | limit −= dividend | BUY STOP, BUY STOP_LIMIT, SELL LIMIT, MARKET, TRAILING_STOP (DAY only; none is open at 03:45) |
+| SELL STOP (not triggered) | stop −= dividend | a triggered stop (it already works as a market order) |
+| SELL STOP_LIMIT (not triggered) | stop and limit −= dividend | a triggered stop-limit (it works as a sell limit) |
+
+- The reduced price is rounded **down** to the tick (`TICK_DOWN(price − dividend)`, the "next lower minimum price variation"), so a $0.125 dividend takes a $25.03 buy limit to $24.90. A result ≤ 0 cancels the order (`CORPORATE_ACTION`).
+- A BUY LIMIT's hold is recomputed for its remaining quantity at the new limit, never above the old hold (§10.3); a BUY OCO pair keeps its shared reservation (conservative).
+- Group legs follow the same table (held children included); the bracket rules are not re-checked.
+- Each adjusted order gets `PRICE_ADJUSTED {reason: "DIVIDEND", corporateActionId, dividend, limitBefore?, limitAfter?, stopBefore?, stopAfter?}` and an `OrderChanged`; each affected account gets one `CorporateActionEffect` (`ORDER_ADJ`, a `CORPORATE_ACTION` notification).
+- **Do not reduce:** `PlaceOrderRequest.doNotReduce` (default false, stored as `trade_order.do_not_reduce`, part of the request hash only when true) opts an order out. Stock dividends and splits never adjust orders here: §14 cancels them.
 
 **Reference prices after a split** (`SplitAdjustments`, WS2). From 03:45 on the ex-date until the first post-split print, every reference price is still dated before the ex-date. Without adjustment, a 1-for-10 reverse split of a $30 ETF would show 0.04 shares × $30 (−90%) on the live TODAY board and in intraday samples, and an admin deposit in that window would mint units at a wrong U, permanently. Therefore:
 - Any price **dated before** an applied split's `ex_date` and used **on or after** it is adjusted by `SPLIT_ADJUST`: `(price × old_rate).divide(new_rate, 4, HALF_EVEN)`, chained over every applicable split. This covers `MarkService` fallbacks (`prevClose`, `day_end_mark`, last trade of a previous day), `MarketDataService.previousClose`, `QuoteView.prevClose` and `change`, the `HoldCalculator` `ref`, and the reference price for checks 19 and 20.
@@ -3034,6 +3162,11 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `PATCH /orders/{orderId}` | trade | `ReplaceOrderRequest` → 201 `PlaceOrderResponse` (the new order) | 404 `ORDER_NOT_FOUND`, 409 `ORDER_NOT_REPLACEABLE`, 422 `FRACTIONAL_NOT_REPLACEABLE`, 422 per §11.2 |
 | `DELETE /orders/{orderId}` | trade | → `Order` | `ORDER_NOT_FOUND`, `ORDER_NOT_CANCELLABLE` |
 | `DELETE /orders?symbol=` | trade | → `{cancelled: Order[]}` | |
+| `POST /order-groups/preview` (Phase 2, §11.9) | account:read | `PlaceOrderGroupRequest` (`clientOrderId` optional) → `GroupPreview` (always 200) | |
+| `POST /order-groups` | trade | `PlaceOrderGroupRequest` → **201** `PlaceOrderGroupResponse`; **200** on replay | 409 `CLIENT_ORDER_ID_CONFLICT`; 422 `ORDER_GROUP_INVALID` and per §11.2 (fields prefixed by leg) |
+| `GET /order-groups/{groupId}` | account:read | → `OrderGroup` (legs in list shape) | `NOT_FOUND` |
+| `PATCH /order-groups/{groupId}` | trade | `ReplaceOrderGroupRequest` → 201 `PlaceOrderGroupResponse` (200 on replay) | `NOT_FOUND`, 409 `ORDER_NOT_REPLACEABLE`, 422 as `POST` |
+| `DELETE /order-groups/{groupId}` | trade | → `OrderGroup` (open legs cancelled, or `PENDING_CANCEL`, §11.10) | `NOT_FOUND` |
 | `GET /watchlists` | account:read | → `Watchlist[]` | |
 | `POST /watchlists` | trade | `{name, symbols?: string[]}` → 201 `Watchlist` | `VALIDATION_FAILED`, `SYMBOL_NOT_FOUND` |
 | `PUT /watchlists/{id}` | trade | `{name, symbols: string[]}`; array order = sort order → `Watchlist` | |
@@ -3172,7 +3305,8 @@ type PlaceOrderRequest = { clientOrderId: string; symbol: string; side: Side; ty
   trailAmount?: Dec|null; trailPercent?: Dec|null; timeInForce?: TimeInForce /* default DAY */;
   extendedHours?: boolean /* default false */; rationale?: string|null /* required for AI */;
   shareNote?: boolean /* humans: publish the rationale with the delayed trade; AI rationales are always public */;
-  acknowledge?: ("GFV_RISK")[] };
+  acknowledge?: ("GFV_RISK")[];
+  doNotReduce?: boolean /* Phase 2, §14 FINRA 5330: keep my prices on ex-dividend dates; default false */ };
 type ReplaceOrderRequest = { clientOrderId: string; qty?: Dec; limitPrice?: Dec; stopPrice?: Dec;
   trailAmount?: Dec; trailPercent?: Dec; timeInForce?: TimeInForce; extendedHours?: boolean; rationale?: string };
 type Execution = { executionId: string; orderId: string; symbol: string; side: Side; qty: Dec; price: Dec;
@@ -3189,7 +3323,33 @@ type Order = { orderId: string; clientOrderId: string; accountId: string; symbol
   fees: Dec; reservedCash: Dec; reservedQty: Dec; sessionDate: DateEt; receivedAt: Ts; acceptedAt: Ts; eligibleAt: Ts;
   activatedAt: Ts|null; triggeredAt: Ts|null; expiresAt: Ts; doneAt: Ts|null; replacesOrderId: string|null;
   replacedByOrderId: string|null; channel: Channel; rationale: string|null;
-  executions: Execution[]|null; events: OrderEvent[]|null /* filled only by the detail endpoints; null elsewhere */ };
+  executions: Execution[]|null; events: OrderEvent[]|null /* filled only by the detail endpoints; null elsewhere */;
+  group: OrderGroupRef|null /* Phase 2: the leg's group (§11.9) */; doNotReduce: boolean;
+  cancelRequestedAt: Ts|null /* §11.10; status is PENDING_CANCEL while the order is open */ };
+// ---- group orders (Phase 2, §11.9)
+type OrderGroupRef = { groupId: string; type: OrderGroupType; role: OrderGroupRole; parentOrderId: string|null;
+  held: boolean /* a child its entry has not released yet */ };
+type GroupLegRequest = { type?: OrderType|null /* entry, secondary: required; takeProfit: LIMIT; stopLoss: STOP, or
+  STOP_LIMIT when limitPrice is set */; limitPrice?: Dec|null; stopPrice?: Dec|null };
+type PlaceOrderGroupRequest = { clientOrderId: string; type: OrderGroupType; symbol: string;
+  side?: Side|null /* OCO: both legs (default SELL); other types: the entry side, BUY only in wave A */;
+  qty: Dec /* whole shares, every leg */; timeInForce?: TimeInForce /* default DAY; a MARKET entry is DAY */;
+  entry?: GroupLegRequest|null; takeProfit?: GroupLegRequest|null; stopLoss?: GroupLegRequest|null;
+  secondary?: GroupLegRequest|null; rationale?: string|null; shareNote?: boolean; doNotReduce?: boolean;
+  acknowledge?: ("GFV_RISK")[] };
+type GroupLegChange = { limitPrice?: Dec|null; stopPrice?: Dec|null };
+type ReplaceOrderGroupRequest = { clientOrderId: string /* new */; qty?: Dec|null; timeInForce?: TimeInForce|null;
+  entry?: GroupLegChange|null; takeProfit?: GroupLegChange|null; stopLoss?: GroupLegChange|null;
+  secondary?: GroupLegChange|null; rationale?: string|null };
+type OrderGroup = { groupId: string; clientOrderId: string; type: OrderGroupType; symbol: string; qty: Dec;
+  timeInForce: TimeInForce; status: OrderGroupStatus; createdAt: Ts; updatedAt: Ts;
+  legs: Order[] /* current legs (not REPLACED), ENTRY, TAKE_PROFIT, STOP_LOSS, SECONDARY */ };
+type PlaceOrderGroupResponse = { group: OrderGroup; estimate: Estimate /* the entry, or the OCO's take-profit leg */;
+  buyingPowerBefore: Dec; buyingPowerAfter: Dec; warnings: Warning[] /* message prefixed with the leg */;
+  replayed: boolean };
+type GroupPreview = { valid: boolean; errors: { code: string; field: string|null; message: string; hint: string|null }[];
+  warnings: Warning[]; legs: { role: OrderGroupRole; type: OrderType; side: Side; estimate: Estimate|null }[];
+  buyingPowerBefore: Dec; buyingPowerAfter: Dec|null; sessionNote: string|null };
 type Estimate = { price: Dec|null; qty: Dec|null; principal: Dec|null; fees: Fees; hold: Dec;
   quoteAsOf: Ts|null; quoteQuality: DataQuality };
 type PlaceOrderResponse = { order: Order; estimate: Estimate; buyingPowerBefore: Dec; buyingPowerAfter: Dec;
@@ -3235,7 +3395,10 @@ type Rules = { version: string; asOf: Ts;
       { type: OrderType; sessions: string; timeInForce: TimeInForce[]; qtyForms: string[]; notes: string }[];
     gtcDays: number; maxOpenOrders: number; maxQty: Dec; tick: string; collarPct: Dec; holdPctRegular: Dec; holdPctQueued: Dec;
     fatFingerWarnPct: Dec; priceTooFarPct: Dec; clientOrderIdPattern: string; rationaleRequiredForAi: boolean;
-    fractional: { minBuyNotional: Dec; minSellNotional: Dec; minQty: Dec; marketOnly: boolean; dayOnly: true; rthOnly: true; replaceable: false } };
+    fractional: { minBuyNotional: Dec; minSellNotional: Dec; minQty: Dec; marketOnly: boolean; dayOnly: true; rthOnly: true; replaceable: false };
+    // Phase 2 (§11.9, §11.10, §14)
+    groups: { type: OrderGroupType; legs: string; entryTypes: OrderType[]; timeInForce: TimeInForce[]; notes: string }[];
+    cancelLatency: string|null /* null when off (the default) */; dividendAdjustment: string };
   execution: { latency: string; qualityLadder: string[]; freshness: object; partialFills: string; liquiditySharedAcrossPlayers: false };
   fees: { code: FeeCode; appliesTo: "SELL"|"BOTH"; basis: "PRINCIPAL"|"SHARES"; rate: Dec; rounding: string;
     maxPerOrder: Dec|null; effectiveFrom: DateEt; effectiveTo: DateEt|null; note: string }[];
@@ -3271,7 +3434,7 @@ Content-Type: application/json
     "eligibleAt": "2026-10-09T14:31:02.729Z", "activatedAt": null, "triggeredAt": null,
     "expiresAt": "2026-10-09T20:00:00.000Z", "doneAt": null, "replacesOrderId": null, "replacedByOrderId": null,
     "channel": "REST_KEY", "rationale": "Momentum after guidance raise; …",
-    "executions": null, "events": null },
+    "executions": null, "events": null, "group": null, "doNotReduce": false, "cancelRequestedAt": null },
   "estimate": { "price": "131.2000", "qty": "0.95274", "principal": "125.00",
     "fees": { "sec": "0.00", "taf": "0.00", "cat": "0.00", "total": "0.00" }, "hold": "125.00",
     "quoteAsOf": "2026-10-09T14:31:01.904Z", "quoteQuality": "REALTIME_SINGLE_VENUE" },
@@ -3432,6 +3595,17 @@ Write tools:
 | 36 | `update_watchlist` | `trade` | RO=false, destructive=false, idempotent=true | `{name*, add?: string[], remove?: string[]}` (creates the list if missing) | `Watchlist` |
 | 37 | `delete_watchlist` | `trade` | RO=false, destructive=true, idempotent=true | `{name*}` | `{deleted: boolean}` (false if it did not exist) |
 | 38 | `mark_notifications_read` | `account:read` | RO=false, destructive=false, idempotent=true | `{ids?: string[], all?: bool}` (exactly one) | `{marked: int}` |
+
+Phase 2 group orders (§11.9), appended to the catalog; `place_order`, `preview_order` and `replace_order` also take `do_not_reduce?: bool` (§14). Leg inputs are flat (no nested objects): `entry_type`, `entry_limit_price`, `entry_stop_price`, `take_profit_limit_price`, `stop_loss_stop_price`, `stop_loss_limit_price` (makes the stop loss a STOP_LIMIT), `secondary_type`, `secondary_limit_price`, `secondary_stop_price`.
+
+| # | Tool | Scope | Hints | Input schema | Output |
+|---|---|---|---|---|---|
+| 39 | `preview_order_group` | `account:read` | read | as `place_order_group`; `client_order_id` and `rationale` optional | `GroupPreview` |
+| 40 | `place_order_group` | `trade` | RO=false, destructive=false, idempotent=true | `{client_order_id*, group_type*: "OCO"\|"OTO"\|"OTOCO"\|"BRACKET", symbol*, side?, qty*, time_in_force?, <leg inputs>, rationale* (AI), share_note?, do_not_reduce?, acknowledge?}` | `PlaceOrderGroupResponse` |
+| 41 | `get_order_group` | `account:read` | read | `{group_id*}` | `OrderGroup` |
+| 42 | `cancel_order_group` | `trade` | RO=false, destructive=true, idempotent=true | `{group_id*}` | `OrderGroup` |
+
+A single leg is replaced or cancelled with `replace_order` / `cancel_order` (§11.9 rules apply); `GET /order-groups` has no list endpoint (every `Order` carries its `group`).
 
 Decimal inputs are accepted as strings or numbers, and numbers are parsed as `BigDecimal` (§6.3). There are no admin tools. A tool whose backing contract is still a Day-0 stub (or a default method a workstream has not overridden yet, e.g. `PerformanceQueries.feed`) answers the error result `NOT_IMPLEMENTED`; the catalog, schemas and order never change with what has shipped.
 
@@ -3715,11 +3889,14 @@ frontend/src/
 | Quantity | Toggle **Shares / Amount ($)**. Amount forces Market + Day + no extended hours and requires a fractionable symbol (inline hint otherwise). Chips **25% · 50% · Max**: Max is buying power ÷ (ask × 1.02) for share buys, buying power for amount buys, and the available position for sells. |
 | TIF | Day or GTC. GTC is disabled for Trailing and Amount. |
 | Extended hours | A toggle, enabled for Limit only. It shows the IEX data-gap note at 04:00–08:00 and 17:00–20:00 ET. |
+| Don't reduce (Phase 2, §14) | A checkbox **"Don't reduce on dividends"**, shown only for the orders FINRA 5330 reduces (a share BUY LIMIT, a SELL STOP or STOP_LIMIT); sends `doNotReduce: true`, which the review sheet repeats. |
 | Estimates | From `POST /orders/preview`, debounced 250 ms: estimated price, qty for notional orders, principal, fees (SEC/TAF/CAT), hold, buying power before → after, session note ("Will queue for 09:30 ET"). |
 | Warnings | `FAT_FINGER`, `GFV_RISK` (shows a required **"I understand this will cause a good-faith violation"** checkbox that adds `acknowledge: ["GFV_RISK"]`), `SYNTHETIC_QUOTE`, `PARTIAL_FILL_LIKELY` |
 | Note | Optional rationale (≤ 1000 characters), behind "Add note", with a **"Share note publicly"** checkbox (off by default; sends `shareNote: true`). Without it the note is private to the player. |
 | Submit | Full width, "Buy AAPL" in `--up` or "Sell AAPL" in `--down`, **pinned to the bottom** of the scrolling ticket column (desktop) or sheet (phone, tablet) with the estimated cost or proceeds above it, so a long Stop Limit ticket never hides it. **Disabled until the preview is `valid`.** The `clientOrderId` (`web-<uuid>`) is created when the ticket opens and reused on retry. A symbol on a corporate-action hold (`tradable = false` with a halted quote) shows the hold up front and stays disabled. |
 | Review sheet | On by default (setting `confirmOrders`). It summarizes every field and warning, with Confirm and Edit. |
+| Advanced (Phase 2, §11.9) | A **Simple · Advanced** switch above the side picker. Advanced shows a segmented **Bracket · OCO · OTO · OTOCO** picker (only the types `GET /rules` `orders.groups` lists) and replaces the single-order body: Bracket/OTOCO/OTO show an **Entry** card (type Market/Limit, plus Stop/Stop Limit for OTO/OTOCO, its prices), **Take profit** (limit, with "+x.x% from entry") and **Stop loss** (stop, optional limit, "−x.x%") cards (OTO: one **Then** card with its own type), OCO shows its side (Sell to protect a position, Buy) and the two legs; shares (whole), Day/GTC for the group, the note and "Don't reduce on dividends". The preview is `POST /order-groups/preview` (per-leg estimates; errors map to the leg's field: `takeProfit.limitPrice` → the TP input). Submit opens the group review sheet (every leg, the bracket's risk/reward, the warnings) and posts `POST /order-groups` with a `web-<uuid>` group id. |
+| Orders (Phase 2) | Orders lists and the bottom dock show a group chip on each leg ("Bracket · TP", held children "Waiting for entry"); order detail adds a **Linked orders** card (every leg with status, links to each) and **Cancel group**. A leg's timeline shows ACTIVATED, QTY_ADJUSTED, PRICE_ADJUSTED and CANCEL_REQUESTED lines; `PENDING_CANCEL` reads "Pending cancel" and hides the Cancel button. |
 | Result | Toast "Buy 10 AAPL Limit 227.40 · Pending", then live status changes from `/user/queue/orders`, then a fill toast "Filled 10 AAPL @ 227.38". Server error codes map to inline field errors in friendly copy per code (`orderErrorText`: "Buy stops must be above the market (256.33)"; other messages with field names in words and prices at display scale), never Java field names or 4-decimal internal prices. |
 
 ### 22.6 Data flow
@@ -3907,6 +4084,7 @@ stocks:
     pdt.enforced: false
     ext-hours.require-real-quotes: false
     fill.resting-requires-print: false
+    cancel-latency: { enabled: false, base: 150ms, jitter-max: 100ms }   # Phase 2, §11.10 (PENDING_CANCEL)
   marketdata:
     profile: ${MARKETDATA_PROFILE:simulated}
     allow-simulated-in-prod: false

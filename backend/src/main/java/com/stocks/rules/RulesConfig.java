@@ -29,7 +29,8 @@ public record RulesConfig(Rules rules, Engine engine, String marketDataProfile, 
                       @DefaultValue Pdt pdt,
                       @DefaultValue Freshness freshness,
                       @DefaultValue ExtHours extHours,
-                      @DefaultValue Fill fill) {}
+                      @DefaultValue Fill fill,
+                      @DefaultValue CancelLatency cancelLatency) {}
 
   public record Fractional(@DefaultValue("1.00") BigDecimal minBuyNotional,
                            @DefaultValue("0.01") BigDecimal minSellNotional,
@@ -53,6 +54,11 @@ public record RulesConfig(Rules rules, Engine engine, String marketDataProfile, 
   public record ExtHours(@DefaultValue("false") boolean requireRealQuotes) {}
 
   public record Fill(@DefaultValue("false") boolean restingRequiresPrint) {}
+
+  /** §11.10 (Phase 2): off by default. */
+  public record CancelLatency(@DefaultValue("false") boolean enabled,
+                              @DefaultValue("150ms") Duration base,
+                              @DefaultValue("100ms") Duration jitterMax) {}
 
   public record Engine(@DefaultValue("250ms") Duration latencyBase,
                        @DefaultValue("100ms") Duration latencyJitterMin,

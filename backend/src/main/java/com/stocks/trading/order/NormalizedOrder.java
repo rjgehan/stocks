@@ -17,9 +17,18 @@ import java.util.Set;
 public record NormalizedOrder(String clientOrderId, String symbol, Side side, OrderType type, BigDecimal qty,
                               BigDecimal notional, BigDecimal limitPrice, BigDecimal stopPrice, BigDecimal trailAmount,
                               BigDecimal trailPercent, TimeInForce timeInForce, boolean extendedHours,
-                              String rationale, boolean shareNote, Set<String> acknowledge) {
+                              String rationale, boolean shareNote, Set<String> acknowledge, boolean doNotReduce) {
 
   public static final String ACK_GFV_RISK = "GFV_RISK";
+
+  /** An order without the FINRA 5330 "do not reduce" flag (§14). */
+  public NormalizedOrder(String clientOrderId, String symbol, Side side, OrderType type, BigDecimal qty,
+                         BigDecimal notional, BigDecimal limitPrice, BigDecimal stopPrice, BigDecimal trailAmount,
+                         BigDecimal trailPercent, TimeInForce timeInForce, boolean extendedHours, String rationale,
+                         boolean shareNote, Set<String> acknowledge) {
+    this(clientOrderId, symbol, side, type, qty, notional, limitPrice, stopPrice, trailAmount, trailPercent,
+        timeInForce, extendedHours, rationale, shareNote, acknowledge, false);
+  }
 
   public NormalizedOrder {
     acknowledge = acknowledge == null ? Set.of() : Set.copyOf(acknowledge);
@@ -30,7 +39,7 @@ public record NormalizedOrder(String clientOrderId, String symbol, Side side, Or
         r.qty(), r.notional(), r.limitPrice(), r.stopPrice(), r.trailAmount(), r.trailPercent(),
         r.timeInForce() == null ? TimeInForce.DAY : r.timeInForce(), r.extendedHoursOrDefault(),
         Text.trimToNull(r.rationale()), Boolean.TRUE.equals(r.shareNote()),
-        r.acknowledge() == null ? Set.of() : upper(r.acknowledge()));
+        r.acknowledge() == null ? Set.of() : upper(r.acknowledge()), Boolean.TRUE.equals(r.doNotReduce()));
   }
 
   public static String normalizeSymbol(String symbol) {
@@ -57,11 +66,11 @@ public record NormalizedOrder(String clientOrderId, String symbol, Side side, Or
 
   public NormalizedOrder withClientOrderId(String id) {
     return new NormalizedOrder(id, symbol, side, type, qty, notional, limitPrice, stopPrice, trailAmount,
-        trailPercent, timeInForce, extendedHours, rationale, shareNote, acknowledge);
+        trailPercent, timeInForce, extendedHours, rationale, shareNote, acknowledge, doNotReduce);
   }
 
   public NormalizedOrder withQty(BigDecimal newQty) {
     return new NormalizedOrder(clientOrderId, symbol, side, type, newQty, notional, limitPrice, stopPrice,
-        trailAmount, trailPercent, timeInForce, extendedHours, rationale, shareNote, acknowledge);
+        trailAmount, trailPercent, timeInForce, extendedHours, rationale, shareNote, acknowledge, doNotReduce);
   }
 }

@@ -31,6 +31,9 @@ public final class RequestHasher {
     fields.put("trailAmount", dec(o.trailAmount()));
     fields.put("trailPercent", dec(o.trailPercent()));
     fields.put("type", o.type() == null ? null : o.type().name());
+    if (o.doNotReduce()) {
+      fields.put("doNotReduce", true);   // Phase 2 (§14): only when set, so Phase 1 hashes are unchanged
+    }
     return sha256Hex(canonicalJson(fields));
   }
 
