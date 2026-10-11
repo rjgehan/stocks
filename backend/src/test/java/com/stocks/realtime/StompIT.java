@@ -416,7 +416,9 @@ class StompIT {
       connectHeaders.add("X-XSRF-TOKEN", csrfToken);
     }
     Client client = new Client();
-    client.session = stomp.connectAsync(url(), handshake, connectHeaders, client).get(5, TimeUnit.SECONDS);
+    // generous: the first CONNECT of a fresh context also warms up Tomcat's WebSocket upgrade, which took more than
+    // 5 s on a loaded machine (the full suite next to other builds)
+    client.session = stomp.connectAsync(url(), handshake, connectHeaders, client).get(20, TimeUnit.SECONDS);
     return client;
   }
 
