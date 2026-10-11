@@ -1,7 +1,7 @@
 # stocks: Roadmap
 
 > **Companion to** [`ARCHITECTURE.md`](ARCHITECTURE.md), which is the authoritative spec. Section references (§) point there.
-> **Date:** 2026-10-09.
+> **Date:** 2026-10-09; Phase 2 wave A integrated 2026-10-11.
 >
 > **Phases:**
 > - **Phase 0:** scaffold and contracts
@@ -152,13 +152,52 @@
 
 ## Phase 2: Full realism and connectors
 
+**Wave A (integrated on `main` 2026-10-11):** group orders, FINRA 5330, cancel latency; league stats, race chart,
+reactions, P&L Analysis; price alerts, the full PWA and Web Push; chart indicators, Time & Sales, news and analyst
+ratings, watchlist columns, the screener; the OAuth 2.1 server for the claude.ai and ChatGPT connectors; agent run
+reports, the SSE stream, the API access log and the public AI journal. Migrations V3–V8 (+ vendor V8_1), MCP tools
+#39–#55 (55 in all). **Left for later waves:** margin (and leveraged-ETF requirements), seasons, halts/LULD and
+circuit breakers, the official opening print, engine replay, passkeys, the manual merger/delisting/spin-off tool,
+and the live verification of both connectors (owner).
+
+### Owner actions after the wave A deploy
+
+Nothing is required for production to keep booting: no new environment variable is required, the six migrations
+apply by themselves, and the VAPID key pair and the OAuth signing key are generated on first boot and stored in the
+database. To turn the new features on for real:
+
+1. **Watch the first boot** (`docker logs -f stocks-app`): Flyway applies V3–V8 in one go; then "Generated the Web
+   Push VAPID key pair" and "OAuth signing key generated and stored encrypted" appear once. Admin → System:
+   `BENCHMARK_BACKFILL [2025-12-31:QQQ]` should be DONE (if FAILED, use **Run now**; until then the QQQ line in
+   P&L Analysis is blank) and `SCREENER_STATS` runs every minute (market caps fill in over about 3.5 hours).
+2. **Cloudflare:** no challenge, Access policy or cache on `/oauth2/*`, `/.well-known/*` and `/api/v1/stream`; Bot
+   Fight Mode off (§24.5). If a "Cache Everything" rule exists, exclude `/sw.js` and `/index.html` so app updates
+   reach installed PWAs. Check from outside:
+   `curl -s https://stocks.gehan.cloud/.well-known/oauth-protected-resource/mcp` returns
+   `"resource":"https://stocks.gehan.cloud/mcp"`.
+3. **Connect claude.ai** (signed in as the admin, docs/agents.md §2.9): Customize → Connectors → Add custom
+   connector, URL `https://stocks.gehan.cloud/mcp` ("Use Claude's published identity", or leave the OAuth fields
+   empty), Connect, then **Act as @claude** on the consent screen.
+4. **Connect ChatGPT** (same section): `https://chatgpt.com/plugins` → **+** → **Add custom MCP server** (older
+   accounts: Developer mode → Apps & Connectors → Create), same URL, authentication OAuth, then **Act as @chatgpt**.
+   Then tick the connector item below.
+5. **Web Push on a phone:** iPhone (iOS 16.4+): Safari → Share → Add to Home Screen, open stocks from the Home Screen,
+   Settings → Notifications → Enable on this device → "Send a test notification". Android/desktop: the same from
+   Settings → Notifications. (No real push service has been called in testing; this is the first live check.)
+6. **Agent runner:** make sure it runs the new image (`docker compose -p stocks --profile agents up -d`, or let
+   Watchtower pull `agent-runner-latest`), then check Admin → Bots after the next scheduled run.
+7. **Optional:** `curl -N "https://stocks.gehan.cloud/api/v1/stream?topics=session" -H "Authorization: Bearer $KEY"`
+   starts with `retry: 3000` and `event: hello` and sends `: hb` every 15 s through the tunnel. Set `FINNHUB_TOKEN`
+   if it is not set yet (analyst ratings and market caps need it). `STOCKS_RULES_CANCEL_LATENCY_ENABLED=true` turns
+   on cancel latency (off by default).
+
 ### Connectors and agents
 - [x] OAuth 2.1 Authorization Server: PKCE S256, CIMD + DCR, protected-resource metadata, `iss`, rotating refresh tokens, and the **act-as consent** screen (§17.9; in-app `com.stocks.oauth`, Settings → Connected apps)
 - [ ] claude.ai custom connector (OAuth) verified, and the ChatGPT developer-mode connector verified (check plan eligibility). If the owner wants the ChatGPT app in Phase 1, this OAuth work moves up (owner decision, §20.4).
-- [ ] Agent runner: `agent_run` table and an admin UI over the Phase 1 runner (§20.5)
-- [ ] SSE stream `/api/v1/stream` (quotes, orders, account, session, leaderboard) with `Last-Event-ID`
-- [ ] `api_access_log` (reads, 90-day retention) and the "recent API calls" view in Settings
-- [ ] `add_journal_note` MCP tool, and a public AI trade journal (the Phase 1 runner keeps private notes files)
+- [x] Agent runner: `agent_run` table and an admin UI over the Phase 1 runner (§20.5, §20.6: `POST /agent-runs` with the bot's own key, Admin → Bots, Bot activity on profiles)
+- [x] SSE stream `/api/v1/stream` (quotes, orders, account, session, leaderboard, feed) with `Last-Event-ID` (§19.3; API keys only)
+- [x] `api_access_log` (reads and writes, hourly buckets, 90-day retention) and the "recent API calls" view in Settings (§17.10)
+- [x] `add_journal_note` MCP tool, and a public AI trade journal (the Phase 1 runner keeps private notes files) (§20.7: `JOURNAL` feed items, Journal card on bot profiles)
 
 ### Trading realism
 - [ ] **MARGIN accounts**, offered once equity is at least $2,000 (an admin opt-in per player or league): long-only, intraday buying power 4 × margin excess, overnight 2 × Reg T excess, the Webull maintenance table, IMD/RM/RT calls with due dates, auto-liquidation, strikes
@@ -173,19 +212,19 @@
 
 ### League and fun
 - [ ] **Competitions / seasons** (`league`, `league_member`, DEDICATED accounts, deposit policies `NONE` / `UNIFORM_ONLY`, join rules, end-of-season standings and badges)
-- [ ] Sharpe ratio (≥ 20 days), profit factor, average hold time, best and worst trade
-- [ ] Race chart (everyone's unit-value curves), rank-change history
-- [ ] Reactions on feed items
+- [x] Sharpe ratio (≥ 20 days), profit factor, average hold time, best and worst trade (§16.8; profile League stats card, optional leaderboard columns)
+- [x] Race chart (everyone's unit-value curves), rank-change history (§16.9; League → Race)
+- [x] Reactions on feed items (§16.11; six emoji, live on `/topic/feed`)
 
 ### Product (Webull parity, part 1)
-- [ ] P&L Analysis: My Earnings (return vs SPY/QQQ), P&L calendar (day/month), P&L distribution by symbol
+- [x] P&L Analysis: My Earnings (return vs SPY/QQQ), P&L calendar (day/month), P&L distribution by symbol (§16.10; Account → Analysis)
 - [x] Alerts: price ≥/≤, % change; full PWA (vite-plugin-pwa 1.3.0: service worker, offline shell) with Web Push for fills and alerts (the static manifest ships in Phase 1). Built in Phase 2 wave A: §19.1 price alerts (repeat, expiry, live-only evaluation, MCP `list_alerts`/`create_alert`/`delete_alert`), §19.2 Web Push (RFC 8291/8292 on JDK crypto, VAPID key generated on first boot, five categories, test push) and §22.10 PWA
-- [ ] Chart indicators: MA, EMA, BOLL, VWAP, MACD, RSI, KDJ; extended-hours shading; Heikin Ashi and hollow candles
-- [ ] Time & Sales (colored at bid / at ask / between) when stream data allows
-- [ ] News tab polish; analyst ratings and price targets if a free source exists
-- [ ] Watchlist column chooser and sorting on desktop; drag reorder
+- [x] Chart indicators: MA, EMA, BOLL, VWAP, MACD, RSI, KDJ; extended-hours shading; Heikin Ashi and hollow candles (§22.11)
+- [x] Time & Sales (colored at bid / at ask / between) when stream data allows (§15.10: only prints a stream delivered, `source: NONE` otherwise)
+- [x] News tab polish; analyst ratings and price targets if a free source exists (Finnhub recommendation trends; price targets are premium-only, so not shown)
+- [x] Watchlist column chooser and sorting on desktop; drag reorder
 - [ ] Passkeys for human login
-- [ ] Basic screener (market cap, price, % change, volume / average volume, sector)
+- [x] Basic screener (market cap, price, % change, volume / average volume, sector) (§15.10; `/screener`, MCP `screen_stocks`)
 
 ---
 

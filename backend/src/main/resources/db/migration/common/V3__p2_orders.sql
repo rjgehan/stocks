@@ -1,4 +1,4 @@
--- V3 (WS3, Phase 2 wave A, provisional number: the integrator renumbers at merge time; §8 "As deployed"):
+-- V3 (WS3, Phase 2 wave A; number final since the wave A integration merge, §8 "As deployed"):
 -- group orders (§11.9: OCO, OTO, OTOCO, BRACKET), the FINRA 5330 do-not-reduce flag (§14) and cancel latency
 -- (§11.10: PENDING_CANCEL is an API status; the stored status stays WORKING / PARTIALLY_FILLED).
 -- Portable H2 2.4 + PostgreSQL 18 (§8 portability rules): no PG-only types, constraints added by name.

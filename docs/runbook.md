@@ -190,8 +190,63 @@ dc --profile agents stop agent-runner                                # pause bot
   `bot skipped … missing …`: a key or model is empty in `.env`. `no price for CLAUDE_MODEL=…`: set
   `AGENT_PRICE_CLAUDE` (or `AGENT_PRICE_CHATGPT`).
 - **Permission denied on `/data`**: the image runs as uid 1000; run `sudo chown -R 1000:1000 /DATA/AppData/stocks/agent-data` once.
-- The bots' orders and rationales are also visible in the app (order detail, player profile, the feed). Their notes
-  are not: they live only in `/DATA/AppData/stocks/agent-data/<bot>/notes.md`.
+- The bots' orders and rationales are also visible in the app (order detail, player profile, the feed). Their
+  private notes live only in `/DATA/AppData/stocks/agent-data/<bot>/notes.md`; what they choose to publish with
+  `add_journal_note` shows on their profile (Journal card) and in the feed after the 15-minute delay.
+- **Run reports (Phase 2):** every run, skipped ones included, is reported to the app with the bot's own key and
+  shows under **Admin → Bots** (status, tool calls, orders, cost) and as "Bot activity" on the bot's profile. No
+  reports? Check the runner runs the wave A image (`docker logs stocks-agent-runner | grep -i report`) and that
+  `AGENT_REPORT_RUNS` is not `false`. A bot can report at most 100 new runs per 24 h (429 beyond that).
+
+## Phase 2 features: jobs, alerts, Web Push, OAuth, SSE
+
+Everything below works with the Phase 1 `.env`; every setting has a default (ARCHITECTURE §23).
+
+**New jobs and tasks** (Admin → System lists them with their last run):
+
+| Name | When | What | If it fails |
+|---|---|---|---|
+| `BENCHMARK_BACKFILL [2025-12-31:QQQ]` | once, at the first boot of wave A | QQQ daily closes since 2025-12-31 (display only: P&L Analysis) | **Run now**; until it is DONE the QQQ line is blank or short |
+| `SCREENER_STATS` | every 60 s | 20-day average volumes once per trading day; ≤ 3 Finnhub company profiles a minute (market caps fill in over about 3.5 h after the first deploy) | the screener footer shows the coverage; without `FINNHUB_TOKEN` there are no market caps |
+| `PUSH_LEAGUE_EVENTS` | every 60 s | Web Push for a new weekly leader | harmless; the in-app feed still shows it |
+| `OAUTH_CLEANUP` | hourly | expired OAuth requests and codes, stale refresh tokens, dead grants, unused DCR clients | harmless; retried next hour |
+| `HOUSEKEEPING` (02:00) | daily | also deletes `api_access_log` buckets older than 90 days | as before |
+
+The price-alert monitor is a thread, not a job (`price-alerts`, every 250 ms, outside the engine): it fires only on a
+live price, never on a stale, synthetic, delayed or halted quote, one older than 15 minutes, or while the market is
+closed. `stocks.alerts.enabled=false` turns it off; `stocks.jobs.enabled` does not.
+
+**Web Push (§19.2).** The VAPID key pair is generated on first boot and kept in `push_vapid_key` ("Generated the Web
+Push VAPID key pair" in the log, once). Players enable push per device under Settings → Notifications (iPhone: only
+from the Home Screen app, iOS 16.4+) and can send themselves a test notification (once per 10 s). Checks:
+- Settings → Notifications says push is unavailable, or writes answer 503 `PUSH_UNAVAILABLE`: the key pair is unusable
+  or `stocks.push.enabled=false`; the boot log has "Web Push is off: …" with the reason. Notifications inside the app
+  keep working.
+- Never rotate the VAPID key casually: every existing subscription is bound to it, so all devices must enable push
+  again. To supply your own pair: `JDK_JAVA_OPTIONS=-Dstocks.push.vapid.public-key=… -Dstocks.push.vapid.private-key=…`
+  (base64url, both or neither), then `dc up -d app`.
+- A device is dropped on a 404/410 from its push service, on logout of that session, on a password change and after
+  10 failures in a row; the player re-enables it in Settings.
+- Cloudflare: if a "Cache Everything" rule exists, exclude `/sw.js` and `/index.html`, or installed apps keep an old
+  service worker. A new deploy shows "New version available · Reload" in open apps.
+
+**OAuth connectors (§17.9).** The access-token signing key is generated on first boot, stored encrypted under
+`API_KEY_PEPPER` in `oauth_signing_key` ("OAuth signing key generated and stored encrypted", once); rotation is under
+"Secrets and accounts" below, player-side revocation under "Players, bots and money" above. Checks from outside:
+`curl -s https://<host>/.well-known/oauth-protected-resource/mcp` returns `"resource":"https://<host>/mcp"`, and
+`curl -si https://<host>/mcp` answers 401 with `resource_metadata=` in `WWW-Authenticate`. A connector that loops
+on sign-in usually means a Cloudflare challenge or cache on `/oauth2/*` or `/.well-known/*`.
+
+**SSE stream (§19.3).** `GET /api/v1/stream` serves API keys only (a browser session gets 403): at most 3 streams per
+player and 200 in all (429 beyond), 15 s heartbeats, a `Last-Event-ID` resume buffer of 2,000 events / 5 minutes held
+in memory (a restart answers `reset {RESTARTED}` and clients refetch). Revoked keys and frozen players are cut off
+within 30 s (a freeze at once). Through the tunnel:
+`curl -N "https://<host>/api/v1/stream?topics=session" -H "Authorization: Bearer $KEY"` prints `retry: 3000` and
+`event: hello`, then `: hb` every 15 s; if nothing arrives until the connection closes, a proxy is buffering it.
+
+**API access log (§17.10).** API-key REST and MCP calls are counted per hour, key, endpoint and outcome: each player
+sees their own under Settings → Recent API calls, the admin sees everyone's. Rows older than 90 days are deleted by
+`HOUSEKEEPING`; up to 15 s of counts can be lost on a crash (not on a normal restart).
 
 ## Backups
 

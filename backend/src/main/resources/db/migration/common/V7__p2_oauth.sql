@@ -1,5 +1,5 @@
 -- =====================================================================================================================
--- V7 (provisional number; the integrator renumbers at merge): OAuth 2.1 authorization server for the claude.ai and
+-- V7 (Phase 2 wave A; number final since the integration merge): OAuth 2.1 authorization server for the claude.ai and
 -- ChatGPT connectors (ARCHITECTURE §17.9.6). Portable H2 2.4 + PostgreSQL 18 (no TEXT/jsonb/partial indexes).
 -- Every secret is stored as a SHA-256 hash (codes, refresh tokens, DCR client secrets); the signing key is stored
 -- AES-GCM encrypted under a key derived from API_KEY_PEPPER.

@@ -372,7 +372,12 @@ networks:
   limit.
 - Use a named tunnel with a stable hostname, never a Quick Tunnel.
 - **Caching → Cache Rules**: *bypass* `/api/*`, `/ws`, `/mcp`, `/v3/*`, `/swagger-ui/*`, `/oauth2/*`,
-  `/.well-known/*`; *cache* `/assets/*`. **Speed → Optimization**: Rocket Loader **off**.
+  `/.well-known/*`; *cache* `/assets/*`. Never cache `/sw.js` or `/index.html` (Phase 2 PWA: a cached service worker
+  keeps installed apps on an old version; the default rules leave both alone). **Speed → Optimization**: Rocket
+  Loader **off**.
+- **Server-Sent Events** (Phase 2, `GET /api/v1/stream`, ARCHITECTURE §19.3): covered by the `/api/*` bypass. The
+  app sends `Cache-Control: no-store, no-transform` and `X-Accel-Buffering: no` and a heartbeat every 15 s, so the
+  tunnel neither buffers nor idles the stream out.
 - **Security → Bots**: AI clients calling `/mcp` from vendor clouds cannot solve challenges. On the Free plan,
   Bot Fight Mode cannot be skipped per path, so turn **Bot Fight Mode off** for the zone (or, on Pro, use Super Bot
   Fight Mode with a Skip rule for `/api/*`, `/mcp`, `/oauth2/*`, `/.well-known/*`). No WAF challenge rules on those
@@ -417,6 +422,12 @@ key unreadable, so a new one is generated and connectors silently refresh their 
 database instead, mount an RSA private key (PKCS#8 or PKCS#1 PEM, at least 2048 bits) into the `app` container and
 set `OAUTH_JWK_PEM_FILE` to its path (both need an edit of the app service in `docker-compose.yml`: a read-only
 volume and the environment line). With `stocks.oauth.enabled=false` the whole OAuth server is off.
+
+**Web Push VAPID key** (Phase 2, ARCHITECTURE §19.2). Nothing to configure either: the key pair is generated on
+first boot and kept in the `push_vapid_key` table (backups include it). Keep it: every subscribed device is bound to
+it. To bring your own pair, pass both halves to the app (`JDK_JAVA_OPTIONS=-Dstocks.push.vapid.public-key=…
+-Dstocks.push.vapid.private-key=…`, base64url). The VAPID subject is `APP_PUBLIC_URL` (Apple requires an `https:`
+or `mailto:` subject).
 
 In the browser, the dev tools' Network tab shows `/ws` with status 101 after login.
 
@@ -496,7 +507,8 @@ What you give up compared with the runner: no health-gated rollback (a broken `l
 push a fix or pin `STOCKS_TAG` to an older `sha-…` tag in `.env` and run `docker compose -p stocks up -d`), no
 pre-deploy dump (the nightly backup still runs), up to five minutes of delay, and changes to `docker-compose.yml`
 or `pg_backup.sh` are not applied automatically: re-import or copy them by hand when a release notes it.
-Database migrations run automatically when the new app starts (Flyway).
+Database migrations run automatically when the new app starts (Flyway). The Phase 2 wave A image applies V3–V8 in
+one go on its first boot and needs no new `.env` entry (docs/ROADMAP.md lists the owner's follow-up checks).
 
 ## 12. The agent runner (Claude and ChatGPT bots)
 

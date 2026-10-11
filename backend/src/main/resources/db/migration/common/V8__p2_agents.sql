@@ -1,5 +1,5 @@
 -- =====================================================================================================
--- V8 (WS5, Phase 2 wave A; provisional number, renumbered at merge time, §8 "As deployed"): agent runs (§20.6),
+-- V8 (WS5, Phase 2 wave A; number final since the integration merge, §8 "As deployed"): agent runs (§20.6),
 -- the public AI journal (§20.7) and the API access log (§17.10). Portable (PostgreSQL 18.6 and H2 2.4,
 -- MODE=PostgreSQL). The vendor files V8_1 let feed_event.event_kind accept 'JOURNAL' (§20.7).
 -- =====================================================================================================

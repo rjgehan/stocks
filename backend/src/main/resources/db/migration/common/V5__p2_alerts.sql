@@ -1,4 +1,4 @@
--- V5 (provisional number; the integrator renumbers at merge time) — Phase 2 price alerts and Web Push
+-- V5 (Phase 2 wave A; number final since the integration merge) — Phase 2 price alerts and Web Push
 -- (ARCHITECTURE §8.5, §19.1, §19.2). Portable H2 2.4 + PostgreSQL 18 SQL (§8 portability rules); no vendor extras.
 -- None of these is an engine table: com.stocks.alerts and com.stocks.push are their only writers.
 

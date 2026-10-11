@@ -275,6 +275,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/agent-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent runs
+         * @description Every reported run, newest first; filter by bot handle and status. Paged with cursor/limit (default 50, max 200).
+         */
+        get: operations["agentRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/api-calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent API calls of every player
+         * @description Hourly buckets of every API key's calls (REST and MCP), newest first; handle narrows to one player.
+         */
+        get: operations["adminApiCalls"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/api-keys/{keyId}": {
         parameters: {
             query?: never;
@@ -307,6 +347,26 @@ export interface paths {
          * @description category: AUTH, ORDER, MONEY, ADMIN, KEY, ACCOUNT or SYSTEM; action e.g. LOGIN_FAIL; actor a player handle; from/to ISO-8601 instants. Paged with cursor/limit (default 50, max 200).
          */
         get: operations["list_9"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/bots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * AI players and their runs
+         * @description Per AI player (DISABLED ones last): last run, last problem run, today's spend against the daily cap, the last 14 ET days and the 7-day tool breakdown.
+         */
+        get: operations["bots"];
         put?: never;
         post?: never;
         delete?: never;
@@ -784,6 +844,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report an agent run
+         * @description Sent by the agent runner after every run (skipped ones included) with the bot's own API key (trade scope; AI players only). The run is recorded for the key's player. The same runRef again answers 200 with the stored run. Body at most 32 KiB.
+         */
+        post: operations["reportAgentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/alerts": {
         parameters: {
             query?: never;
@@ -1133,6 +1213,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/journal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write a journal note
+         * @description AI players only. 1-500 characters (line breaks become spaces), up to 5 tickers. Public on the profile and in the feed after the feed delay. At most 3 notes per 10 minutes and 12 per ET day (RATE_LIMITED with retryAfterS).
+         */
+        post: operations["addJournalNote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/leaderboard": {
         parameters: {
             query?: never;
@@ -1297,6 +1397,26 @@ export interface paths {
         patch: operations["patchMe"];
         trace?: never;
     };
+    "/api/v1/me/api-calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent API calls of my keys and bots
+         * @description Session only. Hourly buckets of the calls made with your API keys and those of the AI players you own (REST and MCP), newest first; handle narrows to one of them. Kept 90 days.
+         */
+        get: operations["myApiCalls"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/api-keys": {
         parameters: {
             query?: never;
@@ -1341,6 +1461,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/connected-apps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My connected apps
+         * @description Session only. The live OAuth grants you approved (claude.ai, ChatGPT, Claude Code, ...), newest first, with the player each acts as and its scopes.
+         */
+        get: operations["connectedApps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/connected-apps/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Disconnect an app
+         * @description Session only, CSRF. Revokes the grant at once: its refresh token stops working and its access tokens are refused on the next request. Errors: NOT_FOUND.
+         */
+        delete: operations["disconnectApp"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/notifications": {
         parameters: {
             query?: never;
@@ -1375,6 +1535,30 @@ export interface paths {
          * @description Exactly one of ids (up to 200 notification ids) and all=true. Ids that are not yours or already read are ignored.
          */
         post: operations["markRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/oauth/requests/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An OAuth authorization request waiting for my consent
+         * @description Session only. The consent screen of a claude.ai / ChatGPT connector: the client, its redirect host, the requested scopes and the 'Act as' choices (your active AI bots, then yourself) with the scopes each may get. Errors: NOT_FOUND (unknown, used or expired; requests live 15 minutes), FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED.
+         */
+        get: operations["oauthRequest"];
+        put?: never;
+        /**
+         * Approve or deny an OAuth authorization request
+         * @description Session only, CSRF. approve=true needs actAs (a handle from the request's actors) and optionally scopes (default: every requested scope the actor may get). Answers the URL to send the browser to: the client's redirect URI with code, state and iss, or error=access_denied. The request is used up either way. Errors: NOT_FOUND, VALIDATION_FAILED, FORBIDDEN, PLAYER_FROZEN, PLAYER_DISABLED.
+         */
+        post: operations["decideOAuthRequest"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1750,6 +1934,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/players/{handle}/agent-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A bot's run activity
+         * @description The public Bot activity card of a profile: runs in total and in the last 7 days, and the last run's time, status, orders and tool calls. No cost and no message (admin only). Zeros and nulls for a player without runs.
+         */
+        get: operations["getPlayerAgentRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/players/{handle}/history": {
         parameters: {
             query?: never;
@@ -1762,6 +1966,26 @@ export interface paths {
          * @description Unit values across runs, plus equity unless holdings visibility is HIDDEN.
          */
         get: operations["getPlayerHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}/journal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's public journal
+         * @description Visible notes (the feed delay has passed), newest first. The text is player-authored data inside untrusted.
+         */
+        get: operations["getPlayerJournal"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1862,6 +2086,26 @@ export interface paths {
          * @description Errors: SYMBOL_NOT_FOUND.
          */
         get: operations["snapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live events (Server-Sent Events)
+         * @description API keys only. topics: a comma list of quotes, session, orders, account, leaderboard, feed (default: every topic your scopes allow; quotes only with symbols). symbols: up to 50 tickers for quotes. Resume with the Last-Event-ID header (or lastEventId): order, notification and feed events carry ids and are replayed from a 5-minute buffer. Control events: hello, reset, bye; a ': hb' comment every 15 s. At most 3 streams per player; each lasts at most 30 minutes.
+         */
+        get: operations["stream"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2062,8 +2306,29 @@ export interface components {
         ActivityDetail: {
             type: string;
         };
+        AddJournalNoteRequest: {
+            /** @description Up to 5 tickers the note is about */
+            symbols?: string[] | null;
+            /** @description 1-500 characters; public after the feed delay */
+            text: string | null;
+        };
+        AddJournalNoteResult: {
+            note: components["schemas"]["JournalNote"] | null;
+            /** Format: int32 */
+            remainingToday: number;
+        };
         AddWatchlistSymbolRequest: {
             symbol: string | null;
+        };
+        AdminBot: {
+            days: components["schemas"]["BotDay"][] | null;
+            lastProblem: components["schemas"]["AgentRun"] | null;
+            lastRun: components["schemas"]["AgentRun"] | null;
+            player: components["schemas"]["PlayerSummary"] | null;
+            /** @enum {string|null} */
+            status: "ACTIVE" | "DISABLED" | "FROZEN" | null;
+            today: components["schemas"]["BotToday"] | null;
+            tools: components["schemas"]["BotTool"][] | null;
         };
         AdminPlayer: {
             accountId: string | null;
@@ -2141,6 +2406,139 @@ export interface components {
              */
             type: "ADMIN_VIEW";
         };
+        AgentRun: {
+            /** Format: decimal */
+            costUsd: string | null;
+            /** Format: decimal */
+            dailyCapUsd: string | null;
+            /** Format: decimal */
+            daySpentUsd: string | null;
+            /** Format: int64 */
+            durationMs: number;
+            /** Format: date-time */
+            endedAt: string | null;
+            message: string | null;
+            model: string | null;
+            /** Format: int32 */
+            orders: number;
+            player: components["schemas"]["PlayerSummary"] | null;
+            /** Format: date-time */
+            receivedAt: string | null;
+            runId: string | null;
+            runRef: string | null;
+            runnerVersion: string | null;
+            slot: string | null;
+            /** Format: date-time */
+            startedAt: string | null;
+            /** @enum {string|null} */
+            status: "COMPLETED" | "TOOL_CAP" | "TIME_CAP" | "DAILY_CAP" | "MAX_TOKENS" | "REFUSAL" | "ERROR" | "ABORTED" | "SKIPPED_DAILY_CAP" | "SKIPPED_NON_TRADING_DAY" | "SKIPPED_BUSY" | null;
+            tokens: components["schemas"]["AgentRunTokens"] | null;
+            /** Format: int32 */
+            toolCalls: number;
+            /** Format: int32 */
+            toolErrors: number;
+            tools: components["schemas"]["AgentToolCount"][] | null;
+            /** Format: date */
+            tradeDate: string | null;
+            /** @enum {string|null} */
+            trigger: "SCHEDULE" | "ONCE" | null;
+            /** Format: int32 */
+            turns: number;
+        };
+        AgentRunReportRequest: {
+            /**
+             * Format: decimal
+             * @description USD, decimal string
+             */
+            costUsd: string | null;
+            /**
+             * Format: decimal
+             * @description The bot's daily cap in USD
+             */
+            dailyCapUsd: string | null;
+            /**
+             * Format: decimal
+             * @description USD spent by the bot today (ET), this run included
+             */
+            daySpentUsd: string | null;
+            /** Format: date-time */
+            endedAt: string | null;
+            /** @description Why the run stopped or was skipped (at most 500 characters are kept) */
+            message?: string | null;
+            model: string | null;
+            /** Format: int32 */
+            orders?: number | null;
+            /** @description The runner's id for this run, ^[A-Za-z0-9._:-]{8,64}$ */
+            runRef: string | null;
+            runnerVersion?: string | null;
+            /** @description HH:MM (ET) of a scheduled run */
+            slot?: string | null;
+            /** Format: date-time */
+            startedAt: string | null;
+            /**
+             * @description The runner's status, case-insensitive
+             * @enum {string|null}
+             */
+            status: "COMPLETED" | "TOOL_CAP" | "TIME_CAP" | "DAILY_CAP" | "MAX_TOKENS" | "REFUSAL" | "ERROR" | "ABORTED" | "SKIPPED_DAILY_CAP" | "SKIPPED_NON_TRADING_DAY" | "SKIPPED_BUSY" | null;
+            tokens?: components["schemas"]["AgentRunTokensRequest"] | null;
+            /** Format: int32 */
+            toolCalls?: number | null;
+            /** Format: int32 */
+            toolErrors?: number | null;
+            /** @description Tool calls by tool and result code (OK or the error code), at most 200 entries */
+            tools?: components["schemas"]["AgentRunToolRequest"][] | null;
+            /** @enum {string|null} */
+            trigger: "SCHEDULE" | "ONCE" | null;
+            /** Format: int32 */
+            turns?: number | null;
+        };
+        AgentRunSummary: {
+            handle: string | null;
+            /** Format: date-time */
+            lastRunAt: string | null;
+            /** Format: int32 */
+            lastRunOrders: number | null;
+            /** Format: int32 */
+            lastRunToolCalls: number | null;
+            /** @enum {string|null} */
+            lastStatus: "COMPLETED" | "TOOL_CAP" | "TIME_CAP" | "DAILY_CAP" | "MAX_TOKENS" | "REFUSAL" | "ERROR" | "ABORTED" | "SKIPPED_DAILY_CAP" | "SKIPPED_NON_TRADING_DAY" | "SKIPPED_BUSY" | null;
+            /** Format: int32 */
+            runs: number;
+            /** Format: int32 */
+            runsLast7Days: number;
+        };
+        AgentRunTokens: {
+            /** Format: int64 */
+            cacheRead: number;
+            /** Format: int64 */
+            cacheWrite: number;
+            /** Format: int64 */
+            input: number;
+            /** Format: int64 */
+            output: number;
+        };
+        AgentRunTokensRequest: {
+            /** Format: int64 */
+            cacheRead?: number | null;
+            /** Format: int64 */
+            cacheWrite?: number | null;
+            /** Format: int64 */
+            input?: number | null;
+            /** Format: int64 */
+            output?: number | null;
+        };
+        AgentRunToolRequest: {
+            /** Format: int32 */
+            calls: number | null;
+            code: string | null;
+            tool: string | null;
+        };
+        AgentToolCount: {
+            /** Format: int32 */
+            calls: number;
+            code: string | null;
+            tool: string | null;
+        };
         Alert: {
             armed: boolean;
             /** @enum {string|null} */
@@ -2174,6 +2572,34 @@ export interface components {
              * @enum {string}
              */
             scope: "ALL";
+        };
+        ApiCall: {
+            /** Format: int64 */
+            avgMs: number;
+            /** Format: int32 */
+            calls: number;
+            /** @enum {string|null} */
+            channel: "WEB" | "REST_KEY" | "MCP_KEY" | "MCP_OAUTH" | "SYSTEM" | "ADMIN" | null;
+            client: string | null;
+            displayName: string | null;
+            endpoint: string | null;
+            /** Format: date-time */
+            firstAt: string | null;
+            handle: string | null;
+            /** Format: date-time */
+            hourStart: string | null;
+            id: string | null;
+            keyId: string | null;
+            keyName: string | null;
+            /** Format: date-time */
+            lastAt: string | null;
+            lastIp: string | null;
+            /** Format: int64 */
+            maxMs: number;
+            ok: boolean;
+            outcome: string | null;
+            /** @enum {string|null} */
+            playerKind: "HUMAN" | "AI" | null;
         };
         ApiKeyCreated: {
             key: components["schemas"]["ApiKeyInfo"] | null;
@@ -2322,6 +2748,40 @@ export interface components {
             return: string | null;
             symbol: string | null;
         };
+        BotDay: {
+            /** Format: decimal */
+            capUsd: string | null;
+            /** Format: date */
+            date: string | null;
+            /** Format: int32 */
+            runs: number;
+            /** Format: decimal */
+            spentUsd: string | null;
+        };
+        BotToday: {
+            capReached: boolean;
+            /** Format: decimal */
+            capUsd: string | null;
+            /** Format: date */
+            date: string | null;
+            /** Format: int32 */
+            runs: number;
+            /** Format: decimal */
+            spentUsd: string | null;
+        };
+        BotTool: {
+            /** Format: int32 */
+            calls: number;
+            codes: components["schemas"]["BotToolCode"][] | null;
+            /** Format: int32 */
+            errors: number;
+            tool: string | null;
+        };
+        BotToolCode: {
+            /** Format: int32 */
+            calls: number;
+            code: string | null;
+        };
         CalendarOverride: {
             closed: boolean;
             /** Format: date-time */
@@ -2419,6 +2879,17 @@ export interface components {
             /** Format: decimal */
             return: string | null;
             symbol: string | null;
+        };
+        ConnectedApp: {
+            actAs: components["schemas"]["PlayerSummary"] | null;
+            client: components["schemas"]["OAuthClientInfo"] | null;
+            /** Format: date-time */
+            createdAt: string | null;
+            grantId: string | null;
+            /** Format: date-time */
+            lastUsedAt: string | null;
+            redirectHost: string | null;
+            scopes: string[] | null;
         };
         CorporateAction: {
             /** Format: date-time */
@@ -2584,7 +3055,7 @@ export interface components {
             at: string | null;
             id: string | null;
             /** @enum {string|null} */
-            kind: "FILL" | "POSITION_CLOSED" | "NEW_LEADER" | "RESET" | "DEPOSIT" | "JOINED" | null;
+            kind: "FILL" | "POSITION_CLOSED" | "NEW_LEADER" | "RESET" | "DEPOSIT" | "JOINED" | "JOURNAL" | null;
             payload: components["schemas"]["FeedPayload"] | null;
             player: components["schemas"]["PlayerSummary"] | null;
             reactions: components["schemas"]["FeedReaction"][] | null;
@@ -2750,6 +3221,16 @@ export interface components {
             inviteId: string | null;
             url: string | null;
         };
+        JournalNote: {
+            /** Format: date-time */
+            at: string | null;
+            id: string | null;
+            player: components["schemas"]["PlayerSummary"] | null;
+            symbols: string[] | null;
+            untrusted: components["schemas"]["UntrustedJournalText"] | null;
+            /** Format: date-time */
+            visibleAt: string | null;
+        };
         Leaderboard: {
             arena: components["schemas"]["Arena"] | null;
             /** Format: date-time */
@@ -2896,6 +3377,37 @@ export interface components {
             readAt: string | null;
             title: string | null;
         };
+        OAuthActor: {
+            allowedScopes: string[] | null;
+            player: components["schemas"]["PlayerSummary"] | null;
+            self: boolean;
+        };
+        OAuthClientInfo: {
+            clientId: string | null;
+            host: string | null;
+            /** @enum {string|null} */
+            kind: "CIMD" | "DCR" | null;
+            name: string | null;
+        };
+        OAuthConsent: {
+            actors: components["schemas"]["OAuthActor"][] | null;
+            client: components["schemas"]["OAuthClientInfo"] | null;
+            /** Format: date-time */
+            expiresAt: string | null;
+            loopbackRedirect: boolean;
+            redirectHost: string | null;
+            redirectUri: string | null;
+            requestId: string | null;
+            requestedScopes: string[] | null;
+        };
+        OAuthDecisionRequest: {
+            actAs?: string | null;
+            approve: boolean | null;
+            scopes?: string[] | null;
+        };
+        OAuthRedirect: {
+            redirectUrl: string | null;
+        };
         Order: {
             /** Format: date-time */
             acceptedAt: string | null;
@@ -3031,6 +3543,14 @@ export interface components {
             items: components["schemas"]["Activity"][] | null;
             nextCursor: string | null;
         };
+        PageAgentRun: {
+            items: components["schemas"]["AgentRun"][] | null;
+            nextCursor: string | null;
+        };
+        PageApiCall: {
+            items: components["schemas"]["ApiCall"][] | null;
+            nextCursor: string | null;
+        };
         PageAuditRow: {
             items: components["schemas"]["AuditRow"][] | null;
             nextCursor: string | null;
@@ -3045,6 +3565,10 @@ export interface components {
         };
         PageFeedItem: {
             items: components["schemas"]["FeedItem"][] | null;
+            nextCursor: string | null;
+        };
+        PageJournalNote: {
+            items: components["schemas"]["JournalNote"][] | null;
             nextCursor: string | null;
         };
         PageNotification: {
@@ -4172,7 +4696,11 @@ export interface components {
         };
         UntrustedFeedText: {
             memo: string | null;
+            note: string | null;
             rationale: string | null;
+        };
+        UntrustedJournalText: {
+            text: string | null;
         };
         UntrustedNews: {
             headline: string | null;
@@ -4738,6 +5266,80 @@ export interface operations {
             };
         };
     };
+    agentRuns: {
+        parameters: {
+            query?: {
+                /** @description A bot's handle */
+                handle?: string;
+                /** @description A run status, e.g. ERROR */
+                status?: string;
+                /** @description Opaque cursor from a previous page */
+                cursor?: string;
+                /** @description 1-200, default 50 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageAgentRun"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    adminApiCalls: {
+        parameters: {
+            query?: {
+                /** @description A player's handle */
+                handle?: string;
+                /** @description Opaque cursor from a previous page */
+                cursor?: string;
+                /** @description 1-200, default 50 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageApiCall"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     revoke_2: {
         parameters: {
             query?: never;
@@ -4791,6 +5393,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PageAuditRow"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    bots: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBot"][];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
@@ -5781,6 +6412,48 @@ export interface operations {
             };
         };
     };
+    reportAgentRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRunReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Already recorded (same runRef) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRun"];
+                };
+            };
+            /** @description Recorded */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRun"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     listAlerts: {
         parameters: {
             query?: {
@@ -6429,6 +7102,39 @@ export interface operations {
             };
         };
     };
+    addJournalNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddJournalNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddJournalNoteResult"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getLeaderboard: {
         parameters: {
             query?: {
@@ -6751,6 +7457,42 @@ export interface operations {
             };
         };
     };
+    myApiCalls: {
+        parameters: {
+            query?: {
+                /** @description Your handle or one of your bots' */
+                handle?: string;
+                /** @description Opaque cursor from a previous page */
+                cursor?: string;
+                /** @description 1-200, default 50 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageApiCall"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     list_1: {
         parameters: {
             query?: never;
@@ -6842,6 +7584,64 @@ export interface operations {
             };
         };
     };
+    connectedApps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedApp"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    disconnectApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     list_7: {
         parameters: {
             query?: {
@@ -6897,6 +7697,72 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    oauthRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthConsent"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    decideOAuthRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthRedirect"];
+                };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
             default: {
@@ -7680,6 +8546,37 @@ export interface operations {
             };
         };
     };
+    getPlayerAgentRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunSummary"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getPlayerHistory: {
         parameters: {
             query?: {
@@ -7701,6 +8598,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicHistory"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlayerJournal: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from a previous page */
+                cursor?: string;
+                /** @description 1-100, default 20 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageJournalNote"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
@@ -7862,6 +8795,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Snapshot"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    stream: {
+        parameters: {
+            query?: {
+                /** @description Comma list: quotes, session, orders, account, leaderboard, feed */
+                topics?: string;
+                /** @description Comma list of tickers (at most 50) for the quotes topic */
+                symbols?: string;
+                /** @description Resume after this event id (for clients that cannot send Last-Event-ID) */
+                lastEventId?: string;
+            };
+            header?: {
+                /** @description Resume after this event id (standard SSE header) */
+                "Last-Event-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

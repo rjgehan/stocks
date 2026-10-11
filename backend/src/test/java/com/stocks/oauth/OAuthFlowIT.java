@@ -710,12 +710,16 @@ class OAuthFlowIT {
   @Autowired OAuthProperties oauthProperties;
 
   @Test
-  void theSigningKeyIsStoredEncryptedAndAPepperChangeReplacesIt() {
+  void theSigningKeyIsStoredEncryptedAndAPepperChangeReplacesIt() throws Exception {
     String kid = signingKeys.current().getKeyID();
     Map<String, Object> row = jdbc.sql("SELECT kid, public_jwk, private_key_enc FROM oauth_signing_key WHERE kid = ?")
         .param(kid).query().singleRow();
     assertThat((String) row.get("public_jwk")).contains(kid).doesNotContain("\"d\"");
-    assertThat((String) row.get("private_key_enc")).doesNotContain("MII");
+    // the stored value never holds the PKCS#8 key in clear (its base64, or any 40-character run of it). Not a check
+    // for "MII": that prefix also turns up by chance in about 1% of random base64 ciphertexts of this length.
+    String pkcs8 = java.util.Base64.getEncoder().encodeToString(signingKeys.current().toRSAPrivateKey().getEncoded());
+    assertThat((String) row.get("private_key_enc")).doesNotContain(pkcs8.substring(0, 40))
+        .doesNotContain(pkcs8.substring(pkcs8.length() / 2, pkcs8.length() / 2 + 40)).doesNotContain("PRIVATE KEY");
     // a restart with the same pepper loads the same key
     assertThat(new SigningKeys(jdbc, time, properties, oauthProperties).current().getKeyID()).isEqualTo(kid);
     // another pepper cannot decrypt it: the row is retired and a new key generated

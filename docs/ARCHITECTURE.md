@@ -1081,7 +1081,9 @@ enum PushCategory    { FILLS, ALERTS, MONEY, ACCOUNT, LEAGUE }
 
 **As deployed (2026-10).** The first production deploy shipped without the squash: production applied `V1__init`, `V1_0_1`, `V1_3_01` and `V1_4_01`, and runs `spring.flyway.out-of-order=false`. Those four files are frozen (never edit, rename or delete them), and the per-workstream `V1_<ws>_<nn>` lanes are closed: a file that sorts before `V1_4_01` is "ignored" by Flyway and fails validation at boot. Every new migration is the next whole version (`V2__…`, `V3__…`), numbered at merge time by the integrator. `MigrationOrderTest` enforces this and upgrades a production-baseline database with out-of-order off.
 
-**Phase 2 group orders and order realism** (`common/V3__p2_orders.sql`, provisional number; §11.9, §11.10, §14), portable H2 + PostgreSQL:
+Production has since applied `V2__wait_reason_fits_corporate_action_hold` (Phase 1 review fixes), so `MigrationOrderTest` treats V2 as the newest applied version. **Phase 2 wave A** (integration merge, 2026-10-11) adds, in merge order, `V3__p2_orders` (group orders, FINRA 5330, cancel latency), `V4__p2_league` (feed reactions), `V5__p2_alerts` (price alerts, Web Push), `V6__p2_charts` (screener statistics), `V7__p2_oauth` (OAuth authorization server) and `V8__p2_agents` (agent runs, journal, API access log) in `common/`, plus the vendor halves `h2/` and `postgresql/V8_1__p2_agents_feed_kind` (the `feed_event.event_kind` CHECK gains `JOURNAL`; a CHECK cannot be replaced portably). Production applies all of them in one go at the first boot of the wave A image; each is additive (new tables, new nullable or defaulted columns, one widened CHECK), so the Phase 1 data needs no backfill. The next migration is `V9__…`.
+
+**Phase 2 group orders and order realism** (`common/V3__p2_orders.sql`; §11.9, §11.10, §14), portable H2 + PostgreSQL:
 
 ```sql
 CREATE TABLE order_group (                            -- §11.9; legs are trade_order rows with group_id
@@ -1122,7 +1124,7 @@ ALTER TABLE trade_order ADD COLUMN cancel_effective_at TIMESTAMP WITH TIME ZONE;
 --   ck_order_cancel_req ((cancel_requested_at IS NULL) = (cancel_effective_at IS NULL)), ix_order_group(group_id)
 ```
 
-**Phase 2 schema, league slice (`common/V4__p2_league.sql`, provisional version; the integrator renumbers it).** One table, portable H2 + PostgreSQL, upserted with the cast-everything `MERGE` (tested on both, §26):
+**Phase 2 schema, league slice (`common/V4__p2_league.sql`).** One table, portable H2 + PostgreSQL, upserted with the cast-everything `MERGE` (tested on both, §26):
 
 ```sql
 CREATE TABLE feed_reaction (                         -- §16.11: one reaction per player per feed item
@@ -1863,7 +1865,7 @@ CREATE TABLE SPRING_SESSION_ATTRIBUTES (
 | I9 | Every `execution` has exactly one `cash_ledger` row with `amount = net_amount`. Every APPLIED `cash_transfer` has exactly one ledger row. |
 | I10 | (Warning only.) Every execution price lies within the SIP 1-minute [low − spread, high + spread] of its minute (spread = the execution's reference-quote spread, at least one tick; RAW bars; a minute with only the IEX tail is retried until the execution is 30 minutes old). Checked by `FillQualityAudit` after the 15-minute embargo; a finding is logged at WARN and written once to `audit_log` as `SYSTEM/FILL_QUALITY_WARNING` (target the execution); it never halts the engine. |
 
-### 8.5 Phase 2: price alerts and Web Push (`common/V5__p2_alerts.sql`, provisional number)
+### 8.5 Phase 2: price alerts and Web Push (`common/V5__p2_alerts.sql`)
 
 Portable (no vendor extras). `price_alert` (§19.1), `push_subscription`, `push_preference` and `push_vapid_key` (§19.2). None is an engine table; `com.stocks.alerts` and `com.stocks.push` are their only writers. Upserts are cast-everything `MERGE`s with `-Ppg-it` tests.
 
@@ -1930,7 +1932,7 @@ CREATE TABLE push_vapid_key (                          -- generated on first boo
 
 | Migration | Table | Owner | Purpose |
 |---|---|---|---|
-| `V6__p2_charts.sql` (provisional number; the integrator renumbers) | `screener_stat(symbol PK, avg_volume, avg_volume_iex, avg_volume_days, avg_volume_as_of, volume_at, shares_outstanding NUMERIC(20,0), market_cap NUMERIC(22,0), industry VARCHAR(100), profile_source, profile_at, updated_at)` | WS2 | Screener statistics (§15.10): written only by `SCREENER_STATS` through two cast `MERGE`s (volumes; profile), both covered on PostgreSQL by `-Ppg-it`. No foreign key to `asset` (a renamed symbol simply gets a new row; old rows are harmless). |
+| `V6__p2_charts.sql` | `screener_stat(symbol PK, avg_volume, avg_volume_iex, avg_volume_days, avg_volume_as_of, volume_at, shares_outstanding NUMERIC(20,0), market_cap NUMERIC(22,0), industry VARCHAR(100), profile_source, profile_at, updated_at)` | WS2 | Screener statistics (§15.10): written only by `SCREENER_STATS` through two cast `MERGE`s (volumes; profile), both covered on PostgreSQL by `-Ppg-it`. No foreign key to `asset` (a renamed symbol simply gets a new row; old rows are harmless). |
 
 ---
 
@@ -2940,7 +2942,7 @@ Four additions behind `MarketDataService` (new default methods `timeAndSales`, `
 **Screener** (`ScreenerService`; `GET /market/screener`, MCP `screen_stocks`).
 - **Universe:** the bundled `universe.csv` (~690 symbols: S&P 500, Nasdaq-100 extras, popular stocks and ADRs, ~100 ETFs), restricted to `asset` rows that are active and tradable. Not the full Alpaca list: ~10,000 symbols cannot be kept priced within the free budget.
 - **Live columns** come from the `QuoteBook` through `MarketFeed.peek` (never waits on a provider), split-adjusted like every quote (§14): `price` (last), `change`, `changePct` (a fraction), `volume` (IEX volume on `hybrid`, so `volumeIsPartial = true`; SIP on `alpaca-sip`; the SIM's full volume). During sessions the universe poll (§15.5, every 60 s) keeps them current. Outside sessions, or after a restart, a screen asks `MarketFeed.warm(universe)` for one background snapshot pass (`BACKGROUND`, batches of 100, about 7 Alpaca calls) over the symbols not polled in the last 60 s, **at most once per 5 minutes**; until it lands the answer carries `warming = true` and only the symbols already priced. The computed universe table is cached 5 s; filters, sorting and paging run in memory.
-- **Statistics** (`screener_stat`, §8, migration `V6__p2_charts.sql` provisional): 20-day average daily volume on two bases (`avg_volume` from SIP daily bars for display, `avg_volume_iex` from IEX daily bars on `hybrid`, so relative volume compares like with like), shares outstanding, the provider's market cap and industry. Written by the `SCREENER_STATS` `PeriodicTask` (every 60 s, all day): (a) when the stored window ends before the last completed trading day, it recomputes the averages for the universe from 22 trading days of `1Day` bars (batches of 100 symbols, `BACKGROUND`; about 7 calls per feed per day; a failed pass is retried after an hour); (b) it fetches at most `stocks.marketdata.screener.profiles-per-minute` (default 3) company profiles (Finnhub `profile2`, one call each, `BACKGROUND`, so at most ~5% of the 55/min Finnhub budget) for stocks and ADRs whose profile is missing or older than 30 days. An empty answer is stored too (no retry for 30 days); a failure is retried after an hour. With no Finnhub token, profiles are skipped (market caps stay null). On the SIM, profiles and averages are local and computed in one pass; the first screen of a fresh SIM process starts that pass in the background.
+- **Statistics** (`screener_stat`, §8, migration `V6__p2_charts.sql`): 20-day average daily volume on two bases (`avg_volume` from SIP daily bars for display, `avg_volume_iex` from IEX daily bars on `hybrid`, so relative volume compares like with like), shares outstanding, the provider's market cap and industry. Written by the `SCREENER_STATS` `PeriodicTask` (every 60 s, all day): (a) when the stored window ends before the last completed trading day, it recomputes the averages for the universe from 22 trading days of `1Day` bars (batches of 100 symbols, `BACKGROUND`; about 7 calls per feed per day; a failed pass is retried after an hour); (b) it fetches at most `stocks.marketdata.screener.profiles-per-minute` (default 3) company profiles (Finnhub `profile2`, one call each, `BACKGROUND`, so at most ~5% of the 55/min Finnhub budget) for stocks and ADRs whose profile is missing or older than 30 days. An empty answer is stored too (no retry for 30 days); a failure is retried after an hour. With no Finnhub token, profiles are skipped (market caps stay null). On the SIM, profiles and averages are local and computed in one pass; the first screen of a fresh SIM process starts that pass in the background.
 - **Derived columns:** `marketCap = sharesOutstanding × price` (moves with the price), else the stored provider market cap, else null (ETFs). `relVolume = volume ÷ average` on the same basis (`avg_volume_iex` when `volumeIsPartial`), scale 2, null without both. `sector`: the static GICS map `marketdata/sectors.csv` (every non-ETF universe symbol; [U] refine as reclassifications happen), else `Sectors.fromIndustry` of the Finnhub industry, else null; ETFs have no sector.
 - **Query** (every filter optional; a filter on a column excludes rows where that column is null): `minPrice`, `maxPrice`, `minMarketCap`, `maxMarketCap` (dollars), `minChangePct`, `maxChangePct` (fractions: `0.05` = +5%), `minVolume`, `minAvgVolume`, `minRelVolume`, `sectors` (`Sector` values), `types` (`COMMON_STOCK`, `ETF`, `ADR`), `sort` (`SYMBOL`, `PRICE`, `CHANGE_PCT`, `VOLUME`, `AVG_VOLUME`, `REL_VOLUME`, `MARKET_CAP`), `order` (`ASC`, `DESC`), `limit` (1..100, default 25) and `cursor` (opaque). Rows without a price are never returned (they are counted in `coverage`). Null sort keys sort last in both orders; ties break by symbol.
 - **Presets** (`ScreenPreset`, server-side so the SPA and the bots share them; an explicit parameter replaces the preset's value for that parameter):
@@ -3382,7 +3384,7 @@ Access-token claims: `iss` = issuer, `sub` = the **acting** player's public id, 
 - With `stocks.oauth.enabled=false` the well-known and `/oauth2` paths answer 404, JWTs are not accepted (they are then unknown keys, 401 `INVALID_API_KEY`) and the challenge has no `resource_metadata`.
 - **Package dependencies** [D]: `security → oauth` (the provider uses `oauth.AccessTokens` as its Spring `JwtDecoder` and listens to `oauth.OAuthGrantsRevoked`); `oauth` depends only on `common`, `contract`, `config` and `audit`, never on `security` or `identity` (it mirrors `ClientIp`/`RequestMetas` in `oauth.web.OAuthRequests` and reads players by SQL and `PlayerQueries`), so §5.2 rule 7 holds. `McpClientNames` remembers an `initialize` per (player, OAuth client) for OAuth principals.
 
-#### 17.9.6 Tables (`V7__p2_oauth.sql`, portable; renumbered at merge)
+#### 17.9.6 Tables (`V7__p2_oauth.sql`, portable)
 
 | Table | Columns (all timestamps `TIMESTAMP WITH TIME ZONE`) |
 |---|---|
@@ -3430,7 +3432,7 @@ Players need to see what their own keys and bots do ("Recent API calls" in Setti
 - **Off switch.** `stocks.api-log.enabled=false` records nothing; the views then return empty pages.
 
 ```sql
--- V8__p2_agents.sql (provisional number; the integrator renumbers, §8 "As deployed")
+-- V8__p2_agents.sql (+ vendor V8_1__p2_agents_feed_kind.sql, §8 "As deployed")
 CREATE TABLE api_access_log (
   id            BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   bucket_start  TIMESTAMP WITH TIME ZONE NOT NULL,     -- the UTC hour

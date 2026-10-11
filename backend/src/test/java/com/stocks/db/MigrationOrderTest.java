@@ -21,13 +21,16 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 /**
  * Production runs {@code spring.flyway.out-of-order=false} and has already applied the migrations in
  * {@link #APPLIED_IN_PRODUCTION} (§8 "Migrations after V1"). A new migration that sorts before the newest of them is
- * "ignored" by Flyway and fails validation at boot, so every new file must sort after it ({@code V2}, {@code V3}, ...).
+ * "ignored" by Flyway and fails validation at boot, so every new file must sort after it ({@code V3}, {@code V4}, ...).
  */
 class MigrationOrderTest {
 
-  /** Applied by the first production deploy (2026-10); never edit, rename or delete these files. */
-  static final Set<String> APPLIED_IN_PRODUCTION = Set.of("1", "1.0.1", "1.3.01", "1.4.01");
-  static final MigrationVersion NEWEST_IN_PRODUCTION = MigrationVersion.fromVersion("1.4.01");
+  /**
+   * Applied in production (the first deploy, 2026-10, then V2 with the Phase 1 review fixes); never edit, rename or
+   * delete these files.
+   */
+  static final Set<String> APPLIED_IN_PRODUCTION = Set.of("1", "1.0.1", "1.3.01", "1.4.01", "2");
+  static final MigrationVersion NEWEST_IN_PRODUCTION = MigrationVersion.fromVersion("2");
 
   private static final Pattern FILE = Pattern.compile("V([0-9_]+)__[A-Za-z0-9_]+\\.sql");
 

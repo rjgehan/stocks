@@ -1,6 +1,6 @@
--- Phase 2 (ARCHITECTURE §8.5, §15.10): screener statistics per universe symbol, written by the SCREENER_STATS
+-- V6 (Phase 2 wave A, ARCHITECTURE §8.6, §15.10): screener statistics per universe symbol, written by the SCREENER_STATS
 -- periodic task (WS2) and read by the screener. Portable H2 + PostgreSQL (§8 portability rules); upserts are cast
--- MERGEs (ScreenerStatRepository). Provisional version: the integrator renumbers it at merge time.
+-- MERGEs (ScreenerStatRepository).
 CREATE TABLE screener_stat (
   symbol             VARCHAR(12)              NOT NULL PRIMARY KEY,
   -- 20-day average daily share volume: SIP daily bars (display), IEX daily bars (the basis of a partial IEX volume)

@@ -9,10 +9,13 @@ in a Webull-style app that works on phone and desktop. Claude and ChatGPT join a
 market data, place orders through the same API, and follow exactly the same rules. A leaderboard shows who is
 actually good at this.
 
-> **Status: Phase 1 (the playable league) is built and running on the owner's server.** Trading with all five
-> order types, live market data, the deposit-aware leaderboard, corporate actions, the MCP server and the agent
-> runner for the Claude and ChatGPT bots all work; what is left is the owner's go-live checklist (bot API keys,
-> Cloudflare settings, a restore rehearsal). See [what works today](#status) and the [roadmap](docs/ROADMAP.md).
+> **Status: Phase 1 (the playable league) is running on the owner's server, and Phase 2 wave A is built.**
+> Trading with all five order types plus bracket/OCO/OTO/OTOCO groups, live market data, the deposit-aware
+> leaderboard with league stats and a race chart, price alerts with Web Push, chart indicators and a screener, the
+> MCP server (also as a claude.ai / ChatGPT connector over OAuth) and the agent runner for the Claude and ChatGPT
+> bots all work. What is left is the owner's checklist (bot keys, Cloudflare settings, connecting the connectors, a
+> restore rehearsal) and the later Phase 2 waves (margin, seasons, halts). See [what works today](#status) and the
+> [roadmap](docs/ROADMAP.md).
 >
 > Paper money only. There is no brokerage connection, no real money, and nothing here is financial advice.
 
@@ -36,27 +39,38 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 
 **Trading**
 - Market, limit, stop, stop-limit and trailing-stop orders; day and good-til-canceled (60 days)
+- Bracket (take profit + stop loss), OCO, OTO and OTOCO group orders: the exits wait for the entry, one leg filling
+  cancels the other
 - Fractional shares and dollar-amount orders ("buy $25 of NVDA"), essential when you start with $500
 - Extended-hours trading for limit orders
-- Positions, cost basis, realized and unrealized P&L, full activity history
+- Positions, cost basis, realized and unrealized P&L, full activity history, and a P&L Analysis tab (earnings vs SPY
+  and QQQ, a daily and monthly P&L calendar, P&L by symbol)
+- Real-broker details: open orders adjusted on ex-dividend dates (FINRA 5330), optional cancel latency
 
 **League**
-- Leaderboard by time-weighted return and by dollar P&L, compared with the S&P 500 (SPY), plus max drawdown
-- Player profiles and a feed of trades
+- Leaderboard by time-weighted return and by dollar P&L, compared with the S&P 500 (SPY), plus max drawdown, Sharpe
+  ratio, profit factor and win rate
+- A race chart of everyone's returns, rank history, player profiles with league stats, and a feed of trades with
+  emoji reactions
 - An **admin** account that can deposit or withdraw fake money for one player or everyone, with a memo; every
   movement is a ledger entry, never an edited balance
 - New players start with $500 (configurable)
 
 **AI players**
-- An **MCP server** (`/mcp`) with tools for quotes, charts, account, orders and the leaderboard, so Claude, ChatGPT or
-  any MCP client can trade
-- The same features over a **REST API** with an OpenAPI 3.1 spec
-- A built-in **agent runner** that drives the Claude and ChatGPT bots on a schedule, with daily cost caps
+- An **MCP server** (`/mcp`) with 55 tools for quotes, charts, the screener, account, orders, alerts and the league,
+  so Claude, ChatGPT or any MCP client can trade
+- **claude.ai and ChatGPT connectors** over OAuth 2.1: sign in once and choose which bot the connector acts as
+- The same features over a **REST API** with an OpenAPI 3.1 spec, plus a Server-Sent Events stream for scripts
+- A built-in **agent runner** that drives the Claude and ChatGPT bots on a schedule, with daily cost caps; its runs
+  show up under Admin → Bots, and the bots keep a public trade journal
 - Bots can never use admin features: blocked in the database, the security layer and the tool list
 
 **App**
-- Webull-inspired dark UI: a 3-pane layout on desktop, bottom tabs and sheets on phone, installable as a PWA
-- Live quotes, candlestick charts, watchlists, and a trade ticket with an order preview
+- Webull-inspired dark UI: a 3-pane layout on desktop, bottom tabs and sheets on phone, installable as a PWA that
+  works offline and sends push notifications for fills and price alerts
+- Live quotes; candlestick, hollow, Heikin Ashi and line charts with MA, EMA, BOLL, VWAP, MACD, RSI and KDJ; Time &
+  Sales; news and analyst ratings
+- Watchlists with sortable columns, a stock screener, price alerts, and a trade ticket with an order preview
 
 <a id="status"></a>
 ## Status
@@ -64,18 +78,21 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 | Area | State |
 |---|---|
 | Trading: market, limit, stop, stop-limit and trailing-stop orders (shares and dollar amounts, day and GTC, extended hours for limits), realistic fills, SEC/FINRA fees, T+1 settlement, good-faith violations | Works |
-| Accounts: cash ledger, positions and lots, activity history, resets; admin deposits and withdrawals to one player or everyone | Works |
+| Group orders: bracket, OCO, OTO and OTOCO; FINRA 5330 dividend adjustments; cancel latency behind a flag (Phase 2) | Works |
+| Accounts: cash ledger, positions and lots, activity history, resets; admin deposits and withdrawals to one player or everyone; P&L Analysis (earnings vs SPY/QQQ, P&L calendar, P&L by symbol) | Works |
 | Corporate actions: splits and reverse splits (with cash in lieu), cash dividends, ticker changes; anything else waits for the admin | Works |
-| League: leaderboard by time-weighted return and by P&L vs SPY (deposits never count as gains), Arena (humans vs AI), player profiles, live feed | Works |
-| Market data: live Alpaca (IEX) and Finnhub in production; a deterministic simulator for development and tests | Works |
-| Web app: Webull-style UI on phone, tablet and desktop, live quotes and charts, watchlists, notifications, admin console | Works |
-| AI players: MCP server with 40 tools, REST API with OpenAPI, the agent runner that drives the Claude and ChatGPT bots on a schedule with daily cost caps; run reports and spend under Admin → Bots, a public AI journal, Server-Sent Events for API keys and hourly API call logs (Phase 2) | Works (live bot runs need the owner's LLM keys) |
-| Tests | 1,334 backend tests on H2 and on PostgreSQL, 117 frontend unit tests, Playwright end-to-end on three viewports, agent-runner tests against fake LLM APIs |
+| League: leaderboard by time-weighted return and by P&L vs SPY (deposits never count as gains), Arena (humans vs AI), player profiles, live feed; Sharpe, profit factor, win rate, race chart, rank history and feed reactions (Phase 2) | Works |
+| Market data: live Alpaca (IEX) and Finnhub in production; a deterministic simulator for development and tests; screener, Time & Sales, analyst ratings (Phase 2) | Works |
+| Web app: Webull-style UI on phone, tablet and desktop, live quotes and charts with indicators, watchlists with columns, notifications, admin console; offline-capable PWA, price alerts and Web Push (Phase 2) | Works (push on a real phone still to be checked by the owner) |
+| AI players: MCP server with 55 tools, REST API with OpenAPI, the agent runner that drives the Claude and ChatGPT bots on a schedule with daily cost caps; run reports and spend under Admin → Bots, a public AI journal, Server-Sent Events for API keys and hourly API call logs (Phase 2) | Works (live bot runs need the owner's LLM keys) |
+| claude.ai and ChatGPT connectors: OAuth 2.1 authorization server with the act-as consent screen (Phase 2) | Built; the owner still has to connect both from their accounts |
+| Tests | 1,880 backend tests on H2 and on PostgreSQL, 240 frontend unit tests, Playwright end-to-end on three viewports, agent-runner tests against fake LLM APIs |
 | Delivery: CI, multi-arch image on GHCR, Watchtower on a CasaOS home server behind a Cloudflare Tunnel | Live |
 
-Next: the go-live checklist that needs the owner (bot keys on the server, Cloudflare settings checked from outside,
-a restore rehearsal), then Phase 2 (margin, bracket orders, OAuth connectors). Details in
-[docs/ROADMAP.md](docs/ROADMAP.md).
+Next: the owner's checklist (bot keys on the server, Cloudflare settings checked from outside, connecting the
+claude.ai and ChatGPT connectors, a push test on a phone, a restore rehearsal; the list is in
+[docs/ROADMAP.md](docs/ROADMAP.md#owner-actions-after-the-wave-a-deploy)), then the later Phase 2 waves: margin
+accounts, seasons, halts and LULD bands, the opening print, engine replay and passkeys.
 
 ## How it works
 
@@ -122,7 +139,7 @@ flowchart LR
 | Backend | Java 21, Spring Boot 4.1, Spring Security, Spring AI (MCP server), JdbcClient, Flyway |
 | Database | PostgreSQL 18 in production; H2 (PostgreSQL mode) and embedded PostgreSQL for dev and tests, no Docker needed |
 | Frontend | React 19, TypeScript, Vite, TanStack Router and Query, Tailwind CSS 4, TradingView Lightweight Charts |
-| Realtime | STOMP over WebSocket |
+| Realtime | STOMP over WebSocket; Server-Sent Events for API clients; Web Push (RFC 8291/8292) |
 | Testing | JUnit, ArchUnit, jqwik, Vitest, Playwright (phone, tablet and desktop viewports) |
 | Delivery | GitHub Actions → multi-arch image on GHCR → Watchtower → Docker Compose on CasaOS, behind a Cloudflare Tunnel (cloudflared sidecar) |
 

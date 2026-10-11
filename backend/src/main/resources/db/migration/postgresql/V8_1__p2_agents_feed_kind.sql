@@ -1,4 +1,4 @@
--- V8_1 (WS5, §20.7; provisional number): feed_event.event_kind gains 'JOURNAL'. V1 declared the CHECK inline
+-- V8_1 (WS5, §20.7; the vendor half of V8): feed_event.event_kind gains 'JOURNAL'. V1 declared the CHECK inline
 -- (PostgreSQL names it feed_event_event_kind_check); drop whichever CHECK of feed_event mentions event_kind, so the
 -- step does not depend on the generated name, then add the named replacement.
 DO $$

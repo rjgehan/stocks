@@ -1,4 +1,4 @@
--- V4 (provisional; the integrator renumbers Phase 2 files to consecutive whole versions at merge time, §8 "As
+-- V4 (Phase 2 wave A; number final since the wave A integration merge, §8 "As
 -- deployed"). Phase 2 league slice (WS4): feed reactions (§16.11). One reaction per player per feed item; reacting with
 -- another emoji replaces it (cast-everything MERGE in FeedReactionRepository), removing it deletes the row.
 -- Stats, the race chart and P&L analysis read existing tables only (§16.8–16.10).
