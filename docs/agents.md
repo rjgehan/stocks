@@ -311,31 +311,42 @@ trades are labeled "via API". Revoke it any time in **Settings → Connected app
 3. Only a bot's owner can connect it. Bots belong to the admin who created them unless another owner was chosen
    at creation (Admin → Players shows the owner), so connect the league bots signed in as the admin.
 
-**claude.ai (Claude web, desktop and mobile).**
+**claude.ai (Claude web, desktop and mobile).** Menu labels as of Claude's connector docs on 2026-10-10.
 
-1. claude.ai → **Settings → Connectors → Add custom connector** (Team and Enterprise: an Owner adds it under
-   Organization settings → Connectors).
-2. Name `stocks`, remote MCP server URL `https://stocks.gehan.cloud/mcp`. Leave *Advanced settings* (OAuth client
-   ID and secret) **empty**: Claude identifies itself with its client ID metadata document
-   (`https://claude.ai/oauth/mcp-oauth-client-metadata`). Click **Add**.
+1. claude.ai → **Customize → Connectors** (`https://claude.ai/customize/connectors`) → **Add custom connector**.
+   On a Team or Enterprise plan an Owner adds it instead under **Organization settings → Connectors** → **Add** →
+   **Custom** (type **Web**), and each member then clicks **Connect** on it under Customize → Connectors.
+2. Name `stocks`, **MCP server URL** `https://stocks.gehan.cloud/mcp` (exactly this, with `/mcp` and no trailing
+   slash: it must equal the server's `resource`).
+   - If the dialog asks for **Authentication**, choose **Sign in now**; for **OAuth client**, choose **Use Claude's
+     published identity** (Claude's client ID metadata document,
+     `https://claude.ai/oauth/mcp-oauth-client-metadata`; **Register automatically** also works).
+   - If it shows *Advanced settings* instead, leave the OAuth client ID and secret **empty**.
+   - Leave **Request headers** empty. Click **Add**.
 3. Click **Connect**. A browser tab opens stocks: sign in if asked, then on **Connect Claude** pick *Act as*
    **Claude (@claude)** (or Myself), keep or untick permissions, and click **Allow**. The tab returns to claude.ai
    (`https://claude.ai/api/mcp/auth_callback`) and the connector shows as connected.
-4. In a chat, enable `stocks` in the tools menu and ask, for example: "Use stocks: call get_rules and whoami, then
-   show my account." Tokens refresh by themselves; after 30 days without use, click Connect again.
+4. In a chat, click **+ → Connectors**, turn `stocks` on, and ask, for example: "Use stocks: call get_rules and
+   whoami, then show my account." Tokens refresh by themselves; after 30 days without use, click Connect again.
+   The desktop and mobile apps use the same connector (it belongs to your claude.ai account).
 
-**ChatGPT (developer mode).**
+**ChatGPT.** OpenAI moves these menus often; use whichever of the two paths your account shows.
 
-1. chatgpt.com → **Settings → Apps & Connectors → Advanced settings → Developer mode: on** (on some accounts the
-   toggle is under Settings → Security; Business/Enterprise workspaces need an admin to allow it).
-2. **Settings → Apps & Connectors → Create**: name `stocks`, a description (e.g. "Paper-trading league: quotes,
-   my account, orders"), MCP server URL `https://stocks.gehan.cloud/mcp`, authentication **OAuth**. Leave client ID
-   and secret empty (ChatGPT uses its client ID metadata document, or registers itself), tick "I trust this
-   application", and click **Create**.
+1. Current path (OpenAI's Apps SDK docs, 2026-10-10): open **ChatGPT Plugins** (`https://chatgpt.com/plugins`) →
+   the **+** button → **Add custom MCP server**. Older accounts: **Settings → Apps & Connectors → Advanced settings
+   → Developer mode: on** (sometimes under Settings → Security; Business/Enterprise workspaces need an admin to
+   allow it), then **Settings → Apps & Connectors → Create**.
+2. Name `stocks`, a description (the model reads it: e.g. "Paper-trading league: quotes, my account, orders"),
+   **Connection**: the MCP server URL `https://stocks.gehan.cloud/mcp`. Authentication **OAuth**; leave client ID
+   and secret empty. If asked how ChatGPT identifies itself, prefer the **client ID metadata document (CIMD)**;
+   dynamic registration (DCR) also works. Review the warning, select **I understand and want to continue** (or tick
+   "I trust this application"), then **Create as a plugin** (or **Create**).
 3. ChatGPT opens stocks: sign in, pick *Act as* **ChatGPT (@chatgpt)** (or Myself) and click **Allow**. You return
    to ChatGPT (`https://chatgpt.com/connector_platform_oauth_redirect`, or a `/connector/oauth/<id>` URL, both
    allowed).
-4. In a chat: **+ → More → Developer mode → stocks**, then ask as above. ChatGPT asks before running write tools.
+4. Install the plugin if asked, start a new conversation, type `@` and pick `stocks` (older accounts:
+   **+ → More → Developer mode → stocks**), then ask as above. ChatGPT asks before running write tools. After a
+   server upgrade that changes the tools, open it in ChatGPT Plugins and select **Refresh**.
 
 **Claude Code without a key.** `claude mcp add --transport http stocks https://stocks.gehan.cloud/mcp`, then in
 Claude Code run `/mcp` → `stocks` → **Authenticate**. The browser consent works the same; the redirect goes to
