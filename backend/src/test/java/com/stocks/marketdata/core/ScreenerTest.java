@@ -482,6 +482,29 @@ class ScreenerTest {
   }
 
   @Test
+  void theFirstSimScreenIsWarmingAndNewStatisticsRebuildTheTableAtOnce() throws Exception {
+    AtomicLong nanos = new AtomicLong(1);
+    Provider p = new Provider();
+    ScreenerStats st = stats(p, p, false, true, nanos, 0, List.of("AAPL"));
+    Feed feed = new Feed().put(quote("AAPL", "227.40", "0.01", 1_000_000L, false, DataQuality.SIMULATED));
+    ScreenerService s = service(feed, st, true, nanos);
+    ScreenResult first = s.screen(query(null));
+    // the pass was just started (its thread may not have begun yet): warming, no statistics in this table
+    assertThat(first.warming()).isTrue();
+    assertThat(first.rows().get(0).avgVolume()).isNull();
+    com.stocks.marketdata.testing.Await.until(() -> st.stats().containsKey("AAPL") && !st.refreshing(),
+        "the SIM statistics pass");
+    // well inside the 5 s table cache, yet the new snapshot is used right away
+    ScreenResult next = s.screen(query(null));
+    assertThat(next.warming()).isFalse();
+    assertThat(next.rows().get(0).avgVolume()).isNotNull();
+    assertThat(next.coverage().withAvgVolume()).isEqualTo(1);
+    verify(feed.feed, times(2)).peek(any());
+    s.screen(query(null));
+    verify(feed.feed, times(2)).peek(any());                               // unchanged statistics: cached
+  }
+
+  @Test
   void repositoryMergesKeepTheOtherHalfOfTheRowAndBindNulls() {
     Instant t = time.now();
     repo.upsertVolumes(Map.of("AAPL", new ScreenerStatRepository.Volumes(null, null, null, null)), t);

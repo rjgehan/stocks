@@ -132,6 +132,7 @@ public class ScreenerStats implements PeriodicTask {
     }
     if (localStarted.compareAndSet(false, true) && (stats().isEmpty() || volumesDue())) {
       Thread.ofVirtual().name("screener-stats").start(() -> refresh(Integer.MAX_VALUE));
+      return true;                                   // the pass may not have set `running` yet: still warming
     }
     return running.get();
   }

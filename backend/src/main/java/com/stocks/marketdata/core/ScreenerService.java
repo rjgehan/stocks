@@ -46,7 +46,9 @@ public class ScreenerService {
                    BigDecimal minRelVolume, Set<Sector> sectors, Set<AssetType> types, ScreenSort sort,
                    SortOrder order) {}
 
-  private record Table(List<ScreenResult.Row> rows, int universe, Instant asOf, long builtAtNanos) {}
+  /** {@code stats}: the statistics snapshot the rows were built from (a new snapshot rebuilds the table at once). */
+  private record Table(List<ScreenResult.Row> rows, int universe, Instant asOf, long builtAtNanos,
+                       Map<String, ScreenerStats.Stat> stats) {}
 
   private final MarketFeed feed;
   private final AssetService assets;
@@ -117,19 +119,23 @@ public class ScreenerService {
 
   private Table table() {
     Table t = table;
-    long now = nanos.getAsLong();
-    if (t != null && now - t.builtAtNanos() < TABLE_TTL.toNanos()) {
+    if (fresh(t)) {
       return t;
     }
     synchronized (this) {
       t = table;
-      if (t != null && nanos.getAsLong() - t.builtAtNanos() < TABLE_TTL.toNanos()) {
+      if (fresh(t)) {
         return t;
       }
       t = build();
       table = t;
       return t;
     }
+  }
+
+  /** Built less than {@link #TABLE_TTL} ago from the current statistics snapshot. */
+  private boolean fresh(Table t) {
+    return t != null && nanos.getAsLong() - t.builtAtNanos() < TABLE_TTL.toNanos() && t.stats() == stats.stats();
   }
 
   private Table build() {
@@ -151,7 +157,7 @@ public class ScreenerService {
       }
       rows.add(row(a, qv, st.get(a.symbol())));
     }
-    return new Table(List.copyOf(rows), universe.size(), time.now(), nanos.getAsLong());
+    return new Table(List.copyOf(rows), universe.size(), time.now(), nanos.getAsLong(), st);
   }
 
   private ScreenResult.Row row(Asset a, QuoteView q, ScreenerStats.Stat s) {
