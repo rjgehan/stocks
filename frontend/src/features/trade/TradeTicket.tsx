@@ -42,6 +42,7 @@ import {
   defaultLimitPrice,
   defaultStopPrice,
   defaultTrail,
+  dividendAdjustable,
   extAllowed,
   gtcAllowed,
   initialTicket,
@@ -552,6 +553,11 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             <IconInfo size={16} className="mt-0.5 shrink-0" />
             No live IEX quotes 4:00–8:00 and 17:00–20:00 ET; orders then use the last known prices.
           </p>
+        ) : null}
+        {dividendAdjustable(state) ? (
+          <Checkbox checked={state.doNotReduce} onChange={(value) => dispatch({ type: 'doNotReduce', value })} className="text-caption text-text-2">
+            Don't reduce on dividends (keep my prices on ex-dividend dates)
+          </Checkbox>
         ) : null}
 
         <div className="rounded-md bg-bg-2/60 px-3 py-2" aria-live="polite">

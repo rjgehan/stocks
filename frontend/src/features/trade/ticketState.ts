@@ -40,6 +40,8 @@ export interface TicketState {
   trailMode: TrailMode
   tif: TimeInForce
   extendedHours: boolean
+  /** FINRA 5330 (§14, Phase 2): keep this order's prices on ex-dividend dates. */
+  doNotReduce: boolean
   note: string
   shareNote: boolean
   gfvAck: boolean
@@ -53,6 +55,7 @@ export type TicketAction =
   | { type: 'field'; field: 'qty' | 'amount' | 'limitPrice' | 'stopPrice' | 'trail' | 'note'; value: string }
   | { type: 'tif'; tif: TimeInForce }
   | { type: 'extendedHours'; value: boolean }
+  | { type: 'doNotReduce'; value: boolean }
   | { type: 'trailMode'; mode: TrailMode }
   | { type: 'shareNote'; value: boolean }
   | { type: 'gfvAck'; value: boolean }
@@ -76,6 +79,7 @@ export function initialTicket(options: { side?: Side; preferences?: Preferences 
     trailMode: 'AMOUNT',
     tif: (p?.defaultOrderType ?? 'LIMIT') === 'MARKET' ? 'DAY' : (p?.defaultTimeInForce ?? 'DAY'),
     extendedHours: false,
+    doNotReduce: false,
     note: '',
     shareNote: false,
     gfvAck: false,
@@ -106,6 +110,8 @@ export function ticketReducer(s: TicketState, a: TicketAction): TicketState {
       return { ...s, tif: a.tif }
     case 'extendedHours':
       return { ...s, extendedHours: a.value && s.type === 'LIMIT' }
+    case 'doNotReduce':
+      return { ...s, doNotReduce: a.value }
     case 'trailMode':
       return { ...s, trailMode: a.mode }
     case 'shareNote':
@@ -122,6 +128,12 @@ export function ticketReducer(s: TicketState, a: TicketAction): TicketState {
 export const gtcAllowed = (s: Pick<TicketState, 'type' | 'qtyMode'>, row?: Pick<OrderMatrixRow, 'timeInForce'> | null): boolean =>
   s.type !== 'TRAILING_STOP' && s.type !== 'MARKET' && s.qtyMode !== 'AMOUNT' && (!row?.timeInForce || row.timeInForce.includes('GTC'))
 export const extAllowed = (s: Pick<TicketState, 'type'>): boolean => s.type === 'LIMIT'
+/**
+ * FINRA 5330 (§14, Phase 2): the orders a cash dividend reduces on its ex-date (a BUY LIMIT's limit, a SELL STOP's
+ * or STOP_LIMIT's prices), which is when "Don't reduce" means something.
+ */
+export const dividendAdjustable = (s: Pick<TicketState, 'side' | 'type' | 'qtyMode'>): boolean =>
+  s.qtyMode === 'SHARES' && (s.side === 'BUY' ? s.type === 'LIMIT' : s.type === 'STOP' || s.type === 'STOP_LIMIT')
 export const showsLimit = (t: OrderType): boolean => t === 'LIMIT' || t === 'STOP_LIMIT'
 export const showsStop = (t: OrderType): boolean => t === 'STOP' || t === 'STOP_LIMIT'
 export const showsTrail = (t: OrderType): boolean => t === 'TRAILING_STOP'
@@ -292,6 +304,7 @@ export function buildOrderRequest(s: TicketState, symbol: string, ctx: TicketCon
     req.shareNote = s.shareNote
   }
   if (s.gfvAck) req.acknowledge = ['GFV_RISK']
+  if (s.doNotReduce && dividendAdjustable(s)) req.doNotReduce = true
   return req
 }
 

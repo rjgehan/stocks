@@ -3889,6 +3889,7 @@ frontend/src/
 | Quantity | Toggle **Shares / Amount ($)**. Amount forces Market + Day + no extended hours and requires a fractionable symbol (inline hint otherwise). Chips **25% · 50% · Max**: Max is buying power ÷ (ask × 1.02) for share buys, buying power for amount buys, and the available position for sells. |
 | TIF | Day or GTC. GTC is disabled for Trailing and Amount. |
 | Extended hours | A toggle, enabled for Limit only. It shows the IEX data-gap note at 04:00–08:00 and 17:00–20:00 ET. |
+| Don't reduce (Phase 2, §14) | A checkbox **"Don't reduce on dividends"**, shown only for the orders FINRA 5330 reduces (a share BUY LIMIT, a SELL STOP or STOP_LIMIT); sends `doNotReduce: true`, which the review sheet repeats. |
 | Estimates | From `POST /orders/preview`, debounced 250 ms: estimated price, qty for notional orders, principal, fees (SEC/TAF/CAT), hold, buying power before → after, session note ("Will queue for 09:30 ET"). |
 | Warnings | `FAT_FINGER`, `GFV_RISK` (shows a required **"I understand this will cause a good-faith violation"** checkbox that adds `acknowledge: ["GFV_RISK"]`), `SYNTHETIC_QUOTE`, `PARTIAL_FILL_LIKELY` |
 | Note | Optional rationale (≤ 1000 characters), behind "Add note", with a **"Share note publicly"** checkbox (off by default; sends `shareNote: true`). Without it the note is private to the player. |
