@@ -324,7 +324,10 @@ describe('agent runner against the real stocks MCP server', () => {
 
     expect(`${s.status}\n${sink.text}`).toMatch(/^completed\n/);
     expect(s).toMatchObject({ toolCalls: 4, toolErrors: 0, orders: 1 });
-    expect(llm.calls[0]?.body.tools).toHaveLength(39);
+    // every server tool (38 in Phase 1, more as Phase 2 adds them) plus save_notes, as Responses API function tools
+    const tools = llm.calls[0]?.body.tools as { type: string; name: string }[];
+    expect(tools.length).toBeGreaterThanOrEqual(39);
+    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['whoami', 'place_order', 'get_league_feed', 'save_notes']));
     expect(JSON.parse(placed)).toMatchObject({ order: { clientOrderId }, replayed: false });
     expect(llm.calls[1]?.body.previous_response_id).toMatch(/^resp_fake_/);
     const order = await orderByClientId(keys.chatgpt, clientOrderId);
