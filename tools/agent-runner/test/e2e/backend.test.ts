@@ -322,7 +322,7 @@ describe('agent runner against the real stocks MCP server', () => {
 
     expect(`${s.status}\n${sink.text}`).toMatch(/^completed\n/);
     expect(s).toMatchObject({ toolCalls: 4, toolErrors: 0, orders: 1 });
-    expect(llm.calls[0]?.body.tools).toHaveLength(39);
+    expect(llm.calls[0]?.body.tools).toHaveLength(42);
     expect(JSON.parse(placed)).toMatchObject({ order: { clientOrderId }, replayed: false });
     expect(llm.calls[1]?.body.previous_response_id).toMatch(/^resp_fake_/);
     const order = await orderByClientId(keys.chatgpt, clientOrderId);
