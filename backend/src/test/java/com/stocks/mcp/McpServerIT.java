@@ -453,6 +453,12 @@ class McpServerIT {
     assertThat(post(botKey, call("whoami"), Map.of("Origin", McpConfig.origin(properties.publicUrl())))
         .statusCode()).isEqualTo(200);
     assertThat(post(botKey, call("whoami"), Map.of()).statusCode()).isEqualTo(200);
+    // the connector vendors' origins pass (the bearer key still decides who it is)
+    for (String vendor : List.of("https://claude.ai", "https://claude.com", "https://chatgpt.com")) {
+      assertThat(post(botKey, call("whoami"), Map.of("Origin", vendor)).statusCode()).as(vendor).isEqualTo(200);
+    }
+    assertThat(post(botKey, call("whoami"), Map.of("Origin", "https://claude.ai.evil.example")).statusCode())
+        .isEqualTo(403);
   }
 
   @Test

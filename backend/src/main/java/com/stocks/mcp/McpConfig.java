@@ -18,6 +18,7 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.ai.mcp.server.common.autoconfigure.properties.McpServerProperties;
@@ -79,7 +80,7 @@ public class McpConfig {
         .messageEndpoint(endpoint)
         .contextExtractor(contextExtractor(clientNames))
         .securityValidator(DefaultServerTransportSecurityValidator.builder()
-            .allowedOrigin(origin(properties.publicUrl()))
+            .allowedOrigins(allowedOrigins(properties.publicUrl()))
             .build())
         .build();
   }
@@ -123,6 +124,19 @@ public class McpConfig {
   }
 
   /** {@code scheme://host[:port]} of a URL, the form browsers send in {@code Origin}. */
+  /**
+   * The connector vendors' web origins, accepted next to our own (§20.1 Origin): their calls come from their servers,
+   * but if one ever forwards an {@code Origin} the connector must not fail with 403. The bearer token still decides.
+   */
+  static final List<String> CONNECTOR_ORIGINS = List.of("https://claude.ai", "https://claude.com", "https://chatgpt.com");
+
+  static List<String> allowedOrigins(String publicUrl) {
+    List<String> out = new ArrayList<>();
+    out.add(origin(publicUrl));
+    out.addAll(CONNECTOR_ORIGINS);
+    return List.copyOf(out);
+  }
+
   static String origin(String url) {
     URI uri = URI.create(url.strip());
     if (uri.getScheme() == null || uri.getHost() == null) {
