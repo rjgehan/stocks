@@ -43,6 +43,36 @@ class OAuthUnitTest {
     assertThat(new RedirectUris(List.of(), false).isAllowed("http://localhost/cb")).isFalse();
   }
 
+  /** RFC 7591 §3.2.1: DCR registers what it supports and ignores the rest, like CIMD (Claude sends jwt-bearer). */
+  @Test
+  void registrationMetadataIsLenient() {
+    tools.jackson.databind.json.JsonMapper json = com.stocks.config.JacksonConfig.newMapper();
+    for (String grants : List.of("[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:jwt-bearer\"]",
+        "[\"authorization_code\"]", "[]", "null")) {
+      assertThat(DcrClients.grantTypes(json.readTree(grants))).as(grants)
+          .containsExactly("authorization_code", "refresh_token");
+    }
+    assertThat(DcrClients.grantTypes(null)).containsExactly("authorization_code", "refresh_token");
+    for (String bad : List.of("[\"implicit\"]", "[\"refresh_token\",\"client_credentials\"]", "\"authorization_code\"")) {
+      assertThatThrownBy(() -> DcrClients.grantTypes(json.readTree(bad))).as(bad).isInstanceOf(OAuthException.class)
+          .extracting(e -> ((OAuthException) e).error()).isEqualTo(OAuthException.INVALID_CLIENT_METADATA);
+    }
+    DcrClients.responseTypes(json.readTree("[\"code\",\"token\"]"));
+    DcrClients.responseTypes(json.readTree("[]"));
+    DcrClients.responseTypes(null);
+    assertThatThrownBy(() -> DcrClients.responseTypes(json.readTree("[\"token\"]"))).isInstanceOf(OAuthException.class);
+    assertThat(DcrClients.authMethod(null)).isEqualTo("client_secret_basic");
+    assertThat(DcrClients.authMethod(json.readTree("\"client_secret_post\""))).isEqualTo("client_secret_post");
+    assertThat(DcrClients.authMethod(json.readTree("\"client_secret_basic\""))).isEqualTo("client_secret_basic");
+    for (String other : List.of("\"none\"", "\"private_key_jwt\"", "\"tls_client_auth\"", "\"client_secret_jwt\"", "42")) {
+      assertThat(DcrClients.authMethod(json.readTree(other))).as(other).isEqualTo("none");
+    }
+    assertThat(DcrClients.name(json.readTree("\"claudeai\""))).isEqualTo("claudeai");
+    assertThat(DcrClients.name(json.readTree("\"  \\u0000 \""))).isEqualTo(DcrClients.DEFAULT_NAME);
+    assertThat(DcrClients.name(json.readTree("17"))).isEqualTo(DcrClients.DEFAULT_NAME);
+    assertThat(DcrClients.name(json.readTree("\"" + "x".repeat(300) + "\""))).hasSize(DcrClients.MAX_NAME);
+  }
+
   @Test
   void loopbackRedirectsMatchWithThePortIgnored() {
     assertThat(RedirectUris.matches("http://localhost/callback", "http://localhost:3118/callback")).isTrue();

@@ -32,11 +32,13 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>a JSON object whose {@code client_id} equals the URL exactly;</li>
  *   <li>{@code redirect_uris}: a non-empty array; only URIs on the server's allowlist are kept, and none left is an
  *       error;</li>
- *   <li>{@code token_endpoint_auth_method}: absent, {@code none} or {@code private_key_jwt} (treated as a public
- *       client: {@code private_key_jwt} is not advertised, so clients authenticate with {@code none}); any
- *       {@code client_secret*} method or a {@code client_secret} member is refused;</li>
- *   <li>{@code grant_types}: absent (both are assumed) or containing {@code authorization_code}; unknown types are
- *       ignored; {@code response_types}, when present, contains {@code code};</li>
+ *   <li>{@code token_endpoint_auth_method}: any {@code client_secret*} method or a {@code client_secret} member is
+ *       refused (CIMD has no shared secret); anything else ({@code none}, ChatGPT's {@code private_key_jwt}, an
+ *       unknown method, absent) makes a public client: {@code private_key_jwt} is not advertised, so clients
+ *       authenticate with {@code none} and an assertion is ignored;</li>
+ *   <li>{@code grant_types}: absent or empty (both are assumed) or containing {@code authorization_code}; unknown
+ *       types (Claude's {@code jwt-bearer}) are ignored; {@code response_types}, when non-empty, contains
+ *       {@code code}; every other member ({@code jwks_uri}, {@code logo_uri}, ...) is ignored;</li>
  *   <li>{@code client_name}: optional (the host is shown instead), control characters stripped, 100 characters.</li>
  * </ul>
  * Valid documents are cached in memory (≤ 500) for the response's {@code max-age} clamped to
@@ -148,11 +150,9 @@ public class CimdClients {
       throw invalid("A client metadata document must not contain a client secret.");
     }
     JsonNode method = doc.get("token_endpoint_auth_method");
-    if (method != null && !method.isNull()) {
-      String m = method.isString() ? method.asString() : "";
-      if (!m.equals(OAuthClient.AUTH_NONE) && !m.equals("private_key_jwt")) {
-        throw invalid("Unsupported token_endpoint_auth_method '" + Text.clip(m, 40) + "' (use none).");
-      }
+    if (method != null && method.isString() && method.asString().startsWith("client_secret")) {
+      throw invalid("A client metadata document cannot use a client secret ('" + Text.clip(method.asString(), 40)
+          + "'); use none.");
     }
     JsonNode uris = doc.get("redirect_uris");
     if (uris == null || !uris.isArray() || uris.isEmpty()) {
@@ -169,7 +169,7 @@ public class CimdClients {
     }
     Set<String> grants = new LinkedHashSet<>();
     JsonNode grantTypes = doc.get("grant_types");
-    if (grantTypes == null || grantTypes.isNull()) {
+    if (grantTypes == null || grantTypes.isNull() || grantTypes.isArray() && grantTypes.isEmpty()) {
       grants.add(OAuthClient.GRANT_CODE);
       grants.add(OAuthClient.GRANT_REFRESH);
     } else if (grantTypes.isArray()) {
@@ -184,7 +184,7 @@ public class CimdClients {
       throw invalid("The client metadata document does not allow the authorization_code grant.");
     }
     JsonNode responseTypes = doc.get("response_types");
-    if (responseTypes != null && !responseTypes.isNull()) {
+    if (responseTypes != null && !responseTypes.isNull() && !(responseTypes.isArray() && responseTypes.isEmpty())) {
       boolean code = false;
       if (responseTypes.isArray()) {
         for (JsonNode r : responseTypes) {

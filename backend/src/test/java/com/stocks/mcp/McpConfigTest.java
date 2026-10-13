@@ -87,6 +87,8 @@ class McpConfigTest {
     assertThat(McpConfig.origin("https://Stocks.Example.com/")).isEqualTo("https://stocks.example.com");
     assertThat(McpConfig.origin(" https://stocks.example.com:8443/app ")).isEqualTo("https://stocks.example.com:8443");
     assertThatThrownBy(() -> McpConfig.origin("stocks.example.com")).isInstanceOf(IllegalArgumentException.class);
+    assertThat(McpConfig.allowedOrigins("https://stocks.example.com/"))
+        .containsExactly("https://stocks.example.com", "https://claude.ai", "https://claude.com", "https://chatgpt.com");
   }
 
   @Test

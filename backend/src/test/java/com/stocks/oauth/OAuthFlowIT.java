@@ -70,6 +70,11 @@ class OAuthFlowIT {
            "client_uri":"https://claude.ai","redirect_uris":["http://localhost/callback","http://127.0.0.1/callback"],
            "grant_types":["authorization_code","refresh_token"],"response_types":["code"],
            "token_endpoint_auth_method":"none"}""");
+      // ChatGPT's production document as fetched on 2026-10-13, and its callback-ID form (ConnectorVendorFlowsIT)
+      DOCS.put(ConnectorVendorFlowsIT.CHATGPT, ConnectorVendorFlowsIT.chatgptDocument(ConnectorVendorFlowsIT.CHATGPT,
+          ConnectorVendorFlowsIT.CHATGPT_CALLBACK));
+      DOCS.put(ConnectorVendorFlowsIT.CHATGPT_CB, ConnectorVendorFlowsIT.chatgptDocument(
+          ConnectorVendorFlowsIT.CHATGPT_CB, ConnectorVendorFlowsIT.CHATGPT_CB_CALLBACK));
     }
 
     @Bean

@@ -48,12 +48,29 @@ describe('act-as consent rules (§17.9.3)', () => {
     expect(defaultActor(league, INSPECTOR, '127.0.0.1')).toBeNull()
     expect(defaultActor([me], CLAUDE, 'claude.ai')).toBeNull()
     expect(defaultActor([gpt, me], CLAUDE, 'claude.ai')).toBeNull()
-    expect(defaultActor([bot, { ...bot, player: player('claude2', 'AI') }, me], CLAUDE, 'claude.ai')).toBeNull()
+    expect(defaultActor([{ ...bot, player: player('claude1', 'AI') }, { ...bot, player: player('claude2', 'AI') }, me], CLAUDE, 'claude.ai')).toBeNull()
+    // the league's bots named claude and chatgpt win, whatever their model label says and however many others match
+    expect(defaultActor([bot, { ...bot, player: player('claude2', 'AI') }, me], CLAUDE, 'claude.ai')).toBe('claude')
+    const relabeled = [{ ...gpt, player: player('chatgpt', 'AI', 'o3') }, { ...bot, player: player('claude', 'AI', 'Opus 4.5') }, me]
+    expect(defaultActor(relabeled, CLAUDE, 'claude.ai')).toBe('claude')
+    expect(defaultActor(relabeled, CHATGPT, 'chatgpt.com')).toBe('chatgpt')
     expect(defaultActor([], CLAUDE)).toBeNull()
     // a bot without a model label is matched by its handle; GPT labels count as ChatGPT
     expect(defaultActor([{ ...gpt, player: player('chatgpt', 'AI', null) }, me], CHATGPT)).toBe('chatgpt')
     expect(defaultActor([{ ...gpt, player: player('openbot', 'AI', 'GPT-5') }, me], CHATGPT)).toBe('openbot')
     expect(clientFamily(null, 'evil.claude.ai.example')).toBeNull()
+  })
+
+  it('preselects the right league bot for each connector as the server describes it (CIMD and DCR)', () => {
+    const league = [gpt, bot, me]
+    // claude.ai: its client ID metadata document, or "Register automatically" (DCR, client_name claudeai)
+    expect(defaultActor(league, CLAUDE, 'claude.ai')).toBe('claude')
+    expect(defaultActor(league, { clientId: 'ocl_01', name: 'claudeai', kind: 'DCR', host: null }, 'claude.ai')).toBe('claude')
+    // ChatGPT: its stable or callback-ID document, or DCR with either callback
+    expect(defaultActor(league, CHATGPT, 'chatgpt.com')).toBe('chatgpt')
+    expect(defaultActor(league, { ...CHATGPT, clientId: 'https://chatgpt.com/oauth/cbk_1/client.json' }, 'chatgpt.com')).toBe('chatgpt')
+    expect(defaultActor(league, { clientId: 'ocl_02', name: 'ChatGPT', kind: 'DCR', host: null }, 'chatgpt.com')).toBe('chatgpt')
+    expect(defaultActor(league, { clientId: 'ocl_03', name: 'MCP client', kind: 'DCR', host: null }, 'chatgpt.com')).toBe('chatgpt')
   })
 
   it('keeps what is still grantable when the actor changes, else selects everything grantable', () => {

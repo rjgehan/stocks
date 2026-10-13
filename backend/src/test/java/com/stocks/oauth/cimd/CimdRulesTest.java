@@ -109,11 +109,36 @@ public class CimdRulesTest {
         + "\"redirect_uris\":[\"https://chatgpt.com/connector_platform_oauth_redirect\"],"
         + "\"token_endpoint_auth_method\":\"private_key_jwt\",\"token_endpoint_auth_methods_supported\":[\"none\","
         + "\"private_key_jwt\"],\"grant_types\":[\"authorization_code\",\"refresh_token\"],\"response_types\":[\"code\"],"
-        + "\"client_name\":\"ChatGPT\",\"token_endpoint_auth_signing_alg\":\"RS256\","
-        + "\"jwks_uri\":\"https://chatgpt.com/oauth/jwks.json\"}";
+        + "\"client_name\":\"ChatGPT\",\"logo_uri\":\"https://persistent.oaistatic.com/sonic/misc/openai-logo.png\","
+        + "\"token_endpoint_auth_signing_alg\":\"RS256\",\"jwks_uri\":\"https://chatgpt.com/oauth/jwks.json\"}";
     OAuthClient c = clients(serving(doc, null, new AtomicInteger())).resolve(CHATGPT);
     assertThat(c.name()).isEqualTo("ChatGPT");
+    assertThat(c.host()).isEqualTo("chatgpt.com");
+    assertThat(c.redirectUris()).containsExactly("https://chatgpt.com/connector_platform_oauth_redirect");
     assertThat(c.isPublic()).isTrue();
+    assertThat(c.allowsRefresh()).isTrue();
+  }
+
+  /** Values this server does not use are ignored, never fatal (only a shared secret or no usable flow is). */
+  @Test
+  void unknownValuesAreIgnored() {
+    String callbackId = "https://chatgpt.com/oauth/cb_01J9ZX/client.json";
+    String doc = "{\"client_id\":\"" + callbackId + "\",\"client_name\":\"ChatGPT\","
+        + "\"redirect_uris\":[\"https://chatgpt.com/connector/oauth/cb_01J9ZX\",\"https://chatgpt.com/aip/x/callback\"],"
+        + "\"token_endpoint_auth_method\":\"tls_client_auth\",\"grant_types\":[],\"response_types\":[],"
+        + "\"scope\":\"openid email profile unknown:scope\",\"application_type\":\"web\",\"tos_uri\":\"https://x.example/t\","
+        + "\"policy_uri\":\"https://x.example/p\",\"contacts\":[\"a@x.example\"],\"software_id\":\"s\","
+        + "\"software_version\":\"1\",\"client_uri\":\"https://openai.com\",\"jwks\":{\"keys\":[]}}";
+    OAuthClient c = clients(serving(doc, null, new AtomicInteger())).resolve(callbackId);
+    assertThat(c.isPublic()).isTrue();
+    assertThat(c.allowsRefresh()).isTrue();
+    assertThat(c.redirectUris()).containsExactly("https://chatgpt.com/connector/oauth/cb_01J9ZX");
+    for (String method : List.of("client_secret_post", "client_secret_jwt")) {
+      String secretDoc = "{\"client_id\":\"" + CLAUDE + "\",\"redirect_uris\":[\"https://claude.ai/api/mcp/auth_callback\"],"
+          + "\"token_endpoint_auth_method\":\"" + method + "\"}";
+      assertThatThrownBy(() -> clients(serving(secretDoc, null, new AtomicInteger())).resolve(CLAUDE)).as(method)
+          .isInstanceOf(OAuthException.class);
+    }
   }
 
   @Test
