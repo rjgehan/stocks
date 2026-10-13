@@ -67,7 +67,9 @@ function botOf(actor: OAuthActor, family: ClientFamily): boolean {
 /**
  * The preselected "Act as" choice (§17.9.3): the one bot of the asking app's family (Claude's connector or Claude
  * Code → the Claude bot, ChatGPT → the ChatGPT bot), so one press of Allow never binds an app to another vendor's
- * bot. An unknown app, or no single matching bot, preselects nothing: the human picks, and Allow waits for it.
+ * bot. The league's own bots, handles `claude` and `chatgpt`, win whatever their model label says (the admin may
+ * label them "Opus" or "o3"). An unknown app, or no single matching bot, preselects nothing: the human picks, and
+ * Allow waits for it.
  */
 export function defaultActor(
   actors: readonly OAuthActor[] | null | undefined,
@@ -76,7 +78,10 @@ export function defaultActor(
 ): string | null {
   const family = clientFamily(client, redirectHost)
   if (!family) return null
-  const matches = (actors ?? []).filter((a) => !a.self && botOf(a, family))
+  const bots = (actors ?? []).filter((a) => !a.self)
+  const named = bots.find((a) => (a.player?.handle ?? '').toLowerCase() === family)
+  if (named) return named.player?.handle ?? null
+  const matches = bots.filter((a) => botOf(a, family))
   return matches.length === 1 ? (matches[0]!.player?.handle ?? null) : null
 }
 
