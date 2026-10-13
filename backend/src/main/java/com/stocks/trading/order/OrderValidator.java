@@ -359,7 +359,8 @@ public class OrderValidator {
             .withHint("Use a LIMIT order or a notional (dollar) amount, or retry when a quote is available.");
       }
       if (hold.compareTo(bpAvailable) > 0) {
-        throw insufficientBuyingPower(o, hold, bpAvailable, holds.holdPrice(o, in.acceptance().queued(), ask, ref));
+        throw insufficientBuyingPower(o, hold, bpAvailable, holds.holdPrice(o, in.acceptance().queued(), ask, ref),
+            cushionNote(o, in.acceptance().queued(), ask), asset.fractionable());
       }
       reservedCash = hold;
     }
@@ -442,7 +443,29 @@ public class OrderValidator {
     }
   }
 
-  private ApiException insufficientBuyingPower(NormalizedOrder o, BigDecimal hold, BigDecimal bp, BigDecimal perShare) {
+  /**
+   * Why a buy holds more than qty × price (§10.3), for the {@code INSUFFICIENT_BUYING_POWER} hint: an LLM caller
+   * otherwise sees "needs $592.69" for 2 shares quoted at $256 and cannot tell why. Null when the hold has no cushion
+   * (LIMIT, STOP_LIMIT and notional orders hold their own price or amount).
+   */
+  private String cushionNote(NormalizedOrder o, boolean queued, BigDecimal ask) {
+    if (o.notional() != null) {
+      return null;
+    }
+    String regular = rules.holdPctRegular().stripTrailingZeros().toPlainString() + "%";
+    return switch (o.type()) {
+      case MARKET -> !queued && ask != null
+          ? "a market buy holds " + regular + " of the ask until it fills"
+          : "a market buy " + (queued ? "queued for the open" : "without a live ask") + " holds "
+              + rules.holdPctQueued().stripTrailingZeros().toPlainString() + "% of the last price until it fills";
+      case STOP -> "a buy stop holds " + regular + " of the stop price (or of the market, if higher)";
+      case TRAILING_STOP -> "a buy trailing stop holds " + regular + " of the market plus the trail";
+      default -> null;
+    };
+  }
+
+  private ApiException insufficientBuyingPower(NormalizedOrder o, BigDecimal hold, BigDecimal bp, BigDecimal perShare,
+                                               String cushionNote, boolean fractionable) {
     String detail = "Order needs $" + hold.toPlainString() + "; buying power is $" + bp.toPlainString() + ".";
     String hint;
     if (o.notional() != null) {
@@ -452,8 +475,11 @@ public class OrderValidator {
           : bp.max(BigDecimal.ZERO).divide(perShare, 0, RoundingMode.FLOOR);
       hint = "Max " + max.toPlainString() + " whole shares at $" + (perShare == null ? "?"
           : perShare.setScale(2, RoundingMode.HALF_UP).toPlainString()) + "."
-          + (bp.compareTo(new BigDecimal("1.00")) >= 0 ? " Try a notional (dollar) market order of \""
-              + bp.toPlainString() + "\" during regular hours." : "");
+          + (cushionNote == null ? "" : " That per-share hold includes a cushion: " + cushionNote
+              + "; the unused part is released when it fills.")
+          + (fractionable && bp.compareTo(rules.fractional().minBuyNotional()) >= 0
+              ? " Or send a notional (dollar) MARKET DAY order of \"" + bp.toPlainString()
+                  + "\" or less: it holds exactly that amount, fees included, and buys fractional shares." : "");
     }
     return ApiException.of(ErrorCode.INSUFFICIENT_BUYING_POWER, detail).withHint(hint)
         .withField(o.notional() != null ? "notional" : "qty", ErrorCode.INSUFFICIENT_BUYING_POWER,
