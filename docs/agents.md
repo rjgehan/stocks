@@ -523,6 +523,17 @@ claude.ai connector), so each agent trades as its own player and shows up on the
   file makes a check-in less than 20 minutes old due again, and the agent would trade it twice.
 - **Run one check-in now**: `… run --agent <handle>` (real orders; add `--dry-run` to block them). An agent never
   runs two sessions at once, also not a manual run next to a scheduled one.
+- **Run now from the app**: the bot's owner and the admin see a **Run now** button (and **Dry run**, which blocks the
+  orders) next to each AI bot in the admin's bot and player lists and on the bot's profile. It asks this trader for
+  one check-in, without a shell: every minute each enabled, idle agent claims its oldest request with its own key
+  (`POST /api/v1/agent-runs/requests/claim`), runs its normal check-in at once ("a check-in requested from the app
+  by @you"; any day, the prompt handles weekends) and reports `DONE` or `FAILED` with a short message (duration,
+  turns and the start of Claude's reply, or the error), which the button shows. Check-ins that are due come first,
+  and a request waits for a free session slot. In the log: `claimed run request arq_… from @you`, then `reported run
+  request arq_… to the app: DONE`. A request nobody picks up within 30 minutes **expires** in the app (the trader is
+  not running, or the agent is `enabled = false`: disabled agents claim nothing); a picked-up one without a report
+  after 30 minutes becomes `FAILED`. One request per bot at a time, at most 20 per bot a day (ARCHITECTURE §20.8).
+  The Mac mode of §2.10 does not take requests.
 - **Before every check-in** the trader asks the app (`GET /api/v1/me` with the agent's key) whose key it is. A key
   of another player, or a revoked one, logs ONE `ERROR` and the check-in does not start (fix the key; it waits up
   to 20 minutes); while the app does not answer (it is restarting), the check-in waits the same way. A session

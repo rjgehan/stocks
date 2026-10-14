@@ -66,7 +66,7 @@ The final design takes **mvp-first's skeleton**, raises it to **realism-first's 
 | Process shape | mvp-first, realism-first | One Boot app, one instance, one engine thread that is the only writer, `JdbcClient`, no JPA |
 | Ledger | mvp-first | Single-entry, append-only, per account. One ledger row per execution, holding the net cash after fees. Idempotency keys and invariants come from realism-first. |
 | Settlement | mvp-first, realism-first | Derived from `settle_date`, so there is no settlement job. Settlement dates come from realism-first's bank-holiday-aware calendar. |
-| Cash-account rules | realism-first, multiplayer | T+1, settled versus unsettled cash, and **GFV with escalation, all in Phase 1**. The $500 starting balance is what makes these rules matter. |
+| Cash-account rules | realism-first, multiplayer | T+1, settled versus unsettled cash, and **GFV with escalation, all in Phase 1**. The rules matter at any balance; they bit hardest at the original $500 starting balance (the default is $500,000 since 2026-10-14, D6). |
 | Order types | realism-first | MARKET, LIMIT, STOP, STOP_LIMIT and TRAILING_STOP in Phase 1, with partial fills, a book walk and a 5% collar |
 | Fill engine | realism-first, multiplayer | Anti-look-ahead latency, a quote-quality ladder, synthetic quotes and trade-through fills. **No cancel latency** (mvp simplification). |
 | Fees | realism-first | Effective-dated table with cumulative per-order delta charging |
@@ -100,7 +100,7 @@ The final design takes **mvp-first's skeleton**, raises it to **realism-first's 
 | D3 | Persistence uses `JdbcClient` and Flyway. Production runs **PostgreSQL 18.6**; dev and fast tests run **H2 2.4 file or memory in `MODE=PostgreSQL`**. The SQL subset and the JDBC typing rules are portable (§8). A **Docker-free embedded PostgreSQL 18.6** (`-Ppg-it`) runs the same suite on PG locally and in CI. | The owner's machine has no Postgres and Docker may not be running. H2 hides some PG-only failures, so every repository method also runs on real PG. |
 | D4 | Money is `BigDecimal`: cash at scale 2, prices at scale 4, quantities at scale 5. JSON carries decimals as **strings**. `double` and `float` are banned in money code (ArchUnit). | Exactness, and LLM clients never round-trip through floating point. |
 | D5 | The ledger is **append-only and single-entry** (`cash_ledger`). Every cash change is one row. `account.cash_balance` is a cache that is updated only in the same transaction as a ledger insert. Admin money movements are `cash_transfer` rows plus a ledger row. | Meets the owner's rule ("never edit balances"), and it is provable through invariants. |
-| D6 | **Every account is a CASH account.** Starting cash is **$500.00** (runtime setting). Settlement is **T+1**, derived from the calendar's `settlement_date`. **GFVs are tracked and escalate.** **PDT is not enforced**: FINRA Regulatory Notice 26-10 replaced it effective 2026-06-04, Webull adopted that on day one [V], and PDT never applied to cash accounts anyway. Margin accounts come in Phase 2 and require $2,000 equity. | At $500 the rules a real retail customer actually hits are settled cash and good-faith violations. |
+| D6 | **Every account is a CASH account.** Starting cash is **$500,000.00** (runtime setting; the owner raised it from $500.00 on 2026-10-14, V11, for new players, and topped up the existing ones with a deposit to all). Settlement is **T+1**, derived from the calendar's `settlement_date`. **GFVs are tracked and escalate.** **PDT is not enforced**: FINRA Regulatory Notice 26-10 replaced it effective 2026-06-04, Webull adopted that on day one [V], and PDT never applied to cash accounts anyway. Margin accounts come in Phase 2 and require $2,000 equity. | The rules a real retail customer actually hits are settled cash and good-faith violations; a larger stake makes the league more interesting (the owner's call). |
 | D7 | **Fractional and notional orders are in Phase 1.** They are MARKET only, DAY only, execute in RTH only, fractionable symbols only, minimum $1.00 buy, quantity to 5 decimal places. **A notional amount is all-in** (principal plus fees ≤ notional). They cannot be replaced. | Most stocks cost more than $500 a share. |
 | D8 | Phase 1 order types: MARKET, LIMIT, STOP, STOP_LIMIT, TRAILING_STOP. TIF is DAY or GTC (**60 days**, Webull US). The extended-hours flag applies to LIMIT only. TRAILING_STOP can only be entered during regular hours. | Webull parity [V]. |
 | D9 | **Price-taker fills** against real quotes and prints. Simulated latency is 250 ms plus 100–500 ms of seeded jitter, with no look-ahead. Humans and bots get identical treatment. Players never trade with each other. | Fairness and resistance to gaming. |
@@ -860,7 +860,7 @@ public record SessionChanged(SessionState state) {}
 | `fde` | feed_event | `ntf` | notification |
 | `led` | cash_ledger | `aev` | account_event |
 | `grp` | order_group (Phase 2, §11.9) | `arn` | agent_run (Phase 2, §20.6) |
-| `jnl` | journal_note (Phase 2, §20.7) | | |
+| `jnl` | journal_note (Phase 2, §20.7) | `arq` | agent_run_request (Run now, §20.8) |
 
 - API keys use their own public `key_id` (§17.2).
 - `clientOrderId` is chosen by the client and must match `^[A-Za-z0-9._:-]{1,64}$`.
@@ -1025,7 +1025,7 @@ enum PushCategory    { FILLS, ALERTS, MONEY, ACCOUNT, LEAGUE }
 | 401 | `UNAUTHENTICATED`, `INVALID_API_KEY`, `API_KEY_REVOKED`, `API_KEY_EXPIRED`, `BAD_CREDENTIALS` |
 | 403 | `FORBIDDEN`, `FORBIDDEN_SCOPE`, `ADMIN_REQUIRES_SESSION`, `RECENT_AUTH_REQUIRED`, `CSRF_INVALID`, `PLAYER_DISABLED`, `PLAYER_FROZEN` |
 | 404 | `NOT_FOUND`, `SYMBOL_NOT_FOUND`, `ORDER_NOT_FOUND`, `PLAYER_NOT_FOUND`, `ACCOUNT_NOT_FOUND` |
-| 409 | `CLIENT_ORDER_ID_CONFLICT`, `IDEMPOTENCY_KEY_CONFLICT`, `ORDER_NOT_CANCELLABLE`, `ORDER_NOT_REPLACEABLE`, `HANDLE_TAKEN` |
+| 409 | `CLIENT_ORDER_ID_CONFLICT`, `IDEMPOTENCY_KEY_CONFLICT`, `ORDER_NOT_CANCELLABLE`, `ORDER_NOT_REPLACEABLE`, `HANDLE_TAKEN`, `RUN_REQUEST_CONFLICT` (Run now, §20.8) |
 | 422 (orders) | `CLIENT_ORDER_ID_INVALID`, `RATIONALE_REQUIRED`, `SYMBOL_NOT_TRADABLE`, `INVALID_QTY`, `QTY_OR_NOTIONAL_REQUIRED`, `NOT_FRACTIONABLE`, `FRACTIONAL_MARKET_ONLY`, `FRACTIONAL_DAY_ONLY`, `FRACTIONAL_NOT_REPLACEABLE`, `NOTIONAL_TOO_SMALL`, `INVALID_TICK`, `LIMIT_PRICE_REQUIRED`, `STOP_PRICE_REQUIRED`, `TRAIL_REQUIRED`, `PRICE_NOT_ALLOWED`, `EXT_HOURS_LIMIT_ONLY`, `TIF_NOT_ALLOWED`, `SESSION_NOT_ALLOWED`, `STOP_PRICE_WRONG_SIDE`, `PRICE_TOO_FAR`, `SHORT_SELLING_NOT_ALLOWED`, `INSUFFICIENT_POSITION`, `INSUFFICIENT_BUYING_POWER`, `ACCOUNT_RESTRICTED`, `TOO_MANY_OPEN_ORDERS`, `GFV_ACK_REQUIRED`, `MARKET_DATA_UNAVAILABLE`, `ORDER_GROUP_INVALID` (Phase 2, §11.9) |
 | 422 (other) | `INSUFFICIENT_WITHDRAWABLE`, `MARKS_DEGRADED`, `SELF_RESET_DISABLED`, `INVITE_INVALID`, `WEAK_PASSWORD`, `SETTING_INVALID`, `CORPORATE_ACTION_NOT_RESOLVABLE`, `TOO_MANY_ALERTS` (Phase 2) |
 | 429 | `RATE_LIMITED`, `LOGIN_LOCKED` |
@@ -1081,7 +1081,7 @@ enum PushCategory    { FILLS, ALERTS, MONEY, ACCOUNT, LEAGUE }
 
 **As deployed (2026-10).** The first production deploy shipped without the squash: production applied `V1__init`, `V1_0_1`, `V1_3_01` and `V1_4_01`, and runs `spring.flyway.out-of-order=false`. Those four files are frozen (never edit, rename or delete them), and the per-workstream `V1_<ws>_<nn>` lanes are closed: a file that sorts before `V1_4_01` is "ignored" by Flyway and fails validation at boot. Every new migration is the next whole version (`V2__…`, `V3__…`), numbered at merge time by the integrator. `MigrationOrderTest` enforces this and upgrades a production-baseline database with out-of-order off.
 
-Production has since applied `V2__wait_reason_fits_corporate_action_hold` (Phase 1 review fixes), so `MigrationOrderTest` treats V2 as the newest applied version. **Phase 2 wave A** (integration merge, 2026-10-11) adds, in merge order, `V3__p2_orders` (group orders, FINRA 5330, cancel latency), `V4__p2_league` (feed reactions), `V5__p2_alerts` (price alerts, Web Push), `V6__p2_charts` (screener statistics), `V7__p2_oauth` (OAuth authorization server) and `V8__p2_agents` (agent runs, journal, API access log) in `common/`, plus the vendor halves `h2/` and `postgresql/V8_1__p2_agents_feed_kind` (the `feed_event.event_kind` CHECK gains `JOURNAL`; a CHECK cannot be replaced portably). Production applies all of them in one go at the first boot of the wave A image; each is additive (new tables, new nullable or defaulted columns, one widened CHECK), so the Phase 1 data needs no backfill. The next migration is `V9__…`.
+Production has since applied `V2__wait_reason_fits_corporate_action_hold` (Phase 1 review fixes), so `MigrationOrderTest` treats V2 as the newest applied version. **Phase 2 wave A** (integration merge, 2026-10-11) adds, in merge order, `V3__p2_orders` (group orders, FINRA 5330, cancel latency), `V4__p2_league` (feed reactions), `V5__p2_alerts` (price alerts, Web Push), `V6__p2_charts` (screener statistics), `V7__p2_oauth` (OAuth authorization server) and `V8__p2_agents` (agent runs, journal, API access log) in `common/`, plus the vendor halves `h2/` and `postgresql/V8_1__p2_agents_feed_kind` (the `feed_event.event_kind` CHECK gains `JOURNAL`; a CHECK cannot be replaced portably). Production applies all of them in one go at the first boot of the wave A image; each is additive (new tables, new nullable or defaulted columns, one widened CHECK), so the Phase 1 data needs no backfill. After wave A (2026-10-14): `V9` and `V10` from the branches built in parallel that day, `V11__starting_cash_500k` (a data migration: the stored `league.defaultStartingCash` becomes 500000.00; a no-op on a fresh database, whose settings are seeded at boot) and `V12__agent_run_requests` (Run now, §20.8). The next migration is `V13__…`; the parked `p2b/*` branches renumber again when they merge.
 
 **Phase 2 group orders and order realism** (`common/V3__p2_orders.sql`; §11.9, §11.10, §14), portable H2 + PostgreSQL:
 
@@ -2014,7 +2014,7 @@ CLOSED ──04:00──► PRE ──09:30──► REGULAR ──16:00 (13:00)
 |---|---|
 | Type | Every Phase 1 account is `CASH`. `MARGIN` comes in Phase 2: it is offered only when equity is at least $2,000, is long-only, and gets 4× intraday and 2× overnight buying power with IMD calls. |
 | Runs | A player has exactly one `ACTIVE` account at a time. A reset closes it (`close_reason=RESET`) and opens `run_no + 1`. Closed runs stay readable, and the reset count (`max(run_no) − 1`) is public. |
-| Starting cash | Taken from the runtime setting `league.defaultStartingCash` (default **500.00**, minimum 1.00), or the admin's per-account override. Posted as an `INITIAL` transfer plus an `INITIAL_FUNDING` ledger row, effective immediately. Run 1 opens at U = 1 (units = amount); a later run opens at the previous run's final U, so a reset cannot erase losses from the leaderboard (§16.3). |
+| Starting cash | Taken from the runtime setting `league.defaultStartingCash` (default **500000.00** since V11, was 500.00; minimum 1.00), or the admin's per-account override. Posted as an `INITIAL` transfer plus an `INITIAL_FUNDING` ledger row, effective immediately. Run 1 opens at U = 1 (units = amount); a later run opens at the previous run's final U, so a reset cannot erase losses from the leaderboard (§16.3). |
 | Deposits | Admin deposits, withdrawals and adjustments **settle immediately** (`settle_date = trade_date`). There is no ACH simulation, so **freeriding cannot happen**. |
 | Shorting | Not allowed. A sell may never take a position below 0 (`SHORT_SELLING_NOT_ALLOWED` or `INSUFFICIENT_POSITION`). |
 | PDT | **Not enforced** (`stocks.rules.pdt.enforced=false`), per FINRA RN 26-10 effective 2026-06-04 [V] and the cash-account exemption. `dayTradesLast5Days` is still computed for display. A Phase 3 option adds `LEGACY_25K`. |
@@ -4093,7 +4093,7 @@ curl -N https://stocks.gehan.cloud/api/v1/stream?topics=orders,quotes\&symbols=A
 
 ### 20.3 Tool catalog
 
-The requirement is that AIs can reach everything a player can. **Coverage test** (CI): every non-admin `GET` in `docs/openapi.json` maps to a tool below or is on the explicit exclusion list in `src/test/resources/golden/mcp/tool-coverage.yml`. That list is: `GET /auth/csrf`; `GET /me` (= `whoami`); `GET /me/api-keys` (session only); `GET /assets/{symbol}/logo` (binary); `GET /market/indices` (= `get_quotes` for SPY, QQQ, DIA, IWM); `GET /account/positions/{symbol}` (= `get_positions`); `GET /orders/by-client-id/{id}` (= `get_order`); `GET /me/push` (Phase 2: this browser's Web Push settings, session only; bots have no browser subscriptions); `GET /assets/{symbol}/trades` (Phase 2: a live UI tape that exists only while a viewer's stream covers the symbol, §15.10); `GET /me/oauth/requests/{requestId}` and `GET /me/connected-apps` (Phase 2: session only, §17.9); `GET /players/{handle}/agent-runs` (Phase 2: runner telemetry, §20.6), `GET /me/api-calls` (session only, §17.10) and `GET /stream` (Server-Sent Events, §19.3). `GET /alerts` maps to `list_alerts`.
+The requirement is that AIs can reach everything a player can. **Coverage test** (CI): every non-admin `GET` in `docs/openapi.json` maps to a tool below or is on the explicit exclusion list in `src/test/resources/golden/mcp/tool-coverage.yml`. That list is: `GET /auth/csrf`; `GET /me` (= `whoami`); `GET /me/api-keys` (session only); `GET /assets/{symbol}/logo` (binary); `GET /market/indices` (= `get_quotes` for SPY, QQQ, DIA, IWM); `GET /account/positions/{symbol}` (= `get_positions`); `GET /orders/by-client-id/{id}` (= `get_order`); `GET /me/push` (Phase 2: this browser's Web Push settings, session only; bots have no browser subscriptions); `GET /assets/{symbol}/trades` (Phase 2: a live UI tape that exists only while a viewer's stream covers the symbol, §15.10); `GET /me/oauth/requests/{requestId}` and `GET /me/connected-apps` (Phase 2: session only, §17.9); `GET /players/{handle}/agent-runs` (Phase 2: runner telemetry, §20.6), `GET /me/api-calls` (session only, §17.10), `GET /stream` (Server-Sent Events, §19.3) and `GET /me/bots/{handle}/run-requests` (session only, the owner's Run now button, §20.8). `GET /alerts` maps to `list_alerts`.
 
 **Scopes.** Chain 2 only requires an authenticated player for `/mcp` (§17.1), so every tool declares the scope that REST requires for the same data (the Scope column; `McpToolCatalog.SCOPES`, a tool without an entry fails the boot), and `McpToolHandler` checks it before binding arguments: a key without it gets the error result `FORBIDDEN_SCOPE`, no caller `UNAUTHENTICATED`. A browser session holds all four scopes. `McpServerIT` calls a tool with a `market:read`-only key.
 
@@ -4360,6 +4360,62 @@ CREATE INDEX ix_journal_player ON journal_note(player_id, created_at);
 **Implementation** (WS5): `agents.JournalServiceImpl` implements the contract `contract.agents.JournalService` (REST `agents.web.JournalController` and the MCP `mcp.tools.JournalTools` share it); one writer per bot at a time (a per-player lock) so two concurrent calls cannot both pass the count; `JournalNotePosted` (§5.3) is published after the insert. The SPA renders the note with React text escaping only (`features/agents/JournalSection`, the feed's quote block).
 
 **Prompt.** The shared system prompt (§20.5, `prompts/system.md`) tells bots that `add_journal_note` exists, that notes are public after the feed delay and limited (3 per 10 min, 12 a day), and to use them for reasoning worth sharing, not for secrets or instructions to others.
+
+### 20.8 Run now: run requests (`agent_run_request`)
+
+The owner of an AI player, or the admin, can start one of the bot's **normal check-ins** from the app instead of waiting for its schedule: a **Run now** button next to the bot (with a **Dry run** variant that blocks its orders). The app never runs a model itself. It stores a request; the claude-trader service (`tools/claude-trader`, `docs/agents.md` §2.11) asks the app every minute with **the bot's own key**, claims it, runs the check-in on the server and reports how it went. The bot's prompt says "a check-in requested from the app by @owner".
+
+**States.** `PENDING` (waiting for the trader) → `CLAIMED` (picked up) → `DONE` or `FAILED` (the trader's report, with a short message: the duration and turns, or the error). A `PENDING` request nobody claimed within 30 minutes becomes `EXPIRED` ("the trader did not pick it up": the service is not running, or the bot is not enabled in its agents file); a `CLAIMED` one without a report after 30 minutes becomes `FAILED` ("the trader did not report back"). Expiry is lazy: it is applied to a bot whenever its requests are created, listed or claimed (`stocks.agents.run-requests.pending-ttl`, `claim-ttl`).
+
+**Rules.**
+- The owner's routes are `/me/**` (session only, CSRF). The caller owns the bot (`player.owner_player_id`) or is an ACTIVE admin, else 403 `FORBIDDEN`; the handle is a listed AI player (unknown or DISABLED → 404 `PLAYER_NOT_FOUND`, a human → 403 `FORBIDDEN`). A new request needs the bot ACTIVE (FROZEN → 403 `PLAYER_FROZEN`).
+- **One open request per bot**: another one while a request is `PENDING` or `CLAIMED` is 409 `RUN_REQUEST_CONFLICT` with a clear detail ("… already has a run request waiting for the trader (requested at 10:31 ET by @ryan) …" / "… is already running a requested check-in …"). The column `open_bot_id` (the bot's id while open, NULL once final) is UNIQUE, so two requests racing in cannot both get in (both databases allow many NULLs; no partial index).
+- At most `stocks.agents.run-requests.max-per-day` (20) requests per bot in any 24 hours, else 429 `RATE_LIMITED` with `retryAfterS` until the oldest leaves the window.
+- Every accepted request is audited (`ACCOUNT` `BOT_RUN_REQUEST`, actor = the human, target = the bot's handle, detail `requestId` and `dryRun`), and so is one refused by the daily limit (`RATE_LIMITED`).
+- The trader's routes need `trade` and **an AI player's API key** (route rule in `SecurityConfig`, like `POST /agent-runs`): a browser session or a human's key gets 403 `FORBIDDEN`; OAuth tokens only work on `/mcp`. A claim returns the calling bot's oldest `PENDING` request: an `UPDATE … WHERE status = 'PENDING'`, so two claims never both win (PostgreSQL and H2). A finish names a request of the calling bot (else 404 `NOT_FOUND`) that is `CLAIMED`; the same final status again answers the stored request (a retried report), anything else is 409 `RUN_REQUEST_CONFLICT`. The message is cleaned like a run report's (§20.6: control characters out, key-shaped strings redacted, 500 characters).
+- Not an MCP tool: a bot books its own extra check-ins in its reply (§2.10 of `docs/agents.md`), and the route list of `tool-coverage.yml` excludes `GET /me/bots/{handle}/run-requests` (session only).
+
+```ts
+type RunRequestStatus = "PENDING"|"CLAIMED"|"DONE"|"FAILED"|"EXPIRED";
+type RunRequest = { id: string /* arq_… */; handle: string /* the bot */; requestedBy: string /* the human's handle */;
+  requestedAt: Ts; dryRun: boolean; status: RunRequestStatus; claimedAt: Ts|null; finishedAt: Ts|null;
+  message: string|null /* the trader's report, or why it expired */ };
+type RunNowRequest = { dryRun?: boolean /* default false */ };
+type FinishRunRequest = { status: "DONE"|"FAILED"; message?: string|null };
+```
+
+| Method and path | Auth | Request → response | Errors |
+|---|---|---|---|
+| `POST /me/bots/{handle}/run-requests` | session (`/me/**`), the bot's owner or the admin | `RunNowRequest` (optional) → 201 `RunRequest` (`PENDING`) | `PLAYER_NOT_FOUND`, `FORBIDDEN`, `PLAYER_FROZEN`, `RUN_REQUEST_CONFLICT`, `RATE_LIMITED` |
+| `GET /me/bots/{handle}/run-requests?limit` | session, the bot's owner or the admin | → `RunRequest[]`, newest first (limit 1-50, default 10) | `PLAYER_NOT_FOUND`, `FORBIDDEN` |
+| `POST /agent-runs/requests/claim` | the bot's own key, `trade` | → 200 `RunRequest` (now `CLAIMED`), or 204 when none is `PENDING` | `FORBIDDEN`, `FORBIDDEN_SCOPE` |
+| `POST /agent-runs/requests/{requestId}/finish` | the bot's own key, `trade` | `FinishRunRequest` → `RunRequest` | `FORBIDDEN`, `FORBIDDEN_SCOPE`, `NOT_FOUND`, `VALIDATION_FAILED`, `RUN_REQUEST_CONFLICT` |
+
+```sql
+-- common/V12__agent_run_requests.sql
+CREATE TABLE agent_run_request (
+  id              BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  public_id       VARCHAR(32)   NOT NULL UNIQUE,                 -- arq_<ulid>
+  player_id       BIGINT        NOT NULL REFERENCES player(id),  -- the bot
+  requested_by    BIGINT        NOT NULL REFERENCES player(id),  -- the owner or the admin
+  requested_at    TIMESTAMP WITH TIME ZONE NOT NULL,
+  dry_run         BOOLEAN       NOT NULL,
+  status          VARCHAR(8)    NOT NULL CHECK (status IN ('PENDING','CLAIMED','DONE','FAILED','EXPIRED')),
+  open_bot_id     BIGINT,                                        -- player_id while PENDING or CLAIMED, else NULL
+  claimed_at      TIMESTAMP WITH TIME ZONE,
+  claimed_key_id  BIGINT        REFERENCES api_key(id),
+  finished_at     TIMESTAMP WITH TIME ZONE,
+  message         VARCHAR(500),
+  CONSTRAINT ux_agent_run_request_open UNIQUE (open_bot_id),
+  CONSTRAINT ck_agent_run_request_open CHECK ((status IN ('PENDING','CLAIMED')) = (open_bot_id IS NOT NULL)),
+  CONSTRAINT ck_agent_run_request_bot CHECK (open_bot_id IS NULL OR open_bot_id = player_id),
+  CONSTRAINT ck_agent_run_request_claim CHECK (status = 'PENDING' OR status = 'EXPIRED' OR claimed_at IS NOT NULL)
+);
+CREATE INDEX ix_agent_run_request_player ON agent_run_request(player_id, requested_at);          -- latest, daily limit
+CREATE INDEX ix_agent_run_request_status ON agent_run_request(player_id, status, requested_at);  -- oldest PENDING
+```
+
+**Trader side** (server mode only; `tick_requests` in `claude_trader.py`). Every minute, after the check-ins that are due (they come first), each enabled agent that is idle and has no check-in waiting to start claims its oldest request while a session slot is free (`STOCKS_TRADER_MAX_PARALLEL`), and runs it at once with the request's `dryRun`, any day of the week (the prompt itself stops on a weekend). When the session ends it posts `DONE` ("Check-in done in 4 min 2 s, 12 turns. <the start of Claude's reply>") or `FAILED` (the error, or "stopped: the trader shut down"); a report the app cannot take is sent again every minute, one the app refuses for good (404, 409) is dropped with a log line. A claim answering a request of another player (a key pasted under the wrong agent) runs nothing and reports `FAILED`. Network problems are logged once per distinct problem. Disabled agents claim nothing, so their requests expire. Mac mode (§2.10) does not claim.
 
 ## 21. Admin
 
@@ -4797,7 +4853,7 @@ stocks:
   bootstrap:
     admin-handle: ${ADMIN_BOOTSTRAP_USERNAME:}
     admin-password: ${ADMIN_BOOTSTRAP_PASSWORD:}
-    default-starting-cash: ${STARTING_CASH_DEFAULT:500.00}   # seeds app_setting once; admin UI wins afterwards
+    default-starting-cash: ${STARTING_CASH_DEFAULT:500000.00}   # seeds app_setting once; admin UI wins afterwards
     seed-demo: false
   security:
     api-key-pepper: ${API_KEY_PEPPER:}
@@ -4925,10 +4981,11 @@ stocks:
     max-attempts: 3
     max-devices-per-player: 10
   # Phase 2, WS5: every key optional (these are the code defaults), so production's .env needs nothing new
-  agents:                                   # §20.6 run reports, §20.7 the public AI journal
+  agents:                                   # §20.6 run reports, §20.7 the public AI journal, §20.8 Run now
     max-report-bytes: 32768
     max-reports-per-day: 100
     journal: { max-chars: 500, max-per-window: 3, window: 10m, max-per-day: 12, max-symbols: 5 }
+    run-requests: { max-per-day: 20, pending-ttl: 30m, claim-ttl: 30m }
   api-log: { enabled: true, flush-interval: 15s, max-pending-buckets: 10000, retention-days: 90 }   # §17.10
   stream: { enabled: true, max-connections-per-player: 3, max-connections: 200, heartbeat: 15s, max-age: 30m,
             revalidate-every: 30s, buffer-size: 2000, buffer-max-age: 5m, quote-interval: 1s, queue-capacity: 1000,
@@ -4958,7 +5015,7 @@ stocks:
 | `API_KEY_PEPPER` | prod | 32+ random bytes, base64 (`openssl rand -base64 48`) |
 | `ENGINE_SEED` | prod | Secret seed for latency jitter |
 | `ADMIN_BOOTSTRAP_USERNAME`, `ADMIN_BOOTSTRAP_PASSWORD` | first boot | Creates the human admin only if no admin exists |
-| `STARTING_CASH_DEFAULT` | no | Default `500.00`. Seeds `league.defaultStartingCash` once. |
+| `STARTING_CASH_DEFAULT` | no | Default `500000.00`. Seeds `league.defaultStartingCash` once (an existing database got 500000.00 from V11). |
 | `MARKETDATA_PROFILE` | prod | `hybrid` (free tier) or `alpaca-sip` (paid) |
 | `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY` | hybrid | Alpaca **paper** account keys (Basic data plan) |
 | `ALPACA_FEED` | no | `iex` (default) or `sip` |
@@ -4981,7 +5038,7 @@ stocks:
 
 | Key | Default | Type |
 |---|---|---|
-| `league.defaultStartingCash` | `500.00` | decimal ≥ 1.00 |
+| `league.defaultStartingCash` | `500000.00` | decimal ≥ 1.00 |
 | `league.allowSelfReset` | `false` | boolean |
 | `league.seasonStart` | `2026-10-12` | date |
 | `league.eligibility.minFills` | `5` | int ≥ 0 |
@@ -5091,7 +5148,7 @@ services:
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:?…}
       API_KEY_PEPPER: ${API_KEY_PEPPER:?…}
       ENGINE_SEED: ${ENGINE_SEED:?…}
-      # ADMIN_BOOTSTRAP_USERNAME/PASSWORD, STARTING_CASH_DEFAULT (500.00), MARKETDATA_PROFILE (hybrid),
+      # ADMIN_BOOTSTRAP_USERNAME/PASSWORD, STARTING_CASH_DEFAULT (500000.00), MARKETDATA_PROFILE (hybrid),
       # ALPACA_KEY_ID, ALPACA_SECRET_KEY, ALPACA_FEED (iex), FINNHUB_TOKEN, JDK_JAVA_OPTIONS: ${VAR:-default}
       TRUSTED_PROXIES: '${TRUSTED_PROXIES:-<the §24.3 default, written with \d+>}'   # never passed empty
     # no `ports:`: nothing is published on the host; cloudflared reaches http://stocks-app:8080 over stocks-edge
