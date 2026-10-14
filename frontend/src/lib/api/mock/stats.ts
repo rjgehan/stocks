@@ -114,7 +114,7 @@ export function mockRowStats(handle: string, period: string, fills: number): { s
 }
 
 /** §16.8 player stats from the board row (return, P&L, rank) plus seeded trade stats. */
-export function mockPlayerStats(row: LeaderboardRow, period: LeaderboardPeriod, players: number, nowMs: number, self: boolean, trades: ReadonlyArray<Execution> = []): PlayerStats {
+export function mockPlayerStats(row: LeaderboardRow, period: LeaderboardPeriod, players: number, nowMs: number, self: boolean, trades: ReadonlyArray<Execution> = [], delayMs = 0): PlayerStats {
   const handle = row.player?.handle ?? '?'
   const rng = mulberry32(hashString(`${handle}:lots:${period}`))
   const days = PERIOD_DAYS[period] ?? 0
@@ -164,7 +164,8 @@ export function mockPlayerStats(row: LeaderboardRow, period: LeaderboardPeriod, 
     profitFactor: compare(grossLoss, '0') > 0 ? div(grossProfit, grossLoss, 4, 'HALF_EVEN') : null,
     closedLots: sells + Math.floor(rng() * 3),
     avgHoldSeconds: sells ? Math.round((6 + rng() * 60) * 3600) : null,
-    tradesAsOf: iso(self ? nowMs : nowMs - 15 * MIN),
+    // another player's best and worst trades come after the league's feed delay (none by default, public mode)
+    tradesAsOf: iso(self ? nowMs : nowMs - delayMs),
     bestTrade: best,
     worstTrade: worst,
     rank: row.rank,
@@ -176,17 +177,23 @@ export function mockPlayerStats(row: LeaderboardRow, period: LeaderboardPeriod, 
 const RANGE_DAYS: Record<string, number> = { '1D': 0, '1W': 5, '1M': 21, '3M': 63, YTD: 190, '1Y': 252, ALL: 7 }
 
 /**
- * §16.10 P&L analysis of the demo account: the earnings curve ends at the account's return since the range start
- * (the mock's unit value against a seeded anchor), SPY and QQQ walks, and P&L by symbol from the lots and fills.
+ * §16.10 P&L analysis of an account (the demo account's, or another player's in public mode, seeded by `key`): the
+ * earnings curve ends at the account's return since the range start (the mock's unit value against a seeded anchor),
+ * SPY and QQQ walks, and P&L by symbol from the lots and fills.
  */
-export function mockPnlAnalysis(range: string, input: { u: Dec; equity: Dec; nc: Dec; openedAtMs: number; lots: ReadonlyArray<Lot>; executions: ReadonlyArray<Execution>; mark: (s: string) => Dec }, nowMs: number): PnlAnalysis {
+export function mockPnlAnalysis(
+  range: string,
+  input: { u: Dec; equity: Dec; nc: Dec; openedAtMs: number; lots: ReadonlyArray<Lot>; executions: ReadonlyArray<Pick<Execution, 'side' | 'symbol' | 'realizedPnl' | 'executedAt'>>; mark: (s: string) => Dec; key?: string },
+  nowMs: number,
+): PnlAnalysis {
+  const key = input.key ?? 'demo'
   const days = RANGE_DAYS[range] ?? 21
   const fromMs = Math.max(input.openedAtMs, range === '1D' ? nowMs - 8 * 60 * MIN : nowMs - days * DAY * 1.4)
-  const anchorU = range === 'ALL' || fromMs === input.openedAtMs ? 1 : Number(input.u) / (1 + (mulberry32(hashString(`demo:${range}`))() - 0.45) * 0.03)
+  const anchorU = range === 'ALL' || fromMs === input.openedAtMs ? 1 : Number(input.u) / (1 + (mulberry32(hashString(`${key}:${range}`))() - 0.45) * 0.03)
   const end = Number(input.u) / anchorU - 1
   const n = range === '1D' ? 20 : Math.max(2, Math.min(days || 6, Math.round((nowMs - fromMs) / DAY)) + 1)
   const times = Array.from({ length: n }, (_, i) => fromMs + ((nowMs - fromMs) * i) / (n - 1))
-  const values = path(`demo:earn:${range}`, n, end)
+  const values = path(`${key}:earn:${range}`, n, end)
   const base = Number(input.equity) / (1 + end)
   const points: EarningsPoint[] = times.map((t, i) => ({ t: iso(t), return: ret(values[i]!), pnl: (base * values[i]!).toFixed(2) }))
   const bench = (symbol: string, drift: number): BenchmarkCurve => {
@@ -235,15 +242,21 @@ function mergeCells(date: string, list: ReadonlyArray<PnlCalendarCell>): PnlCale
   return { date, pnl: money(pnl), return: ret(growth - 1), flows: money(flows), live: list.some((c) => c.live) }
 }
 
-/** §16.10 P&L calendar of the demo account: one seeded cell per trading day since the opening, today live. */
-export function mockPnlCalendar(view: 'DAY' | 'MONTH', month: string, year: number, input: { openedAtMs: number; dayPnl: Dec; dayReturn: Dec; deposits: ReadonlyArray<{ date: string; amount: Dec }> }, nowMs: number): PnlCalendar {
+/** §16.10 P&L calendar of an account (seeded by `key`, the demo's by default): one cell per trading day since the opening, today live. */
+export function mockPnlCalendar(
+  view: 'DAY' | 'MONTH',
+  month: string,
+  year: number,
+  input: { openedAtMs: number; dayPnl: Dec; dayReturn: Dec; deposits: ReadonlyArray<{ date: string; amount: Dec }>; key?: string },
+  nowMs: number,
+): PnlCalendar {
   const today = etDate(nowMs)
   const days: PnlCalendarCell[] = []
   for (let t = input.openedAtMs; t <= nowMs + DAY; t += DAY) {
     const date = etDate(t)
     if (!isWeekday(date) || date > today || days.some((d) => d.date === date)) continue
     const live = date === today
-    const rng = mulberry32(hashString(`demo:cal:${date}`))
+    const rng = mulberry32(hashString(`${input.key ?? 'demo'}:cal:${date}`))
     const r = live ? Number(input.dayReturn) : (rng() - 0.47) * 0.04
     const flows = input.deposits.filter((d) => d.date === date).reduce((acc, d) => add(acc, d.amount), '0.00')
     days.push({ date, pnl: live ? input.dayPnl : (r * 520).toFixed(2), return: ret(r), flows: money(flows), live })

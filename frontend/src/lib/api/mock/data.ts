@@ -82,3 +82,84 @@ export const MOCK_PLAYERS = [
 
 /** An always-valid invite for trying the signup flow in mock mode: /join/welcome-friends */
 export const MOCK_INVITE_CODE = 'welcome-friends'
+
+/**
+ * Public mode (§16.7): what each member holds and trades, so their Portfolio and History screens have something to
+ * show. `holdings` split the money they have invested (the first is their `top`); the server prices them from the
+ * fake market at seed time. `closed` is a position they bought and sold again (a realized gain or loss), `working`
+ * a resting limit buy below the market, `cancelled` an order they pulled. One bot also has a bracket whose entry has
+ * not filled yet, so its take profit and stop loss are held. Bots explain every order; humans only some.
+ */
+export interface MockPlayerBook {
+  holdings: Array<{ symbol: string; share: number }>
+  closed: { symbol: string; pnl: string }
+  working: string
+  cancelled: string
+  bracket?: string
+  notes: { buy: string | null; closed: string | null; working: string | null }
+}
+
+export const MOCK_BOOKS: Record<string, MockPlayerBook> = {
+  claude: {
+    holdings: [
+      { symbol: 'NVDA', share: 0.5 },
+      { symbol: 'AMD', share: 0.3 },
+      { symbol: 'MSFT', share: 0.2 },
+    ],
+    closed: { symbol: 'META', pnl: '2.15' },
+    working: 'KO',
+    cancelled: 'TSLA',
+    bracket: 'GOOGL',
+    notes: {
+      buy: 'Thesis: guidance raised and the spread is tight; a starter position with a limit under the last print, keeping 60% settled cash for GFV-safe exits.',
+      closed: 'Took the gain after a 5% run; the setup played out and the cash settles tomorrow.',
+      working: 'Bid below the 20-day average: only worth owning on a pullback.',
+    },
+  },
+  alice: {
+    holdings: [
+      { symbol: 'AAPL', share: 0.6 },
+      { symbol: 'SPY', share: 0.4 },
+    ],
+    closed: { symbol: 'DIS', pnl: '-1.40' },
+    working: 'KO',
+    cancelled: 'NFLX',
+    notes: { buy: 'Core holding, buying the dip.', closed: null, working: null },
+  },
+  chatgpt: {
+    holdings: [
+      { symbol: 'MSFT', share: 0.4 },
+      { symbol: 'GOOGL', share: 0.25 },
+      { symbol: 'AAPL', share: 0.2 },
+      { symbol: 'KO', share: 0.15 },
+    ],
+    closed: { symbol: 'TSLA', pnl: '3.05' },
+    working: 'JPM',
+    cancelled: 'AMD',
+    notes: {
+      buy: 'Rebalancing toward large caps: the league leader is overweight semis, so diversification is my edge this week.',
+      closed: 'Took profit on TSLA after a 6% run; volatility too high for the rest of the week.',
+      working: 'Banks look cheap against the index; a limit a little under the bid.',
+    },
+  },
+  bob: {
+    holdings: [
+      { symbol: 'TSLA', share: 0.7 },
+      { symbol: 'F', share: 0.3 },
+    ],
+    closed: { symbol: 'COIN', pnl: '-2.60' },
+    working: 'F',
+    cancelled: 'SOFI',
+    notes: { buy: null, closed: 'Cut it. Lesson learned.', working: null },
+  },
+  carol: {
+    holdings: [
+      { symbol: 'SPY', share: 0.8 },
+      { symbol: 'KO', share: 0.2 },
+    ],
+    closed: { symbol: 'QQQ', pnl: '0.85' },
+    working: 'KO',
+    cancelled: 'IWM',
+    notes: { buy: null, closed: null, working: 'Adding on any red day.' },
+  },
+}

@@ -70,7 +70,7 @@ export class MockGroups {
     const qty = r.qty ?? ''
     if (!type) return { field: 'type', message: 'Choose OCO, OTO, OTOCO or BRACKET.' }
     if (!isDecimal(qty) || sign(qty) <= 0 || compare(setScale(qty, 0, 'DOWN'), qty) !== 0) return { field: 'qty', message: 'Group orders take a whole number of shares.' }
-    const base = { symbol: r.symbol ?? '', qty, timeInForce: r.timeInForce ?? 'DAY', rationale: r.rationale ?? null, shareNote: r.shareNote ?? false, doNotReduce: r.doNotReduce ?? false }
+    const base = { symbol: r.symbol ?? '', qty, timeInForce: r.timeInForce ?? 'DAY', rationale: r.rationale ?? null, doNotReduce: r.doNotReduce ?? false }
     const sideOf = (role: OrderGroupRole): 'BUY' | 'SELL' => (type === 'OCO' ? (r.side ?? 'SELL') : role === 'ENTRY' ? 'BUY' : 'SELL')
     const out: LegPlan[] = []
     if (type !== 'OCO') {

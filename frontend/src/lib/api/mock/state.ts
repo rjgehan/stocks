@@ -18,6 +18,7 @@ import type {
   Order,
   OrderEvent,
   Preferences,
+  PublicOrder,
   Settings,
   TransferRow,
   Watchlist,
@@ -62,7 +63,21 @@ export interface MockOtherPlayer {
   resets: number
   createdAt: string
   lastSeenAt: string | null
+  /** Public mode (§16.7): the live positions every player sees (marked by the fake market). */
+  positions: MockPosition[]
+  /** Public mode: every stored order, oldest first, as `GET /players/{handle}/orders` serves them. */
+  orders: MockPublicOrder[]
 }
+
+export interface MockPosition {
+  symbol: string
+  qty: Dec
+  avgCost: Dec
+  openedAt: string
+}
+
+/** Another player's order as the league sees it (`PublicOrder`, §18.3), stored as served. */
+export type MockPublicOrder = PublicOrder
 
 export interface MockKey extends ApiKeyInfo {
   handle: string
@@ -73,7 +88,7 @@ export interface MockInvite extends Invite {
 }
 
 export interface MockState {
-  v: 3
+  v: 4
   me: MockIdentity
   apiTradingAllowed: boolean
   preferences: NonNullable<Preferences>
@@ -115,14 +130,14 @@ export interface MockState {
   seq: number
 }
 
-const KEY = 'stocks.mock.state.v3'
+const KEY = 'stocks.mock.state.v4'
 
 export function loadState(): MockState | null {
   try {
     const raw = sessionStorage.getItem(KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as MockState
-    return parsed.v === 3 ? parsed : null
+    return parsed.v === 4 ? parsed : null
   } catch {
     return null
   }

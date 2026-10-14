@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import type { Leaderboard, Order, PlaceOrderResponse, TransferBatchResult } from '../types'
-import { MockServer } from './server'
+import { beforeEach, describe, expect, expectTypeOf, it } from 'vitest'
+import type { Activity, Leaderboard, Order, PlaceOrderResponse, PlayerProfile, PublicOrder, PublicPortfolio, Rules, Settings, TransferBatchResult } from '../types'
+import { MockServer, durationMs } from './server'
 
 /**
  * The mock backend (§22.9) must answer with the exact §18.3 / §21.1 shapes, so screens built against it work
@@ -40,6 +40,19 @@ const LEADERBOARD_ROW_KEYS = [
   // Phase 2 (§16.8)
   'sharpe', 'profitFactor',
 ]
+
+// public mode (§16.7): exactly the generated schema's members (the type checks below fail when the backend adds one)
+const PUBLIC_PORTFOLIO_KEYS = [
+  'player', 'runNo', 'asOf', 'marksQuality', 'equity', 'longMarketValue', 'dividendsReceivable', 'cash', 'settledCash', 'unsettledCash',
+  'buyingPower', 'openBuyHolds', 'netContributions', 'totalPnl', 'totalReturn', 'dayPnl', 'dayReturn', 'unrealizedPnl', 'restriction',
+  'restrictionUntil', 'gfvActive', 'positions', 'openOrders',
+] as const satisfies ReadonlyArray<keyof PublicPortfolio>
+const PUBLIC_ORDER_KEYS = [
+  'orderId', 'runNo', 'symbol', 'side', 'type', 'qty', 'notional', 'fractional', 'limitPrice', 'stopPrice', 'trailAmount', 'trailPercent',
+  'timeInForce', 'extendedHours', 'status', 'waitReason', 'statusReason', 'filledQty', 'avgFillPrice', 'fees', 'receivedAt', 'expiresAt',
+  'doneAt', 'replacesOrderId', 'replacedByOrderId', 'group', 'channel', 'viaApi', 'manualSessionId', 'fills', 'untrusted',
+] as const satisfies ReadonlyArray<keyof PublicOrder>
+const PUBLIC_FILL_KEYS = ['executionId', 'executedAt', 'qty', 'price', 'fees', 'realizedPnl'] as const
 
 const keys = (o: unknown) => Object.keys(o as object).sort()
 const DECIMAL = /^-?\d+(\.\d+)?$/
@@ -298,4 +311,86 @@ describe('mock server: stop orders (§11.1, §12.7)', () => {
     const o3 = (await call<Order>('GET', `/orders/${id}`)).body
     expect(o3).toMatchObject({ status: 'FILLED', triggered: true })
   }, 10_000)
+})
+
+describe('mock server: public mode (§16.7)', () => {
+  it('pins PublicPortfolio and PublicOrder to the generated schema', () => {
+    expectTypeOf<Exclude<keyof PublicPortfolio, (typeof PUBLIC_PORTFOLIO_KEYS)[number]>>().toEqualTypeOf<never>()
+    expectTypeOf<Exclude<keyof PublicOrder, (typeof PUBLIC_ORDER_KEYS)[number]>>().toEqualTypeOf<never>()
+  })
+
+  it("serves another player's live portfolio with the exact members, positions and read-only open orders", async () => {
+    const res = await call<PublicPortfolio>('GET', '/players/claude/portfolio')
+    expect(res.status).toBe(200)
+    expect(keys(res.body)).toEqual([...PUBLIC_PORTFOLIO_KEYS].sort())
+    const p = res.body
+    expect(p.player?.handle).toBe('claude')
+    expect(p.runNo).toBe(1)
+    expect(p.positions!.length).toBeGreaterThanOrEqual(2)
+    expect(p.positions![0]!.symbol).toBe('NVDA') // the board's top holding is the largest position
+    for (const k of ['equity', 'cash', 'buyingPower', 'openBuyHolds', 'unrealizedPnl'] as const) expect(p[k]).toMatch(DECIMAL)
+    const open = p.openOrders!
+    expect(open.length).toBeGreaterThanOrEqual(2)
+    expect(keys(open[0])).toEqual([...PUBLIC_ORDER_KEYS].sort())
+    // a bracket whose entry has not filled: its exits are held, waiting for the parent
+    const held = open.find((o) => o.group?.held)!
+    expect(held).toMatchObject({ waitReason: 'AWAITING_PARENT', group: { type: 'BRACKET', held: true } })
+    expect(held.group!.parentOrderId).toBe(open.find((o) => o.group?.role === 'ENTRY')!.orderId)
+    expect(open.every((o) => o.untrusted?.rationale)).toBe(true) // bots explain every order
+  })
+
+  it("serves a player's orders newest first with fills, filters and pages, and their sanitized activity", async () => {
+    const all = await call<{ items: PublicOrder[]; nextCursor: string | null }>('GET', '/players/alice/orders?limit=3')
+    expect(all.body.items).toHaveLength(3)
+    expect(all.body.nextCursor).not.toBeNull()
+    const times = all.body.items.map((o) => Date.parse(o.receivedAt!))
+    expect(times).toEqual([...times].sort((a, b) => b - a))
+    const closed = await call<{ items: PublicOrder[] }>('GET', '/players/alice/orders?status=CLOSED&limit=50')
+    const filled = closed.body.items.filter((o) => o.status === 'FILLED')
+    expect(filled.length).toBeGreaterThanOrEqual(3)
+    expect(keys(filled[0]!.fills![0])).toEqual([...PUBLIC_FILL_KEYS].sort())
+    expect(closed.body.items.some((o) => o.status === 'CANCELLED')).toBe(true)
+    const aapl = await call<{ items: PublicOrder[] }>('GET', '/players/alice/orders?symbol=aapl')
+    expect(aapl.body.items.length).toBeGreaterThan(0)
+    expect(aapl.body.items.every((o) => o.symbol === 'AAPL')).toBe(true)
+
+    const acts = await call<{ items: Activity[] }>('GET', '/players/alice/activities?limit=50')
+    const types = acts.body.items.map((a) => a.type)
+    expect(types).toContain('INITIAL_FUNDING')
+    expect(types).toContain('FILL')
+    expect(types.at(-1)).toBe('INITIAL_FUNDING')
+    expect(acts.body.items.every((a) => a.memo === null || a.by === 'SYSTEM')).toBe(true)
+
+    // the signed-in player's own ledger, as others see it: no "admin viewed" rows, no admin memos
+    const mine = await call<{ items: Activity[] }>('GET', '/players/demo/activities?limit=200')
+    expect(mine.body.items.some((a) => a.type === 'ADMIN_VIEW')).toBe(false)
+    expect(mine.body.items.every((a) => a.memo === null || a.by === 'SYSTEM')).toBe(true)
+  })
+
+  it('analysis and calendar answer for any listed player; a disabled one is only on the admin twin', async () => {
+    expect((await call('GET', '/players/chatgpt/pnl-analysis?range=1M')).status).toBe(200)
+    expect((await call('GET', '/players/chatgpt/pnl-calendar?view=MONTH&year=2026')).status).toBe(200)
+    expect((await call('PATCH', '/admin/players/bob', { status: 'DISABLED' })).status).toBe(200)
+    expect((await call<{ code: string }>('GET', '/players/bob/portfolio')).body.code).toBe('PLAYER_NOT_FOUND')
+    const twin = await call<PublicPortfolio>('GET', '/admin/players/bob/portfolio')
+    expect(twin.status).toBe(200)
+    expect(twin.body.positions!.length).toBeGreaterThan(0)
+  })
+
+  it('has no feed delay or holdings visibility by default: equity and holdings with qty are public', async () => {
+    const settings = await call<Settings>('GET', '/admin/settings')
+    expect(settings.body['social.tradeFeedDelay']).toBe('PT0S')
+    expect(settings.body).not.toHaveProperty('social.holdingsVisibility')
+    const rules = await call<Rules>('GET', '/rules')
+    expect(rules.body.social).toEqual({ tradeFeedDelay: 'PT0S', visibility: 'PUBLIC' })
+    expect(rules.body.fairness).toHaveLength(6)
+    const board = await call<Leaderboard>('GET', '/leaderboard?period=ALL')
+    expect(board.body.rows!.every((r) => r.equity !== null)).toBe(true)
+    const profile = await call<PlayerProfile>('GET', '/players/claude')
+    expect(profile.body.equity).toMatch(DECIMAL)
+    expect(profile.body.holdings!.every((h) => h.qty !== null)).toBe(true)
+    expect(durationMs('PT15M')).toBe(15 * 60_000)
+    expect(durationMs('P1D')).toBe(24 * 60 * 60_000)
+    expect(durationMs('PT0S')).toBe(0)
+  })
 })

@@ -104,8 +104,16 @@ export function mockRules(settings: Settings, now: string): Rules {
       benchmark: 'SPY',
       resetPolicy: 'A reset never erases a loss from any leaderboard period.',
     },
-    social: { tradeFeedDelay: settings['social.tradeFeedDelay'], holdingsVisibility: settings['social.holdingsVisibility'] },
+    social: { tradeFeedDelay: settings['social.tradeFeedDelay'], visibility: 'PUBLIC' },
     dataSources: ['Mock market (simulated prices)'],
-    fairness: ['Same rules for all.', 'Deposits are public.', 'No live copying of others.'],
+    // the §16.7 public mode charter (RulesService.fairness), the "rationale required" variant
+    fairness: [
+      'Same rules for all: the same starting cash, market data, latency, fill rules, fees and write limits on every channel, for humans and bots alike. Players never trade with each other.',
+      "Deposits are public: net contributions and flows are shown on every leaderboard row, and admin deposits never move anyone's return. Resets are counted publicly, and a reset never erases a loss.",
+      "Everything is public: every player's live portfolio (cash, positions, open orders), full order history with fills, account activity, P&L analysis, rationales, journal and stats are visible to every player in real time. The feed delay (none by default) only holds back the feed, the trade list and journal notes.",
+      "Rationales: every new order's rationale or note is public, and AI players must give one. Notes written before public mode keep the visibility their author chose.",
+      'Kill switch: the admin can freeze any player, and every such action is audited. Bots can never act as admin.',
+      'Secrets stay private: passwords, API keys, OAuth tokens, email addresses, sessions and the audit log.',
+    ],
   }
 }

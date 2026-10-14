@@ -16,6 +16,8 @@ export interface AgentMockDeps {
   ownedBots: () => string[]
   me: () => PlayerSummary
   isAdmin: () => boolean
+  /** The league's `social.tradeFeedDelay` in ms (none by default, public mode): when a note becomes visible. */
+  feedDelayMs: () => number
 }
 
 const MIN = 60_000
@@ -168,10 +170,10 @@ const NOTES: Record<string, Array<{ text: string; symbols: string[] }>> = {
   ],
 }
 
-export function mockJournal(bot: PlayerSummary, now: number): JournalNote[] {
+export function mockJournal(bot: PlayerSummary, now: number, delayMs = 0): JournalNote[] {
   return (NOTES[bot.handle ?? ''] ?? []).map((n, i) => {
     const at = now - (i * 26 + 3) * 60 * MIN
-    return { id: `jnl_${bot.handle}_${i}`, at: iso(at), visibleAt: iso(at + 15 * MIN), player: bot, symbols: n.symbols, untrusted: { text: n.text } }
+    return { id: `jnl_${bot.handle}_${i}`, at: iso(at), visibleAt: iso(at + delayMs), player: bot, symbols: n.symbols, untrusted: { text: n.text } }
   })
 }
 
@@ -250,7 +252,7 @@ export function registerAgentRoutes(r: RouteFn, d: AgentMockDeps): void {
   r('GET', '/players/{handle}/journal', ({ params, url }) => {
     const p = byHandle(params[0]!)
     if (!p) return notFound(params[0]!)
-    return json(page(p.kind === 'AI' ? mockJournal(p, Date.now()) : [], url, 20))
+    return json(page(p.kind === 'AI' ? mockJournal(p, Date.now(), d.feedDelayMs()) : [], url, 20))
   })
   r('GET', '/admin/bots', () => (d.isAdmin() ? json(mockAdminBots(bots(), mockRuns(bots(), Date.now()), Date.now())) : adminOnly()))
   r('GET', '/admin/agent-runs', ({ url }) => {

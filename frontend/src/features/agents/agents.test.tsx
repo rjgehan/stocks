@@ -91,7 +91,7 @@ describe('mock mode data (§22.9)', () => {
     const routes = new Map<string, (ctx: { url: URL; params: string[] }) => Response | Promise<Response>>()
     const r: RouteFn = (method, pattern, handler) => routes.set(`${method} ${pattern}`, handler)
     const everyone = [player('demo', 'HUMAN'), ...bots, player('alice', 'HUMAN')]
-    registerAgentRoutes(r, { players: () => everyone, ownedBots: () => ['claude', 'chatgpt'], me: () => everyone[0]!, isAdmin: () => false })
+    registerAgentRoutes(r, { players: () => everyone, ownedBots: () => ['claude', 'chatgpt'], me: () => everyone[0]!, isAdmin: () => false, feedDelayMs: () => 0 })
     const mine = await (await routes.get('GET /me/api-calls')!({ url: new URL('http://x/api/v1/me/api-calls?limit=200'), params: [] })).json()
     const handles = new Set((mine.items as { handle: string }[]).map((c) => c.handle))
     expect(handles.has('alice')).toBe(false)

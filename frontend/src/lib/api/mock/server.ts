@@ -64,6 +64,8 @@ import type {
   PlayerSummary,
   Position,
   Preview,
+  PublicOrder,
+  PublicPortfolio,
   PublicTrade,
   Reaction,
   Reactor,
@@ -75,7 +77,7 @@ import type {
   Warning,
 } from '../types'
 import { mockJournalNote, registerAgentRoutes } from './agents'
-import { MOCK_INDEX_SYMBOLS, MOCK_INVITE_CODE, MOCK_ME_BASE, MOCK_PLAYERS, POPULAR_SYMBOLS } from './data'
+import { MOCK_BOOKS, MOCK_INDEX_SYMBOLS, MOCK_INVITE_CODE, MOCK_ME_BASE, MOCK_PLAYERS, POPULAR_SYMBOLS } from './data'
 import { registerAlertsAndPush } from './alerts'
 import { MockMarket, hashString, mulberry32, unitsToDec } from './market'
 import { mockRules } from './rules'
@@ -171,6 +173,27 @@ const floor5 = (d: Dec): Dec => setScale(d, 5, 'FLOOR')
 const money = (d: Dec): Dec => setScale(d, 2, 'HALF_EVEN')
 const isOpen = (o: Order): boolean => o.status === 'PENDING' || o.status === 'WORKING' || o.status === 'PARTIALLY_FILLED'
 const HANDLE_RE = /^[a-z0-9_]{2,32}$/
+/** Order channels that count as "via API" (`PublicProfileService.API_CHANNELS`). */
+const API_CHANNELS = new Set(['REST_KEY', 'MCP_KEY', 'MCP_OAUTH'])
+/** An open order as the league sees it (PENDING_CANCEL is still open). */
+const isOpenPublic = (o: PublicOrder): boolean => o.status === 'PENDING' || o.status === 'WORKING' || o.status === 'PARTIALLY_FILLED' || o.status === 'PENDING_CANCEL'
+const untrusted = (rationale: string | null): PublicOrder['untrusted'] => ({ rationale })
+/** A seed price on the tick grid. */
+const tickPrice = (d: Dec): Dec => roundToTick(setScale(d, 4, 'HALF_UP'))
+const byMarketValue = (xs: Position[]): Position[] => xs.sort((a, b) => compare(b.marketValue ?? '0', a.marketValue ?? '0'))
+/** Ledger rows newest first by time (the seed and corporate actions append out of order). */
+const newestFirst = (rows: Activity[]): Activity[] =>
+  rows
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => Date.parse(y.a.at ?? '') - Date.parse(x.a.at ?? '') || y.i - x.i)
+    .map(({ a }) => a)
+
+/** An ISO-8601 duration as the settings store it (PT0S, PT15M, PT1H, P1D) in ms; 0 when it cannot be read. */
+export function durationMs(value: string | null | undefined): number {
+  const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(value ?? '')
+  if (!m) return 0
+  return ((Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)) * 60 + Number(m[3] ?? 0)) * MIN + Math.round(Number(m[4] ?? 0) * 1000)
+}
 
 function defaultSettings(): Settings {
   return {
@@ -179,8 +202,7 @@ function defaultSettings(): Settings {
     'league.seasonStart': '2026-10-12',
     'league.eligibility.minFills': 5,
     'league.eligibility.minSymbols': 2,
-    'social.tradeFeedDelay': 'PT15M',
-    'social.holdingsVisibility': 'EOD_WEIGHTS',
+    'social.tradeFeedDelay': 'PT0S',
     'social.showDepositsInFeed': true,
     'bots.requireRationale': true,
     'league.humanKindExcludesApiTraders': false,
@@ -252,7 +274,7 @@ export class MockServer {
   private seed(): MockState {
     const openedAt = iso(this.startedAt - 9 * 24 * 60 * MIN)
     const s: MockState = {
-      v: 3,
+      v: 4,
       me: { playerId: MOCK_ME_BASE.playerId, handle: 'demo', displayName: 'Demo Player', role: 'ADMIN', accountId: MOCK_ME_BASE.accountId, createdAt: openedAt },
       apiTradingAllowed: true,
       preferences: { theme: 'DARK', upDown: 'GREEN_UP', confirmOrders: true, defaultOrderType: 'LIMIT', defaultTimeInForce: 'DAY', defaultQtyMode: 'SHARES' },
@@ -291,6 +313,8 @@ export class MockServer {
         resets: 0,
         createdAt: openedAt,
         lastSeenAt: iso(this.startedAt - (i + 1) * 37 * MIN),
+        positions: [],
+        orders: [],
       })),
       transfers: [],
       invites: [
@@ -314,6 +338,8 @@ export class MockServer {
       s.transfers.push(this.transferRow(p.handle, p.accountId, 'INITIAL', '500.00', 'Starting cash', openedAt, null, '0.00', '1'))
     }
     s.transfers.push(this.transferRow('demo', s.me.accountId, 'INITIAL', '500.00', 'Starting cash', openedAt, null, '0.00', '1'))
+    // public mode (§16.7): every member's positions and orders are public, so they get some
+    for (const p of s.others) this.seedBook(p)
     this.seedCorporateActionHistory()
     this.seedFeed()
     // §18.4: the notional buy of $125.00 NVDA, filled 45 minutes ago.
@@ -615,6 +641,7 @@ export class MockServer {
       ownedBots: () => this.s.others.filter((p) => p.kind === 'AI' && p.ownerHandle === this.s.me.handle).map((p) => p.handle),
       me: () => this.mySummary(),
       isAdmin: () => this.s.me.role === 'ADMIN',
+      feedDelayMs: () => this.feedDelayMs(),
     })
     // identity
     r('POST', '/auth/logout', () => {
@@ -872,6 +899,36 @@ export class MockServer {
       if (h !== this.s.me.handle && !this.other(h)) return problem(404, 'PLAYER_NOT_FOUND', 'Player not found')
       return json(this.page(this.publicTrades(h), url))
     })
+    // public mode (§16.7): any listed player's live portfolio, orders, activity and P&L
+    r('GET', '/players/{handle}/portfolio', ({ params }) => this.listed(params[0]!, (h) => json(this.publicPortfolio(h))))
+    r('GET', '/players/{handle}/orders', ({ params, url }) =>
+      this.listed(params[0]!, (h) => {
+        const status = (url.searchParams.get('status') ?? 'ALL').toUpperCase()
+        const symbol = url.searchParams.get('symbol')?.trim().toUpperCase()
+        const rows = this.publicOrders(h)
+          .filter((o) => status === 'ALL' || (status === 'OPEN') === isOpenPublic(o))
+          .filter((o) => !symbol || o.symbol === symbol)
+        return json(this.page(rows, url))
+      }),
+    )
+    r('GET', '/players/{handle}/activities', ({ params, url }) =>
+      this.listed(params[0]!, (h) => {
+        const types = url.searchParams.getAll('types').flatMap((v) => v.split(',')).map((t) => t.trim().toUpperCase()).filter(Boolean)
+        return json(this.page(this.publicActivities(h).filter((a) => types.length === 0 || (a.type && types.includes(a.type))), url))
+      }),
+    )
+    r('GET', '/players/{handle}/pnl-analysis', ({ params, url }) => this.listed(params[0]!, (h) => json(this.playerPnlAnalysis(h, url.searchParams.get('range') ?? '1M'))))
+    r('GET', '/players/{handle}/pnl-calendar', ({ params, url }) =>
+      this.listed(params[0]!, (h) => {
+        const view = (url.searchParams.get('view') ?? 'DAY').toUpperCase()
+        const month = url.searchParams.get('month') ?? etDate(Date.now()).slice(0, 7)
+        const year = Number(url.searchParams.get('year') ?? month.slice(0, 4))
+        if ((view !== 'DAY' && view !== 'MONTH') || !/^\d{4}-\d{2}$/.test(month) || !Number.isInteger(year)) {
+          return problem(400, 'VALIDATION_FAILED', 'Validation failed', 'view must be DAY or MONTH, month YYYY-MM')
+        }
+        return json(this.playerPnlCalendar(h, view, month, year))
+      }),
+    )
     r('GET', '/feed', ({ url }) => json(this.page(this.feed(), url)))
     // Phase 2 league slice (§16.8–16.11)
     r('GET', '/league/race', ({ url }) => json(mockRace(this.leaderboard(new URLSearchParams({ period: url.searchParams.get('period') ?? 'WEEK', kind: url.searchParams.get('kind') ?? 'ALL' })), Date.now())))
@@ -917,7 +974,12 @@ export class MockServer {
       }, true),
     )
     r('POST', '/admin/players/{handle}/reset', ({ params, body }) => this.admin(() => this.resetPlayer(params[0]!.toLowerCase(), body), true))
-    r('POST', '/admin/players/{handle}/live-view', ({ params, body }) => this.admin(() => this.liveView(params[0]!.toLowerCase(), body), true))
+    r('GET', '/admin/players/{handle}/portfolio', ({ params }) =>
+      this.admin(() => {
+        const h = params[0]!.toLowerCase()
+        return h === this.s.me.handle || this.other(h) ? json(this.publicPortfolio(h)) : problem(404, 'PLAYER_NOT_FOUND', 'Player not found', `No player @${h}.`)
+      }),
+    )
     r('GET', '/admin/players/{handle}/api-keys', ({ params }) =>
       this.admin(() => json(this.s.keys.filter((k) => k.handle === params[0]!.toLowerCase()).map(({ handle: _h, ...k }) => k))),
     )
@@ -1192,6 +1254,9 @@ export class MockServer {
       resets: 0,
       createdAt: this.s.me.createdAt,
       lastSeenAt: iso(),
+      // public mode (§16.7): their positions and orders stay visible to the league
+      positions: Object.values(this.s.lots).map((l) => ({ symbol: l.symbol, qty: l.qty, avgCost: div(l.costBasis, l.qty, 4, 'HALF_EVEN'), openedAt: l.openedAt })),
+      orders: this.s.orders.map((o) => this.toPublicOrder(o)),
     })
     const now = iso()
     this.s.me = { playerId: publicId('ply'), handle, displayName: b.displayName!.trim().slice(0, 64), role: 'PLAYER', accountId: publicId('acc'), createdAt: now }
@@ -1462,36 +1527,39 @@ export class MockServer {
   }
 
   private positions(): Position[] {
-    const lots = Object.values(this.s.lots)
     const equity = this.equity()
-    return lots.map((lot) => {
-      const quote = this.market.quote(lot.symbol)
-      const mark = this.mark(lot.symbol)
-      const marketValue = money(mul(lot.qty, mark))
-      const unrealized = sub(marketValue, lot.costBasis)
+    return Object.values(this.s.lots).map((lot) => {
       const reserved = this.s.orders.filter((o) => isOpen(o) && o.side === 'SELL' && o.symbol === lot.symbol).reduce((acc, o) => add(acc, o.reservedQty ?? '0'), '0')
-      const prev = quote.prevClose ?? mark
-      const dayPnl = money(mul(lot.qty, sub(mark, prev)))
-      return {
-        symbol: lot.symbol,
-        name: this.market.meta(lot.symbol)?.name ?? lot.symbol,
-        qty: lot.qty,
-        availableQty: setScale(sub(lot.qty, reserved), 5, 'DOWN'),
-        avgCost: div(lot.costBasis, lot.qty, 4, 'HALF_EVEN'),
-        costBasis: lot.costBasis,
-        last: quote.last,
-        mark,
-        markQuality: 'SIMULATED',
-        marketValue,
-        unrealizedPnl: unrealized,
-        unrealizedReturn: isZero(lot.costBasis) ? '0' : div(unrealized, lot.costBasis, 10, 'HALF_EVEN'),
-        dayPnl,
-        dayReturn: isZero(prev) ? null : div(sub(mark, prev), prev, 10, 'HALF_EVEN'),
-        weight: isZero(equity) ? '0' : div(marketValue, equity, 10, 'HALF_EVEN'),
-        fractionable: this.market.meta(lot.symbol)?.fractionable ?? false,
-        openedAt: lot.openedAt,
-      }
+      return this.positionRow(lot, equity, reserved)
     })
+  }
+
+  /** One lot valued at the live mark (the signed-in account's positions, and other players' in public mode). */
+  private positionRow(lot: Lot, equity: Dec, reservedQty: Dec = '0'): Position {
+    const quote = this.market.quote(lot.symbol)
+    const mark = this.mark(lot.symbol)
+    const marketValue = money(mul(lot.qty, mark))
+    const unrealized = sub(marketValue, lot.costBasis)
+    const prev = quote.prevClose ?? mark
+    return {
+      symbol: lot.symbol,
+      name: this.market.meta(lot.symbol)?.name ?? lot.symbol,
+      qty: lot.qty,
+      availableQty: setScale(sub(lot.qty, reservedQty), 5, 'DOWN'),
+      avgCost: div(lot.costBasis, lot.qty, 4, 'HALF_EVEN'),
+      costBasis: lot.costBasis,
+      last: quote.last,
+      mark,
+      markQuality: 'SIMULATED',
+      marketValue,
+      unrealizedPnl: unrealized,
+      unrealizedReturn: isZero(lot.costBasis) ? '0' : div(unrealized, lot.costBasis, 10, 'HALF_EVEN'),
+      dayPnl: money(mul(lot.qty, sub(mark, prev))),
+      dayReturn: isZero(prev) ? null : div(sub(mark, prev), prev, 10, 'HALF_EVEN'),
+      weight: isZero(equity) ? '0' : div(marketValue, equity, 10, 'HALF_EVEN'),
+      fractionable: this.market.meta(lot.symbol)?.fractionable ?? false,
+      openedAt: lot.openedAt,
+    }
   }
 
   private openBuyHolds(): Dec {
@@ -2203,6 +2271,297 @@ export class MockServer {
     }
   }
 
+  // ================================================================ public mode (§16.7)
+
+  /**
+   * Another member's positions and orders from `MOCK_BOOKS`, priced off the fake market's previous closes: a closed
+   * round trip, the holdings (dollar market buys), a cancelled limit, a resting limit buy and, for one bot, a bracket
+   * whose take profit and stop loss wait for the entry. The cash is what those fills leave of the starting $500 (close
+   * to the seed's cash), so their Portfolio, History and Activity add up.
+   */
+  private seedBook(p: MockOtherPlayer): void {
+    const book = MOCK_BOOKS[p.handle]
+    if (!book) return
+    const ai = p.kind === 'AI'
+    const channel: NonNullable<PublicOrder['channel']> = ai ? (p.handle === 'chatgpt' ? 'REST_KEY' : 'MCP_KEY') : 'WEB'
+    const rng = mulberry32(hashString(`${p.handle}:book`))
+    const prev = (symbol: string): Dec => this.market.quote(symbol).prevClose ?? '100.00'
+    const at = (days: number, minutes = 0): string => iso(this.startedAt - days * DAY_MS + minutes * MIN)
+    let cash: Dec = '500.00'
+    const orders: PublicOrder[] = []
+    const order = (o: Partial<PublicOrder> & Pick<PublicOrder, 'symbol' | 'side' | 'type' | 'receivedAt'>): PublicOrder => {
+      const row: PublicOrder = {
+        orderId: publicId('ord'),
+        runNo: 1,
+        qty: null,
+        notional: null,
+        fractional: false,
+        limitPrice: null,
+        stopPrice: null,
+        trailAmount: null,
+        trailPercent: null,
+        timeInForce: 'DAY',
+        extendedHours: false,
+        status: 'WORKING',
+        waitReason: null,
+        statusReason: null,
+        filledQty: '0',
+        avgFillPrice: null,
+        fees: '0.00',
+        expiresAt: null,
+        doneAt: null,
+        replacesOrderId: null,
+        replacedByOrderId: null,
+        group: null,
+        channel,
+        viaApi: API_CHANNELS.has(channel),
+        manualSessionId: null,
+        fills: [],
+        untrusted: { rationale: null },
+        ...o,
+      }
+      orders.push(row)
+      return row
+    }
+    // filled 0.6 s after it was placed; a sell realizes against `costBasis`
+    const fill = (o: PublicOrder, qty: Dec, px: Dec, costBasis: Dec | null): void => {
+      const principal = money(mul(qty, px))
+      const fees = estimateFees(o.side!, qty, principal).total ?? '0.00'
+      const executedAt = iso(Date.parse(o.receivedAt!) + 600)
+      Object.assign(o, { status: 'FILLED', waitReason: null, filledQty: qty, avgFillPrice: px, fees, doneAt: executedAt })
+      o.fills = [{ executionId: publicId('exe'), executedAt, qty, price: px, fees, realizedPnl: costBasis ? money(sub(sub(principal, fees), costBasis)) : null }]
+      cash = o.side === 'BUY' ? sub(cash, add(principal, fees)) : add(cash, sub(principal, fees))
+    }
+
+    // a position bought and sold again
+    const c = book.closed
+    const cBuyPx = tickPrice(prev(c.symbol))
+    const cQty = floor5(div('25', cBuyPx, 10, 'DOWN'))
+    const cBuy = order({ symbol: c.symbol, side: 'BUY', type: 'MARKET', qty: cQty, fractional: true, receivedAt: at(8, 35), untrusted: untrusted(ai ? `Starter in ${c.symbol} ahead of earnings.` : null) })
+    fill(cBuy, cQty, cBuyPx, null)
+    const cost = add(money(mul(cQty, cBuyPx)), cBuy.fees ?? '0.00')
+    const cSell = order({ symbol: c.symbol, side: 'SELL', type: 'MARKET', qty: cQty, fractional: true, receivedAt: at(5, 95), untrusted: untrusted(book.notes.closed) })
+    fill(cSell, cQty, tickPrice(add(cBuyPx, div(c.pnl, cQty, 4, 'HALF_UP'))), cost)
+
+    // the holdings: dollar market buys of what is left above the seed's cash
+    const invest = sub(cash, p.cash)
+    const positions: MockOtherPlayer['positions'] = []
+    book.holdings.forEach((h, i) => {
+      const amount = money(mul(invest, h.share.toFixed(4)))
+      const px = tickPrice(mul(prev(h.symbol), (1 + (rng() - 0.5) * 0.06).toFixed(6)))
+      const qty = floor5(div(amount, px, 10, 'DOWN'))
+      if (sign(qty) <= 0) return
+      const text = i === 0 ? book.notes.buy : ai ? `Adding ${h.symbol} for balance: ${Math.round(h.share * 100)}% of the invested money.` : null
+      const o = order({ symbol: h.symbol, side: 'BUY', type: 'MARKET', notional: amount, fractional: true, receivedAt: at(7 - i, 40 + i * 7), untrusted: untrusted(text) })
+      fill(o, qty, px, null)
+      positions.push({ symbol: h.symbol, qty, avgCost: px, openedAt: o.doneAt! })
+    })
+
+    // an order they pulled, and a resting limit buy under the market
+    const xPx = tickPrice(mul(prev(book.cancelled), '0.9'))
+    order({ symbol: book.cancelled, side: 'BUY', type: 'LIMIT', qty: '1', limitPrice: xPx, status: 'CANCELLED', statusReason: 'USER', receivedAt: at(3, 20), doneAt: at(3, 140), untrusted: untrusted(ai ? 'Not at this price after all: the earnings date moved up.' : null) })
+    const wPx = tickPrice(mul(prev(book.working), '0.95'))
+    const wQty = String(Math.max(1, Math.floor(40 / Number(wPx))))
+    order({ symbol: book.working, side: 'BUY', type: 'LIMIT', qty: wQty, limitPrice: wPx, timeInForce: 'GTC', waitReason: 'LIMIT_NOT_REACHED', receivedAt: at(1, 10), expiresAt: '2026-12-04T21:00:00.000Z', untrusted: untrusted(book.notes.working) })
+
+    // a bracket whose entry has not filled: the take profit and stop loss are held (§11.9)
+    if (book.bracket) {
+      const b = prev(book.bracket)
+      const groupId = publicId('grp')
+      const text = untrusted(`Bracket on ${book.bracket}: entry under the market, +8% take profit, -10% stop.`)
+      const entry = order({ symbol: book.bracket, side: 'BUY', type: 'LIMIT', qty: '1', limitPrice: tickPrice(mul(b, '0.96')), waitReason: 'LIMIT_NOT_REACHED', receivedAt: at(0, -50), untrusted: text, group: { groupId, type: 'BRACKET', role: 'ENTRY', parentOrderId: null, held: false } })
+      const leg = { symbol: book.bracket, side: 'SELL' as const, qty: '1', status: 'PENDING' as const, waitReason: 'AWAITING_PARENT' as const, receivedAt: entry.receivedAt, untrusted: text }
+      order({ ...leg, type: 'LIMIT', limitPrice: tickPrice(mul(b, '1.08')), group: { groupId, type: 'BRACKET', role: 'TAKE_PROFIT', parentOrderId: entry.orderId, held: true } })
+      order({ ...leg, type: 'STOP', stopPrice: tickPrice(mul(b, '0.9')), group: { groupId, type: 'BRACKET', role: 'STOP_LOSS', parentOrderId: entry.orderId, held: true } })
+    }
+
+    p.cash = money(cash)
+    p.positions = positions
+    p.orders = orders.sort((x, y) => Date.parse(x.receivedAt ?? '') - Date.parse(y.receivedAt ?? ''))
+    // units so that units × U (the board's equity) matches the portfolio as seeded; U and the returns are unchanged
+    const lmv = positions.reduce((acc, x) => add(acc, mul(x.qty, this.mark(x.symbol))), '0.00')
+    p.units = div(add(p.cash, lmv), p.u, 18, 'HALF_EVEN')
+  }
+
+  /** A listed player (anyone but a DISABLED one; the signed-in player too), or PLAYER_NOT_FOUND. */
+  private listed(handle: string, fn: (h: string) => Response): Response {
+    const h = handle.toLowerCase()
+    const p = this.other(h)
+    if (h !== this.s.me.handle && (!p || p.status === 'DISABLED')) return problem(404, 'PLAYER_NOT_FOUND', 'Player not found', `No player @${handle}.`)
+    return fn(h)
+  }
+
+  /** The signed-in account's order as the league sees it (`PublicOrder`): no client order id, account or holds. */
+  private toPublicOrder(o: Order): PublicOrder {
+    return {
+      orderId: o.orderId,
+      runNo: 1,
+      symbol: o.symbol,
+      side: o.side,
+      type: o.type,
+      qty: o.qty,
+      notional: o.notional,
+      fractional: o.fractional,
+      limitPrice: o.limitPrice,
+      stopPrice: o.stopPrice,
+      trailAmount: o.trailAmount,
+      trailPercent: o.trailPercent,
+      timeInForce: o.timeInForce,
+      extendedHours: o.extendedHours,
+      status: o.cancelRequestedAt && isOpen(o) ? 'PENDING_CANCEL' : o.status,
+      waitReason: o.waitReason,
+      statusReason: o.statusReason,
+      filledQty: o.filledQty,
+      avgFillPrice: o.avgFillPrice,
+      fees: o.fees,
+      receivedAt: o.receivedAt,
+      expiresAt: o.expiresAt,
+      doneAt: o.doneAt,
+      replacesOrderId: o.replacesOrderId,
+      replacedByOrderId: o.replacedByOrderId,
+      group: o.group,
+      channel: o.channel,
+      viaApi: API_CHANNELS.has(o.channel ?? ''),
+      manualSessionId: null,
+      fills: this.s.executions
+        .filter((e) => e.orderId === o.orderId)
+        .map((e) => ({ executionId: e.executionId, executedAt: e.executedAt, qty: e.qty, price: e.price, fees: e.fees?.total ?? '0.00', realizedPnl: e.realizedPnl })),
+      untrusted: { rationale: o.rationale },
+    }
+  }
+
+  /** Every stored order of a player, newest first. */
+  private publicOrders(handle: string): PublicOrder[] {
+    if (handle === this.s.me.handle) return this.s.orders.toReversed().map((o) => this.toPublicOrder(o))
+    return (this.other(handle)?.orders ?? []).toReversed()
+  }
+
+  /** `GET /players/{handle}/portfolio` and the admin twin: the live run, valued at the fake market's marks. */
+  private publicPortfolio(handle: string): PublicPortfolio {
+    const sum = (xs: Position[], f: (x: Position) => Dec | null | undefined): Dec => money(xs.reduce((acc, x) => add(acc, f(x) ?? '0'), '0.00'))
+    if (handle === this.s.me.handle) {
+      const a = this.account()
+      const positions = byMarketValue(this.positions())
+      return {
+        player: this.mySummary(),
+        runNo: a.runNo,
+        asOf: a.asOf,
+        marksQuality: a.marksQuality,
+        equity: a.equity,
+        longMarketValue: a.longMarketValue,
+        dividendsReceivable: a.dividendsReceivable,
+        cash: a.cash?.total ?? '0.00',
+        settledCash: a.cash?.settled ?? '0.00',
+        unsettledCash: a.cash?.unsettled ?? '0.00',
+        buyingPower: a.buyingPower,
+        openBuyHolds: a.openBuyHolds,
+        netContributions: a.netContributions,
+        totalPnl: a.totalPnl,
+        totalReturn: a.totalReturn,
+        dayPnl: a.dayPnl,
+        dayReturn: a.dayReturn,
+        unrealizedPnl: sum(positions, (x) => x.unrealizedPnl),
+        restriction: a.restriction,
+        restrictionUntil: a.restrictionUntil,
+        gfvActive: a.gfv?.active ?? 0,
+        positions,
+        openOrders: this.publicOrders(handle).filter(isOpenPublic),
+      }
+    }
+    const p = this.other(handle)!
+    const lmv = money(p.positions.reduce((acc, x) => add(acc, mul(x.qty, this.mark(x.symbol))), '0.00'))
+    const equity = add(p.cash, lmv)
+    const positions = byMarketValue(p.positions.map((x) => this.positionRow({ symbol: x.symbol, qty: x.qty, costBasis: money(mul(x.qty, x.avgCost)), openedAt: x.openedAt }, equity)))
+    const openOrders = this.publicOrders(handle).filter(isOpenPublic)
+    const holds = money(openOrders.filter((o) => o.side === 'BUY' && !o.group?.held).reduce((acc, o) => add(acc, mul(o.qty ?? '0', o.limitPrice ?? '0')), '0.00'))
+    const dayPnl = sum(positions, (x) => x.dayPnl)
+    const before = sub(equity, dayPnl)
+    return {
+      player: this.summary(p),
+      runNo: 1 + p.resets,
+      asOf: iso(),
+      marksQuality: 'SIMULATED',
+      equity,
+      longMarketValue: lmv,
+      dividendsReceivable: '0.00',
+      cash: p.cash,
+      settledCash: p.cash,
+      unsettledCash: '0.00',
+      buyingPower: max('0.00', sub(p.cash, holds)),
+      openBuyHolds: holds,
+      netContributions: p.nc,
+      totalPnl: sub(equity, p.nc),
+      totalReturn: isZero(p.nc) ? '0' : sub(div(equity, p.nc, 10, 'HALF_EVEN'), '1'),
+      dayPnl,
+      dayReturn: isZero(before) ? '0' : div(dayPnl, before, 10, 'HALF_EVEN'),
+      unrealizedPnl: sum(positions, (x) => x.unrealizedPnl),
+      restriction: p.status === 'FROZEN' ? 'FROZEN' : 'NONE',
+      restrictionUntil: null,
+      gfvActive: 0,
+      positions,
+      openOrders,
+    }
+  }
+
+  /**
+   * `GET /players/{handle}/activities`: the run's ledger, newest first, as every player sees it: no ADMIN_VIEW rows,
+   * memos only from the system, no account ids. Another member's rows derive from their funding, transfers and fills.
+   */
+  private publicActivities(handle: string): Activity[] {
+    if (handle === this.s.me.handle) {
+      return newestFirst(this.s.ledger.filter((a) => a.type !== 'ADMIN_VIEW')).map((a) => {
+        const d = a.detail as { type?: string; reason?: unknown } | null
+        const detail = d?.type === 'RESET' ? { ...d, fromAccountId: null, toAccountId: null, memo: null } : d?.type === 'RESTRICTION' && a.by !== 'SYSTEM' ? { ...d, reason: null } : a.detail
+        return { ...a, memo: a.by === 'SYSTEM' ? a.memo : null, detail: detail as Activity['detail'] }
+      })
+    }
+    const p = this.other(handle)!
+    const rows: Activity[] = []
+    for (const t of this.s.transfers.filter((x) => x.handle === handle && x.status === 'APPLIED')) {
+      const initial = t.type === 'INITIAL'
+      rows.push(this.ledgerRow({ at: t.effectiveAt, type: initial ? 'INITIAL_FUNDING' : (t.type as Activity['type']), amount: t.amount, by: initial ? 'SYSTEM' : 'ADMIN', memo: initial ? 'Starting cash' : null, transferId: t.transferId }))
+    }
+    for (const o of p.orders) {
+      for (const f of o.fills ?? []) {
+        const principal = money(mul(f.qty ?? '0', f.price ?? '0'))
+        const fees = estimateFees(o.side!, f.qty ?? '0', principal)
+        const amount = o.side === 'BUY' ? negate(add(principal, f.fees ?? '0.00')) : sub(principal, f.fees ?? '0.00')
+        rows.push(this.ledgerRow({ at: f.executedAt, type: 'FILL', symbol: o.symbol, side: o.side, qty: f.qty, price: f.price, fees, amount, by: 'SELF', orderId: o.orderId, executionId: f.executionId, tradeDate: etDate(Date.parse(f.executedAt ?? '')), settleDate: etDate(Date.parse(f.executedAt ?? '') + DAY_MS) }))
+      }
+    }
+    rows.sort((x, y) => Date.parse(x.at ?? '') - Date.parse(y.at ?? ''))
+    let balance: Dec = '0.00'
+    for (const r of rows) {
+      balance = add(balance, r.amount ?? '0.00')
+      r.balanceAfter = money(balance)
+    }
+    return rows.toReversed()
+  }
+
+  /** `GET /players/{handle}/pnl-analysis`: the own-account builder, keyed by the player. */
+  private playerPnlAnalysis(handle: string, range: string) {
+    if (handle === this.s.me.handle) {
+      return mockPnlAnalysis(range, { u: this.unitValue(), equity: this.equity(), nc: this.s.nc, openedAtMs: Date.parse(this.s.openedAt), lots: Object.values(this.s.lots), executions: this.s.executions, mark: (sym) => this.mark(sym) }, Date.now())
+    }
+    const p = this.other(handle)!
+    const fills = p.orders.flatMap((o) => (o.fills ?? []).map((f) => ({ side: o.side, symbol: o.symbol, realizedPnl: f.realizedPnl, executedAt: f.executedAt })))
+    const lots = p.positions.map((x) => ({ symbol: x.symbol, qty: x.qty, costBasis: money(mul(x.qty, x.avgCost)), openedAt: x.openedAt }))
+    return mockPnlAnalysis(range, { u: p.u, equity: this.otherEquity(p), nc: p.nc, openedAtMs: Date.parse(p.createdAt), lots, executions: fills, mark: (sym) => this.mark(sym), key: handle }, Date.now())
+  }
+
+  /** `GET /players/{handle}/pnl-calendar`: the own-account builder, keyed by the player. */
+  private playerPnlCalendar(handle: string, view: 'DAY' | 'MONTH', month: string, year: number) {
+    const deposits = this.s.transfers
+      .filter((t) => t.handle === handle && t.type !== 'INITIAL' && t.status === 'APPLIED' && t.isContribution)
+      .map((t) => ({ date: etDate(Date.parse(t.effectiveAt ?? '')), amount: t.amount ?? '0.00' }))
+    if (handle === this.s.me.handle) {
+      const a = this.account()
+      return mockPnlCalendar(view, month, year, { openedAtMs: Date.parse(this.s.openedAt), dayPnl: a.dayPnl ?? '0.00', dayReturn: a.dayReturn ?? '0', deposits }, Date.now())
+    }
+    const pf = this.publicPortfolio(handle)
+    return mockPnlCalendar(view, month, year, { openedAtMs: Date.parse(this.other(handle)!.createdAt), dayPnl: pf.dayPnl ?? '0.00', dayReturn: pf.dayReturn ?? '0', deposits, key: handle }, Date.now())
+  }
+
   /** Period anchor for a player's unit value: deterministic per player and period (ALL = 1, TODAY = session start). */
   private anchor(handle: string, period: string, u: Dec): Dec {
     if (period === 'ALL' || period === 'SEASON') return '1'
@@ -2265,7 +2624,7 @@ export class MockServer {
           pnl,
           excessVsBenchmark: sub(ret, spyRet),
           maxDrawdown: '0.0210',
-          equity: this.s.settings['social.holdingsVisibility'] === 'HIDDEN' ? null : r.equity,
+          equity: r.equity,
           netContributions: r.nc,
           flowsInPeriod: this.flowsFor(r.summary.handle!),
           fills: r.fills,
@@ -2310,7 +2669,7 @@ export class MockServer {
     if (!row) return null
     const ranked = (board.rows ?? []).filter((r) => r.rank != null).length
     const mine = handle === this.s.me.handle
-    return mockPlayerStats(row, (board.period ?? 'ALL') as LeaderboardPeriod, ranked, Date.now(), mine, mine ? this.s.executions : [])
+    return mockPlayerStats(row, (board.period ?? 'ALL') as LeaderboardPeriod, ranked, Date.now(), mine, mine ? this.s.executions : [], this.feedDelayMs())
   }
 
   private reactor(handle: string): Reactor | null {
@@ -2349,19 +2708,34 @@ export class MockServer {
     return item.id
   }
 
+  /** The league's `social.tradeFeedDelay` (none by default, public mode). */
+  private feedDelayMs(): number {
+    return durationMs(this.s.settings['social.tradeFeedDelay'])
+  }
+
   private publicTrades(handle: string): PublicTrade[] {
-    const delayMs = 15 * MIN
+    const delayMs = this.feedDelayMs()
     if (handle === this.s.me.handle) {
       return this.s.executions
         .filter((e) => Date.parse(e.executedAt ?? '') <= Date.now() - delayMs)
         .toReversed()
-        .map((e) => ({ executedAt: e.executedAt, symbol: e.symbol, side: e.side, qty: e.qty, price: e.price, realizedPnl: e.realizedPnl, viaApi: false, untrusted: { rationale: null } }))
+        .map((e) => ({
+          executedAt: e.executedAt,
+          symbol: e.symbol,
+          side: e.side,
+          qty: e.qty,
+          price: e.price,
+          realizedPnl: e.realizedPnl,
+          viaApi: false,
+          // public mode: every new order's note is public
+          untrusted: { rationale: this.s.orders.find((o) => o.orderId === e.orderId)?.rationale ?? null },
+        }))
     }
     const p = this.other(handle)
     if (!p) return []
     const rng = mulberry32(hashString(`${handle}:trades`))
     const symbols = ['NVDA', 'AAPL', 'MSFT', 'TSLA', 'AMD', 'SPY', 'META', 'GOOGL']
-    return Array.from({ length: Math.min(p.fills, 12) }, (_, i) => {
+    const trades = Array.from({ length: Math.min(p.fills, 12) }, (_, i) => {
       const symbol = (i === 0 && p.top) || symbols[Math.floor(rng() * symbols.length)]!
       const price = this.market.quote(symbol).prevClose ?? '100.00'
       const side = rng() > 0.35 ? ('BUY' as const) : ('SELL' as const)
@@ -2383,6 +2757,7 @@ export class MockServer {
         },
       }
     })
+    return trades.filter((t) => Date.parse(t.executedAt) <= Date.now() - delayMs)
   }
 
   private profile(handle: string): PlayerProfile | null {
@@ -2400,20 +2775,17 @@ export class MockServer {
       return { return: sub(div(u, a, 10, 'HALF_EVEN'), '1'), pnl: money(mul(sub(u, a), mine ? this.s.units : p!.units)), rank }
     }
     const deposits = this.s.transfers.filter((t) => t.handle === handle && t.type === 'DEPOSIT' && t.status === 'APPLIED')
-    const lots = mine ? Object.values(this.s.lots) : []
-    const holdings = mine
-      ? lots.map((l) => ({ symbol: l.symbol, weight: isZero(equity) ? '0' : div(money(mul(l.qty, this.mark(l.symbol))), equity, 4, 'HALF_EVEN'), qty: null }))
-      : [
-          { symbol: p!.top ?? 'SPY', weight: '0.4120', qty: null },
-          { symbol: 'SPY', weight: '0.1850', qty: null },
-        ]
+    // previous-close holdings with weight and qty (public mode: always both)
+    const lots = mine ? Object.values(this.s.lots).map((l) => ({ symbol: l.symbol, qty: l.qty })) : p!.positions.map((x) => ({ symbol: x.symbol, qty: x.qty }))
+    const prevClose = (symbol: string): Dec => this.market.quote(symbol).prevClose ?? this.mark(symbol)
+    const holdings = lots.map((l) => ({ symbol: l.symbol, weight: isZero(equity) ? '0' : div(money(mul(l.qty, prevClose(l.symbol))), equity, 4, 'HALF_EVEN'), qty: l.qty }))
     const row = board.rows?.find((r) => r.player?.handle === handle)
     return {
       player: summary,
       ownerHandle: mine ? null : p!.ownerHandle,
       runNo: 1,
       stats: { TODAY: stat('TODAY'), WEEK: stat('WEEK'), MONTH: stat('MONTH'), YTD: stat('YTD'), ALL: stat('ALL') },
-      equity: this.s.settings['social.holdingsVisibility'] === 'HIDDEN' ? null : equity,
+      equity,
       netContributions: nc,
       deposits: { count: deposits.length, total: deposits.reduce((acc, t) => add(acc, t.amount ?? '0'), '0.00') },
       fills: row?.fills ?? 0,
@@ -2623,6 +2995,8 @@ export class MockServer {
       resets: 0,
       createdAt: now,
       lastSeenAt: null,
+      positions: [],
+      orders: [],
     }
     this.s.others.push(p)
     this.s.transfers.push(this.transferRow(handle, p.accountId, 'INITIAL', starting, 'Starting cash', now, this.s.me.handle, '0.00', '1'))
@@ -2677,53 +3051,12 @@ export class MockServer {
     p.cash = starting
     p.nc = starting
     p.resets += 1
+    p.positions = []
+    for (const o of p.orders) {
+      if (o.status === 'PENDING' || o.status === 'WORKING' || o.status === 'PARTIALLY_FILLED') Object.assign(o, { status: 'CANCELLED', statusReason: 'ACCOUNT_RESET', waitReason: null, doneAt: iso() })
+    }
     this.audit('ADMIN', 'PLAYER_RESET', 'OK', this.s.me.handle, 'player', handle)
     return json(this.syntheticAccount(p))
-  }
-
-  private liveView(handle: string, body: unknown): Response {
-    const reason = (body as { reason?: string } | null)?.reason?.trim() ?? ''
-    if (reason.length < 5) return problem(400, 'VALIDATION_FAILED', 'Validation failed', 'Give a reason (5–200 characters).', null, [{ field: 'reason', code: 'Size', message: '5–200 characters.' }])
-    const mine = handle === this.s.me.handle
-    const p = this.other(handle)
-    if (!mine && !p) return problem(404, 'PLAYER_NOT_FOUND', 'Player not found')
-    this.audit('ADMIN', 'PLAYER_LIVE_VIEW', 'OK', this.s.me.handle, 'player', handle, { reason })
-    if (mine) {
-      this.s.ledger.push(this.ledgerRow({ at: iso(), type: 'ADMIN_VIEW', by: 'ADMIN', memo: reason, detail: { type: 'ADMIN_VIEW', admin: this.s.me.handle, reason } }))
-    }
-    const positions = mine
-      ? this.positions()
-      : p!.top
-        ? [
-            {
-              ...this.positions()[0],
-              symbol: p!.top,
-              name: this.market.meta(p!.top)?.name ?? p!.top,
-              qty: '1.5',
-              availableQty: '1.5',
-              avgCost: this.market.quote(p!.top).prevClose,
-              costBasis: money(mul('1.5', this.market.quote(p!.top).prevClose ?? '0')),
-              last: this.market.quote(p!.top).last,
-              mark: this.market.quote(p!.top).last,
-              markQuality: 'SIMULATED' as const,
-              marketValue: money(mul('1.5', this.market.quote(p!.top).last ?? '0')),
-              unrealizedPnl: money(mul('1.5', this.market.quote(p!.top).change ?? '0')),
-              unrealizedReturn: this.market.quote(p!.top).changePct,
-              dayPnl: money(mul('1.5', this.market.quote(p!.top).change ?? '0')),
-              dayReturn: this.market.quote(p!.top).changePct,
-              weight: '0.4',
-              fractionable: true,
-              openedAt: p!.createdAt,
-            } satisfies Position,
-          ]
-        : []
-    return json({
-      player: mine ? this.mySummary() : this.summary(p!),
-      viewedAt: iso(),
-      reason,
-      positions,
-      openOrders: mine ? this.s.orders.filter(isOpen) : [],
-    })
   }
 
   private transferRow(handle: string, accountId: string, type: 'INITIAL' | 'DEPOSIT' | 'WITHDRAWAL' | 'ADJUSTMENT', amount: Dec, memo: string, at: string, by: string | null, equityBefore: Dec | null, u: Dec | null, batchId?: string, contribution = true, status: 'APPLIED' | 'SKIPPED' = 'APPLIED', skipReason: string | null = null): TransferRow {
