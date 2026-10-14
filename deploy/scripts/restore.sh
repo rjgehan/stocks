@@ -4,9 +4,9 @@
 #   deploy/scripts/restore.sh /DATA/AppData/stocks/backups/stocks-2026-10-09.dump [--yes]
 #
 # 1. takes a safety dump of the current database (backups/stocks-<date>-prerestore.dump)
-# 2. stops app (and agent-runner), drops and recreates the database, pg_restore --exit-on-error
+# 2. stops the Claude trader, app and agent-runner, drops and recreates the database, pg_restore --exit-on-error
 # 3. starts the stack again (with the agents profile when the agent runner was running, or COMPOSE_PROFILES names
-#    it) and waits for the app to be healthy
+#    it; the Claude trader when it was running) and waits for the app to be healthy
 # The image is not changed. If the dump comes from an OLDER release than the running image, Flyway applies the
 # missing migrations at start; if it comes from a NEWER one, deploy that release's tag first.
 #
@@ -45,9 +45,12 @@ else
   echo "   backup service not running: no safety dump" >&2
 fi
 
-echo "== stopping app and agent-runner"
+echo "== stopping the Claude trader, app and agent-runner"
 # a plain `up -d` ignores profile services: remember whether the bots ran, to start them again at the end
 runner_was_running="$(compose --profile agents ps -q --status running agent-runner 2> /dev/null || true)"
+trader_was_running="$(compose --profile trader ps -q --status running claude-trader 2> /dev/null || true)"
+# the trader first, so no check-in starts against the stopped app (one cut short runs again after the restart)
+compose --profile trader stop claude-trader > /dev/null 2>&1 || true
 compose stop app > /dev/null
 compose --profile agents stop agent-runner > /dev/null 2>&1 || true
 
@@ -67,6 +70,10 @@ if [[ -n "$runner_was_running" || ",${COMPOSE_PROFILES:-}," == *",agents,"* ]]; 
   echo "   agent runner started again (profile agents)"
 else
   compose up -d
+fi
+if [[ -n "$trader_was_running" ]]; then
+  compose --profile trader up -d --no-deps claude-trader
+  echo "   Claude trader started again (profile trader)"
 fi
 for _ in $(seq 1 84); do
   cid="$(compose ps -q app)"

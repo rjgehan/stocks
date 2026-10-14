@@ -1,7 +1,8 @@
 # Release and deploy (ARCHITECTURE §24.7, docs/deploy.md).
 #
 #   push to main       → CI (ci.yml) → multi-arch image to GHCR (latest + sha-<7>) → deploy to the CasaOS server
-#                        (the agent runner goes to the same package as agent-runner-latest + agent-runner-sha-<7>)
+#                        (the agent runner goes to the same package as agent-runner-latest + agent-runner-sha-<7>,
+#                        the Claude trader as claude-trader-latest + claude-trader-sha-<7>)
 #   push of a v* tag   → CI → image (X.Y.Z, X.Y, sha-<7>; never `latest`); no deploy (dispatch one if you want it)
 #   workflow_dispatch  → tag empty: CI → image (sha-<7>) → deploy; tag set: deploy/roll back to that existing tag
 #
@@ -12,7 +13,8 @@
 # pull requests (this workflow has no pull_request trigger). A dispatch with `tag` set from main changes only the
 # image (--no-sync-compose); from a v* tag it also installs that tag's docker-compose.yml.
 # Repository variables: DEPLOY_ENABLED, DEPLOY_DIR (default /DATA/AppData/stocks/compose), DEPLOY_SYNC_COMPOSE
-# (true), DEPLOY_PROFILES (e.g. agents), DEPLOY_HEALTH_TIMEOUT (420), DEPLOY_PUBLIC_URL (optional smoke test).
+# (true), DEPLOY_PROFILES (e.g. agents, trader or agents,trader), DEPLOY_HEALTH_TIMEOUT (420), DEPLOY_PUBLIC_URL
+# (optional smoke test).
 name: Release
 
 on:
@@ -166,12 +168,44 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=agent-runner
           cache-to: type=gha,scope=agent-runner,mode=max
+      # The Claude trader the same way, with the tag prefix claude-trader- (claude-trader-sha-<7>,
+      # claude-trader-latest, claude-trader-X.Y.Z).
+      - id: trader-meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ needs.meta.outputs.image }}
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=claude-trader-sha-${{ needs.meta.outputs.short_sha }}
+            type=semver,pattern={{version}},prefix=claude-trader-
+            type=semver,pattern={{major}}.{{minor}},prefix=claude-trader-
+            type=raw,value=claude-trader-latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=stocks-claude-trader
+            org.opencontainers.image.description=stocks Claude trader (Claude Code check-ins, one agent per AI player)
+      - id: trader-build
+        name: Build and push claude-trader image
+        uses: docker/build-push-action@v7
+        with:
+          context: tools/claude-trader
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.trader-meta.outputs.tags }}
+          labels: ${{ steps.trader-meta.outputs.labels }}
+          annotations: ${{ steps.trader-meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=claude-trader
+          cache-to: type=gha,scope=claude-trader,mode=max
       - name: Summary
         env:
           TAGS: ${{ steps.docker-meta.outputs.tags }}
           DIGEST: ${{ steps.build.outputs.digest }}
           AGENT_TAGS: ${{ steps.agent-meta.outputs.tags }}
           AGENT_DIGEST: ${{ steps.agent-build.outputs.digest }}
+          TRADER_TAGS: ${{ steps.trader-meta.outputs.tags }}
+          TRADER_DIGEST: ${{ steps.trader-build.outputs.digest }}
         run: |
           {
             echo "### Image pushed"
@@ -185,6 +219,12 @@ jobs:
             echo "Digest: \`${AGENT_DIGEST}\`"
             echo ""
             while IFS= read -r t; do if [ -n "$t" ]; then echo "- \`$t\`"; fi; done <<< "$AGENT_TAGS"
+            echo ""
+            echo "### Claude trader pushed"
+            echo ""
+            echo "Digest: \`${TRADER_DIGEST}\`"
+            echo ""
+            while IFS= read -r t; do if [ -n "$t" ]; then echo "- \`$t\`"; fi; done <<< "$TRADER_TAGS"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:

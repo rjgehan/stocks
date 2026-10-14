@@ -8,6 +8,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+# tools/claude-trader: a real agents file holds the agents' stk_ keys (agents.example.toml is the template)
+agents.toml
 
 # Build output
 dist/

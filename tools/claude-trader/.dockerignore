@@ -1,0 +1,5 @@
+# Build context of the claude-trader image (tools/claude-trader/Dockerfile): only the trader and the example agents
+# file go in. A real agents.toml holds API keys, and local state and logs never belong in an image.
+*
+!claude_trader.py
+!agents.example.toml

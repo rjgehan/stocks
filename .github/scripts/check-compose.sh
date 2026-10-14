@@ -20,7 +20,8 @@ sed -E 's/^(DB_PASSWORD|API_KEY_PEPPER|ENGINE_SEED)=$/\1=ci-dummy-value/' "$ENV_
 dc() { docker compose -f "$COMPOSE" --env-file "$tmp_env" "$@"; }
 dc config -q || bad "docker compose config failed"
 dc --profile agents config -q || bad "docker compose --profile agents config failed"
-json="$(dc --profile agents config --format json)"
+dc --profile trader config -q || bad "docker compose --profile trader config failed"
+json="$(dc --profile agents --profile trader config --format json)"
 
 # 2. CasaOS-safety rules (see the header of docker-compose.yml).
 if grep -nE '^[[:space:]]+build:' "$COMPOSE"; then bad "'build:' is not allowed (deploy images from GHCR)"; fi

@@ -24,10 +24,10 @@ project directory, and without "keep data" the whole `/DATA/AppData/stocks`. Sto
 
 | Thing | Where |
 |---|---|
-| Containers | `stocks-app` (Spring Boot, :8080 HTTP+WS, :8081 actuator inside the container only; no host port), `stocks-db` (PostgreSQL 18.6), `stocks-backup`, `stocks-cloudflared` (this app's tunnel, `CLOUDFLARE_TUNNEL_TOKEN`), `stocks-agent-runner` (profile `agents`, the bots) |
+| Containers | `stocks-app` (Spring Boot, :8080 HTTP+WS, :8081 actuator inside the container only; no host port), `stocks-db` (PostgreSQL 18.6), `stocks-backup`, `stocks-cloudflared` (this app's tunnel, `CLOUDFLARE_TUNNEL_TOKEN`), `stocks-agent-runner` (profile `agents`, the bots), `stocks-claude-trader` (profile `trader`, Claude Code check-ins on the owner's subscription, docs/agents.md §2.11) |
 | Networks | `stocks-backend` (internal: db, backup, app), `stocks-edge` (app egress, cloudflared → `http://stocks-app:8080`, agent runner) |
 | Config | `/DATA/AppData/stocks/.env` (mode 600; `compose/.env` is a link to it). `compose/docker-compose.yml` is replaced by every deploy (previous copy `.bak`). |
-| Data | `pgdata/` (database), `backups/` (dumps), `agent-data/` (bots) |
+| Data | `pgdata/` (database), `backups/` (dumps), `agent-data/` (bots), `trader-data/` (the Claude trader: agents.toml and each agent's state) |
 | What is deployed | `docker inspect -f '{{.Config.Image}} {{.Image}}' stocks-app` (Watchtower: `:latest` and its digest; the `sha-…` tag pointing at it is on the GHCR package page), `grep STOCKS_TAG /DATA/AppData/stocks/.env`; runner deploys also write `compose/.deploy-state` |
 | Logs | `docker logs -f stocks-app` (ECS JSON: `… 2>&1 \| jq -r '"\(.["@timestamp"]) \(.["log.level"]) \(.message)"'`); rotated at 5 × 10 MB per container |
 | Deploy history | GitHub → Actions → Release (each run's summary lists the image tags it pushed); `docker logs watchtower` (when it restarted what) |
@@ -270,11 +270,12 @@ sudo bash /DATA/AppData/stocks/scripts/restore.sh /DATA/AppData/stocks/backups/s
 # sudo -u gha-runner /home/gha-runner/actions-runner/_work/stocks/stocks/deploy/scripts/restore.sh <dump>
 ```
 
-`restore.sh` asks you to type `RESTORE`, takes a `prerestore` safety dump, stops the app (and the agent runner),
-drops and recreates the `stocks` database, runs `pg_restore --exit-on-error`, starts the stack and waits for the
-app to be healthy. The agent runner is started again (`--profile agents`) when it was running before, or when
-`COMPOSE_PROFILES` contains `agents`; otherwise it stays stopped, so check `docker ps` for `stocks-agent-runner`
-after a restore and start it with `dc --profile agents up -d agent-runner` if the bots should trade. The image is not changed: restoring an **older** dump under a newer image is fine (Flyway
+`restore.sh` asks you to type `RESTORE`, takes a `prerestore` safety dump, stops the Claude trader, the app and the
+agent runner, drops and recreates the `stocks` database, runs `pg_restore --exit-on-error`, starts the stack and
+waits for the app to be healthy. The agent runner is started again (`--profile agents`) when it was running before, or
+when `COMPOSE_PROFILES` contains `agents`; otherwise it stays stopped, so check `docker ps` for `stocks-agent-runner`
+after a restore and start it with `dc --profile agents up -d agent-runner` if the bots should trade. The Claude
+trader (`stocks-claude-trader`, profile `trader`) is started again when it was running before. The image is not changed: restoring an **older** dump under a newer image is fine (Flyway
 applies the newer migrations at start); for a dump from a **newer** release, deploy that release's tag first.
 
 The manual equivalent (ARCHITECTURE §24.2):
@@ -357,7 +358,7 @@ keeps cookies; the `XSRF-TOKEN` cookie value must be sent as `X-XSRF-TOKEN` on w
 ## Host layout
 
 ```
-/DATA/AppData/stocks/            .env · pgdata/ · backups/ · scripts/pg_backup.sh · agent-data/   (the data)
+/DATA/AppData/stocks/            .env · pgdata/ · backups/ · scripts/pg_backup.sh · agent-data/ · trader-data/   (the data)
 /DATA/AppData/stocks/compose/    docker-compose.yml(.bak) · .deploy-state · .env -> ../.env      (the project)
 ```
 

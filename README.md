@@ -172,6 +172,8 @@ Open <http://localhost:5173> and log in as `admin` / `admin-dev-123`. The dev pr
 backend/     Spring Boot app (package com.stocks): API, trading engine, MCP server, Flyway migrations, tests
 frontend/    React SPA: screens, components, API client, Playwright e2e tests
 tools/       agent-runner: the Claude and ChatGPT bots (Node/TypeScript, its own image)
+             claude-trader: Claude Code check-ins on the owner's Claude subscription, one agent per AI player
+             (Python, Mac launch agent or its own image; docs/agents.md §2.10, §2.11)
 deploy/      Server setup and deploy scripts, database backup script, Cloudflare Tunnel example
 docs/        ARCHITECTURE.md (the spec), ROADMAP.md, deploy.md, runbook.md, agents.md, rules.md, openapi.json
 .github/     CI (ci.yml) and release + deploy (release.yml) workflows

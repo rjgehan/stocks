@@ -17,10 +17,11 @@
 #   - no literal dollar signs except variable references: CasaOS re-serializes the file and interpolates it again;
 #   - every variable referenced here is also set in .env.example: CasaOS Import drops `:-default` fallbacks, so
 #     the `.env` next to the compose file must define every value;
-#   - optional services sit behind profiles (`agents`); CasaOS Import leaves them out.
+#   - optional services sit behind profiles (`agents`: the API-key agent runner; `trader`: the Claude Code trader on
+#     the owner's Claude subscription); CasaOS Import leaves them out.
 #
 # Host layout (deploy/scripts/init-host.sh creates it; each deploy refreshes docker-compose.yml and the script):
-#   /DATA/AppData/stocks/{.env, pgdata/, backups/, scripts/pg_backup.sh, agent-data/}            the data root
+#   /DATA/AppData/stocks/{.env, pgdata/, backups/, scripts/pg_backup.sh, agent-data/, trader-data/}  the data root
 #   /DATA/AppData/stocks/compose/{docker-compose.yml, .deploy-state, .env -> ../.env}          the project directory
 # The project directory is NOT the data root: CasaOS lists every Compose project, and its Uninstall deletes the
 # project directory even when told to keep the data. Never Uninstall (or "Save" the settings of) this app in CasaOS;
@@ -293,6 +294,39 @@ services:
         bind:
           create_host_path: true
     networks: [edge] # reaches app:8080 and the LLM APIs; never the database
+    logging: *logging
+
+  claude-trader: # Claude Code check-ins on the owner's Claude subscription, one agent per AI player (docs/agents.md
+    # §2.11). Start with: docker compose -p stocks --profile trader up -d --no-deps claude-trader
+    profiles: [trader]
+    # Same GHCR package as the app, tag prefix claude-trader- (release.yml): no second package to make public.
+    image: ${STOCKS_IMAGE:?set STOCKS_IMAGE in .env, e.g. ghcr.io/OWNER/stocks}:claude-trader-${STOCKS_TAG:-latest}
+    container_name: stocks-claude-trader
+    restart: unless-stopped
+    init: true # a small init as PID 1 forwards SIGTERM and reaps what the claude sessions leave behind
+    labels:  # Watchtower: update together with the app
+      com.centurylinklabs.watchtower.enable: "true"
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      TZ: America/New_York
+      STOCKS_TRADER_MCP_URL: http://app:8080/mcp
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}   # `claude setup-token` on the Mac; never an API key
+      STOCKS_CLAUDE_KEY: ${STOCKS_CLAUDE_KEY:-}               # only used when trader-data/agents.toml does not exist
+      STOCKS_TRADER_SCHEDULE_ET: ${STOCKS_TRADER_SCHEDULE_ET:-09:30,12:45,15:50}
+      STOCKS_TRADER_MODEL: ${STOCKS_TRADER_MODEL:-}
+      STOCKS_TRADER_MAX_PARALLEL: ${STOCKS_TRADER_MAX_PARALLEL:-3}
+    # SIGTERM ends the running claude sessions (SIGKILL after 5 s); the trader then exits 0. A check-in cut short
+    # (e.g. by Watchtower's update) runs again after the restart within 20 minutes of its time, once the app answers.
+    stop_grace_period: 30s
+    volumes:
+      - type: bind # agents.toml (the agents, their stk_ keys and strategies; mode 600) and each agent's state and logs
+        source: /DATA/AppData/stocks/trader-data
+        target: /data
+        bind:
+          create_host_path: true
+    networks: [edge] # reaches app:8080 and Anthropic; never the database
     logging: *logging
 
 networks:

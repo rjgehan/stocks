@@ -5,16 +5,16 @@
 #   sudo deploy/scripts/init-host.sh --owner gha-runner --image ghcr.io/<owner>/stocks \
 #        --url https://stocks.example.com [--casaos-link] [--dir /DATA/AppData/stocks]
 #
-# It creates DIR (default /DATA/AppData/stocks) with pgdata/, backups/, scripts/pg_backup.sh and agent-data/,
-# creates DIR/.env from .env.example with fresh DB_PASSWORD, API_KEY_PEPPER and ENGINE_SEED (mode 600), and
-# creates the Compose project directory DIR/compose/ with the link compose/.env -> ../.env. The project directory
-# is kept apart from the data on purpose: CasaOS lists every Compose project, and its "Uninstall" deletes the
+# It creates DIR (default /DATA/AppData/stocks) with pgdata/, backups/, scripts/pg_backup.sh, agent-data/ and
+# trader-data/, creates DIR/.env from .env.example with fresh DB_PASSWORD, API_KEY_PEPPER and ENGINE_SEED (mode
+# 600), and creates the Compose project directory DIR/compose/ with the link compose/.env -> ../.env. The project
+# directory is kept apart from the data on purpose: CasaOS lists every Compose project, and its "Uninstall" deletes the
 # project directory (os.RemoveAll) even when you keep the data; that now removes only compose/ and the link. (An
 # Uninstall that does not keep the data still deletes DIR: never uninstall this app in CasaOS.)
 # A host set up with the old layout (docker-compose.yml directly in DIR) is migrated: the compose file, its .bak and
 # .deploy-state move into compose/. The runner user (--owner) gets DIR itself, .env, compose/ and scripts/ so the
-# deploy job can update them; pgdata/ and backups/ stay with root and the postgres container; agent-data/ goes to
-# uid/gid 1000, the user the agent-runner image runs as.
+# deploy job can update them; pgdata/ and backups/ stay with root and the postgres container; agent-data/ and
+# trader-data/ go to uid/gid 1000, the user the agent-runner and claude-trader images run as.
 # --url also sets APP_PUBLIC_HOST (the CasaOS dashboard tile opens https://APP_PUBLIC_HOST). --casaos-link links
 # DIR/.env into /var/lib/casaos/apps/stocks/ for a CasaOS "Import" install.
 #
@@ -82,7 +82,7 @@ set_key() { # set_key FILE KEY VALUE (only when the key is empty or missing)
 }
 
 echo "== $DIR"
-mkdir -p "$DIR" "$DIR/pgdata" "$DIR/backups" "$DIR/scripts" "$DIR/agent-data" "$DIR/compose"
+mkdir -p "$DIR" "$DIR/pgdata" "$DIR/backups" "$DIR/scripts" "$DIR/agent-data" "$DIR/trader-data" "$DIR/compose"
 install -m 0755 "$BACKUP_SCRIPT" "$DIR/scripts/pg_backup.sh"
 echo "   scripts/pg_backup.sh installed"
 
@@ -145,12 +145,15 @@ if [[ -n "$OWNER" ]]; then
   chown -h "$OWNER": "$DIR/compose/.env"
   echo "   $DIR, .env, compose/ and scripts/ now belong to $OWNER"
 fi
-# The agent runner (compose profile "agents") runs as uid/gid 1000 and writes the bots' notes, spend and run logs.
+# The agent runner (compose profile "agents") and the Claude trader (profile "trader") run as uid/gid 1000 and
+# write the bots' notes, spend, state and run logs. trader-data/ also holds agents.toml (the agents' keys): mode 700.
 if [[ $EUID -eq 0 ]]; then
-  chown -R 1000:1000 "$DIR/agent-data"
-  echo "   agent-data/ belongs to uid 1000 (the agent-runner image's user)"
+  chown -R 1000:1000 "$DIR/agent-data" "$DIR/trader-data"
+  chmod 0700 "$DIR/trader-data"
+  echo "   agent-data/ and trader-data/ belong to uid 1000 (the agent-runner and claude-trader images' user)"
 else
-  echo "   WARNING: not root, so agent-data/ keeps its owner; run: sudo chown -R 1000:1000 $DIR/agent-data" >&2
+  echo "   WARNING: not root, so agent-data/ and trader-data/ keep their owner; run:" >&2
+  echo "   sudo chown -R 1000:1000 $DIR/agent-data $DIR/trader-data" >&2
 fi
 
 if [[ "$CASAOS_LINK" == "true" ]]; then

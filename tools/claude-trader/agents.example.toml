@@ -1,0 +1,77 @@
+# The Claude agents of tools/claude-trader on the CasaOS server (docs/agents.md §2.11): one [[agent]] per AI player.
+#
+# Copy it to /DATA/AppData/stocks/trader-data/agents.toml (the container reads /data/agents.toml), then
+#   sudo chown -R 1000:1000 /DATA/AppData/stocks/trader-data
+#   sudo chmod 600 /DATA/AppData/stocks/trader-data/agents.toml
+# It holds API keys: never commit it, paste it into a chat or show it in a screenshot.
+#
+# The trader re-reads this file every minute, so an edit needs no restart: `docker logs stocks-claude-trader` shows
+# the agents it loaded, or ONE error naming the problem (an invalid file runs no agent until it is fixed). Then run
+#   docker exec stocks-claude-trader python3 /app/claude_trader.py check
+#   docker exec stocks-claude-trader python3 /app/claude_trader.py selftest
+#
+# Settings of an [[agent]]:
+#   handle              required. The player's handle in the app (Admin -> Players). Same rule as the app:
+#                       2-32 characters, lowercase letters, digits and _ (no -, so claude_tech, not claude-tech).
+#   key                 required. The player's stk_ API key (Admin -> Players -> Add player -> AI bot -> "Issue an
+#                       API key now", or the player's API keys page). Each agent needs its own player and key.
+#   strategy            required. Your instructions for this agent, at most 4000 characters. The agent follows them
+#                       at every check-in; the league rules (get_rules) always come first.
+#   schedule_et         optional. Check-in times, ET on weekdays (default STOCKS_TRADER_SCHEDULE_ET or
+#                       "09:30,12:45,15:50": the open, midday, 10 minutes before the close).
+#   model               optional. A Claude model name or alias, e.g. "sonnet" or "opus" (default
+#                       STOCKS_TRADER_MODEL, else Claude Code's default for your plan).
+#   extra_runs_per_day  optional. Extra check-ins the agent may book for itself per day, 0 to 10 (default 4; 0 = off).
+#   enabled             optional. false pauses the agent and keeps its memory (default true).
+#
+# Every check-in of every agent is a full Claude Code session on your Claude subscription and counts toward your
+# plan's usage limits: three agents on the default schedule are at least 9 sessions a trading day.
+
+# Balanced: a diversified portfolio that tries to beat the S&P 500 (the player @claude).
+[[agent]]
+handle = "claude"
+key = "stk_REPLACE_ME"
+strategy = """
+Balanced growth. Aim to beat the S&P 500 (SPY) over months, not days.
+- Hold 5 to 10 positions across different sectors, mixing quality large caps and broad ETFs. No single stock above
+  20% of the account value; keep 5-15% in cash for opportunities.
+- Buy on pullbacks with LIMIT orders near support; add to winners slowly instead of chasing spikes. With little
+  cash, use dollar (notional) MARKET orders during regular hours to own a slice of an expensive stock.
+- Sell when the reason you bought is gone (a broken thesis, a bad earnings report), or when a position falls 12%
+  below your average cost. Trim a position that grows above 25% of the account.
+- Read the news of every holding at each check-in; trade only when something changed. Doing nothing is fine.
+"""
+
+# Aggressive: concentrated momentum bets, fast turnover, large positions (create the AI bot claude_aggressive).
+[[agent]]
+handle = "claude_aggressive"
+key = "stk_REPLACE_ME"
+strategy = """
+Aggressive momentum. Aim for the highest return in the league and accept large swings.
+- Concentrate: 2 to 4 positions at a time, each 20-40% of the account value; cash may go close to zero.
+- Buy the strongest momentum: stocks and ETFs breaking out to new highs on rising volume, and top gainers with a
+  fresh catalyst (an earnings beat, raised guidance, an upgrade, big news). Check get_movers and screen_stocks at
+  every check-in.
+- Turn the portfolio over quickly: sell a position that stalls for 2-3 check-ins or falls 7% below your entry, and
+  move the money into the next leader. Take partial profits after a +15% run.
+- Book extra check-ins around catalysts (an earnings release, the first minutes after big news) to manage positions.
+- Stay within the cash-account rules (get_rules): no margin, no short selling, no options. Before selling shares you
+  bought with unsettled sale proceeds, check the GFV_RISK warning: do not collect good-faith violations.
+"""
+
+# Tech: US technology and semiconductor stocks and tech ETFs only, benchmark QQQ (create the AI bot claude_tech).
+[[agent]]
+handle = "claude_tech"
+key = "stk_REPLACE_ME"
+strategy = """
+Technology specialist. Trade ONLY US-listed technology and semiconductor stocks and technology ETFs (for example
+QQQ, XLK, SMH, SOXX, VGT). No other sectors, even when they look attractive. Your benchmark is QQQ: compare your
+return with it in every summary.
+- Core: 50-70% of the account in 3-6 leaders (mega-cap platforms, chip makers and chip equipment, cloud and
+  cybersecurity software). Satellite: up to 30% in faster-growing mid caps. Up to 30% may sit in QQQ, SMH or XLK
+  when you have no stronger idea.
+- Follow the sector's drivers: earnings and guidance, AI and data-center spending, chip export rules, interest
+  rates. Book an extra check-in after the earnings releases of your holdings.
+- No single stock above 30% of the account value. Sell when a company misses and cuts guidance, or when a position
+  falls 10% below your average cost and the news gives no reason to hold it.
+"""

@@ -134,7 +134,9 @@ Everything lives in `/DATA/AppData/stocks` (the CasaOS AppData convention):
 ├── scripts/pg_backup.sh        copied from the repository by every deploy
 ├── pgdata/                     PostgreSQL 18 data
 ├── backups/                    nightly and pre-deploy dumps
-└── agent-data/                 the agent runner's bot notes, daily spend and run logs (owned by uid 1000, §12)
+├── agent-data/                 the agent runner's bot notes, daily spend and run logs (owned by uid 1000, §12)
+└── trader-data/                the Claude trader's agents.toml (mode 600) and each agent's state and logs
+                                (owned by uid 1000; docs/agents.md §2.11)
 ```
 
 The compose file sits in its own `compose/` directory on purpose. CasaOS lists every Compose project Docker runs,

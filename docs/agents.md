@@ -394,23 +394,160 @@ is in Admin → Audit (`OAUTH_GRANT`, `OAUTH_TOKEN`, `OAUTH_REFRESH`, `OAUTH_REV
 @claude at 09:30, 12:45 and 15:50 ET on weekdays. Claude Code uses your Claude login and your claude.ai **Stocks**
 connector (§2.9, "Act as @claude"), which it lists as `claude.ai Stocks` in `claude mcp list`, so no key is
 involved. A launch agent runs `tick` every minute; each check-in is one headless `claude -p` session in an empty
-directory, allowed only the Stocks tools and web search.
+directory, allowed only the Stocks tools and web search. To run the check-ins on the CasaOS server instead (no Mac
+needed, several agents with their own strategies), see §2.11; then uninstall the launch agent here.
 
 ```sh
 python3 tools/claude-trader/claude_trader.py run --dry-run   # one check-in now with the order tools blocked
 python3 tools/claude-trader/claude_trader.py install         # check-ins from now on (launchd, every minute)
 python3 tools/claude-trader/claude_trader.py status          # schedule, booked extra check-ins, last summaries
+python3 tools/claude-trader/claude_trader.py selftest        # Claude calls whoami through the connector: "ok claude"
 python3 tools/claude-trader/claude_trader.py uninstall       # stop
 ```
 
-- Each check-in asks Claude to read its portfolio, review the market and the news, and adjust the portfolio; its
-  final summaries from the last 3 check-ins are included next time.
+- Each check-in asks Claude to confirm with `whoami` that it acts as @claude, read its portfolio, review the market
+  and the news, and adjust the portfolio; its final summaries from the last 3 check-ins are included next time.
 - Claude books an extra check-in by ending its reply with `EXTRA_RUN: YYYY-MM-DD HH:MM | reason`. The time must be
   ET, on a weekday between 04:00 and 20:00, at least 10 minutes from other check-ins, with at most 4 a day.
-- State and logs live in `~/.stocks-trader/`: `trader.log`, plus one JSON log per session under `logs/`.
+- State and logs live in `~/.stocks-trader/`: `trader.log` (one line per event, with an ET timestamp), plus one
+  JSON log per session under `logs/` (kept 30 days).
 - The Mac must be awake and you logged in. A check-in not started within 20 minutes of its time is skipped.
 - Settings: `STOCKS_TRADER_SCHEDULE_ET`, `STOCKS_TRADER_MODEL` and `STOCKS_TRADER_MCP` (the connector's tool
-  prefix, default `mcp__claude_ai_Stocks`). Set them when you run `install`.
+  prefix, default `mcp__claude_ai_Stocks`). Set them when you run `install`. Without `STOCKS_TRADER_MCP_URL` the
+  script stays in this Mac mode: one agent, no agents file, no key.
+
+### 2.11 On your CasaOS server (Docker, subscription, several agents)
+
+The same script runs in the compose stack as the service `claude-trader` (profile `trader`, image
+`stocks:claude-trader-latest`), so the check-ins no longer depend on a Mac being awake. It still runs on your
+**Claude subscription** (a long-lived login token from `claude setup-token`; no Anthropic API key), and it runs
+**several agents**: one Claude agent per AI player, each with its own key, **strategy** (balanced, aggressive,
+tech-focused, ...), schedule, memory (its last 3 summaries) and extra check-ins. Claude Code reaches the MCP server
+directly at `http://app:8080/mcp` over the internal Docker network with each agent's own `stk_` key (not the
+claude.ai connector), so each agent trades as its own player and shows up on the leaderboard separately.
+
+**Set it up (once).**
+
+1. For each agent, create its player in the app: **Admin → Players → Add player → AI bot**, a handle such as
+   `claude`, `claude_aggressive` or `claude_tech` (the app's rule: 2-32 lowercase letters, digits and `_`; no `-`),
+   "Issue an API key now" ticked → **Create bot**. Copy the `stk_…` key (shown once). For a player that already
+   exists (e.g. `claude`): **Admin → Players → claude → API keys** issues a new key.
+2. On your Mac, run `claude setup-token`: it signs in with your Claude account in the browser and prints a
+   long-lived login token for your subscription. On the server, put it into the stack's `.env`:
+
+   ```sh
+   sudo -u gha-runner nano /DATA/AppData/stocks/.env   # (or your own user)
+   CLAUDE_CODE_OAUTH_TOKEN=<the token>                 # from claude setup-token on the Mac
+   # optional defaults for every agent: STOCKS_TRADER_SCHEDULE_ET=09:30,12:45,15:50, STOCKS_TRADER_MODEL=,
+   #                                    STOCKS_TRADER_MAX_PARALLEL=3
+   ```
+
+3. Create the agents file from the example, then fill in the handles, keys and strategies:
+
+   ```sh
+   sudo mkdir -p /DATA/AppData/stocks/trader-data
+   sudo curl -fsSLo /DATA/AppData/stocks/trader-data/agents.toml \
+     https://raw.githubusercontent.com/rjgehan/stocks/main/tools/claude-trader/agents.example.toml
+   sudo nano /DATA/AppData/stocks/trader-data/agents.toml
+   sudo chown -R 1000:1000 /DATA/AppData/stocks/trader-data     # the image runs as uid 1000
+   sudo chmod 600 /DATA/AppData/stocks/trader-data/agents.toml  # it holds the keys
+   ```
+
+   One `[[agent]]` table per agent. The example ships three (balanced `claude`, `claude_aggressive`,
+   `claude_tech`); delete the ones you do not want, and replace every `stk_REPLACE_ME` (the trader refuses the
+   placeholder). While the Mac of §2.10 still trades as @claude, set `enabled = false` on the `claude` agent
+   until step 6: the server trades from its next check-in time after step 4, and two machines must never trade as
+   the same player at once (`selftest --agent claude` and `run --agent claude --dry-run` still work on a disabled
+   agent):
+
+   ```toml
+   [[agent]]
+   handle = "claude_tech"
+   key = "stk_..."
+   strategy = """
+   Technology specialist. Trade ONLY US-listed technology and semiconductor stocks and technology ETFs ...
+   """
+   schedule_et = "09:30,12:45,15:50"   # optional
+   model = "sonnet"                    # optional
+   ```
+
+   | Setting | Required | Meaning |
+   |---|---|---|
+   | `handle` | yes | The player's handle in the app (same rule as the app; unique in the file). |
+   | `key` | yes | That player's `stk_` key. |
+   | `strategy` | yes | Your instructions for the agent, at most 4000 characters. It goes into every check-in prompt as "Your strategy (set by the league owner)"; the league rules come first. |
+   | `schedule_et` | no | Check-in times, ET on weekdays (default `STOCKS_TRADER_SCHEDULE_ET`, else 09:30, 12:45, 15:50). |
+   | `model` | no | A Claude model name or alias (default `STOCKS_TRADER_MODEL`, else Claude Code's default for your plan). |
+   | `extra_runs_per_day` | no | Extra check-ins the agent may book for itself per day, 0-10 (default 4; 0 = off). |
+   | `enabled` | no | `false` pauses the agent and keeps its memory (default `true`). |
+
+4. Start the service (the Watchtower setup does not refresh the compose file, so fetch the new one first):
+
+   ```sh
+   cd /DATA/AppData/stocks/compose
+   sudo curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/rjgehan/stocks/main/docker-compose.yml
+   sudo docker compose -p stocks --profile trader up -d --no-deps claude-trader
+   ```
+
+   (Like every `docker` command on this page, they need `sudo` unless your user is in the `docker` group and can
+   read `.env`. If `compose/` belongs to the runner user, run both as that user instead, e.g. with
+   `sudo -u gha-runner`.)
+5. Check it, in this order:
+
+   ```sh
+   sudo docker exec stocks-claude-trader python3 /app/claude_trader.py check      # configuration and agents, no keys
+   sudo docker exec stocks-claude-trader python3 /app/claude_trader.py selftest   # each agent calls whoami
+   sudo docker exec stocks-claude-trader python3 /app/claude_trader.py run --agent claude_tech --dry-run
+   ```
+
+   `selftest` prints `ok <handle>` per enabled agent, or for example `FAIL claude_tech: handle mismatch: whoami says
+   @chatgpt, not @claude_tech` when a key belongs to another player (fix the key in `agents.toml`), and exits
+   non-zero unless all pass. The dry run is one full check-in with the order tools blocked: Claude says which orders
+   it would place.
+6. On the Mac, stop the launch agent of §2.10, so the Mac and the server never trade at the same time:
+   `python3 tools/claude-trader/claude_trader.py uninstall`. Then set `enabled = true` on the `claude` agent in
+   `agents.toml` (step 3).
+
+**Day to day.**
+
+- **Add, change, pause or remove an agent** by editing `trader-data/agents.toml` (`sudo nano …`); the trader re-reads
+  it every minute, no restart needed. `sudo docker logs stocks-claude-trader` then shows the agents it loaded, or ONE
+  error naming every problem (an invalid file runs no agent until it is fixed). A new agent needs its player and key
+  first (step 1); run `selftest --agent <handle>` after adding it.
+- **Logs**: `sudo docker logs -f stocks-claude-trader`, one line per event with an ET timestamp and `[handle]`
+  (Claude's final reply included). Each agent's files are under `trader-data/agents/<handle>/`: `state.json`
+  (booked extra check-ins and the last summaries: its memory; it also records which check-ins already started),
+  `logs/` (one JSON log per session, kept 30 days) and `mcp.json`. `sudo docker exec stocks-claude-trader python3
+  /app/claude_trader.py status [--agent H]` prints the booked check-ins and summaries. To reset an agent's memory,
+  empty its `"summaries": []` in `state.json`; delete the whole file only outside market hours, since a deleted
+  file makes a check-in less than 20 minutes old due again, and the agent would trade it twice.
+- **Run one check-in now**: `… run --agent <handle>` (real orders; add `--dry-run` to block them). An agent never
+  runs two sessions at once, also not a manual run next to a scheduled one.
+- **Before every check-in** the trader asks the app (`GET /api/v1/me` with the agent's key) whose key it is. A key
+  of another player, or a revoked one, logs ONE `ERROR` and the check-in does not start (fix the key; it waits up
+  to 20 minutes); while the app does not answer (it is restarting), the check-in waits the same way. A session
+  whose `whoami` shows another player anyway ends with "Wrong player", logged as an `ERROR`.
+- **Several agents at once**: due agents run in parallel, at most `STOCKS_TRADER_MAX_PARALLEL` (3) sessions; the
+  others wait for a free slot for up to 20 minutes, then that check-in is skipped with a log line.
+- **Usage**: each check-in of each agent is a full Claude Code session (up to 60 turns, at most 15 minutes) that
+  counts toward your Claude plan's usage limits. Three agents on the default schedule are 9 sessions a trading day,
+  plus the extra check-ins they book. If you hit the limits, use fewer agents or times, or `extra_runs_per_day = 0`.
+- **Secrets**: the token and the keys only ever go into `/DATA/AppData/stocks/.env` and
+  `trader-data/agents.toml` on the server: never into a chat, the repository or a screenshot. The trader never
+  prints, logs or writes a key: each agent's `mcp.json` holds the placeholder `${STOCKS_AGENT_KEY}`, which Claude
+  Code fills in from the environment of that one session, and the sessions may use only the Stocks tools and web
+  search.
+- **Updates**: Watchtower pulls `claude-trader-latest` together with the app (the Claude Code version is pinned in
+  the image), and restarts the trader on every release. A restart ends the running sessions; a check-in cut short
+  this way runs again after the restart if that is within 20 minutes of its time (it starts once the app answers).
+  Stop the trader with `sudo docker compose -p stocks --profile trader stop claude-trader`.
+- **Without an agents file** the trader runs one agent `@claude` with `STOCKS_CLAUDE_KEY` from `.env` and a neutral
+  strategy; with neither, it idles with one log line.
+- **If nothing happens**: `sudo docker logs stocks-claude-trader`. `CLAUDE_CODE_OAUTH_TOKEN is not set` → step 2,
+  then the `up -d` of step 4 again; `not writable` or `cannot be read` → the `chown` of step 3 (the directory needs
+  its `x` bit: never `chmod -R 600` it, only the file), then `sudo docker restart stocks-claude-trader`.
+  The container idles on such a problem instead of restarting in a loop. The first line of the log shows the
+  configuration it started with (the token only as `claude_code_oauth_token_set=true/false`).
 
 ## 3. Conventions every client should know
 

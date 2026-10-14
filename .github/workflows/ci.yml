@@ -121,6 +121,19 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  claude-trader:
+    # tools/claude-trader: the Claude Code trader (standard library only). Unit tests with a fake claude; no network.
+    name: Claude trader (unit tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11' # the image's Python (Debian bookworm)
+      - name: python3 -m unittest discover -s tools/claude-trader -v
+        run: python3 -m unittest discover -s tools/claude-trader -v
+
   agent-runner-e2e:
     # The runner against the real backend (profile dev, SIM) and its MCP server; the LLM APIs are local fakes.
     name: Agent runner E2E (real MCP server, fake LLMs)
@@ -289,3 +302,12 @@ jobs:
           tags: stocks-agent-runner:ci
           cache-from: type=gha,scope=agent-runner
           cache-to: type=gha,scope=agent-runner,mode=max
+      - name: Build claude-trader image
+        uses: docker/build-push-action@v7
+        with:
+          context: tools/claude-trader
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: stocks-claude-trader:ci
+          cache-from: type=gha,scope=claude-trader
+          cache-to: type=gha,scope=claude-trader,mode=max

@@ -9,7 +9,7 @@
 #
 # Host layout (ARCHITECTURE §24.2): the Compose project directory DEPLOY_DIR (compose/) is NOT the data root, so
 # removing the project directory (CasaOS "Uninstall" always deletes it) never takes pgdata/, backups/ or .env along:
-#   /DATA/AppData/stocks/{.env, pgdata/, backups/, scripts/pg_backup.sh, agent-data/}
+#   /DATA/AppData/stocks/{.env, pgdata/, backups/, scripts/pg_backup.sh, agent-data/, trader-data/}
 #   /DATA/AppData/stocks/compose/{docker-compose.yml, docker-compose.yml.bak, .deploy-state, .env -> ../.env}
 #
 # Steps:
@@ -31,7 +31,7 @@
 #                                                                            (default /DATA/AppData/stocks/compose)
 #   STOCKS_DATA_ROOT       host data root used by docker-compose.yml         (default /DATA/AppData/stocks)
 #   COMPOSE_PROJECT        compose project name                              (default stocks)
-#   COMPOSE_PROFILES       extra compose profiles, e.g. "agents"             (default none)
+#   COMPOSE_PROFILES       extra compose profiles, e.g. "agents,trader"      (default none)
 #   DEPLOY_SYNC_COMPOSE    true|false: overwrite DEPLOY_DIR/docker-compose.yml with --sync-from's (default true)
 #   DEPLOY_HEALTH_TIMEOUT  seconds to wait for a healthy app                 (default 420)
 #   DEPLOY_BACKUP          true|false: pre-deploy pg_dump                    (default true)
@@ -262,6 +262,11 @@ AGENT_TAG="agent-runner-$TAG"
 if [[ ",${COMPOSE_PROFILES:-}," == *",agents,"* ]]; then
   docker pull "$IMAGE:$AGENT_TAG" || die "cannot pull $IMAGE:$AGENT_TAG (profile agents is on)"
 fi
+# The same for the Claude trader (tag prefix claude-trader-).
+TRADER_TAG="claude-trader-$TAG"
+if [[ ",${COMPOSE_PROFILES:-}," == *",trader,"* ]]; then
+  docker pull "$IMAGE:$TRADER_TAG" || die "cannot pull $IMAGE:$TRADER_TAG (profile trader is on)"
+fi
 
 # ------------------------------------------------------------------------------------------------ pre-deploy backup
 if is_true "$BACKUP"; then
@@ -368,8 +373,16 @@ while read -r t; do
   kept=$(( kept + 1 ))
   if [[ $kept -gt $KEEP_IMAGES ]]; then docker image rm "$IMAGE:$t" > /dev/null 2>&1 || true; fi
 done < <(docker image ls "$IMAGE" --format '{{.Tag}}' | grep -E '^agent-runner-(sha-[0-9a-f]+|v?[0-9]+\.[0-9]+.*)$' || true)
+# And for the Claude trader's claude-trader-sha-/claude-trader-<version> tags.
+kept=0
+while read -r t; do
+  [[ "$t" == "$TRADER_TAG" ]] && continue
+  kept=$(( kept + 1 ))
+  if [[ $kept -gt $KEEP_IMAGES ]]; then docker image rm "$IMAGE:$t" > /dev/null 2>&1 || true; fi
+done < <(docker image ls "$IMAGE" --format '{{.Tag}}' | grep -E '^claude-trader-(sha-[0-9a-f]+|v?[0-9]+\.[0-9]+.*)$' || true)
 docker image prune -f --filter "label=org.opencontainers.image.title=stocks" > /dev/null 2>&1 || true
 docker image prune -f --filter "label=org.opencontainers.image.title=stocks-agent-runner" > /dev/null 2>&1 || true
+docker image prune -f --filter "label=org.opencontainers.image.title=stocks-claude-trader" > /dev/null 2>&1 || true
 
 log "deployed $IMAGE:$TAG"
 write_summary "OK"
