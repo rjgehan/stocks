@@ -11,6 +11,7 @@ import { ArenaCard } from '@/features/league/ArenaCard'
 import { FeedList } from '@/features/league/FeedList'
 import { LeaderboardTable } from '@/features/league/LeaderboardTable'
 import { MetricInfoPopover } from '@/features/league/MetricInfoPopover'
+import { useFeedDelay } from '@/features/league/useFeedDelay'
 import { useBoardColumns } from '@/features/stats/columns'
 import { ColumnsPicker } from '@/features/stats/ExtraStat'
 import { RaceView } from '@/features/stats/RaceView'
@@ -58,6 +59,7 @@ function LeaguePage() {
   const set = (patch: Partial<LeagueSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
   const board = useLeaderboard(period, metric, kind)
   const { data: me } = useMe()
+  const feedDelay = useFeedDelay()
   const cols = useBoardColumns()
   const rows = board.data?.rows ?? []
   return (
@@ -120,7 +122,8 @@ function LeaguePage() {
               </>
             )}
             <p className="text-micro text-text-3">
-              Return is time-weighted: deposits and withdrawals never move it. Net contributions are public; trades show in the feed after a 15-minute delay.
+              Return is time-weighted: deposits and withdrawals never move it. Net contributions are public; every player&apos;s portfolio and orders are visible live.
+              {feedDelay ? ` Trades show in the feed after ${feedDelay}.` : ''}
             </p>
           </>
         )}

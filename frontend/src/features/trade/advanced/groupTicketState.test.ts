@@ -52,7 +52,6 @@ describe('advanced ticket (§11.9, §22.5)', () => {
       stopLoss: { stopPrice: '95.00', limitPrice: null, type: 'STOP' },
       secondary: null,
       rationale: null,
-      shareNote: false,
       doNotReduce: false,
       acknowledge: [],
     })

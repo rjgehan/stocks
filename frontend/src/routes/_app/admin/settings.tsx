@@ -15,14 +15,17 @@ export const Route = createFileRoute('/_app/admin/settings')({
 })
 
 const DELAYS = [
-  { value: 'PT0S', label: 'No delay' },
+  { value: 'PT0S', label: 'No delay: public (default)' },
   { value: 'PT5M', label: '5 minutes' },
   { value: 'PT15M', label: '15 minutes' },
   { value: 'PT1H', label: '1 hour' },
   { value: 'P1D', label: '1 day' },
 ]
 
-/** Admin · League settings (§21.3, §23.4): starting cash, self-reset, season start, eligibility, feed delay, visibility, rationale. */
+/**
+ * Admin · League settings (§21.3, §23.4): starting cash, self-reset, season start, eligibility, feed delay, rationale.
+ * Holdings are always public (public mode, §16.7), so there is no visibility setting any more.
+ */
 function SettingsPage() {
   const settings = useLeagueSettings()
   if (settings.isPending) return <Skeleton className="h-96 w-full max-w-2xl" />
@@ -105,17 +108,12 @@ function SettingsForm({ initial }: { initial: Settings }) {
       </section>
       <section className="space-y-3 rounded-lg border border-divider bg-bg-1 p-4">
         <h2 className="text-section font-semibold">Social</h2>
-        <SelectField label="Trade feed delay" value={s['social.tradeFeedDelay'] ?? 'PT15M'} onChange={(e) => set('social.tradeFeedDelay', e.target.value)} options={delayOptions} hint="Other players see trades only after this delay (no live copying)." />
         <SelectField
-          label="Holdings visibility"
-          value={s['social.holdingsVisibility'] ?? 'EOD_WEIGHTS'}
-          onChange={(e) => set('social.holdingsVisibility', e.target.value as Settings['social.holdingsVisibility'])}
-          options={[
-            { value: 'EOD_WEIGHTS', label: 'End-of-day weights (default)' },
-            { value: 'EOD_FULL', label: 'End-of-day weights and quantities' },
-            { value: 'HIDDEN', label: 'Hidden (no holdings)' },
-          ]}
-          hint="Hidden removes holdings and the equity figure, but not account size: dollar P&L and deposits stay public, and equity = deposits + all-time P&L."
+          label="Trade feed delay"
+          value={s['social.tradeFeedDelay'] ?? 'PT0S'}
+          onChange={(e) => set('social.tradeFeedDelay', e.target.value)}
+          options={delayOptions}
+          hint="Holds back only the feed, trade lists and journal notes. Portfolios, orders, activity and P&L are always live."
         />
         <Switch checked={s['social.showDepositsInFeed']} onChange={(v) => set('social.showDepositsInFeed', v)} label="Show deposits in the feed" />
         <Switch checked={s['bots.requireRationale']} onChange={(v) => set('bots.requireRationale', v)} label="Bots must explain each order" description="AI orders without a rationale are rejected (RATIONALE_REQUIRED)." />

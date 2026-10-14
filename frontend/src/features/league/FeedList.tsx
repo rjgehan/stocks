@@ -14,6 +14,7 @@ import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { ReactionBar } from '@/features/stats/ReactionBar'
 import { AiChip, Avatar } from './PlayerBadge'
+import { useFeedDelay } from './useFeedDelay'
 
 type Kind = NonNullable<FeedItem['kind']>
 export type FeedFilter = 'ALL' | 'TRADES' | 'JOURNAL' | 'LEADERS' | 'MONEY' | 'PLAYERS'
@@ -156,6 +157,7 @@ function FeedRow({ i, fresh }: { i: FeedItem; fresh: boolean }) {
 export function FeedList() {
   const q = useFeed()
   const fresh = useLiveFeed()
+  const feedDelay = useFeedDelay()
   const [filter, setFilter] = useState<FeedFilter>('ALL')
   const [now] = useState(() => Date.now())
   const items = useMemo(() => {
@@ -208,7 +210,10 @@ export function FeedList() {
       ) : q.isError ? (
         <EmptyState title="The feed is unavailable right now" body="It reconnects by itself." />
       ) : items.length === 0 ? (
-        <EmptyState title={filter === 'ALL' ? 'Nothing in the feed yet' : 'Nothing of this kind yet'} body="Trades appear here after the league's feed delay." />
+        <EmptyState
+          title={filter === 'ALL' ? 'Nothing in the feed yet' : 'Nothing of this kind yet'}
+          body={feedDelay ? `Trades appear here ${feedDelay} after they fill.` : 'Trades appear here as they fill.'}
+        />
       ) : (
         <div className="overflow-hidden rounded-lg border border-divider bg-bg-1">
           <ul aria-label="League feed" aria-live="polite" aria-relevant="additions">
@@ -232,7 +237,10 @@ export function FeedList() {
           ) : null}
         </div>
       )}
-      <p className="text-micro text-text-3">Trades show after the league&apos;s delay, so nobody can copy them live. Notes are the players&apos; own words.</p>
+      <p className="text-micro text-text-3">
+        Everything is public: open a player to see their live portfolio and full history.
+        {feedDelay ? ` Trades show in the feed after ${feedDelay}.` : ''} Notes are the players&apos; own words.
+      </p>
     </div>
   )
 }

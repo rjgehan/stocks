@@ -7,6 +7,7 @@ import { Segmented } from '@/components/ui/Segmented'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
+import { useFeedDelay } from '@/features/league/useFeedDelay'
 import { formatHold, profitFactorLabel, sharpeLabel } from './format'
 import { RankHistory } from './RankHistory'
 
@@ -70,9 +71,10 @@ export function PlayerStatsCard({
   period: LeaderboardPeriod
   onPeriod: (p: LeaderboardPeriod) => void
   title?: string
-  /** Another player's stats: best and worst trades only after the feed delay. */
+  /** Another player's stats: best and worst trades only after the feed delay, if the admin sets one. */
   delayed?: boolean
 }) {
+  const feedDelay = useFeedDelay()
   const s = stats
   const sharpe = sharpeLabel(s?.sharpe, s?.dailyReturns, s?.sharpeMinDays)
   return (
@@ -119,7 +121,7 @@ export function PlayerStatsCard({
           </dl>
           <p className="px-4 py-2 text-micro text-text-3">
             Same numbers as the leaderboard for this period{s.partialPeriod ? ' (joined during it)' : ''}.{' '}
-            {delayed ? 'Best and worst trades appear after the 15-minute feed delay.' : ''}
+            {delayed && feedDelay ? (feedDelay.startsWith('the ') ? `Best and worst trades appear after ${feedDelay}.` : `Best and worst trades appear ${feedDelay} after the sell.`) : ''}
           </p>
         </>
       )}

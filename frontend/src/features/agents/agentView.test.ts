@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   channelLabel,
   delayWords,
+  feedDelayLabel,
   formatDuration,
   formatTokens,
   formatUsd,
@@ -89,5 +90,12 @@ describe('review fixes: copy', () => {
     expect(delayWords('PT45S')).toBe('45 seconds')
     expect(delayWords('P1D')).toBeNull()
     expect(delayWords(undefined)).toBeNull()
+  })
+
+  it('names a feed delay in public copy only when there is one (public mode: none by default)', () => {
+    expect(feedDelayLabel('PT0S')).toBeNull()
+    expect(feedDelayLabel(undefined)).toBeNull()
+    expect(feedDelayLabel('PT15M')).toBe('15 minutes')
+    expect(feedDelayLabel('P1D')).toBe('the league’s feed delay')
   })
 })

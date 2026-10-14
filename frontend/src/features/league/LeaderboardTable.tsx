@@ -151,7 +151,7 @@ export function LeaderboardTable({
           <FlowChip flows={r.flowsInPeriod} />
         </div>
       </td>
-      <td className="hidden px-2 text-right wide:table-cell">{r.equity ? formatMoney(r.equity) : <span className="text-text-3">hidden</span>}</td>
+      <td className="hidden px-2 text-right wide:table-cell">{r.equity ? formatMoney(r.equity) : <span className="text-text-3">—</span>}</td>
       <td className="hidden px-2 text-right tablet:table-cell">{r.fills}</td>
       {extraColumns.map((c) => (
         <td key={c} className="hidden px-2 text-right tablet:table-cell">

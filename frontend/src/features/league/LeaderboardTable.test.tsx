@@ -70,7 +70,7 @@ describe('LeaderboardTable (§22.4, §26 leaderboard row rendering)', () => {
     expect(within(carol).queryByLabelText(/^Rank /)).toBeNull()
   })
 
-  it('shows deposits as a chip, hidden equity as "hidden", and the rebased marker', async () => {
+  it('shows deposits as a chip, a missing equity as a dash (never "hidden": equity is public), and the rebased marker', async () => {
     renderWithRouter(
       <LeaderboardTable
         rows={[row({ handle: 'bob', netContributions: '600.00', flowsInPeriod: '100.00', equity: null, rebased: true })]}
@@ -82,7 +82,8 @@ describe('LeaderboardTable (§22.4, §26 leaderboard row rendering)', () => {
     const bob = rowOf('Bob')
     expect(bob.textContent).toContain('$600.00')
     expect(within(bob).getByText(/\+\$100(\.00)? deposited/)).toBeTruthy()
-    expect(within(bob).getByText('hidden')).toBeTruthy()
+    expect(within(bob).getByText('—')).toBeTruthy()
+    expect(within(bob).queryByText(/hidden/i)).toBeNull()
     expect(within(bob).getByText('Rebased')).toBeTruthy()
   })
 

@@ -32,7 +32,7 @@ export function useRace(period: LeaderboardPeriod, kind: KindFilter, enabled = t
   })
 }
 
-/** `GET /players/{handle}/stats` (another player's best/worst trades come after the feed delay). */
+/** `GET /players/{handle}/stats` (another player's best/worst trades come after the feed delay, if any). */
 export function usePlayerStats(handle: string, period: LeaderboardPeriod) {
   return useQuery({
     queryKey: queryKeys.playerStats(handle, period),

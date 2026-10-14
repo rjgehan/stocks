@@ -31,8 +31,8 @@ export interface GroupTicketState {
   secondaryStop: string
   qty: string
   tif: TimeInForce
+  /** Public with the orders (public mode, §16.7). */
   note: string
-  shareNote: boolean
   doNotReduce: boolean
   gfvAck: boolean
   clientOrderId: string
@@ -57,7 +57,6 @@ export type GroupTicketAction =
   | { type: 'field'; field: GroupField; value: string }
   | { type: 'slUseLimit'; value: boolean }
   | { type: 'tif'; tif: TimeInForce }
-  | { type: 'shareNote'; value: boolean }
   | { type: 'doNotReduce'; value: boolean }
   | { type: 'gfvAck'; value: boolean }
   | { type: 'submitted'; clientOrderId: string }
@@ -101,7 +100,6 @@ export function initialGroupTicket(options: { groupType?: OrderGroupType; client
     qty: '',
     tif: 'DAY',
     note: '',
-    shareNote: false,
     doNotReduce: false,
     gfvAck: false,
     clientOrderId: options.clientOrderId ?? newClientOrderId(),
@@ -127,15 +125,13 @@ export function groupTicketReducer(s: GroupTicketState, a: GroupTicketAction): G
       return { ...s, slUseLimit: a.value }
     case 'tif':
       return { ...s, tif: a.tif }
-    case 'shareNote':
-      return { ...s, shareNote: a.value }
     case 'doNotReduce':
       return { ...s, doNotReduce: a.value }
     case 'gfvAck':
       return { ...s, gfvAck: a.value }
     case 'submitted':
       // a new group gets a new idempotency key; the setup and prices stay, the quantity and note are cleared
-      return { ...s, qty: '', note: '', shareNote: false, gfvAck: false, clientOrderId: a.clientOrderId }
+      return { ...s, qty: '', note: '', gfvAck: false, clientOrderId: a.clientOrderId }
   }
 }
 
@@ -200,7 +196,6 @@ export function buildGroupRequest(s: GroupTicketState, symbol: string): PlaceOrd
     stopLoss: stopLoss ? { ...stopLoss, type: s.slUseLimit ? 'STOP_LIMIT' : 'STOP' } : null,
     secondary,
     rationale: note || null,
-    shareNote: note ? s.shareNote : false,
     doNotReduce: s.doNotReduce,
     acknowledge: s.gfvAck ? ['GFV_RISK'] : [],
   }

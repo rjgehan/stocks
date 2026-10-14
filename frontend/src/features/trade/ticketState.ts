@@ -42,8 +42,8 @@ export interface TicketState {
   extendedHours: boolean
   /** FINRA 5330 (§14, Phase 2): keep this order's prices on ex-dividend dates. */
   doNotReduce: boolean
+  /** Public with the order (public mode, §16.7): there is no private note any more. */
   note: string
-  shareNote: boolean
   gfvAck: boolean
   clientOrderId: string
 }
@@ -57,7 +57,6 @@ export type TicketAction =
   | { type: 'extendedHours'; value: boolean }
   | { type: 'doNotReduce'; value: boolean }
   | { type: 'trailMode'; mode: TrailMode }
-  | { type: 'shareNote'; value: boolean }
   | { type: 'gfvAck'; value: boolean }
   | { type: 'submitted'; clientOrderId: string }
 
@@ -81,7 +80,6 @@ export function initialTicket(options: { side?: Side; preferences?: Preferences 
     extendedHours: false,
     doNotReduce: false,
     note: '',
-    shareNote: false,
     gfvAck: false,
     clientOrderId: options.clientOrderId ?? newClientOrderId(),
   }
@@ -114,13 +112,11 @@ export function ticketReducer(s: TicketState, a: TicketAction): TicketState {
       return { ...s, doNotReduce: a.value }
     case 'trailMode':
       return { ...s, trailMode: a.mode }
-    case 'shareNote':
-      return { ...s, shareNote: a.value }
     case 'gfvAck':
       return { ...s, gfvAck: a.value }
     case 'submitted':
       // A new order gets a new idempotency key; quantities are cleared, the order setup is kept.
-      return { ...s, qty: '', amount: '', note: '', shareNote: false, gfvAck: false, clientOrderId: a.clientOrderId }
+      return { ...s, qty: '', amount: '', note: '', gfvAck: false, clientOrderId: a.clientOrderId }
   }
 }
 
@@ -299,10 +295,7 @@ export function buildOrderRequest(s: TicketState, symbol: string, ctx: TicketCon
     else req.trailPercent = t
   }
   const note = s.note.trim()
-  if (note) {
-    req.rationale = note.slice(0, 1000)
-    req.shareNote = s.shareNote
-  }
+  if (note) req.rationale = note.slice(0, 1000)
   if (s.gfvAck) req.acknowledge = ['GFV_RISK']
   if (s.doNotReduce && dividendAdjustable(s)) req.doNotReduce = true
   return req

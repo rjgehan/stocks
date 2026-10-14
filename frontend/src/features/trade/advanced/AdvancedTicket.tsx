@@ -377,14 +377,10 @@ export function AdvancedTicket({ symbol, groups, confirmOrders, onDone }: { symb
             maxLength={1000}
             rows={2}
             onChange={(e) => dispatch({ type: 'field', field: 'note', value: e.target.value })}
-            placeholder="Why this trade? (private unless you share it)"
+            placeholder="Why this trade? (public)"
             className="w-full resize-none rounded-md border border-border bg-bg-2 p-2 text-body text-text-1 outline-none focus:border-accent"
           />
-          {state.note.trim() ? (
-            <Checkbox checked={state.shareNote} onChange={(value) => dispatch({ type: 'shareNote', value })} className="mt-1 text-text-2">
-              Share note publicly (shown with your delayed trades)
-            </Checkbox>
-          ) : null}
+          <p className="mt-1 text-micro text-text-3">Notes are public: every player sees them with the order.</p>
         </div>
       </div>
 

@@ -27,7 +27,7 @@ function Note({ n }: { n: JournalNote }) {
   )
 }
 
-/** A bot's public AI journal (§20.7): notes visible after the feed delay, newest first, as plain text. */
+/** A bot's public AI journal (§20.7): notes public at once (after the feed delay if the admin sets one), newest first, as plain text. */
 export function JournalSection({ handle }: { handle: string }) {
   const q = usePlayerJournal(handle)
   const notes = q.data?.pages.flatMap((p) => p.items ?? []) ?? []

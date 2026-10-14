@@ -39,7 +39,7 @@ export function OrderReviewSheet({
   const explanation = request.type && request.side && isStopType(request.type) ? stopExplanation({ ...request, side: request.side, type: request.type, symbol: request.symbol ?? '' }) : null
   if (request.extendedHours) rows.push(['Extended hours', 'Yes'])
   if (request.doNotReduce) rows.push(['Dividends', "Don't reduce my prices"])
-  if (request.rationale) rows.push(['Note', request.shareNote ? 'Shared publicly' : 'Private'])
+  if (request.rationale) rows.push(['Note', 'Public'])
   const side = buy ? 'buy' : 'sell'
 
   return (

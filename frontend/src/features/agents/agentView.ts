@@ -102,6 +102,17 @@ export function delayWords(iso: string | null | undefined): string | null {
   return [h ? plural(h, 'hour') : null, min ? plural(min, 'minute') : null, s ? plural(s, 'second') : null].filter(Boolean).join(' ')
 }
 
+/**
+ * The league's feed delay for public copy (public mode, §16.7): null when there is none (PT0S, the default) or the
+ * rules are not loaded yet; else its words ("15 minutes"), or "the league's feed delay" when it has no words (P1D).
+ */
+export function feedDelayLabel(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const words = delayWords(iso)
+  if (words === 'right away') return null
+  return words ?? 'the league’s feed delay'
+}
+
 /** 450 ms, 12.4 s, 1 min 34 s, 2 h 5 min. */
 export function formatDuration(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return '--'

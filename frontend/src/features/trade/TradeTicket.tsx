@@ -618,12 +618,10 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
               maxLength={1000}
               rows={3}
               onChange={(e) => dispatch({ type: 'field', field: 'note', value: e.target.value })}
-              placeholder="Why this trade? (private unless you share it)"
+              placeholder="Why this trade? (public)"
               className="w-full resize-none rounded-md border border-border bg-bg-2 p-2 text-body text-text-1 outline-none focus:border-accent"
             />
-            <Checkbox checked={state.shareNote} onChange={(value) => dispatch({ type: 'shareNote', value })} className="mt-1 text-text-2">
-              Share note publicly (shown with your delayed trade)
-            </Checkbox>
+            <p className="mt-1 text-micro text-text-3">Notes are public: every player sees them with the order.</p>
           </div>
         ) : (
           <button type="button" onClick={() => setNoteOpen(true)} className="inline-flex min-h-11 items-center text-caption font-semibold text-accent hover:text-accent-hover tablet:min-h-0">

@@ -63,14 +63,15 @@ describe('trade ticket rules (§22.5)', () => {
     expect(buildOrderRequest(sell, 'AAPL', { fractionable: true, availableQty: null })).toBeNull()
   })
 
-  it('adds the note, share flag and GFV acknowledgement', () => {
+  it('adds the note (always public, so no share flag) and the GFV acknowledgement', () => {
     let s = initialTicket({ clientOrderId: 'web-1' })
     s = ticketReducer(s, { type: 'orderType', orderType: 'MARKET' })
     s = ticketReducer(s, { type: 'field', field: 'qty', value: '1' })
     s = ticketReducer(s, { type: 'field', field: 'note', value: '  earnings beat ' })
-    s = ticketReducer(s, { type: 'shareNote', value: true })
     s = ticketReducer(s, { type: 'gfvAck', value: true })
-    expect(buildOrderRequest(s, 'AAPL', ctx)).toMatchObject({ rationale: 'earnings beat', shareNote: true, acknowledge: ['GFV_RISK'] })
+    const req = buildOrderRequest(s, 'AAPL', ctx)
+    expect(req).toMatchObject({ rationale: 'earnings beat', acknowledge: ['GFV_RISK'] })
+    expect(req).not.toHaveProperty('shareNote')
   })
 
   it("sends Don't reduce only for the orders a dividend reduces (FINRA 5330)", () => {
