@@ -121,6 +121,18 @@ class RateLimitIT {
         .as("ordinary reads still have tokens").isEqualTo(200);
   }
 
+  /** Public mode (§16.7): a player's live portfolio, orders, activity and P&amp;L value accounts like a profile. */
+  @Test
+  void publicPortfolioReadsAreHeavy() throws Exception {
+    for (String route : new String[] {"portfolio", "orders", "activities", "pnl-analysis", "pnl-calendar"}) {
+      Fixtures.PlayerRef p = fx.human("pubheavy" + SEQ.incrementAndGet());
+      String key = fx.apiKey(p, properties.security().apiKeyPepper());
+      MvcResult r = perform(get("/api/v1/players/" + p.handle() + "/" + route)
+          .header("Authorization", "Bearer " + key));
+      assertThat(r.getResponse().getHeader(RateLimitFilter.LIMIT)).as(route).isEqualTo("2");
+    }
+  }
+
   @Test
   void orderWritesAreLeftToOrderGate() throws Exception {
     Fixtures.PlayerRef p = fx.human("writer" + SEQ.incrementAndGet());

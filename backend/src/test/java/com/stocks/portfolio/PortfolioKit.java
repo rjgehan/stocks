@@ -126,11 +126,16 @@ public final class PortfolioKit implements AutoCloseable {
 
   /** A settings service with §23.4 defaults (no feed delay, public mode §16.7) except {@code social.tradeFeedDelay}. */
   public static SettingsService feedDelay(java.time.Duration delay) {
+    return feedDelay(() -> delay);
+  }
+
+  /** As {@link #feedDelay(java.time.Duration)}, read on every call (a test can change it midway). */
+  public static SettingsService feedDelay(java.util.function.Supplier<java.time.Duration> delay) {
     SettingsService stub = NotImplementedStub.of(SettingsService.class, "WS1");
     return (SettingsService) java.lang.reflect.Proxy.newProxyInstance(SettingsService.class.getClassLoader(),
         new Class<?>[] {SettingsService.class}, (proxy, method, args) -> {
           if (method.getName().equals("tradeFeedDelay")) {
-            return delay;
+            return delay.get();
           }
           try {
             return method.invoke(stub, args);

@@ -84,8 +84,8 @@ class McpToolCatalogTest {
   }
 
   @Test
-  void theCatalogHasThe55ToolsOfSection20Point3AndNoAdminTool() {
-    assertThat(McpToolCatalog.ORDER).hasSize(55).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
+  void theCatalogHasThe60ToolsOfSection20Point3AndNoAdminTool() {
+    assertThat(McpToolCatalog.ORDER).hasSize(60).doesNotHaveDuplicates().startsWith("whoami", "get_rules")
         .noneMatch(n -> n.contains("admin"));
     assertThat(McpToolCatalog.ORDER.get(37)).as("Phase 1 ends at #38").isEqualTo("mark_notifications_read");
   }
@@ -127,8 +127,18 @@ class McpToolCatalogTest {
 
   @Test
   void phase2JournalToolsFollowThePhase1Catalog() {        // §20.3 #54–#55, §20.7
-    assertThat(McpToolCatalog.ORDER).endsWith("get_player_journal", "add_journal_note");
+    assertThat(McpToolCatalog.ORDER).containsSubsequence("get_player_journal", "add_journal_note");
     assertThat(McpToolCatalog.SCOPES).containsEntry("get_player_journal", Scopes.LEAGUE_READ)
         .containsEntry("add_journal_note", Scopes.TRADE);
+  }
+
+  @Test
+  void publicModeToolsAreAppendedWithLeagueRead() {        // §20.3 #56–#60, §16.7
+    assertThat(McpToolCatalog.ORDER).endsWith("add_journal_note", "get_player_portfolio", "get_player_orders",
+        "get_player_activity", "get_player_pnl_analysis", "get_player_pnl_calendar");
+    assertThat(McpToolCatalog.SCOPES).containsEntry("get_player_portfolio", Scopes.LEAGUE_READ)
+        .containsEntry("get_player_orders", Scopes.LEAGUE_READ).containsEntry("get_player_activity", Scopes.LEAGUE_READ)
+        .containsEntry("get_player_pnl_analysis", Scopes.LEAGUE_READ)
+        .containsEntry("get_player_pnl_calendar", Scopes.LEAGUE_READ);
   }
 }

@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -27,9 +26,7 @@ import com.stocks.common.error.ErrorCode;
 import com.stocks.common.events.PlayerStatusChanged;
 import com.stocks.common.jdbc.Jdbc;
 import com.stocks.common.web.IdempotencyKeys;
-import com.stocks.common.web.Page;
 import com.stocks.contract.trading.IdempotencyRef;
-import com.stocks.contract.trading.OrderFilter;
 import com.stocks.contract.trading.dto.AccountDto;
 import com.stocks.testkit.ContractMocksWebTest;
 import com.stocks.testkit.Fixtures;
@@ -41,7 +38,6 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -377,23 +373,24 @@ class AdminPlayersIT extends ContractMocksWebTest {
   }
 
   @Test
-  void breakGlassWritesTheAdminViewBeforeShowingAnything() {
+  void theAdminSeesAnyPlayersLivePortfolioEvenADisabledOne() {
     Fixtures.PlayerRef p = fx.human(handle("watched"));
+    fx.status(p, "DISABLED");
     when(accountQueries.activeAccountId(p.id())).thenReturn(4242L);
+    when(accountQueries.account(4242L)).thenReturn(account("acc_WATCHED", 2));
     when(accountQueries.positions(4242L)).thenReturn(List.of());
-    when(orderQueries.list(eq(4242L), any(OrderFilter.class), any(), eq(200))).thenReturn(Page.empty());
-    assertThat(code(send(root, post("/api/v1/admin/players/" + p.handle() + "/live-view"), "{\"reason\":\"hm\"}")))
-        .isEqualTo("VALIDATION_FAILED");
-    MvcResult r = send(root, post("/api/v1/admin/players/" + p.handle() + "/live-view"),
-        "{\"reason\":\"suspected bug in fills\"}");
+    MvcResult r = root.perform(get("/api/v1/admin/players/" + p.handle() + "/portfolio"));
     assertThat(status(r)).as(body(r)).isEqualTo(200);
-    assertThat((String) json(r, "$.reason")).isEqualTo("suspected bug in fills");
     assertThat((String) json(r, "$.player.handle")).isEqualTo(p.handle());
-    InOrder order = inOrder(accountService, accountQueries);
-    order.verify(accountService).recordAdminView(4242L, "suspected bug in fills", admin.id());
-    order.verify(accountQueries).positions(4242L);
-    assertThat(jdbc.sql("SELECT COUNT(*) FROM audit_log WHERE action = 'PLAYER_LIVE_VIEW' AND target_id = ?")
-        .param(p.publicId()).query(Long.class).single()).isEqualTo(1);
+    assertThat((Integer) json(r, "$.runNo")).isEqualTo(2);
+    assertThat((String) json(r, "$.cash")).isEqualTo("500.00");
+    assertThat(body(r)).doesNotContain("acc_WATCHED");                   // never an account id
+    verify(accountService, never()).recordAdminView(anyLong(), any(), anyLong());   // public mode: no break-glass
+    assertThat(status(root.perform(get("/api/v1/admin/players/nobody-here/portfolio")))).isEqualTo(404);
+
+    Fixtures.PlayerRef other = fx.human(handle("nosy"));
+    WebSession nosy = WebSession.login(mvc, other.handle(), Fixtures.PASSWORD);
+    assertThat(status(nosy.perform(get("/api/v1/admin/players/" + p.handle() + "/portfolio")))).isEqualTo(403);
   }
 
   @Test

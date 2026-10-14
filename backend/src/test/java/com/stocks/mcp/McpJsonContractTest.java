@@ -19,8 +19,12 @@ import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.contract.portfolio.dto.FeedItemDto;
 import com.stocks.contract.portfolio.dto.LeaderboardDto;
 import com.stocks.contract.portfolio.dto.PlayerProfileDto;
+import com.stocks.contract.portfolio.dto.PnlAnalysisDto;
+import com.stocks.contract.portfolio.dto.PnlCalendarDto;
 import com.stocks.contract.portfolio.dto.PortfolioHistoryDto;
 import com.stocks.contract.portfolio.dto.PublicHistoryDto;
+import com.stocks.contract.portfolio.dto.PublicOrderDto;
+import com.stocks.contract.portfolio.dto.PublicPortfolioDto;
 import com.stocks.contract.portfolio.dto.PublicTradeDto;
 import com.stocks.contract.security.RateLimitStatus;
 import com.stocks.contract.trading.dto.AccountDto;
@@ -120,6 +124,17 @@ class McpJsonContractTest {
     when(h.performance.publicTrades(anyString(), any(), anyInt()))
         .thenReturn(page((PublicTradeDto) sample(PublicTradeDto.class, full)));
     when(h.performance.feed(any(), anyInt())).thenReturn(page((FeedItemDto) sample(FeedItemDto.class, full)));
+    // public mode (§16.7)
+    when(h.publicPortfolios.portfolio(anyString()))
+        .thenReturn((PublicPortfolioDto) sample(PublicPortfolioDto.class, full));
+    when(h.publicPortfolios.orders(anyString(), any(), any(), any(), anyInt()))
+        .thenReturn(page((PublicOrderDto) sample(PublicOrderDto.class, full)));
+    when(h.publicPortfolios.activities(anyString(), any(), any(), anyInt()))
+        .thenReturn(page((ActivityDto) sample(ActivityDto.class, full)));
+    when(h.publicPortfolios.pnlAnalysis(anyString(), any()))
+        .thenReturn((PnlAnalysisDto) sample(PnlAnalysisDto.class, full));
+    when(h.publicPortfolios.pnlCalendar(anyString(), any(), any(), any()))
+        .thenReturn((PnlCalendarDto) sample(PnlCalendarDto.class, full));
     when(h.leaderboard.board(any(), any(), any(), anyInt(), any()))
         .thenReturn((LeaderboardDto) sample(LeaderboardDto.class, full));
     when(h.players.all(any(), anyBoolean()))
@@ -178,7 +193,8 @@ class McpJsonContractTest {
       case "get_order" -> Map.of("order_id", "ord_1");
       case "get_portfolio_history" -> Map.of("range", "1M");
       case "preview_order" -> Map.of("symbol", "AAPL", "side", "BUY", "type", "MARKET", "notional", "125.00");
-      case "get_player_profile", "get_player_trades" -> Map.of("handle", "alice");
+      case "get_player_profile", "get_player_trades", "get_player_portfolio", "get_player_orders",
+           "get_player_activity", "get_player_pnl_analysis", "get_player_pnl_calendar" -> Map.of("handle", "alice");
       case "get_player_history" -> Map.of("handle", "alice", "range", "1W");
       case "screen_stocks" -> Map.of("preset", "TOP_GAINERS", "min_price", "5", "sectors",
           List.of("INFORMATION_TECHNOLOGY"), "limit", 10);
@@ -192,12 +208,15 @@ class McpJsonContractTest {
       "get_fundamentals", "get_account", "get_positions", "get_orders", "get_order", "get_executions", "get_activity",
       "get_violations", "get_runs", "get_portfolio_history", "get_notifications", "preview_order", "get_leaderboard",
       "list_players", "get_player_profile", "get_player_history", "get_player_trades", "get_league_feed",
-      "get_watchlists", "list_alerts", "screen_stocks", "get_recommendations");
+      "get_watchlists", "list_alerts", "screen_stocks", "get_recommendations",
+      // public mode (§16.7)
+      "get_player_portfolio", "get_player_orders", "get_player_activity", "get_player_pnl_analysis",
+      "get_player_pnl_calendar");
 
   @ParameterizedTest(name = "full={0}")
   @ValueSource(booleans = {true, false})
   void everyReadToolResultValidatesAgainstItsOutputSchema(boolean full) {
-    assertThat(READ_TOOLS).hasSize(33).doesNotHaveDuplicates();
+    assertThat(READ_TOOLS).hasSize(38).doesNotHaveDuplicates();
     stub(full);
     List<String> failures = new ArrayList<>();
     for (String tool : READ_TOOLS) {

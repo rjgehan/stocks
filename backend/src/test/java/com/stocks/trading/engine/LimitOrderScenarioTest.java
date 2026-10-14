@@ -12,8 +12,10 @@ import com.stocks.common.error.WarningCode;
 import com.stocks.contract.trading.dto.ExecutionDto;
 import com.stocks.contract.trading.dto.OrderDto;
 import com.stocks.contract.trading.dto.PlaceOrderResponse;
+import com.stocks.contract.trading.dto.ReplaceOrderRequest;
 import com.stocks.testkit.TestTimes;
 import com.stocks.trading.testkit.TradingTestBase;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
@@ -228,5 +230,45 @@ class LimitOrderScenarioTest extends TradingTestBase {
     assertThat(partial.filledQty()).isEqualByComparingTo("100");
     assertThat(partial.reservedCash()).isEqualByComparingTo("4000.00");
     assertThat(partial.executions()).extracting(ExecutionDto::liquidity).containsExactly(Liquidity.TOUCH);
+  }
+
+  // ------------------------------------------------------------------------------------------- public mode (§16.7)
+
+  boolean rationalePublic(String orderId) {
+    return jdbc.sql("SELECT rationale_public FROM trade_order WHERE public_id = ?").param(orderId)
+        .query(Boolean.class).single();
+  }
+
+  String rationale(String orderId) {
+    return jdbc.sql("SELECT rationale FROM trade_order WHERE public_id = ?").param(orderId).query(String.class)
+        .single();
+  }
+
+  @Test
+  void aHumansNewNoteIsPublicAndAReplaceKeepsAnOldPrivateNotePrivate() {
+    Player p = human();
+    String s = symbol();
+    quote(s, "99.98", 300, "100.00", 300);
+    OrderDto o = place(p, limit(cid(), s, Side.BUY, "1", "95.00", TimeInForce.DAY, false)).order();
+    assertThat(rationalePublic(o.orderId())).as("no shareNote: public anyway").isTrue();
+
+    // a note written as private before public mode (V9 keeps the stored flag)
+    jdbc.sql("UPDATE trade_order SET rationale_public = FALSE WHERE public_id = ?").param(o.orderId()).update();
+    OrderDto moved = orders.replace(p.principal(), o.orderId(), new ReplaceOrderRequest(cid(), null,
+        new BigDecimal("94.00"), null, null, null, null, null, null), meta()).order();
+    assertThat(rationalePublic(moved.orderId())).as("a price change never publishes an old private note").isFalse();
+    assertThat(rationale(moved.orderId())).isEqualTo("test");
+    OrderDto blank = orders.replace(p.principal(), moved.orderId(), new ReplaceOrderRequest(cid(), null,
+        new BigDecimal("93.00"), null, null, null, null, null, "   "), meta()).order();
+    assertThat(rationalePublic(blank.orderId())).as("a blank note is no new note").isFalse();
+    assertThat(rationale(blank.orderId())).isEqualTo("test");
+
+    OrderDto renoted = orders.replace(p.principal(), blank.orderId(), new ReplaceOrderRequest(cid(), null,
+        new BigDecimal("92.00"), null, null, null, null, null, " Waiting for a dip "), meta()).order();
+    assertThat(rationalePublic(renoted.orderId())).as("a new note is public").isTrue();
+    assertThat(rationale(renoted.orderId())).isEqualTo("Waiting for a dip");
+    OrderDto again = orders.replace(p.principal(), renoted.orderId(), new ReplaceOrderRequest(cid(), null,
+        new BigDecimal("91.00"), null, null, null, null, null, null), meta()).order();
+    assertThat(rationalePublic(again.orderId())).as("a public note stays public").isTrue();
   }
 }

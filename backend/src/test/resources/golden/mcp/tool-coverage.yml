@@ -42,6 +42,12 @@ tools:
   /api/v1/market/screener: screen_stocks
   /api/v1/assets/{symbol}/recommendations: get_recommendations
   /api/v1/players/{handle}/journal: get_player_journal
+  # public mode (§16.7)
+  /api/v1/players/{handle}/portfolio: get_player_portfolio
+  /api/v1/players/{handle}/orders: get_player_orders
+  /api/v1/players/{handle}/activities: get_player_activity
+  /api/v1/players/{handle}/pnl-analysis: get_player_pnl_analysis
+  /api/v1/players/{handle}/pnl-calendar: get_player_pnl_calendar
 excluded:
   /api/v1/auth/csrf: browser CSRF bootstrap
   /api/v1/me: whoami returns the same Me

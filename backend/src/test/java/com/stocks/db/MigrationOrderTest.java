@@ -29,8 +29,9 @@ class MigrationOrderTest {
    * Applied in production (the first deploy, 2026-10, then V2 with the Phase 1 review fixes); never edit, rename or
    * delete these files.
    */
-  static final Set<String> APPLIED_IN_PRODUCTION = Set.of("1", "1.0.1", "1.3.01", "1.4.01", "2");
-  static final MigrationVersion NEWEST_IN_PRODUCTION = MigrationVersion.fromVersion("2");
+  static final Set<String> APPLIED_IN_PRODUCTION = Set.of("1", "1.0.1", "1.3.01", "1.4.01", "2", "3", "4", "5", "6",
+      "7", "8", "8.1");
+  static final MigrationVersion NEWEST_IN_PRODUCTION = MigrationVersion.fromVersion("8.1");
 
   private static final Pattern FILE = Pattern.compile("V([0-9_]+)__[A-Za-z0-9_]+\\.sql");
 

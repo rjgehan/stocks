@@ -38,6 +38,25 @@ public record TestDb(DataSource dataSource, JdbcClient jdbc, String vendor) impl
   }
 
   /**
+   * A fresh database of the suite's vendor migrated only up to {@code targetVersion} (e.g. {@code "8.1"}), for data
+   * migration tests; {@link #migrateToLatest()} applies the rest.
+   */
+  public static TestDb migratedTo(String targetVersion) {
+    boolean pg = EmbeddedPg.enabled();
+    DataSource ds = pg ? pool(EmbeddedPg.jdbcUrl(EmbeddedPg.createDatabase()), EmbeddedPg.USER, EmbeddedPg.PASSWORD)
+        : pool("jdbc:h2:mem:testdb-" + UUID.randomUUID()
+            + ";MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1", "sa", "");
+    String vendor = pg ? POSTGRESQL : H2;
+    flyway(ds, vendor).target(targetVersion).load().migrate();
+    return new TestDb(ds, JdbcClient.create(ds), vendor);
+  }
+
+  /** Applies every pending migration. */
+  public void migrateToLatest() {
+    flyway(dataSource, vendor).load().migrate();
+  }
+
+  /**
    * A small Hikari pool, like the app's. (H2 evaluates CHECK constraints through the session that created them, so
    * the connection that ran the migration must stay open: a non-pooled DataSource fails with "Check constraint
    * invalid … database has been closed".)
@@ -66,13 +85,15 @@ public record TestDb(DataSource dataSource, JdbcClient jdbc, String vendor) impl
   private static final java.util.concurrent.atomic.AtomicInteger POOLS = new java.util.concurrent.atomic.AtomicInteger();
 
   private static TestDb migrate(DataSource ds, String vendor) {
-    Flyway.configure()
+    flyway(ds, vendor).load().migrate();
+    return new TestDb(ds, JdbcClient.create(ds), vendor);
+  }
+
+  private static org.flywaydb.core.api.configuration.FluentConfiguration flyway(DataSource ds, String vendor) {
+    return Flyway.configure()
         .dataSource(ds)
         .locations("classpath:db/migration/common", "classpath:db/migration/" + vendor)
-        .outOfOrder(true)
-        .load()
-        .migrate();
-    return new TestDb(ds, JdbcClient.create(ds), vendor);
+        .outOfOrder(true);
   }
 
   public boolean isPostgres() {

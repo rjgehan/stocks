@@ -518,6 +518,45 @@ class GroupOrderScenarioTest extends TradingTestBase {
             e -> assertThat(e.code()).isEqualTo(ErrorCode.STOP_PRICE_WRONG_SIDE));
   }
 
+  /** Public mode (§16.7): new legs are public; replaces never publish a note written as private before. */
+  @Test
+  void newGroupNotesArePublicAndReplacesKeepOldPrivateNotesPrivate() {
+    Player p = human("5000.00");
+    String s = symbol();
+    market(s, "99.98", "100.00");
+    OrderGroupDto g = placeGroup(p, bracket(s, "10", OrderType.LIMIT, "98.00", "110.00", "95.00")).group();
+    assertThat(g.legs()).allSatisfy(o -> assertThat(rationalePublic(o.orderId())).isTrue());
+
+    // notes written as private before public mode (V9 keeps the stored flags)
+    jdbc.sql("UPDATE trade_order SET rationale_public = FALSE WHERE group_id = (SELECT id FROM order_group "
+        + "WHERE public_id = ?)").param(g.groupId()).update();
+    OrderGroupDto moved = orders.replaceGroup(p.principal(), g.groupId(), new ReplaceOrderGroupRequest(cid(), null,
+        null, new GroupLegChangeDto(new BigDecimal("97.00"), null), null,
+        new GroupLegChangeDto(null, new BigDecimal("94.00")), null, null), meta()).group();
+    assertThat(moved.legs()).hasSize(3).allSatisfy(o -> assertThat(rationalePublic(o.orderId())).isFalse());
+    OrderDto tp = leg(moved, OrderGroupRole.TAKE_PROFIT);
+    OrderDto tpMoved = orders.replace(p.principal(), tp.orderId(), new ReplaceOrderRequest(cid(), null,
+        new BigDecimal("111.00"), null, null, null, null, null, null), meta()).order();
+    assertThat(tpMoved.orderId()).isNotEqualTo(tp.orderId());
+    assertThat(rationalePublic(tpMoved.orderId())).as("replaceLeg without a note").isFalse();
+
+    OrderGroupDto renoted = orders.replaceGroup(p.principal(), g.groupId(), new ReplaceOrderGroupRequest(cid(), null,
+        null, new GroupLegChangeDto(new BigDecimal("96.50"), null), null, null, null, "New thesis"), meta()).group();
+    OrderDto entry = leg(renoted, OrderGroupRole.ENTRY);
+    assertThat(rationalePublic(entry.orderId())).as("replaceGroup with a new note").isTrue();
+    assertThat(jdbc.sql("SELECT rationale FROM trade_order WHERE public_id = ?").param(entry.orderId())
+        .query(String.class).single()).isEqualTo("New thesis");
+    OrderDto sl = leg(renoted, OrderGroupRole.STOP_LOSS);
+    OrderDto slMoved = orders.replace(p.principal(), sl.orderId(), new ReplaceOrderRequest(cid(), null, null,
+        new BigDecimal("93.00"), null, null, null, null, "Tighter stop"), meta()).order();
+    assertThat(rationalePublic(slMoved.orderId())).as("replaceLeg with a new note").isTrue();
+  }
+
+  boolean rationalePublic(String orderId) {
+    return jdbc.sql("SELECT rationale_public FROM trade_order WHERE public_id = ?").param(orderId)
+        .query(Boolean.class).single();
+  }
+
   @Test
   void groupIdempotencyReplaysAndConflicts() {
     Player p = human("5000.00");

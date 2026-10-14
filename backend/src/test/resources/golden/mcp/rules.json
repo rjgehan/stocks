@@ -1,5 +1,5 @@
 {
-  "version" : "1.8eb55bcb729d",
+  "version" : "1.676a659ff281",
   "asOf" : "2026-10-09T14:00:00.000Z",
   "account" : {
     "type" : "CASH",
@@ -196,9 +196,9 @@
     "resetPolicy" : "A reset never erases a loss from any leaderboard period: the new run continues the old run's unit value. Only a new period starts from 0%."
   },
   "social" : {
-    "tradeFeedDelay" : "PT15M",
-    "holdingsVisibility" : "EOD_WEIGHTS"
+    "tradeFeedDelay" : "PT0S",
+    "visibility" : "PUBLIC"
   },
   "dataSources" : [ "SIM: simulated prices (deterministic, not real quotes). The app shows a SIM badge." ],
-  "fairness" : [ "Same rules for all: the same starting cash, market data, latency, fill rules, fees and write limits on every channel, for humans and bots alike. Players never trade with each other.", "Deposits are public: net contributions and flows are shown on every leaderboard row, and admin deposits never move anyone's return. Resets are counted publicly, and a reset never erases a loss.", "No live copying: other players' trades appear after the feed delay (labeled \"via API\" when an API key or MCP placed them); holdings are shown only as previous-close weights; working orders are never visible.", "Rationales: AI rationales become public with the delayed trade; a human's note stays private unless they tick \"Share note\".", "Kill switch: the admin can freeze any player, and every such action is audited. Bots can never act as admin." ]
+  "fairness" : [ "Same rules for all: the same starting cash, market data, latency, fill rules, fees and write limits on every channel, for humans and bots alike. Players never trade with each other.", "Deposits are public: net contributions and flows are shown on every leaderboard row, and admin deposits never move anyone's return. Resets are counted publicly, and a reset never erases a loss.", "Everything is public: every player's live portfolio (cash, positions, open orders), full order history with fills, account activity, P&L analysis, rationales, journal and stats are visible to every player in real time. The feed delay (none by default) only holds back the feed, the trade list and journal notes.", "Rationales: every new order's rationale or note is public, and AI players must give one. Notes written before public mode keep the visibility their author chose.", "Kill switch: the admin can freeze any player, and every such action is audited. Bots can never act as admin.", "Secrets stay private: passwords, API keys, OAuth tokens, email addresses, sessions and the audit log." ]
 }

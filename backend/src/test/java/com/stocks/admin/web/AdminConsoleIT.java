@@ -60,8 +60,8 @@ class AdminConsoleIT extends ContractMocksWebTest {
     MvcResult get = root.perform(get("/api/v1/admin/settings"));
     assertThat(status(get)).as(body(get)).isEqualTo(200);
     assertThat((String) json(get, "$['league.defaultStartingCash']")).isEqualTo("500.00");
-    assertThat((String) json(get, "$['social.tradeFeedDelay']")).isEqualTo("PT15M");
-    assertThat((String) json(get, "$['social.holdingsVisibility']")).isEqualTo("EOD_WEIGHTS");
+    assertThat((String) json(get, "$['social.tradeFeedDelay']")).isEqualTo("PT0S");   // public mode (§16.7)
+    assertThat(body(get)).doesNotContain("social.holdingsVisibility");                // retired
 
     MvcResult put = send(put("/api/v1/admin/settings"),
         "{\"league.defaultStartingCash\":\"750\",\"league.allowSelfReset\":true,\"social.tradeFeedDelay\":\"pt5m\"}");
@@ -78,11 +78,13 @@ class AdminConsoleIT extends ContractMocksWebTest {
     assertThat(settings.allowSelfReset()).as("all or nothing").isTrue();
     assertThat(code(send(patch("/api/v1/admin/settings"), "{\"social.tradeFeedDelay\":\"soon\"}")))
         .isEqualTo("SETTING_INVALID");
-    assertThat(code(send(patch("/api/v1/admin/settings"), "{\"social.holdingsVisibility\":\"PUBLIC\"}")))
-        .isEqualTo("VALIDATION_FAILED");
+    MvcResult retired = send(patch("/api/v1/admin/settings"), "{\"social.holdingsVisibility\":\"PUBLIC\"}");
+    assertThat(status(retired)).as("an unknown member is ignored").isEqualTo(200);
+    assertThat((String) json(retired, "$['social.tradeFeedDelay']")).isEqualTo("PT5M");   // nothing changed
+    assertThat(body(retired)).doesNotContain("social.holdingsVisibility");
 
     MvcResult restore = send(patch("/api/v1/admin/settings"),
-        "{\"league.defaultStartingCash\":\"500.00\",\"league.allowSelfReset\":false,\"social.tradeFeedDelay\":\"PT15M\"}");
+        "{\"league.defaultStartingCash\":\"500.00\",\"league.allowSelfReset\":false,\"social.tradeFeedDelay\":\"PT0S\"}");
     assertThat(status(restore)).isEqualTo(200);
     assertThat(jdbc.sql("SELECT COUNT(*) FROM audit_log WHERE action = 'SETTINGS_UPDATE' AND actor_player_id = ?")
         .param(admin.id()).query(Long.class).single()).isEqualTo(2);

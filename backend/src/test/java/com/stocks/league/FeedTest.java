@@ -39,8 +39,8 @@ import org.springframework.messaging.simp.SimpMessageSendingOperations;
 
 /**
  * The league feed (§12.8): {@link FeedEventListener} is the only writer, idempotent by {@code source_ref}; trades
- * appear after the 15-minute delay with public rationales only; deposits are public; the publisher pushes each row
- * once when it becomes visible.
+ * appear at once (public mode, §16.7) or after the admin's delay, with public rationales only; deposits are public; the
+ * publisher pushes each row once when it becomes visible, also when its insert commits after its {@code visible_at}.
  */
 class FeedTest {
 
@@ -71,6 +71,27 @@ class FeedTest {
     return lk.feedService.page(null, 50).items();
   }
 
+  /** The same league on the same database with {@code social.tradeFeedDelay = PT15M}. */
+  LeagueKit delayed() {
+    return new LeagueKit(new PortfolioKit(kit.db, kit.time, NotImplementedStub.of(MarketCalendar.class, "WS2"),
+        PortfolioKit.feedDelay(Duration.ofMinutes(15))));
+  }
+
+  String visibleAt(String sourceRef) {
+    return kit.db.jdbc().sql("SELECT visible_at FROM feed_event WHERE source_ref = ?").param(sourceRef)
+        .query((rs, n) -> com.stocks.common.jdbc.Jdbc.instant(rs, "visible_at").toString()).single();
+  }
+
+  @Test
+  void byDefaultAFillIsVisibleAtOnce() {
+    String exe = data.trade(acc, "BUY", "SIMA", "1", "100.00", "WEB", "public note", true);
+    assertThat(lk.feed.recordExecution(exe)).isTrue();
+    assertThat(visible()).singleElement().satisfies(i -> {
+      assertThat(i.kind()).isEqualTo(FeedItemKind.FILL);
+      assertThat(i.payload().untrusted().rationale()).isEqualTo("public note");
+    });
+  }
+
   String transferId(String type) {
     return kit.db.jdbc().sql("SELECT public_id FROM cash_transfer WHERE account_id = ? AND transfer_type = ? "
         + "ORDER BY id DESC LIMIT 1").params(acc.id(), type).query(String.class).single();
@@ -78,6 +99,7 @@ class FeedTest {
 
   @Test
   void fillsAppearAfterTheDelayWithOnlyPublicRationales() {
+    lk = delayed();                                                 // the admin set PT15M
     PlayerRef bot = data.ai("claude", alice);
     AccountRef botAcc = data.open(bot, "500.00");
     String botExe = data.trade(botAcc, "BUY", "SIMA", "2", "100.00", "MCP_KEY", "Rotation into " + "y".repeat(500),
@@ -227,6 +249,7 @@ class FeedTest {
 
   @Test
   void thePublisherPushesEachRowOnceWhenItBecomesVisible() {
+    lk = delayed();                                                 // the admin set PT15M
     SimpMessageSendingOperations ops = mock(SimpMessageSendingOperations.class);
     assertThat(lk.feedService.publishNewlyVisible()).isZero();      // no broker: nothing to do
     lk.beans.addBean("brokerMessagingTemplate", ops);
@@ -242,5 +265,38 @@ class FeedTest {
     assertThat(lk.feedService.publishNewlyVisible()).isZero();
     verify(ops, times(1)).convertAndSend(eq(FeedService.TOPIC), any(FeedItemDto.class));
     verify(ops, never()).convertAndSend(eq("/topic/leaderboard"), any(Object.class));
+  }
+
+  /** At PT0S a row's visible_at falls before its asynchronous insert commits: the overlap still pushes it, once. */
+  @Test
+  void aRowCommittedAfterTheLastTickIsPushedExactlyOnce() {
+    SimpMessageSendingOperations ops = mock(SimpMessageSendingOperations.class);
+    lk.beans.addBean("brokerMessagingTemplate", ops);
+    kit.at(MON_10.minusSeconds(5));
+    lk.feedService.tick();                                          // the first tick only sets the watermark
+    kit.at(MON_10);
+    assertThat(lk.feedService.publishNewlyVisible()).isZero();      // the last tick: MON_10
+    kit.at(MON_10.minusSeconds(2));                                 // executed 2 s before that tick …
+    String exe = data.buy(acc, "SIMA", "1", "1.00");
+    kit.at(MON_10.plusSeconds(1));
+    lk.feed.recordExecution(exe);                                   // … and committed after it
+    assertThat(visibleAt("EXEC:" + exe)).isEqualTo(MON_10.minusSeconds(2).toString());
+    int pushed = 0;
+    for (int tick = 1; tick <= 4; tick++) {
+      kit.at(MON_10.plusSeconds(5L * tick));
+      pushed += lk.feedService.publishNewlyVisible();
+    }
+    assertThat(pushed).isEqualTo(1);
+    verify(ops, times(1)).convertAndSend(eq(FeedService.TOPIC), any(FeedItemDto.class));
+  }
+
+  /** The EOD backfill keeps a recovered fill at its original place in the feed: visible_at = executedAt + delay. */
+  @Test
+  void anEodBackfillRowKeepsItsOriginalVisibleAt() {
+    LeagueKit slow = delayed();
+    String exe = data.buy(acc, "SIMA", "1", "1.00");                 // executed at MON_10, its event lost
+    kit.at(MON_10.plus(Duration.ofHours(10)));
+    assertThat(slow.feed.backfill(MON_10.minusSeconds(60), kit.time.now())).isGreaterThanOrEqualTo(1);
+    assertThat(visibleAt("EXEC:" + exe)).isEqualTo(MON_10.plus(Duration.ofMinutes(15)).toString());
   }
 }

@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.jayway.jsonpath.JsonPath;
 import com.stocks.common.time.MutableTimeSource;
 import com.stocks.config.StocksProperties;
+import com.stocks.contract.identity.SettingsService;
 import com.stocks.contract.security.Scopes;
 import com.stocks.testkit.Fixtures;
 import com.stocks.testkit.Fixtures.PlayerRef;
@@ -50,6 +51,7 @@ class AgentsWebIT {
   @Autowired JdbcClient jdbc;
   @Autowired MutableTimeSource time;
   @Autowired StocksProperties properties;
+  @Autowired SettingsService settings;
 
   Fixtures fx;
   PlayerRef owner;
@@ -192,7 +194,26 @@ class AgentsWebIT {
   }
 
   @Test
+  void journalNotesArePublicAtOnceByDefault() throws Exception {
+    MockHttpServletResponse written = bearer(botKey, post("/api/v1/journal").contentType(MediaType.APPLICATION_JSON)
+        .content("{\"text\":\"Holding cash into CPI.\",\"symbols\":[\"spy\"]}"));
+    assertThat(written.getStatus()).as(written.getContentAsString()).isEqualTo(201);
+    MockHttpServletResponse page = as(stranger, get("/api/v1/players/" + botHandle + "/journal"));
+    assertThat(page.getStatus()).isEqualTo(200);
+    assertThat((List<String>) json(page, "$.items[*].untrusted.text")).containsExactly("Holding cash into CPI.");
+  }
+
+  @Test
   void botsWriteJournalNotesThatBecomePublicAfterTheDelay() throws Exception {
+    settings.put("social.tradeFeedDelay", "PT15M", owner.id());     // the admin can still set a delay
+    try {
+      journalNotesFollowTheDelay();
+    } finally {
+      settings.put("social.tradeFeedDelay", "PT0S", owner.id());
+    }
+  }
+
+  private void journalNotesFollowTheDelay() throws Exception {
     MockHttpServletResponse written = bearer(botKey, post("/api/v1/journal").contentType(MediaType.APPLICATION_JSON)
         .content("{\"text\":\"Thesis:\\nNVDA guidance <b>raised</b>.\",\"symbols\":[\"nvda\"]}"));
     assertThat(written.getStatus()).as(written.getContentAsString()).isEqualTo(201);

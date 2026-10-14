@@ -26,7 +26,6 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 class RecentAuthRoutesIT extends ContractMocksWebTest {
 
   static final Set<String> SPEC_R = Set.of(
-      "POST /api/v1/admin/players/{handle}/live-view",
       "POST /api/v1/admin/players",
       "PATCH /api/v1/admin/players/{handle}",
       "POST /api/v1/admin/players/{handle}/freeze",

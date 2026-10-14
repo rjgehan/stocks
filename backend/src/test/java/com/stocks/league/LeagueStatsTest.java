@@ -8,6 +8,8 @@ import com.stocks.common.domain.LeaderboardMetric;
 import com.stocks.common.domain.LeaderboardPeriod;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
+import com.stocks.config.stubs.NotImplementedStub;
+import com.stocks.contract.calendar.MarketCalendar;
 import com.stocks.contract.portfolio.dto.LeaderboardDto;
 import com.stocks.contract.portfolio.dto.LeaderboardRowDto;
 import com.stocks.contract.portfolio.dto.PlayerStatsDto;
@@ -18,6 +20,8 @@ import com.stocks.portfolio.MetricsCalculator;
 import com.stocks.portfolio.MetricsCalculator.UnitPoint;
 import com.stocks.portfolio.PortfolioData;
 import com.stocks.portfolio.PortfolioKit;
+import com.stocks.testkit.TestDb;
+import com.stocks.testkit.TestTimes;
 import com.stocks.testkit.Fixtures.AccountRef;
 import com.stocks.testkit.Fixtures.PlayerRef;
 import java.math.BigDecimal;
@@ -26,6 +30,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +39,7 @@ import org.junit.jupiter.api.Test;
  * §16.8 / §16.9 end to end on a fresh database (Mon–Fri fallback calendar, 20:00 ET cut-off): the race chart is the
  * board's unit-value curves normalized at the period start (a deposit never moves a line; the last point is the
  * row's return), TODAY uses the 5-minute samples, SPY rides along; player stats agree with the board, show closed
- * lots with the feed delay for other players, rank history from {@code leaderboard_snapshot}, and Sharpe once there
+ * lots at once (public mode) or after the admin's feed delay for other players, rank history from {@code leaderboard_snapshot}, and Sharpe once there
  * are 20 daily returns.
  */
 class LeagueStatsTest {
@@ -49,6 +54,8 @@ class LeagueStatsTest {
   static final LocalDate MON = LocalDate.of(2026, 10, 5);
   static final LocalDate TUE = LocalDate.of(2026, 10, 6);
 
+  /** {@code social.tradeFeedDelay}: none by default (public mode, §16.7); a test may set one. */
+  final AtomicReference<Duration> delay = new AtomicReference<>(Duration.ZERO);
   LeagueKit lk;
   PortfolioKit kit;
   PortfolioData data;
@@ -60,7 +67,8 @@ class LeagueStatsTest {
 
   @BeforeEach
   void setUp() {
-    lk = new LeagueKit();
+    lk = new LeagueKit(new PortfolioKit(TestDb.fresh(), TestTimes.clock(),
+        NotImplementedStub.of(MarketCalendar.class, "WS2"), PortfolioKit.feedDelay(delay::get)));
     kit = lk.kit;
     data = kit.data;
     kit.at(MON_10);
@@ -269,8 +277,15 @@ class LeagueStatsTest {
       assertThat(p.ranked()).isEqualTo(2);
     });
 
-    // bob looking at alice 5 minutes after her sell: none of its statistics before the 15-minute feed delay (review
+    // public mode: bob sees alice's sell at once
+    PlayerStatsDto live = lk.stats.playerStats("alice", LeaderboardPeriod.TODAY, bob.id());
+    assertThat(live.tradesAsOf()).isEqualTo(live.asOf());
+    assertThat(live.closingSells()).isEqualTo(1);
+    assertThat(live.bestTrade()).isEqualTo(mine.bestTrade());
+
+    // with a 15-minute feed delay, bob looking at alice 5 minutes after her sell sees none of its statistics (review
     // finding: the counts, gross profit, closed lots and hold time used to show it at once)
+    delay.set(Duration.ofMinutes(15));
     PlayerStatsDto seen = lk.stats.playerStats("alice", LeaderboardPeriod.TODAY, bob.id());
     assertThat(seen.tradesAsOf()).isEqualTo(seen.asOf().minus(Duration.ofMinutes(15)));
     assertThat(seen.closingSells()).isZero();

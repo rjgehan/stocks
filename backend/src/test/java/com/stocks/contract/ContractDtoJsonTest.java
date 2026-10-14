@@ -103,6 +103,10 @@ class ContractDtoJsonTest {
     SPEC_TYPES.put("FeedReaction", pf + "FeedReactionsDto$FeedReactionDto");
     SPEC_TYPES.put("Reactor", pf + "FeedReactionsDto$ReactorDto");
     SPEC_TYPES.put("SetReactionRequest", pf + "SetReactionRequest");
+    // public mode (§16.7)
+    SPEC_TYPES.put("PublicPortfolio", pf + "PublicPortfolioDto");
+    SPEC_TYPES.put("PublicOrder", pf + "PublicOrderDto");
+    SPEC_TYPES.put("PublicFill", pf + "PublicOrderDto$PublicFillDto");
     // rules
     SPEC_TYPES.put("Rules", "com.stocks.contract.rules.dto.RulesDto");
     // §21.1 admin
@@ -110,7 +114,6 @@ class ContractDtoJsonTest {
     SPEC_TYPES.put("CreatePlayerRequest", ad + "CreatePlayerRequest");
     SPEC_TYPES.put("CreatePlayerResponse", ad + "CreatePlayerResponse");
     SPEC_TYPES.put("AdminPlayerDetail", ad + "AdminPlayerDetailDto");
-    SPEC_TYPES.put("AdminPlayerLiveView", ad + "AdminPlayerLiveViewDto");
     SPEC_TYPES.put("CalendarOverride", "com.stocks.contract.calendar.dto.CalendarOverrideDto");
     SPEC_TYPES.put("CorporateAction", tr + "CorporateActionDto");
     SPEC_TYPES.put("CashTransferRequest", tr + "CashTransferRequest");

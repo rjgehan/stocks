@@ -54,6 +54,7 @@ class JournalServiceTest {
   PlayerRef bot;
   PlayerPrincipal botKey;
   List<Object> events = new ArrayList<>();
+  SettingsService settings;
 
   @BeforeEach
   void setUp() {
@@ -66,8 +67,8 @@ class JournalServiceTest {
     fx.asset("NVDA");
     fx.asset("AAPL");
     botKey = TestPrincipals.apiKey(bot.id(), bot.publicId(), "claude", PlayerKind.AI, Scopes.ALL, 1L);
-    SettingsService settings = mock(SettingsService.class);
-    when(settings.tradeFeedDelay()).thenReturn(Duration.ofMinutes(15));
+    settings = mock(SettingsService.class);
+    when(settings.tradeFeedDelay()).thenReturn(Duration.ofMinutes(15));   // the delay tests: the admin set PT15M
     MarketDataService market = mock(MarketDataService.class);
     when(market.asset(anyString())).thenReturn(Optional.empty());
     journal = new JournalServiceImpl(db.jdbc(), new AgentPlayers(db.jdbc(), mock(PlayerQueries.class)),
@@ -107,6 +108,17 @@ class JournalServiceTest {
     assertThat(events).singleElement().isEqualTo(new JournalNotePosted(bot.id(), note.id(), NOW,
         NOW.plus(Duration.ofMinutes(15))));
     assertThat(db.jdbc().sql("SELECT channel FROM journal_note").query(String.class).single()).isEqualTo("MCP_KEY");
+  }
+
+  @Test
+  void byDefaultANoteIsPublicAtOnce() {
+    when(settings.tradeFeedDelay()).thenReturn(Duration.ZERO);       // public mode (§16.7): no delay by default
+    JournalNoteDto note = add("Holding cash into CPI.").note();
+    assertThat(note.visibleAt()).isEqualTo(NOW);
+    assertThat(journal.visibleNotes("claude", null, 10).items()).extracting(JournalNoteDto::id)
+        .containsExactly(note.id());
+    when(settings.tradeFeedDelay()).thenThrow(new IllegalStateException("settings down"));
+    assertThat(add("Still holding.").note().visibleAt()).as("no delay when unreadable").isEqualTo(NOW);
   }
 
   @Test

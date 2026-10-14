@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.jayway.jsonpath.JsonPath;
 import com.stocks.common.time.MutableTimeSource;
 import com.stocks.config.StocksProperties;
+import com.stocks.contract.identity.SettingsService;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.portfolio.PerformanceQueries;
 import com.stocks.contract.portfolio.ValuationService;
@@ -40,8 +41,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /**
  * §18.2 league endpoints through the real filter chains and Boot's {@code JsonMapper}: scopes ({@code league:read}),
- * §6.3 JSON (decimal strings, nulls present), the deposit-aware board, public profiles and the delayed feed, and
- * that another player's private data (working orders, private notes, live positions) never appears.
+ * §6.3 JSON (decimal strings, nulls present), the deposit-aware board, public profiles, the feed (live by default,
+ * delayed when the admin sets a delay) and, public mode (§16.7), another player's live portfolio, orders, activity and
+ * P&amp;L, while private data (private notes, client order ids, account ids, holds) never appears.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -61,6 +63,7 @@ class LeagueWebIT {
   @Autowired LeaderboardServiceImpl leaderboard;
   @Autowired FeedEventListener feed;
   @Autowired StocksProperties properties;
+  @Autowired SettingsService settings;
 
   PortfolioData data;
   PlayerRef alice;
@@ -166,7 +169,7 @@ class LeagueWebIT {
     assertThat(body).doesNotContain("secret");                     // a private note never leaks
     assertThat(body).doesNotContain("orderId").doesNotContain("clientOrderId").doesNotContain("reservedCash");
     List<Object> recent = JsonPath.read(body, "$.recentTrades");
-    assertThat(recent).hasSize(1);                                  // her trade is older than 15 minutes now
+    assertThat(recent).hasSize(1);                                  // no feed delay by default (public mode)
     assertThat(json(profile, "$.recentTrades[0].untrusted.rationale")).isNull();
 
     MockHttpServletResponse botProfile = as(alice, get("/api/v1/players/" + botHandle));
@@ -195,21 +198,88 @@ class LeagueWebIT {
   }
 
   @Test
-  void theFeedIsDelayedAndPaged() throws Exception {
+  void theFeedIsLiveByDefault() throws Exception {
+    String exe = data.trade(botAcc, "BUY", "SIMA", "1", "105.00", "MCP_KEY", "Adding on strength", true);
+    feed.recordExecution(exe);
     MockHttpServletResponse r = as(alice, get("/api/v1/feed").param("limit", "50"));
-    assertThat(r.getStatus()).isEqualTo(200);
     List<Map<String, Object>> items = JsonPath.read(r.getContentAsString(), "$.items[?(@.player.handle == '"
-        + botHandle + "')]");
-    assertThat(items).singleElement().satisfies(i -> {
-      assertThat(i.get("kind")).isEqualTo("FILL");
-      assertThat(((Map<?, ?>) i.get("payload")).get("qty")).isEqualTo("2.00000");
-      assertThat(((Map<?, ?>) ((Map<?, ?>) i.get("payload")).get("untrusted")).get("rationale"))
-          .isEqualTo("Public bot thesis");
-    });
-    assertThat(as(alice, get("/api/v1/feed").param("limit", "0")).getStatus()).isEqualTo(400);
-    assertThat(JsonPath.<Object>read(r.getContentAsString(), "$.nextCursor")).isNull();
-    // MCP get_league_feed reads the same rows through the contract
-    List<String> restIds = JsonPath.read(r.getContentAsString(), "$.items[*].id");
-    assertThat(performance.feed(null, 50).items()).extracting(FeedItemDto::id).containsExactlyElementsOf(restIds);
+        + botHandle + "' && @.kind == 'FILL')]");
+    assertThat(items).hasSize(2);                                   // the new fill shows at once
+  }
+
+  @Test
+  void theFeedIsDelayedAndPaged() throws Exception {
+    settings.put("social.tradeFeedDelay", "PT15M", alice.id());     // the admin can still set a delay
+    try {
+      String exe = data.trade(botAcc, "BUY", "SIMA", "1", "105.00", "MCP_KEY", "Adding on strength", true);
+      feed.recordExecution(exe);
+      MockHttpServletResponse r = as(alice, get("/api/v1/feed").param("limit", "50"));
+      assertThat(r.getStatus()).isEqualTo(200);
+      List<Map<String, Object>> items = JsonPath.read(r.getContentAsString(), "$.items[?(@.player.handle == '"
+          + botHandle + "')]");
+      assertThat(items).singleElement().satisfies(i -> {             // the new fill waits 15 minutes
+        assertThat(i.get("kind")).isEqualTo("FILL");
+        assertThat(((Map<?, ?>) i.get("payload")).get("qty")).isEqualTo("2.00000");
+        assertThat(((Map<?, ?>) ((Map<?, ?>) i.get("payload")).get("untrusted")).get("rationale"))
+            .isEqualTo("Public bot thesis");
+      });
+      assertThat(as(alice, get("/api/v1/feed").param("limit", "0")).getStatus()).isEqualTo(400);
+      assertThat(JsonPath.<Object>read(r.getContentAsString(), "$.nextCursor")).isNull();
+      // MCP get_league_feed reads the same rows through the contract
+      List<String> restIds = JsonPath.read(r.getContentAsString(), "$.items[*].id");
+      assertThat(performance.feed(null, 50).items()).extracting(FeedItemDto::id)
+          .containsExactlyElementsOf(restIds);
+      time.advance(Duration.ofMinutes(16));
+      List<Object> later = JsonPath.read(as(alice, get("/api/v1/feed").param("limit", "50")).getContentAsString(),
+          "$.items[?(@.player.handle == '" + botHandle + "')]");
+      assertThat(later).hasSize(2);
+    } finally {
+      settings.put("social.tradeFeedDelay", "PT0S", alice.id());
+    }
+  }
+
+  @Test
+  void anotherPlayersLivePortfolioOrdersActivityAndPnlArePublic() throws Exception {
+    String working = data.fx.apiKey(bot, Set.of(Scopes.LEAGUE_READ), properties.security().apiKeyPepper());
+    for (String route : List.of("portfolio", "orders", "activities", "pnl-analysis", "pnl-calendar")) {
+      String path = "/api/v1/players/" + botHandle + "/" + route;
+      MockHttpServletResponse r = as(alice, get(path));
+      assertThat(r.getStatus()).as(path + " " + r.getContentAsString()).isEqualTo(200);
+      assertThat(r.getContentAsString()).doesNotContain("clientOrderId").doesNotContain("accountId")
+          .doesNotContain("reservedCash").doesNotContain("mcpClient");
+      assertThat(bearer(working, get(path)).getStatus()).as(path + " with league:read").isEqualTo(200);
+    }
+    MockHttpServletResponse portfolio = as(alice, get("/api/v1/players/" + botHandle + "/portfolio"));
+    assertThat(json(portfolio, "$.player.handle")).isEqualTo(botHandle);
+    assertThat(json(portfolio, "$.runNo")).isEqualTo(1);
+    assertThat(json(portfolio, "$.positions[0].symbol")).isEqualTo("SIMA");
+    assertThat(new java.math.BigDecimal((String) json(portfolio, "$.positions[0].qty"))).isEqualByComparingTo("2");
+    assertThat(json(portfolio, "$.cash")).isEqualTo("300.00");
+    List<Object> open = JsonPath.read(portfolio.getContentAsString(), "$.openOrders");
+    assertThat(open).isEmpty();
+
+    MockHttpServletResponse orders = as(alice, get("/api/v1/players/" + aliceHandle + "/orders"));
+    assertThat(json(orders, "$.items[0].symbol")).isEqualTo("SIMB");
+    assertThat(json(orders, "$.items[0].channel")).isEqualTo("WEB");
+    assertThat(json(orders, "$.items[0].fills[0].price")).isEqualTo("100.0000");
+    assertThat(json(orders, "$.items[0].untrusted.rationale")).isNull();   // written as private: stays private
+    assertThat(orders.getContentAsString()).doesNotContain("secret");
+    assertThat(as(alice, get("/api/v1/players/" + aliceHandle + "/orders").param("limit", "500")).getStatus())
+        .isEqualTo(400);
+
+    MockHttpServletResponse activity = as(bot, get("/api/v1/players/" + aliceHandle + "/activities"));
+    List<String> types = JsonPath.read(activity.getContentAsString(), "$.items[*].type");
+    assertThat(types).contains("INITIAL_FUNDING", "DEPOSIT", "FILL").doesNotContain("ADMIN_VIEW");
+
+    MockHttpServletResponse missing = as(alice, get("/api/v1/players/nobody_here/portfolio"));
+    assertThat(missing.getStatus()).isEqualTo(404);
+    assertThat(json(missing, "$.code")).isEqualTo("PLAYER_NOT_FOUND");
+
+    String marketOnly = data.fx.apiKey(bot, Set.of(Scopes.MARKET_READ), properties.security().apiKeyPepper());
+    for (String route : List.of("portfolio", "orders", "activities", "pnl-analysis", "pnl-calendar")) {
+      MockHttpServletResponse r = bearer(marketOnly, get("/api/v1/players/" + aliceHandle + "/" + route));
+      assertThat(r.getStatus()).as(route).isEqualTo(403);
+      assertThat(json(r, "$.code")).isEqualTo("FORBIDDEN_SCOPE");
+    }
   }
 }

@@ -16,6 +16,7 @@ import com.stocks.contract.portfolio.LeaderboardService;
 import com.stocks.contract.portfolio.LeagueStatsQueries;
 import com.stocks.contract.portfolio.PerformanceQueries;
 import com.stocks.contract.portfolio.PnlAnalysisQueries;
+import com.stocks.contract.portfolio.PublicPortfolioQueries;
 import com.stocks.contract.portfolio.ValuationService;
 import com.stocks.contract.security.RateLimitService;
 import com.stocks.contract.trading.AccountQueries;
@@ -52,7 +53,9 @@ final class ContractServices {
       // WS4, Phase 2 league slice (§16.8–16.11)
       LeagueStatsQueries.class, PnlAnalysisQueries.class, FeedReactionService.class,
       // WS5, Phase 2 (§17.10, §20.7)
-      ApiAccessRecorder.class, JournalService.class);
+      ApiAccessRecorder.class, JournalService.class,
+      // public mode (§16.7)
+      PublicPortfolioQueries.class);
 
   private ContractServices() {}
 }
