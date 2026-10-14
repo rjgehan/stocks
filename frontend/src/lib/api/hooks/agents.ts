@@ -5,7 +5,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '../client'
 import { queryKeys } from '../queryKeys'
-import type { RunRequest } from '../types'
+import type { RunRequest, RunRequestList } from '../types'
 
 export const agentKeys = {
   summary: (handle: string) => ['player', handle, 'agent-runs'] as const,
@@ -23,8 +23,9 @@ export const RUN_REQUEST_POLL_MS = 5_000
 const openRequest = (r: RunRequest | null | undefined) => r?.status === 'PENDING' || r?.status === 'CLAIMED'
 
 /**
- * `GET /me/bots/{handle}/run-requests` (§20.9, the bot's owner or the admin): the latest requests, newest first.
- * Polled every 5 s while the latest one waits for the trader or runs, so the button follows it to DONE.
+ * `GET /me/bots/{handle}/run-requests` (§20.9, the bot's owner or the admin): the latest requests, newest first, the
+ * bot's status and when a trader last asked for its requests. Polled every 5 s while the latest one waits for the
+ * trader or runs, so the button follows it to DONE.
  */
 export function useRunRequests(handle: string, enabled = true) {
   return useQuery({
@@ -33,7 +34,7 @@ export function useRunRequests(handle: string, enabled = true) {
     enabled: enabled && Boolean(handle),
     staleTime: 10_000,
     retry: false,
-    refetchInterval: (q) => (openRequest(q.state.data?.[0]) ? RUN_REQUEST_POLL_MS : false),
+    refetchInterval: (q) => (openRequest(q.state.data?.requests?.[0]) ? RUN_REQUEST_POLL_MS : false),
   })
 }
 
@@ -44,7 +45,9 @@ export function useRequestRun() {
     mutationFn: ({ handle, dryRun }: { handle: string; dryRun: boolean }) =>
       unwrap(api.POST('/api/v1/me/bots/{handle}/run-requests', { params: { path: { handle } }, body: { dryRun } })),
     onSuccess: (r, { handle }) => {
-      qc.setQueryData<RunRequest[]>(agentKeys.runRequests(handle), (prev) => [r, ...(prev ?? []).filter((x) => x.id !== r.id)])
+      qc.setQueryData<RunRequestList>(agentKeys.runRequests(handle), (prev) =>
+        prev ? { ...prev, requests: [r, ...(prev.requests ?? []).filter((x) => x.id !== r.id)] } : prev,
+      )
     },
     // a 409 means another request is open: show it
     onError: (_e, { handle }) => void qc.invalidateQueries({ queryKey: agentKeys.runRequests(handle) }),

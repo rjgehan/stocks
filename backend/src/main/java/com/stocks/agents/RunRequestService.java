@@ -17,6 +17,7 @@ import com.stocks.common.time.TimeSource;
 import com.stocks.common.web.Text;
 import com.stocks.contract.agents.dto.FinishRunRequest;
 import com.stocks.contract.agents.dto.RunNowRequest;
+import com.stocks.contract.agents.dto.RunRequestListDto;
 import com.stocks.contract.agents.dto.RunRequestDto;
 import com.stocks.contract.agents.dto.RunRequestStatus;
 import com.stocks.contract.security.PlayerPrincipal;
@@ -24,9 +25,10 @@ import com.stocks.contract.security.RequestMeta;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
@@ -43,8 +45,14 @@ import org.springframework.stereotype.Service;
  *   <li>Expiry is lazy, applied to a bot whenever its requests are created, listed or claimed: PENDING longer than
  *       {@code pending-ttl} (30 min) becomes EXPIRED; CLAIMED longer than {@code claim-ttl} (30 min) without a report
  *       becomes FAILED.</li>
+ *   <li>A bot that is not ACTIVE cannot be run: its PENDING requests become EXPIRED ("Not run: @bot is FROZEN …")
+ *       at the same lazy points, and a claim for it gets nothing. (A FROZEN or DISABLED bot's key is refused before
+ *       it reaches the claim anyway; this also covers a status that changes while the request waits.)</li>
  *   <li>Claiming is an UPDATE guarded by {@code status = 'PENDING'}, so two claims never both win (PostgreSQL and
  *       H2). Finishing moves CLAIMED to DONE or FAILED; the same final status again answers the stored request.</li>
+ *   <li>Every claim records when a trader last asked for the bot ({@code traderSeenAt} of the list), in memory: the
+ *       button tells the owner when no trader serves the bot (one instance, §5; empty for up to a minute after a
+ *       restart, until the trader's next claim).</li>
  * </ul>
  * Every accepted request is audited ({@code ACCOUNT BOT_RUN_REQUEST}: who asked, for which bot), and so is one refused
  * by the daily limit.
@@ -63,6 +71,8 @@ public class RunRequestService {
   private final TimeSource time;
   private final AuditService audit;
   private final AgentsProperties.RunRequests settings;
+  /** The bot's player id → when a trader last claimed (or asked for) its requests. */
+  private final Map<Long, Instant> traderSeen = new ConcurrentHashMap<>();
 
   public RunRequestService(RunRequestRepository requests, AgentPlayers players, PublicId publicIds, TimeSource time,
                            AuditService audit, AgentsProperties properties) {
@@ -103,12 +113,16 @@ public class RunRequestService {
     return dto(requests.byPublicId(id).orElseThrow());
   }
 
-  /** {@code GET /me/bots/{handle}/run-requests}: the bot's latest requests, newest first (any status of the bot). */
-  public List<RunRequestDto> list(PlayerPrincipal caller, String handle, Integer limit) {
+  /**
+   * {@code GET /me/bots/{handle}/run-requests}: the bot's latest requests, newest first (any status of the bot), its
+   * status and when a trader last asked for its requests.
+   */
+  public RunRequestListDto list(PlayerPrincipal caller, String handle, Integer limit) {
     AgentPlayers.PlayerRef bot = botFor(caller, handle);
     expire(bot, time.now());
     int n = limit == null || limit < 1 ? LIST_DEFAULT : Math.min(limit, LIST_MAX);
-    return requests.latest(bot.id(), n).stream().map(RunRequestService::dto).toList();
+    return new RunRequestListDto(bot.status(), traderSeen.get(bot.id()),
+        requests.latest(bot.id(), n).stream().map(RunRequestService::dto).toList());
   }
 
   /** A listed AI player that {@code caller} owns, or any as an ACTIVE admin. */
@@ -157,12 +171,20 @@ public class RunRequestService {
 
   /**
    * {@code POST /agent-runs/requests/claim}: the calling bot's oldest PENDING request, now CLAIMED by the caller's
-   * key; empty when there is none (or another claim won it).
+   * key; empty when there is none (or another claim won it) and when the bot is not ACTIVE.
    */
   public Optional<RunRequestDto> claim(PlayerPrincipal caller) {
     requireBotKey(caller);
     Instant now = time.now();
-    players.byId(caller.playerId()).ifPresent(bot -> expire(bot, now));
+    traderSeen.put(caller.playerId(), now);
+    AgentPlayers.PlayerRef bot = players.byId(caller.playerId()).orElse(null);
+    if (bot == null) {
+      return Optional.empty();
+    }
+    expire(bot, now);
+    if (bot.status() != PlayerStatus.ACTIVE) {
+      return Optional.empty();
+    }
     for (int attempt = 0; attempt < 3; attempt++) {
       Optional<RequestRow> next = requests.oldestPending(caller.playerId());
       if (next.isEmpty()) {
@@ -212,6 +234,10 @@ public class RunRequestService {
 
   /** The lazy expiry of one bot's requests (see the class comment). */
   void expire(AgentPlayers.PlayerRef bot, Instant now) {
+    if (bot.status() != PlayerStatus.ACTIVE) {
+      requests.expireAllPending(bot.id(), now, "Not run: @" + bot.handle() + " is " + bot.status()
+          + ", so it cannot trade. Request the run again once it is ACTIVE.");
+    }
     requests.expirePending(bot.id(), now.minus(settings.pendingTtl()), now, "Expired: the trader did not pick it up "
         + "within " + minutes(settings.pendingTtl()) + ". Is the claude-trader service running, with @" + bot.handle()
         + " enabled in its agents file?");

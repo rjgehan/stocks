@@ -99,6 +99,7 @@ export type AgentRun = S['AgentRun']
 export type AgentRunSummary = S['AgentRunSummary']
 // "Run now" (§20.9)
 export type RunRequest = S['RunRequest']
+export type RunRequestList = S['RunRequestList']
 export type AdminBot = S['AdminBot']
 export type ApiCall = S['ApiCall']
 export type JournalNote = S['JournalNote']

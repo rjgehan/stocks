@@ -1,14 +1,17 @@
 /**
  * Mock mode (§22.9) for "Run now" (§20.9): the owner's routes, with a pretend claude-trader that picks a request up
- * a few seconds after it is made and reports DONE a few seconds later, so the button's states can be seen. Requests
- * live in memory (a reload forgets them).
+ * a few seconds after it is made and reports DONE a few seconds later, so the button's states can be seen. It serves
+ * every AI bot but @chatgpt (the agent runner's bot), which shows the button disabled. Requests live in memory (a
+ * reload forgets them).
  */
-import type { RunRequest } from '../types'
+import type { RunRequest, RunRequestList } from '../types'
 import type { AgentMockDeps, RouteFn } from './agents'
 
 /** The pretend trader: claimed this long after the request, done this long after it. */
 export const MOCK_CLAIM_AFTER_MS = 3_000
 export const MOCK_DONE_AFTER_MS = 9_000
+/** Bots the pretend trader does not serve. */
+export const MOCK_UNSERVED = new Set(['chatgpt'])
 
 interface Stored {
   id: string
@@ -49,7 +52,7 @@ export function mockRunRequestAt(s: Stored, now: number): RunRequest {
   }
 }
 
-export function registerRunRequestRoutes(r: RouteFn, d: Pick<AgentMockDeps, 'players' | 'ownedBots' | 'me' | 'isAdmin'>): void {
+export function registerRunRequestRoutes(r: RouteFn, d: Pick<AgentMockDeps, 'players' | 'ownedBots' | 'me' | 'isAdmin' | 'botStatus'>): void {
   const store: Stored[] = []
   let seq = 0
   /** The AI player `h` when the caller owns it or is the admin, else the problem to answer. */
@@ -70,7 +73,14 @@ export function registerRunRequestRoutes(r: RouteFn, d: Pick<AgentMockDeps, 'pla
     const h = bot(params[0]!)
     if (h instanceof Response) return h
     const limit = Math.max(1, Math.min(50, Number(url.searchParams.get('limit') ?? 10) || 10))
-    return json(latest(h, Date.now()).slice(0, limit))
+    const now = Date.now()
+    const list: RunRequestList = {
+      botStatus: d.botStatus?.(h) ?? 'ACTIVE',
+      // the pretend trader asked at the start of this minute
+      traderSeenAt: MOCK_UNSERVED.has(h) ? null : iso(now - (now % 60_000)),
+      requests: latest(h, now).slice(0, limit),
+    }
+    return json(list)
   })
   r('POST', '/me/bots/{handle}/run-requests', ({ params, body }) => {
     const h = bot(params[0]!)

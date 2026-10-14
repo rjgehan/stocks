@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 
 import com.stocks.audit.AuditService;
 import com.stocks.common.domain.PlayerKind;
+import com.stocks.common.domain.PlayerStatus;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.common.id.Prefix;
@@ -15,6 +16,7 @@ import com.stocks.config.JacksonConfig;
 import com.stocks.contract.agents.dto.FinishRunRequest;
 import com.stocks.contract.agents.dto.RunNowRequest;
 import com.stocks.contract.agents.dto.RunRequestDto;
+import com.stocks.contract.agents.dto.RunRequestListDto;
 import com.stocks.contract.agents.dto.RunRequestStatus;
 import com.stocks.contract.identity.PlayerQueries;
 import com.stocks.contract.security.PlayerPrincipal;
@@ -38,7 +40,8 @@ import org.springframework.dao.DuplicateKeyException;
 /**
  * §20.9 "Run now" on a real database (PostgreSQL under {@code -Ppg-it}): the owner or an ACTIVE admin asks, the bot's
  * own key claims and finishes; one open request per bot (also against a race, by the table's constraint), 20 per bot
- * in 24 hours, and lazy expiry of unclaimed and unreported requests.
+ * in 24 hours, lazy expiry of unclaimed and unreported requests, and what the list tells the button (the bot's status,
+ * when a trader last asked).
  */
 class RunRequestServiceTest {
 
@@ -94,6 +97,10 @@ class RunRequestServiceTest {
     return service.request(caller, handle, new RunNowRequest(dryRun), RequestMeta.system(null));
   }
 
+  List<RunRequestDto> listed(PlayerPrincipal caller, String handle, Integer limit) {
+    return service.list(caller, handle, limit).requests();
+  }
+
   static void fails(ThrowingCallable call, ErrorCode code, String detailPart) {
     assertThatThrownBy(call).isInstanceOfSatisfying(ApiException.class, e -> {
       assertThat(e.code()).isEqualTo(code);
@@ -145,9 +152,9 @@ class RunRequestServiceTest {
     time.advance(Duration.ofMinutes(1));
     RunRequestDto second = service.request(ownerSession, "claude", null, RequestMeta.system(null));  // no body
     assertThat(second.dryRun()).isFalse();
-    assertThat(service.list(ownerSession, "claude", null)).extracting(RunRequestDto::id)
+    assertThat(listed(ownerSession, "claude", null)).extracting(RunRequestDto::id)
         .containsExactly(second.id(), asked.id());
-    assertThat(service.list(ownerSession, "claude", 1)).extracting(RunRequestDto::id).containsExactly(second.id());
+    assertThat(listed(ownerSession, "claude", 1)).extracting(RunRequestDto::id).containsExactly(second.id());
   }
 
   @Test
@@ -173,28 +180,28 @@ class RunRequestServiceTest {
     PlayerPrincipal strangerSession = TestPrincipals.session(stranger.id(), stranger.publicId(), stranger.handle());
     PlayerPrincipal adminSession = TestPrincipals.adminSession(admin.id(), admin.publicId(), admin.handle());
     fails(() -> ask(strangerSession, "claude", false), ErrorCode.FORBIDDEN, "Only @claude's owner or the admin");
-    fails(() -> service.list(strangerSession, "claude", null), ErrorCode.FORBIDDEN, "owner or the admin");
+    fails(() -> listed(strangerSession, "claude", null), ErrorCode.FORBIDDEN, "owner or the admin");
     assertThat(ask(adminSession, "claude", false).requestedBy()).isEqualTo("root");
-    assertThat(service.list(adminSession, "claude", null)).hasSize(1);
+    assertThat(listed(adminSession, "claude", null)).hasSize(1);
     fx.status(admin, "FROZEN");                                    // a frozen admin never acts as one
     fails(() -> ask(adminSession, "chatgpt", false), ErrorCode.FORBIDDEN, "owner or the admin");
     fails(() -> ask(ownerSession, "stranger", false), ErrorCode.FORBIDDEN, "@stranger is not an AI player");
     fails(() -> ask(ownerSession, "nobody", false), ErrorCode.PLAYER_NOT_FOUND, "nobody");
     fx.status(other, "FROZEN");
     fails(() -> ask(ownerSession, "chatgpt", false), ErrorCode.PLAYER_FROZEN, "@chatgpt is FROZEN");
-    assertThat(service.list(ownerSession, "chatgpt", null)).isEmpty();
+    assertThat(listed(ownerSession, "chatgpt", null)).isEmpty();
     fx.status(other, "DISABLED");
-    fails(() -> service.list(ownerSession, "chatgpt", null), ErrorCode.PLAYER_NOT_FOUND, "chatgpt");
+    fails(() -> listed(ownerSession, "chatgpt", null), ErrorCode.PLAYER_NOT_FOUND, "chatgpt");
   }
 
   @Test
   void unclaimedRequestsExpireAndUnreportedClaimsFail() {
     RunRequestDto first = ask(ownerSession, "claude", false);
     time.advance(Duration.ofMinutes(29));
-    assertThat(service.list(ownerSession, "claude", null)).extracting(RunRequestDto::status)
+    assertThat(listed(ownerSession, "claude", null)).extracting(RunRequestDto::status)
         .containsExactly(RunRequestStatus.PENDING);
     time.advance(Duration.ofMinutes(1).plusSeconds(1));
-    RunRequestDto expired = service.list(ownerSession, "claude", null).get(0);
+    RunRequestDto expired = listed(ownerSession, "claude", null).get(0);
     assertThat(expired.status()).isEqualTo(RunRequestStatus.EXPIRED);
     assertThat(expired.finishedAt()).isEqualTo(time.now());
     assertThat(expired.message()).isEqualTo("Expired: the trader did not pick it up within 30 minutes. Is the "
@@ -207,7 +214,7 @@ class RunRequestServiceTest {
     service.claim(botKey).orElseThrow();
     time.advance(Duration.ofMinutes(31));
     assertThat(service.claim(botKey)).isEmpty();                   // the claim sweep fails the stale claim
-    RunRequestDto failed = service.list(ownerSession, "claude", 1).get(0);
+    RunRequestDto failed = listed(ownerSession, "claude", 1).get(0);
     assertThat(failed.id()).isEqualTo(second.id());
     assertThat(failed.status()).isEqualTo(RunRequestStatus.FAILED);
     assertThat(failed.message()).isEqualTo("The trader did not report back within 30 minutes of picking it up.");
@@ -216,6 +223,43 @@ class RunRequestServiceTest {
         .isEqualTo(failed.message());
     fails(() -> service.finish(botKey, second.id(), new FinishRunRequest(RunRequestStatus.DONE, "x")),
         ErrorCode.RUN_REQUEST_CONFLICT, "The run request is FAILED");
+    assertThat(ask(ownerSession, "claude", false).status()).isEqualTo(RunRequestStatus.PENDING);
+  }
+
+  @Test
+  void theListSaysWhenATraderLastAskedForTheBotAndWhetherItCanRun() {
+    RunRequestListDto fresh = service.list(ownerSession, "claude", null);
+    assertThat(fresh.botStatus()).isEqualTo(PlayerStatus.ACTIVE);
+    assertThat(fresh.traderSeenAt()).isNull();                     // no trader has asked for @claude
+    assertThat(fresh.requests()).isEmpty();
+    time.advance(Duration.ofSeconds(30));
+    assertThat(service.claim(botKey)).isEmpty();                   // an empty claim is a sign of life too
+    assertThat(service.list(ownerSession, "claude", null).traderSeenAt()).isEqualTo(NOW.plusSeconds(30));
+    assertThat(service.list(ownerSession, "chatgpt", null).traderSeenAt()).isNull();   // per bot
+
+    // frozen while its request waits: the list closes the request, with why
+    RunRequestDto first = ask(ownerSession, "claude", false);
+    fx.status(bot, "FROZEN");
+    RunRequestListDto frozen = service.list(ownerSession, "claude", null);
+    assertThat(frozen.botStatus()).isEqualTo(PlayerStatus.FROZEN);
+    assertThat(frozen.requests()).singleElement().satisfies(r -> {
+      assertThat(r.id()).isEqualTo(first.id());
+      assertThat(r.status()).isEqualTo(RunRequestStatus.EXPIRED);
+      assertThat(r.finishedAt()).isEqualTo(time.now());
+      assertThat(r.message()).isEqualTo("Not run: @claude is FROZEN, so it cannot trade. Request the run again once "
+          + "it is ACTIVE.");
+    });
+    // ... and so does a claim (its key would be refused before that; a status can change while a request waits)
+    fx.status(bot, "ACTIVE");
+    RunRequestDto second = ask(ownerSession, "claude", false);
+    fx.status(bot, "FROZEN");
+    assertThat(service.claim(botKey)).isEmpty();
+    fx.status(bot, "ACTIVE");
+    assertThat(service.claim(botKey)).isEmpty();                   // closed for good
+    assertThat(listed(ownerSession, "claude", 1)).singleElement().satisfies(r -> {
+      assertThat(r.id()).isEqualTo(second.id());
+      assertThat(r.status()).isEqualTo(RunRequestStatus.EXPIRED);
+    });
     assertThat(ask(ownerSession, "claude", false).status()).isEqualTo(RunRequestStatus.PENDING);
   }
 

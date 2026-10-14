@@ -7,7 +7,8 @@ import { MOCK, open } from './support/app'
  *  - mock mode: the seeded bot @claude on its profile; the mock's pretend trader claims the request after 3 s and
  *    reports DONE after 9 s;
  *  - a real backend (`make e2e`): the admin creates a bot, runs it from Admin → Bots and dry-runs it from its
- *    profile, and the test plays the trader with the bot's own key (claim, then finish DONE or FAILED).
+ *    profile, and the test plays the trader with the bot's own key (claim, then finish DONE or FAILED). Until a
+ *    trader has asked for the new bot's requests, its button is disabled: nothing would pick a run up.
  */
 
 // a fresh route chunk per page in Vite's dev server, and up to two 5 s polls per state
@@ -68,13 +69,18 @@ test('Run now against the real backend: the trader claims the request with the b
   const key = await createBot(page, handle)
   const auth = { Authorization: `Bearer ${key}`, 'X-Stocks-Client': 'claude-code/trader' }
 
-  // nothing to claim yet
-  expect((await page.request.post('/api/v1/agent-runs/requests/claim', { headers: auth })).status()).toBe(204)
-
   await open(page, '/admin/bots')
   const card = page.getByRole('list', { name: 'Bots' }).getByRole('listitem', { name: `Bot ${handle}` })
   const group = runNow(card, handle)
   const status = group.getByRole('status')
+  // no trader serves the new bot yet
+  await expect(status).toContainText(`No claude-trader service has asked for @${handle}'s runs`)
+  await expect(group.getByRole('button', { name: 'Run now' })).toBeDisabled()
+
+  // the trader's minute poll: nothing to claim yet, but now the app knows a trader serves the bot
+  expect((await page.request.post('/api/v1/agent-runs/requests/claim', { headers: auth })).status()).toBe(204)
+  await page.reload()
+  await expect(group.getByRole('button', { name: 'Run now' })).toBeEnabled()
   await group.getByRole('button', { name: 'Run now' }).click()
   await expect(status).toContainText(/Requested .* · waiting for the trader/)
   await expect(group.getByRole('button', { name: 'Run now' })).toBeDisabled()

@@ -915,7 +915,7 @@ export interface paths {
         put?: never;
         /**
          * Claim a run request
-         * @description Sent by the claude-trader service with the bot's own API key (trade scope; AI players only): 200 with the bot's oldest PENDING request, now CLAIMED, or 204 when there is none. A claimed request must be finished within 30 minutes, else it becomes FAILED.
+         * @description Sent by the claude-trader service with the bot's own API key (trade scope; AI players only): 200 with the bot's oldest PENDING request, now CLAIMED, or 204 when there is none (or the bot is not ACTIVE). A claimed request must be finished within 30 minutes, else it becomes FAILED. Each claim is the trader's sign of life for the bot (traderSeenAt); an empty answer does not count as the bot's activity (last seen, Recent API calls).
          */
         post: operations["claimRunRequest"];
         delete?: never;
@@ -1550,7 +1550,7 @@ export interface paths {
         };
         /**
          * A bot's run requests
-         * @description Session only; the bot's owner or the admin. The latest requests, newest first (limit 1-50, default 10).
+         * @description Session only; the bot's owner or the admin. The latest requests, newest first (limit 1-50, default 10), the bot's status and when a trader last asked for its requests (traderSeenAt: the claude-trader service asks every minute for each agent it serves).
          */
         get: operations["listRunRequests"];
         put?: never;
@@ -4479,6 +4479,19 @@ export interface components {
             requestedBy: string | null;
             /** @enum {string|null} */
             status: "PENDING" | "CLAIMED" | "DONE" | "FAILED" | "EXPIRED" | null;
+        };
+        RunRequestList: {
+            /**
+             * @description The bot's status; only an ACTIVE bot can be run
+             * @enum {string|null}
+             */
+            botStatus: "ACTIVE" | "DISABLED" | "FROZEN" | null;
+            requests: components["schemas"]["RunRequest"][] | null;
+            /**
+             * Format: date-time
+             * @description When a trader last asked for the bot's run requests (with the bot's own key); null when none has since the app started
+             */
+            traderSeenAt: string | null;
         };
         ScreenCoverage: {
             /** Format: int32 */
@@ -7882,7 +7895,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunRequest"][];
+                    "application/json": components["schemas"]["RunRequestList"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

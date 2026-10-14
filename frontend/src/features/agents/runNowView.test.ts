@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Me, RunRequest } from '@/lib/api/types'
-import { EXPIRED_NOTE, canRunBot, isOpenRequest, runRequestView } from './runNowView'
+import type { Me, RunRequest, RunRequestList } from '@/lib/api/types'
+import { EXPIRED_NOTE, canRunBot, isOpenRequest, runNowBlocked, runRequestView } from './runNowView'
 
 const me = (over: Partial<Me> = {}): Me => ({ handle: 'ryan', role: 'PLAYER', status: 'ACTIVE', kind: 'HUMAN', ...over }) as Me
 
@@ -32,11 +32,33 @@ describe('who sees Run now (§20.9)', () => {
   })
 })
 
+const list = (over: Partial<RunRequestList> = {}): RunRequestList => ({ botStatus: 'ACTIVE', traderSeenAt: '2026-10-14T14:59:00Z', requests: [], ...over })
+
+describe('whether anything would run the bot', () => {
+  it('runs an ACTIVE bot that a trader asked for in the last 5 minutes', () => {
+    expect(runNowBlocked('claude', list(), NOW)).toBeNull()
+    expect(runNowBlocked('claude', list({ traderSeenAt: '2026-10-14T14:55:00Z' }), NOW)).toBeNull()
+    expect(runNowBlocked('claude', undefined, NOW)).toBeNull() // not loaded yet: the server decides
+  })
+
+  it('explains a bot that no trader serves, and one that is not ACTIVE', () => {
+    // e.g. @chatgpt (the agent runner's bot) or a manual bot: no key in the trader's agents file asks for it
+    expect(runNowBlocked('chatgpt', list({ traderSeenAt: null }), NOW)).toBe(
+      "No claude-trader service has asked for @chatgpt's runs in the last few minutes (it asks every minute for each bot in its agents file), so nothing would pick a run up.",
+    )
+    expect(runNowBlocked('claude', list({ traderSeenAt: '2026-10-14T14:54:59Z' }), NOW)).toContain('nothing would pick a run up')
+    expect(runNowBlocked('claude', list({ botStatus: 'FROZEN' }), NOW)).toBe('@claude is FROZEN: it cannot trade, so it cannot be run.')
+  })
+})
+
 describe('a run request as the button shows it', () => {
-  it('waits for the trader while PENDING', () => {
-    const v = runRequestView(req({}), NOW, 'ryan')
+  it('waits for the trader while PENDING, with a hint once it waits long', () => {
+    const v = runRequestView(req({}), Date.parse('2026-10-14T14:32:00Z'), 'ryan')
     expect(v).toEqual({ label: 'Waiting', tone: 'neutral', line: 'Requested 10:31 AM ET · waiting for the trader', note: 'The trader picks it up within about a minute.' })
     expect(isOpenRequest(req({}))).toBe(true)
+    expect(runRequestView(req({}), Date.parse('2026-10-14T14:33:01Z'), 'ryan').note).toBe(
+      "Not picked up yet: is @claude in the trader's agents file, and is the claude-trader service running?",
+    )
   })
 
   it('runs once claimed, and ends with the times and the trader report', () => {
@@ -63,10 +85,13 @@ describe('a run request as the button shows it', () => {
     expect(failed.tone).toBe('down')
     expect(failed.note).toBe('claude exited with code 1')
     expect(runRequestView(req({ status: 'FAILED' }), NOW).note).toBe('The trader reported a failure.')
-    const expired = runRequestView(req({ status: 'EXPIRED', finishedAt: '2026-10-14T15:01:00Z', message: 'Expired: …' }), NOW, 'ryan')
+    const expired = runRequestView(req({ status: 'EXPIRED', finishedAt: '2026-10-14T15:01:00Z' }), NOW, 'ryan')
     expect(expired.line).toBe('Requested 10:31 AM ET · expired 11:01 AM')
     expect(expired.note).toBe(EXPIRED_NOTE)
     expect(expired.note).toContain('is the claude-trader service running?')
+    // the server's reason when it gives one (nobody picked it up in 30 minutes, or the bot was frozen meanwhile)
+    const frozen = 'Not run: @claude is FROZEN, so it cannot trade. Request the run again once it is ACTIVE.'
+    expect(runRequestView(req({ status: 'EXPIRED', message: frozen }), NOW).note).toBe(frozen)
   })
 
   it('dates a request from another day', () => {

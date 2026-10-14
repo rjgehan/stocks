@@ -4,6 +4,7 @@ import com.stocks.agents.RunRequestService;
 import com.stocks.contract.agents.dto.FinishRunRequest;
 import com.stocks.contract.agents.dto.RunNowRequest;
 import com.stocks.contract.agents.dto.RunRequestDto;
+import com.stocks.contract.agents.dto.RunRequestListDto;
 import com.stocks.contract.security.CurrentPlayer;
 import com.stocks.contract.security.PlayerPrincipal;
 import com.stocks.security.RequestMetas;
@@ -14,7 +15,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -59,8 +59,9 @@ public class RunRequestController {
   @GetMapping("/me/bots/{handle}/run-requests")
   @Tag(name = "me", description = "The authenticated player")
   @Operation(summary = "A bot's run requests", description = "Session only; the bot's owner or the admin. The latest "
-      + "requests, newest first (limit 1-50, default 10).")
-  public List<RunRequestDto> listRunRequests(
+      + "requests, newest first (limit 1-50, default 10), the bot's status and when a trader last asked for its "
+      + "requests (traderSeenAt: the claude-trader service asks every minute for each agent it serves).")
+  public RunRequestListDto listRunRequests(
       @PathVariable("handle") String handle,
       @Parameter(description = "1-50, default 10") @RequestParam(required = false) Integer limit) {
     return requests.list(CurrentPlayer.require(), handle, limit);
@@ -70,7 +71,9 @@ public class RunRequestController {
   @Tag(name = "agents", description = "AI players: run reports and the public AI journal (Phase 2)")
   @Operation(summary = "Claim a run request", description = "Sent by the claude-trader service with the bot's own "
       + "API key (trade scope; AI players only): 200 with the bot's oldest PENDING request, now CLAIMED, or 204 when "
-      + "there is none. A claimed request must be finished within 30 minutes, else it becomes FAILED.",
+      + "there is none (or the bot is not ACTIVE). A claimed request must be finished within 30 minutes, else it "
+      + "becomes FAILED. Each claim is the trader's sign of life for the bot (traderSeenAt); an empty answer does not "
+      + "count as the bot's activity (last seen, Recent API calls).",
       responses = {
           @ApiResponse(responseCode = "200", description = "Claimed",
               content = @Content(mediaType = "application/json",

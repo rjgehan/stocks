@@ -1,8 +1,9 @@
 /**
- * "Run now" (§20.9) as the button shows it: who may run a bot, and one timeline line per request state.
+ * "Run now" (§20.9) as the button shows it: who may run a bot, whether anything would run it, and one timeline line
+ * per request state.
  */
 import type { PillTone } from '@/components/ui/Pill'
-import type { Me, RunRequest, RunRequestStatus } from '@/lib/api/types'
+import type { Me, RunRequest, RunRequestList, RunRequestStatus } from '@/lib/api/types'
 import { formatDateTimeEt, formatTimeEt } from '@/lib/format/time'
 
 /** The tooltip of the button. */
@@ -25,6 +26,24 @@ export const RUN_REQUEST_TONE: Record<RunRequestStatus, PillTone> = {
 }
 
 export const EXPIRED_NOTE = 'Expired: the trader did not pick it up — is the claude-trader service running?'
+
+/** The claude-trader service asks every minute for each bot it serves; not within this long, nothing serves the bot. */
+export const TRADER_SEEN_MS = 5 * 60_000
+/** A request still waiting this long gets a hint about the trader's agents file. */
+export const PENDING_HINT_MS = 2 * 60_000
+
+/**
+ * Why the bot cannot be run from here (the button is disabled and says so), or null: it is not ACTIVE, or no
+ * claude-trader service has asked for its requests lately (it is not in the trader's agents file, e.g. a bot of the
+ * agent runner or a manual bot, or the service is down). Judged at `now`, when the list was fetched.
+ */
+export function runNowBlocked(handle: string, list: RunRequestList | null | undefined, now: number): string | null {
+  if (!list) return null
+  if (list.botStatus && list.botStatus !== 'ACTIVE') return `@${handle} is ${list.botStatus}: it cannot trade, so it cannot be run.`
+  const seen = Date.parse(list.traderSeenAt ?? '')
+  if (Number.isFinite(seen) && now - seen <= TRADER_SEEN_MS) return null
+  return `No claude-trader service has asked for @${handle}'s runs in the last few minutes (it asks every minute for each bot in its agents file), so nothing would pick a run up.`
+}
 
 /** The bot's owner or an ACTIVE admin sees the button, as the server decides (it checks again on every request). */
 export function canRunBot(me: Me | null | undefined, ownerHandle: string | null | undefined): boolean {
@@ -61,7 +80,10 @@ export function runRequestView(r: RunRequest, now: number, myHandle?: string | n
   switch (status) {
     case 'PENDING':
       parts.push('waiting for the trader')
-      note = 'The trader picks it up within about a minute.'
+      note =
+        now - requestedMs > PENDING_HINT_MS
+          ? `Not picked up yet: is @${r.handle} in the trader's agents file, and is the claude-trader service running?`
+          : 'The trader picks it up within about a minute.'
       break
     case 'CLAIMED':
       parts.push('running')
@@ -76,7 +98,8 @@ export function runRequestView(r: RunRequest, now: number, myHandle?: string | n
       break
     case 'EXPIRED':
       parts.push(`expired ${clock(r.finishedAt)}`)
-      note = EXPIRED_NOTE
+      // the server says why: nobody picked it up in 30 minutes, or the bot was frozen meanwhile
+      note = r.message ?? EXPIRED_NOTE
       break
   }
   return { label: RUN_REQUEST_LABEL[status], tone: RUN_REQUEST_TONE[status], line: parts.join(' · '), note }

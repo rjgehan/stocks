@@ -103,6 +103,14 @@ public class RunRequestRepository {
         .update();
   }
 
+  /** Every PENDING request of the bot becomes EXPIRED with {@code message} (the bot cannot be run now). */
+  public int expireAllPending(long playerId, Instant at, String message) {
+    return jdbc.sql("UPDATE agent_run_request SET status = 'EXPIRED', finished_at = ?, message = ?, open_bot_id = NULL "
+            + "WHERE player_id = ? AND status = 'PENDING'")
+        .params(Jdbc.ts(at), message, playerId)
+        .update();
+  }
+
   /** The bot's CLAIMED requests claimed before {@code before} become FAILED with {@code message}. */
   public int failStaleClaims(long playerId, Instant before, Instant at, String message) {
     return jdbc.sql("UPDATE agent_run_request SET status = 'FAILED', finished_at = ?, message = ?, open_bot_id = NULL "

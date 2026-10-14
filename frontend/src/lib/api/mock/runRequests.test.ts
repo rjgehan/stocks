@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { PlayerSummary, RunRequest } from '../types'
+import type { PlayerSummary, RunRequestList } from '../types'
 import type { RouteFn } from './agents'
 import { MOCK_CLAIM_AFTER_MS, MOCK_DONE_AFTER_MS, registerRunRequestRoutes } from './runRequests'
 
@@ -28,21 +28,28 @@ describe('mock Run now (§20.9, §22.9)', () => {
     const api = routes(false, ['claude'])
     const created = await api.post('claude', { dryRun: true })
     expect(created.status).toBe(201)
-    expect(((await created.json()) as RunRequest).status).toBe('PENDING')
+    expect(((await created.json()) as { status: string }).status).toBe('PENDING')
     // one open request per bot
     const again = await api.post('claude')
     expect(again.status).toBe(409)
     expect(((await again.json()) as { code: string }).code).toBe('RUN_REQUEST_CONFLICT')
 
     vi.setSystemTime(Date.parse('2026-10-14T14:31:00Z') + MOCK_CLAIM_AFTER_MS)
-    expect(((await (await api.list('claude')).json()) as RunRequest[])[0]).toMatchObject({ status: 'CLAIMED', requestedBy: 'demo', dryRun: true })
+    expect(((await (await api.list('claude')).json()) as RunRequestList).requests![0]).toMatchObject({ status: 'CLAIMED', requestedBy: 'demo', dryRun: true })
     vi.setSystemTime(Date.parse('2026-10-14T14:31:00Z') + MOCK_DONE_AFTER_MS)
-    const [done] = (await (await api.list('claude')).json()) as RunRequest[]
+    const [done] = ((await (await api.list('claude')).json()) as RunRequestList).requests!
     expect(done).toMatchObject({ status: 'DONE', finishedAt: '2026-10-14T14:31:09.000Z' })
     expect(done!.message).toContain('Dry run')
     // final: the next one may go
     expect((await api.post('claude')).status).toBe(201)
-    expect(((await (await api.list('claude')).json()) as RunRequest[]).map((x) => x.status)).toEqual(['PENDING', 'DONE'])
+    expect(((await (await api.list('claude')).json()) as RunRequestList).requests!.map((x) => x.status)).toEqual(['PENDING', 'DONE'])
+  })
+
+  it("lists the bot's status and when the pretend trader last asked (every bot but @chatgpt)", async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-10-14T14:31:25Z') })
+    const admin = routes(true, [])
+    expect((await (await admin.list('claude')).json()) as RunRequestList).toEqual({ botStatus: 'ACTIVE', traderSeenAt: '2026-10-14T14:31:00.000Z', requests: [] })
+    expect(((await (await admin.list('chatgpt')).json()) as RunRequestList).traderSeenAt).toBeNull()
   })
 
   it('lets only the owner or the admin run a bot, and only bots', async () => {

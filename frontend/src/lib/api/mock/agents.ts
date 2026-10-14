@@ -3,7 +3,7 @@
  * public journals, the admin Bots page and "Recent API calls". Derived deterministically from the current time and
  * the league's players, so nothing here needs persisting. Run now (§20.9) is in ./runRequests.ts.
  */
-import type { AdminBot, AgentRun, AgentRunStatus, ApiCall, JournalNote, PlayerSummary } from '../types'
+import type { AdminBot, AgentRun, AgentRunStatus, ApiCall, JournalNote, PlayerSummary, RunRequestList } from '../types'
 import { mulberry32 } from './market'
 import { registerRunRequestRoutes } from './runRequests'
 
@@ -17,6 +17,8 @@ export interface AgentMockDeps {
   ownedBots: () => string[]
   me: () => PlayerSummary
   isAdmin: () => boolean
+  /** A player's status (Run now, §20.9); ACTIVE when not given. */
+  botStatus?: (handle: string) => RunRequestList['botStatus'] | undefined
 }
 
 const MIN = 60_000

@@ -615,6 +615,7 @@ export class MockServer {
       ownedBots: () => this.s.others.filter((p) => p.kind === 'AI' && p.ownerHandle === this.s.me.handle).map((p) => p.handle),
       me: () => this.mySummary(),
       isAdmin: () => this.s.me.role === 'ADMIN',
+      botStatus: (h) => this.s.others.find((p) => p.handle === h)?.status,
     })
     // identity
     r('POST', '/auth/logout', () => {

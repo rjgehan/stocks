@@ -122,7 +122,9 @@ class RunRequestWebIT {
 
     MockHttpServletResponse list = session.perform(get(runs).param("limit", "5")).getResponse();
     assertThat(list.getStatus()).isEqualTo(200);
-    assertThat((List<String>) read(list, "$[*].status")).containsExactly("DONE");
+    assertThat((List<String>) read(list, "$.requests[*].status")).containsExactly("DONE");
+    assertThat((String) read(list, "$.botStatus")).isEqualTo("ACTIVE");
+    assertThat((String) read(list, "$.traderSeenAt")).isNotNull();   // the claims above
     assertThat(jdbc.sql("SELECT COUNT(*) FROM audit_log WHERE action = 'BOT_RUN_REQUEST' AND target_id = ?")
         .param(botHandle).query(Integer.class).single()).isEqualTo(1);
   }

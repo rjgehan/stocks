@@ -8,7 +8,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Checkbox, TextField } from '@/components/ui/Field'
 import { MenuItem, Popover } from '@/components/ui/Popover'
 import { IconMore } from '@/components/ui/icons'
-import { useStartRun } from '@/features/agents/RunNow'
+import { RunNowMenuItems, useStartRun } from '@/features/agents/RunNow'
 import { toast } from '@/features/notifications/toastStore'
 
 type Pending = null | 'freeze' | 'unfreeze' | 'disable' | 'enable' | 'promote' | 'demote'
@@ -84,16 +84,7 @@ export function PlayerActions({ p, myHandle, onIssueKey }: { p: AdminPlayer; myH
             <MenuItem onClick={() => (close(), void navigate({ to: '/admin/players/$handle', params: { handle } }))}>Open details</MenuItem>
             <MenuItem onClick={() => (close(), void navigate({ to: '/admin/money', search: { handle } }))}>Deposit / withdraw…</MenuItem>
             {p.kind === 'AI' ? <MenuItem onClick={() => (close(), onIssueKey(handle))}>Issue API key…</MenuItem> : null}
-            {p.kind === 'AI' && p.status === 'ACTIVE' ? (
-              <>
-                <MenuItem disabled={runNow.pending} onClick={() => (close(), requestRun(false))}>
-                  Run now
-                </MenuItem>
-                <MenuItem disabled={runNow.pending} onClick={() => (close(), requestRun(true))}>
-                  Dry run (no orders)
-                </MenuItem>
-              </>
-            ) : null}
+            {p.kind === 'AI' && p.status === 'ACTIVE' ? <RunNowMenuItems handle={handle} busy={runNow.pending} close={close} onStart={requestRun} /> : null}
             {p.status === 'FROZEN' ? (
               <MenuItem onClick={() => (close(), setPending('unfreeze'))}>Unfreeze</MenuItem>
             ) : (
