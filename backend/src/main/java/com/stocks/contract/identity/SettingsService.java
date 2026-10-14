@@ -1,6 +1,5 @@
 package com.stocks.contract.identity;
 
-import com.stocks.common.domain.HoldingsVisibility;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -26,9 +25,6 @@ public interface SettingsService {
 
   /** {@code social.tradeFeedDelay}. */
   Duration tradeFeedDelay();
-
-  /** {@code social.holdingsVisibility}. */
-  HoldingsVisibility holdingsVisibility();
 
   /** {@code bots.requireRationale}. */
   boolean botsRequireRationale();

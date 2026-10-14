@@ -3,7 +3,6 @@ package com.stocks.rules;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.stocks.common.domain.FeeCode;
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.TimeInForce;
 import com.stocks.common.time.MutableTimeSource;
@@ -93,12 +92,15 @@ class RulesServiceTest {
     assertThat(r.leaderboard().minSymbols()).isEqualTo(2);
     assertThat(r.leaderboard().benchmark()).isEqualTo("SPY");
     assertThat(r.leaderboard().resetPolicy()).contains("never erases a loss");
-    assertThat(r.social().tradeFeedDelay()).isEqualTo("PT15M");
-    assertThat(r.social().holdingsVisibility()).isEqualTo(HoldingsVisibility.EOD_WEIGHTS);
+    assertThat(r.social().tradeFeedDelay()).isEqualTo("PT0S");          // public mode (§16.7): no delay by default
+    assertThat(r.social().visibility()).isEqualTo("PUBLIC");
     assertThat(r.sessions().overnight()).isFalse();
     assertThat(r.sessions().liveIexWindow()).as("SIM has no IEX window").isNull();
     assertThat(r.dataSources()).singleElement().asString().startsWith("SIM");
-    assertThat(r.fairness()).hasSize(5);
+    assertThat(r.fairness()).hasSize(6);
+    assertThat(r.fairness().get(2)).startsWith("Everything is public:");
+    assertThat(r.fairness().get(3)).contains("AI players must give one");
+    assertThat(r.fairness().get(5)).startsWith("Secrets stay private:");
     assertThat(r.rateLimits()).containsEntry("orderWritesPerMinute", 20).containsEntry("orderWritesPerDay", 300);
   }
 
@@ -122,11 +124,10 @@ class RulesServiceTest {
     String before = withStubSettings().rules().version();
     SettingsService settings = Mockito.mock(SettingsService.class);
     Mockito.when(settings.defaultStartingCash()).thenReturn(new BigDecimal("1000.00"));
-    Mockito.when(settings.botsRequireRationale()).thenReturn(true);
+    Mockito.when(settings.botsRequireRationale()).thenReturn(false);
     Mockito.when(settings.eligibilityMinFills()).thenReturn(3);
     Mockito.when(settings.eligibilityMinSymbols()).thenReturn(1);
     Mockito.when(settings.tradeFeedDelay()).thenReturn(Duration.ofMinutes(30));
-    Mockito.when(settings.holdingsVisibility()).thenReturn(HoldingsVisibility.HIDDEN);
     env.setProperty("stocks.rules.gtc-days", "90");
     env.setProperty("stocks.marketdata.profile", "hybrid");
 
@@ -134,7 +135,9 @@ class RulesServiceTest {
     assertThat(r.account().startingCash()).isEqualByComparingTo("1000.00");
     assertThat(r.leaderboard().minFills()).isEqualTo(3);
     assertThat(r.social().tradeFeedDelay()).isEqualTo("PT30M");
-    assertThat(r.social().holdingsVisibility()).isEqualTo(HoldingsVisibility.HIDDEN);
+    assertThat(r.social().visibility()).isEqualTo("PUBLIC");
+    assertThat(r.orders().rationaleRequiredForAi()).isFalse();
+    assertThat(r.fairness().get(3)).contains("AI players are asked, not required, to give one");
     assertThat(r.orders().gtcDays()).isEqualTo(90);
     assertThat(r.sessions().liveIexWindow()).isEqualTo("08:00–17:00");
     assertThat(r.dataSources()).hasSize(3).first().asString().startsWith("Alpaca Basic");

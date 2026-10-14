@@ -2,7 +2,6 @@ package com.stocks.rules;
 
 import com.stocks.common.domain.AccountType;
 import com.stocks.common.domain.FeeCode;
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.domain.OrderGroupType;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.TimeInForce;
@@ -120,10 +119,10 @@ public class RulesService {
         "A reset never erases a loss from any leaderboard period: the new run continues the old run's unit value. "
             + "Only a new period starts from 0%.");
 
-    RulesSocialDto social = new RulesSocialDto(tradeFeedDelay().toString(), holdingsVisibility());
+    RulesSocialDto social = new RulesSocialDto(tradeFeedDelay().toString(), "PUBLIC");
 
     RulesDto content = new RulesDto(null, null, account, sessions, orders, execution, fees(today), rateLimits,
-        leaderboard, social, dataSources(config), fairness());
+        leaderboard, social, dataSources(config), fairness(botsRequireRationale()));
     String version = version(content);
     return new RulesDto(version, time.now(), content.account(), content.sessions(), content.orders(),
         content.execution(), content.fees(), content.rateLimits(), content.leaderboard(), content.social(),
@@ -327,18 +326,24 @@ public class RulesService {
     return p.isEmpty() || p.startsWith("sim");
   }
 
-  static List<String> fairness() {
+  /** The public mode charter (§16.7); item 4 follows {@code bots.requireRationale}. */
+  static List<String> fairness(boolean aiRationaleRequired) {
     return List.of(
         "Same rules for all: the same starting cash, market data, latency, fill rules, fees and write limits on every "
             + "channel, for humans and bots alike. Players never trade with each other.",
         "Deposits are public: net contributions and flows are shown on every leaderboard row, and admin deposits "
             + "never move anyone's return. Resets are counted publicly, and a reset never erases a loss.",
-        "No live copying: other players' trades appear after the feed delay (labeled \"via API\" when an API key or "
-            + "MCP placed them); holdings are shown only as previous-close weights; working orders are never visible.",
-        "Rationales: AI rationales become public with the delayed trade; a human's note stays private unless they "
-            + "tick \"Share note\".",
+        "Everything is public: every player's live portfolio (cash, positions, open orders), full order history with "
+            + "fills, account activity, P&L analysis, rationales, journal and stats are visible to every player in "
+            + "real time. The feed delay (none by default) only holds back the feed, the trade list and journal notes.",
+        aiRationaleRequired
+            ? "Rationales: every new order's rationale or note is public, and AI players must give one. Notes written "
+                + "before public mode keep the visibility their author chose."
+            : "Rationales: every new order's rationale or note is public; AI players are asked, not required, to give "
+                + "one. Notes written before public mode keep the visibility their author chose.",
         "Kill switch: the admin can freeze any player, and every such action is audited. Bots can never act as "
-            + "admin.");
+            + "admin.",
+        "Secrets stay private: passwords, API keys, OAuth tokens, email addresses, sessions and the audit log.");
   }
 
   // ------------------------------------------------------------------------------------------- settings
@@ -360,11 +365,7 @@ public class RulesService {
   }
 
   private Duration tradeFeedDelay() {
-    return setting(settings::tradeFeedDelay, () -> Duration.ofMinutes(15));
-  }
-
-  private HoldingsVisibility holdingsVisibility() {
-    return setting(settings::holdingsVisibility, () -> HoldingsVisibility.EOD_WEIGHTS);
+    return setting(settings::tradeFeedDelay, () -> Duration.ZERO);
   }
 
   /** A runtime setting, or the §23.4 default while {@code SettingsService} is still a Day-0 stub. */

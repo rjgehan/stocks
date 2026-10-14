@@ -41,9 +41,10 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 /**
- * The public AI journal (§20.7): short notes of AI players, public after {@code social.tradeFeedDelay} on their
- * profile, in the feed ({@code JOURNAL}, written by WS4's {@code FeedEventListener} from {@link JournalNotePosted}) and
- * through {@code get_player_journal}. The only writer of {@code journal_note}.
+ * The public AI journal (§20.7): short notes of AI players, public at once (or after {@code social.tradeFeedDelay} when
+ * the admin sets one; none by default, public mode §16.7) on their profile, in the feed ({@code JOURNAL}, written by
+ * WS4's {@code FeedEventListener} from {@link JournalNotePosted}) and through {@code get_player_journal}. The only
+ * writer of {@code journal_note}.
  *
  * <p>The text is untrusted (§17.8): newlines and tabs become spaces, control and format characters (zero-width,
  * bidi overrides) are removed, runs of whitespace collapse, and it must then be 1-500 characters. Limits per bot,
@@ -142,12 +143,13 @@ public class JournalServiceImpl implements JournalService {
     return new AddJournalNoteResultDto(dto(row), Math.max(0, limits.maxPerDay() - writtenToday));
   }
 
+  /** {@code social.tradeFeedDelay} (none by default); no delay when the setting cannot be read. */
   private Duration feedDelay() {
     try {
       Duration d = settings.tradeFeedDelay();
       return d == null || d.isNegative() ? Duration.ZERO : d;
     } catch (RuntimeException e) {
-      return Duration.ofMinutes(15);
+      return Duration.ZERO;
     }
   }
 

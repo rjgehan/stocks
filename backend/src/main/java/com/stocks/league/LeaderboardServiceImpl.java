@@ -140,8 +140,7 @@ public class LeaderboardServiceImpl implements LeaderboardService, PeriodicTask 
     int n = limit <= 0 ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
     Board board = current();
     PeriodBoard pb = board.periods().get(p);
-    List<LeaderboardRowDto> all = LeaderboardRowMapper.rows(pb.entries(), m, k, settings.humanKindExcludesApiTraders(),
-        settings.holdingsVisibility());
+    List<LeaderboardRowDto> all = LeaderboardRowMapper.rows(pb.entries(), m, k, settings.humanKindExcludesApiTraders());
     LeaderboardRowDto me = null;
     if (viewerPlayerId != null) {
       String viewer = pb.entries().stream().filter(e -> e.player().id() == viewerPlayerId)

@@ -14,7 +14,7 @@ import java.util.List;
  * anchors, EOD series and end values as the board, so {@code return} and {@code pnl} equal the player's
  * {@code LeaderboardRow}. {@code sharpe} and {@code volatility} are null below {@code sharpeMinDays} daily returns;
  * {@code profitFactor} is null without a losing sell; {@code bestTrade} and {@code worstTrade} only consider lots
- * closed at or before {@code tradesAsOf} (another player's trades appear after the feed delay, §16.7).
+ * closed at or before {@code tradesAsOf} (another player's trades appear after the feed delay, if any, §16.7).
  */
 public record PlayerStatsDto(PlayerSummaryDto player, LeaderboardPeriod period, Instant periodStart, Instant asOf,
                              @JsonProperty("return") BigDecimal ret, BigDecimal pnl, BigDecimal maxDrawdown,

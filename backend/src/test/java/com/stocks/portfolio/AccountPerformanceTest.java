@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.stocks.common.domain.HistoryRange;
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.domain.KindFilter;
 import com.stocks.common.domain.LeaderboardMetric;
 import com.stocks.common.domain.TransferType;
@@ -29,6 +28,7 @@ import com.stocks.testkit.Fixtures.AccountRef;
 import com.stocks.testkit.Fixtures.PlayerRef;
 import com.stocks.testkit.TestTimes;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -201,27 +201,38 @@ class AccountPerformanceTest {
   }
 
   @Test
-  void thePublicHistoryChainsUnitValuesAcrossRunsAndHidesEquityWhenAsked() {
+  void thePublicHistoryChainsUnitValuesAcrossRunsWithEquityAlways() {
     twrDepositScenario();
     kit.at(WED_10);
     PlayerDirectory.PlayerRow row = kit.players.byHandle("alice").orElseThrow();
-    PublicHistoryDto h = kit.history.publicHistory(row, HistoryRange.ALL, false);
+    PublicHistoryDto h = kit.history.publicHistory(row, HistoryRange.ALL);
     assertThat(h.points()).hasSize(4);
     assertThat(h.points().get(0).unitValue()).isEqualByComparingTo("1");
     assertThat(h.points().get(2).unitValue().setScale(10, java.math.RoundingMode.HALF_EVEN))
         .isEqualByComparingTo("1.1622641509");
     assertThat(h.points()).allSatisfy(pt -> assertThat(pt.equity()).isNotNull());
-    PublicHistoryDto hidden = kit.history.publicHistory(row, HistoryRange.W1, true);
-    assertThat(hidden.points()).allSatisfy(pt -> assertThat(pt.equity()).isNull());
+    PublicHistoryDto week = kit.history.publicHistory(row, HistoryRange.W1);   // public mode (§16.7): equity always
+    assertThat(week.points()).isNotEmpty().allSatisfy(pt -> assertThat(pt.equity()).isNotNull());
     PublicHistoryDto none = kit.history.publicHistory(kit.players.byId(kit.data.human("nobody").id())
-        .orElseThrow(), HistoryRange.D1, false);
+        .orElseThrow(), HistoryRange.D1);
     assertThat(none.points()).isEmpty();
   }
 
   // ------------------------------------------------------------------------------------------- public profile
 
   @Test
-  void publicTradesAreDelayedLabeledAndShowOnlyPublicRationales() {
+  void publicTradesAreLiveByDefault() {
+    kit.data.trade(acc, "BUY", "SIMA", "1", "100.00", "WEB", "my public plan", true);
+    PublicProfileService profiles = kit.profiles(stubBoard());
+    assertThat(profiles.publicTrades("alice", null, 50).items()).singleElement().satisfies(t -> {
+      assertThat(t.symbol()).isEqualTo("SIMA");
+      assertThat(t.viaApi()).isFalse();
+      assertThat(t.untrusted().rationale()).isEqualTo("my public plan");
+    });
+  }
+
+  @Test
+  void publicTradesFollowTheFeedDelayLabelAndShowOnlyPublicRationales() {
     PlayerRef bot = kit.data.ai("claude", alice);
     AccountRef botAcc = kit.data.open(bot, "500.00");
     kit.data.trade(botAcc, "BUY", "SIMA", "1", "100.00", "MCP_KEY", "Momentum " + "x".repeat(400), true);
@@ -229,7 +240,9 @@ class AccountPerformanceTest {
     kit.data.trade(botAcc, "BUY", "SIMB", "1", "50.00", "REST_KEY", "private", false);
     kit.at(MON_10.plusSeconds(120));
     kit.data.trade(acc, "BUY", "SIMA", "1", "100.00", "WEB", "my secret plan", false);
-    PublicProfileService profiles = kit.profiles(stubBoard());
+    PortfolioKit delayed = new PortfolioKit(kit.db, kit.time, NotImplementedStub.of(MarketCalendar.class, "WS2"),
+        PortfolioKit.feedDelay(Duration.ofMinutes(15)));
+    PublicProfileService profiles = delayed.profiles(stubBoard());
     kit.at(MON_10.plusSeconds(14 * 60));                            // 14 min: nothing is visible yet
     assertThat(profiles.publicTrades("claude", null, 50).items()).isEmpty();
     kit.at(MON_10.plusSeconds(16 * 60));                            // 16 min: the first two
@@ -256,7 +269,7 @@ class AccountPerformanceTest {
   }
 
   @Test
-  void theProfileShowsEodWeightsAndDepositsButNoLivePositions() {
+  void theProfileShowsLiveEquityEodHoldingsWithQuantitiesAndDeposits() {
     twrDepositScenario();
     kit.at(WED_10);
     PublicProfileService profiles = kit.profiles(stubBoard());
@@ -276,24 +289,11 @@ class AccountPerformanceTest {
     assertThat(p.holdings()).singleElement().satisfies(h -> {
       assertThat(h.symbol()).isEqualTo("SIMA");
       assertThat(h.weight()).isEqualByComparingTo("0.5455");          // 600 / 1100
-      assertThat(h.qty()).isNull();                                   // EOD_WEIGHTS: no quantities
+      assertThat(h.qty()).isEqualByComparingTo("5");                 // public mode (§16.7): quantities too
     });
     assertThat(p.stats().week().ret()).isEqualByComparingTo("0.25");
     assertThat(p.stats().today().rank()).isEqualTo(1);
     assertThat(p.recentTrades()).hasSize(1);
-
-    PortfolioKit hiddenKit = new PortfolioKit(kit.db, kit.time, NotImplementedStub.of(MarketCalendar.class, "WS2"),
-        PortfolioKit.visibility(HoldingsVisibility.HIDDEN));
-    PlayerProfileDto hidden = hiddenKit.profiles(stubBoard()).profile("alice", null);
-    assertThat(hidden.equity()).isNull();
-    assertThat(hidden.holdings()).isEmpty();
-    assertThat(hidden.holdingsAsOf()).isNull();
-    assertThat(hidden.netContributions()).isEqualByComparingTo("1000.00");   // deposits are always public
-
-    PortfolioKit fullKit = new PortfolioKit(kit.db, kit.time, NotImplementedStub.of(MarketCalendar.class, "WS2"),
-        PortfolioKit.visibility(HoldingsVisibility.EOD_FULL));
-    assertThat(fullKit.profiles(stubBoard()).profile("alice", null).holdings().get(0).qty())
-        .isEqualByComparingTo("5");
   }
 
   @Test

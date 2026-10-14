@@ -1,6 +1,5 @@
 package com.stocks.identity;
 
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.common.jdbc.Jdbc;
@@ -118,11 +117,6 @@ public class SettingsServiceImpl implements SettingsService, SmartInitializingSi
   @Override
   public Duration tradeFeedDelay() {
     return Duration.parse(value(SettingKey.TRADE_FEED_DELAY));
-  }
-
-  @Override
-  public HoldingsVisibility holdingsVisibility() {
-    return HoldingsVisibility.valueOf(value(SettingKey.HOLDINGS_VISIBILITY));
   }
 
   @Override

@@ -18,7 +18,7 @@ import tools.jackson.databind.json.JsonMapper;
  * Secrets are never logged: detail values under secret-looking keys are redacted, and callers never pass raw tokens.
  *
  * <p>The row is written through the caller's transaction when there is one (JdbcClient is transaction-aware).
- * Reads are not audited in Phase 1 except the admin break-glass view. TODO(WS1, Phase 1): {@code AuditQueries}
+ * Reads are not audited in Phase 1. TODO(WS1, Phase 1): {@code AuditQueries}
  * for {@code GET /admin/audit}.
  */
 @Service

@@ -102,10 +102,9 @@ class PeriodsAndCalendarTest {
     assertThat(defaults.seasonStart()).isEqualTo(LocalDate.of(2026, 10, 12));
     assertThat(defaults.minFills()).isEqualTo(5);
     assertThat(defaults.minSymbols()).isEqualTo(2);
-    assertThat(defaults.tradeFeedDelay()).hasMinutes(15);
+    assertThat(defaults.tradeFeedDelay()).isZero();                 // public mode (§16.7): no delay by default
     assertThat(defaults.showDepositsInFeed()).isTrue();
     assertThat(defaults.humanKindExcludesApiTraders()).isFalse();
-    assertThat(defaults.holdingsVisibility()).isEqualTo(com.stocks.common.domain.HoldingsVisibility.EOD_WEIGHTS);
     SettingsService broken = (SettingsService) Proxy.newProxyInstance(SettingsService.class.getClassLoader(),
         new Class<?>[] {SettingsService.class}, (px, m, a) -> {
           throw ApiException.of(ErrorCode.SETTING_INVALID, "bad");

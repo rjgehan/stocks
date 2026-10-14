@@ -2,7 +2,6 @@ package com.stocks.contract.rules.dto;
 
 import com.stocks.common.domain.AccountType;
 import com.stocks.common.domain.FeeCode;
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.domain.OrderGroupType;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.TimeInForce;
@@ -72,6 +71,10 @@ public record RulesDto(String version, Instant asOf, RulesAccountDto account, Ru
   public record RulesLeaderboardDto(String returnDefinition, String pnlDefinition, String pnlDayEnds, int minFills,
                                     int minSymbols, String ties, String benchmark, String resetPolicy) {}
 
-  /** {@code tradeFeedDelay}: ISO-8601 duration ({@code "PT15M"}). */
-  public record RulesSocialDto(String tradeFeedDelay, HoldingsVisibility holdingsVisibility) {}
+  /**
+   * {@code tradeFeedDelay}: ISO-8601 duration ({@code "PT0S"} by default). {@code visibility} is always
+   * {@code "PUBLIC"}: every player's portfolio, orders, fills, activity, rationales and journal are visible to all
+   * players live (§16.7).
+   */
+  public record RulesSocialDto(String tradeFeedDelay, String visibility) {}
 }

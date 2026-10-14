@@ -74,8 +74,8 @@ public class LeagueRepository {
   }
 
   /**
-   * One player's activity in {@code (fromExclusive, toInclusive]} (§16.8: another player's trade statistics as of the
-   * feed delay); {@link Activity#NONE} without any.
+   * One player's activity in {@code (fromExclusive, toInclusive]} (§16.8: another player's trade statistics after
+   * the feed delay, if any); {@link Activity#NONE} without any.
    */
   public Activity activityOf(long playerId, Instant fromExclusive, Instant toInclusive) {
     if (fromExclusive != null && !toInclusive.isAfter(fromExclusive)) {

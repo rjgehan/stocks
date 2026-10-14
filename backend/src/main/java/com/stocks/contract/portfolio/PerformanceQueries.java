@@ -19,7 +19,7 @@ public interface PerformanceQueries {
 
   PublicHistoryDto publicHistory(String handle, HistoryRange range, Long viewerPlayerId);
 
-  /** Delayed by {@code social.tradeFeedDelay}. */
+  /** Delayed by {@code social.tradeFeedDelay} (default none). */
   Page<PublicTradeDto> publicTrades(String handle, Cursor cursor, int limit);
 
   /** §16.2 day/total, same anchors as the board. */

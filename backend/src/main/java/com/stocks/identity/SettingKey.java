@@ -1,6 +1,5 @@
 package com.stocks.identity;
 
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import java.math.BigDecimal;
@@ -61,7 +60,7 @@ public enum SettingKey {
       return nonNegativeInt(v);
     }
   },
-  TRADE_FEED_DELAY("social.tradeFeedDelay", "PT15M") {
+  TRADE_FEED_DELAY("social.tradeFeedDelay", "PT0S") {
     @Override
     String canonical(String v) {
       Duration d;
@@ -74,16 +73,6 @@ public enum SettingKey {
         throw new IllegalArgumentException("between PT0S and P7D");
       }
       return d.toString();
-    }
-  },
-  HOLDINGS_VISIBILITY("social.holdingsVisibility", "EOD_WEIGHTS") {
-    @Override
-    String canonical(String v) {
-      try {
-        return HoldingsVisibility.valueOf(v.trim().toUpperCase(Locale.ROOT)).name();
-      } catch (IllegalArgumentException e) {
-        throw new IllegalArgumentException("one of EOD_WEIGHTS, EOD_FULL, HIDDEN");
-      }
     }
   },
   SHOW_DEPOSITS_IN_FEED("social.showDepositsInFeed", "true") {

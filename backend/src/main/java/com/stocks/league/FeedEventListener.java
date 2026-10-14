@@ -39,8 +39,9 @@ import tools.jackson.databind.json.JsonMapper;
  * app crashes between commit and delivery):
  * <ul>
  *   <li>{@code ExecutionCreated} → {@code FILL}, or {@code POSITION_CLOSED} when the sell took the position to 0
- *       ({@code EXEC:<exe>}), visible after {@code social.tradeFeedDelay}; the rationale only when it is public
- *       (AI, or a human's shared note), clipped to 280 characters inside {@code untrusted};</li>
+ *       ({@code EXEC:<exe>}), visible after {@code social.tradeFeedDelay} (none by default); the rationale when it
+ *       is public (every order since public mode, older AI orders, or a human's shared note), clipped to 280
+ *       characters inside {@code untrusted};</li>
  *   <li>{@code CashTransferPosted} → {@code DEPOSIT} for deposits and withdrawals when
  *       {@code social.showDepositsInFeed} ({@code XFER:<xfr>}, visible at once; deposits are public, charter item 2);
  *       the INITIAL of a player's first run → {@code JOINED} ({@code JOIN:<ply>}), from that event or from

@@ -1,7 +1,6 @@
 package com.stocks.contract.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.stocks.common.domain.HoldingsVisibility;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
@@ -13,7 +12,6 @@ public record UpdateSettingsRequest(
     @JsonProperty("league.eligibility.minFills") Integer eligibilityMinFills,
     @JsonProperty("league.eligibility.minSymbols") Integer eligibilityMinSymbols,
     @JsonProperty("social.tradeFeedDelay") String tradeFeedDelay,
-    @JsonProperty("social.holdingsVisibility") HoldingsVisibility holdingsVisibility,
     @JsonProperty("social.showDepositsInFeed") Boolean showDepositsInFeed,
     @JsonProperty("bots.requireRationale") Boolean botsRequireRationale,
     @JsonProperty("league.humanKindExcludesApiTraders") Boolean humanKindExcludesApiTraders) {}

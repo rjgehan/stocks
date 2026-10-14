@@ -123,8 +123,8 @@ public class PortfolioHistoryService {
     return new PortfolioHistoryDto(r, points, flows, summary);
   }
 
-  /** Unit values (and equity unless hidden) of a player across runs. */
-  public PublicHistoryDto publicHistory(PlayerRow player, HistoryRange range, boolean hideEquity) {
+  /** Unit values and equity of a player across runs (public mode, §16.7: equity always). */
+  public PublicHistoryDto publicHistory(PlayerRow player, HistoryRange range) {
     HistoryRange r = range == null ? HistoryRange.M1 : range;
     List<AccountRow> runs = repository.runsOfPlayer(player.id());
     if (runs.isEmpty()) {
@@ -146,12 +146,12 @@ public class PortfolioHistoryService {
       anchor = RunAnchors.opening(first, repository.appliedTransfers(first.id()));
     }
     List<PublicHistoryPointDto> points = new ArrayList<>();
-    points.add(point(anchor.at(), anchor.unitValue(), anchor.equity(), hideEquity));
+    points.add(point(anchor.at(), anchor.unitValue(), anchor.equity()));
     Optional<AccountRow> active = runs.stream().filter(AccountRow::active).findFirst();
     if (r == HistoryRange.D1) {
       if (active.isPresent()) {
         for (Sample s : sampler.samples(active.get().id(), anchor.at(), now)) {
-          points.add(point(s.sampledAt(), s.unitValue(), s.equity(), hideEquity));
+          points.add(point(s.sampledAt(), s.unitValue(), s.equity()));
         }
       }
     } else {
@@ -162,17 +162,17 @@ public class PortfolioHistoryService {
           byDate.merge(s.tradeDate(), s, (x, y) -> y.computedAt().isAfter(x.computedAt()) ? y : x);
         }
       }
-      byDate.values().forEach(s -> points.add(point(s.asOf(), s.unitValue(), s.equity(), hideEquity)));
+      byDate.values().forEach(s -> points.add(point(s.asOf(), s.unitValue(), s.equity())));
     }
     if (active.isPresent()) {
       Valuation v = valuation.valueNow(active.get().id());
-      points.add(point(v.asOf(), v.unitValue(), v.equity(), hideEquity));
+      points.add(point(v.asOf(), v.unitValue(), v.equity()));
     }
     return new PublicHistoryDto(r, points);
   }
 
-  private static PublicHistoryPointDto point(Instant t, BigDecimal unitValue, BigDecimal equity, boolean hide) {
-    return new PublicHistoryPointDto(t, unitValue, hide ? null : equity);
+  private static PublicHistoryPointDto point(Instant t, BigDecimal unitValue, BigDecimal equity) {
+    return new PublicHistoryPointDto(t, unitValue, equity);
   }
 
   private End end(AccountRow run) {

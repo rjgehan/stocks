@@ -8,7 +8,6 @@ import com.stocks.common.domain.AdjustmentTreatment;
 import com.stocks.common.domain.Channel;
 import com.stocks.common.domain.DataQuality;
 import com.stocks.common.domain.HistoryRange;
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.domain.OrderStatus;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.PlayerKind;
@@ -205,13 +204,12 @@ class ContractGoldenJsonTest {
 
   @Test
   void settingsUseTheAppSettingKeys() throws Exception {
-    SettingsDto s = new SettingsDto(d("500.00"), false, LocalDate.of(2026, 10, 1), 5, 2, "PT15M",
-        HoldingsVisibility.EOD_WEIGHTS, true, true, false);
+    SettingsDto s = new SettingsDto(d("500.00"), false, LocalDate.of(2026, 10, 1), 5, 2, "PT0S", true, true,
+        false);
     assertGolden(s, """
         {"league.defaultStartingCash":"500.00","league.allowSelfReset":false,"league.seasonStart":"2026-10-01",
-         "league.eligibility.minFills":5,"league.eligibility.minSymbols":2,"social.tradeFeedDelay":"PT15M",
-         "social.holdingsVisibility":"EOD_WEIGHTS","social.showDepositsInFeed":true,"bots.requireRationale":true,
-         "league.humanKindExcludesApiTraders":false}
+         "league.eligibility.minFills":5,"league.eligibility.minSymbols":2,"social.tradeFeedDelay":"PT0S",
+         "social.showDepositsInFeed":true,"bots.requireRationale":true,"league.humanKindExcludesApiTraders":false}
         """);
   }
 

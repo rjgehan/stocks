@@ -1,6 +1,5 @@
 package com.stocks.portfolio;
 
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.domain.KindFilter;
 import com.stocks.common.domain.LeaderboardMetric;
 import com.stocks.common.domain.LeaderboardPeriod;
@@ -45,15 +44,13 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
 /**
- * Public player data (§16.7 charter, §18.2 {@code /players/{handle}}, {@code /players/{handle}/trades}): only what
- * every player may see.
+ * Public player data (public mode, §16.7 charter, §18.2 {@code /players/{handle}}, {@code /players/{handle}/trades}).
  * <ul>
- *   <li>Trades appear only after {@code social.tradeFeedDelay} (15 min), labeled "via API" when an API key or MCP
- *       placed them; a rationale is public only when {@code trade_order.rationale_public} (AI, or a human's shared
- *       note), clipped to 280 characters and wrapped in {@code untrusted} (§17.8).</li>
- *   <li>Holdings are previous-EOD <b>weights</b> ({@code qty} only with {@code EOD_FULL}); with {@code HIDDEN} neither
- *       holdings nor equity are shown.</li>
- *   <li>Working orders and live positions are never shown.</li>
+ *   <li>Trades follow {@code social.tradeFeedDelay} (none by default), labeled "via API" when an API key or MCP placed
+ *       them; a rationale is public when {@code trade_order.rationale_public} (every order since public mode, older AI
+ *       orders, or a human's shared note), clipped to 280 characters and wrapped in {@code untrusted} (§17.8).</li>
+ *   <li>Equity is the live valuation; holdings are the previous-EOD rows with weight and qty.</li>
+ *   <li>Live positions, orders, activity and P&amp;L are served by {@code PublicPortfolioQueries}.</li>
  * </ul>
  */
 @Component
@@ -97,8 +94,6 @@ public class PublicProfileService {
 
   public PlayerProfileDto profile(String handle, Long viewerPlayerId) {
     PlayerRow p = player(handle);
-    HoldingsVisibility visibility = settings.holdingsVisibility();
-    boolean hidden = visibility == HoldingsVisibility.HIDDEN;
     List<AccountRow> runs = repository.runsOfPlayer(p.id());
     Optional<AccountRow> active = runs.stream().filter(AccountRow::active).findFirst();
     String ownerHandle = p.ownerPlayerId() == null ? null
@@ -134,28 +129,27 @@ public class PublicProfileService {
     }
     List<ProfileHoldingDto> holdings = List.of();
     LocalDate holdingsAsOf = null;
-    if (!hidden && active.isPresent()) {
+    if (active.isPresent()) {
       Optional<LocalDate> latest = snapshots.latestDate(active.get().id());
       if (latest.isPresent()) {
         EodSnapshot s = snapshots.find(active.get().id(), latest.get()).orElseThrow();
         holdingsAsOf = latest.get();
-        holdings = weights(s, snapshots.holdings(s.accountId(), s.tradeDate()),
-            visibility == HoldingsVisibility.EOD_FULL);
+        holdings = weights(s, snapshots.holdings(s.accountId(), s.tradeDate()));
       }
     }
     return new PlayerProfileDto(p.summary(), ownerHandle, active.map(AccountRow::runNo).orElse(0), stats,
-        hidden || v == null ? null : v.equity(), v == null ? Money.ZERO : v.netContributions(),
+        v == null ? null : v.equity(), v == null ? Money.ZERO : v.netContributions(),
         new DepositsSummaryDto(deposits, depositTotal), totals.fills, totals.winRate(), mwr, holdingsAsOf, holdings,
         publicTrades(p, null, RECENT_TRADES).items());
   }
 
-  /** Weights of the EOD holdings in that day's equity (cash is the rest), largest first. */
-  static List<ProfileHoldingDto> weights(EodSnapshot s, List<HoldingRow> rows, boolean withQty) {
+  /** Weights (and quantities) of the EOD holdings in that day's equity (cash is the rest), largest first. */
+  static List<ProfileHoldingDto> weights(EodSnapshot s, List<HoldingRow> rows) {
     List<ProfileHoldingDto> out = new ArrayList<>();
     for (HoldingRow h : rows) {
       BigDecimal w = s.equity().signum() > 0
           ? h.marketValue().divide(s.equity(), WEIGHT_SCALE, RoundingMode.HALF_EVEN) : BigDecimal.ZERO;
-      out.add(new ProfileHoldingDto(h.symbol(), w, withQty ? h.qty() : null));
+      out.add(new ProfileHoldingDto(h.symbol(), w, h.qty()));
     }
     return out;
   }
@@ -201,7 +195,7 @@ public class PublicProfileService {
     return publicTrades(player(handle), cursor, limit);
   }
 
-  /** The player's executions older than the feed delay, newest first ({@code (executed_at, id)} cursor). */
+  /** The player's executions older than the feed delay (if any), newest first ({@code (executed_at, id)} cursor). */
   public Page<PublicTradeDto> publicTrades(PlayerRow p, Cursor cursor, int limit) {
     int n = Math.max(1, Math.min(limit, Page.MAX_LIMIT));
     Instant visibleBefore = time.now().minus(settings.tradeFeedDelay());

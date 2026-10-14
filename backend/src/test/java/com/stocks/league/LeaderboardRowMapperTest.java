@@ -2,7 +2,6 @@ package com.stocks.league;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.domain.KindFilter;
 import com.stocks.common.domain.LeaderboardMetric;
 import com.stocks.common.domain.LeaderboardPeriod;
@@ -15,7 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** §16.5 views (sort, ties, ranks, kinds, rank arrows) and §16.7 visibility, on synthetic entries. */
+/** §16.5 views (sort, ties, ranks, kinds, rank arrows) and §16.7 public rows, on synthetic entries. */
 class LeaderboardRowMapperTest {
 
   static final Instant T0 = Instant.parse("2026-10-05T14:00:00Z");
@@ -38,8 +37,7 @@ class LeaderboardRowMapperTest {
         entry(3, PlayerKind.AI, "0.1", "20.00", 1, true, false, null),               // same P&L, opened first
         entry(4, PlayerKind.HUMAN, "0.5", "1.00", 0, false, false, null),            // best, but ineligible
         entry(5, PlayerKind.HUMAN, "-0.2", "-5.00", 0, true, false, null));
-    List<LeaderboardRowDto> rows = LeaderboardRowMapper.rows(entries, LeaderboardMetric.RETURN, KindFilter.ALL, false,
-        HoldingsVisibility.EOD_WEIGHTS);
+    List<LeaderboardRowDto> rows = LeaderboardRowMapper.rows(entries, LeaderboardMetric.RETURN, KindFilter.ALL, false);
     assertThat(rows).extracting(r -> r.player().handle()).containsExactly("p3", "p2", "p1", "p5", "p4");
     assertThat(rows).extracting(LeaderboardRowDto::rank).containsExactly(1, 2, 3, 4, null);
     assertThat(rows.get(4).eligibilityNote()).isEqualTo("1/5 trades");
@@ -51,8 +49,8 @@ class LeaderboardRowMapperTest {
         entry(1, PlayerKind.HUMAN, "0.50", "10.00", 0, true, false, null),
         entry(2, PlayerKind.HUMAN, "0.01", "90.00", 0, true, false, null),
         entry(3, PlayerKind.HUMAN, "0.02", "90.00", 0, true, false, null));
-    assertThat(LeaderboardRowMapper.rows(entries, LeaderboardMetric.PNL, KindFilter.ALL, false,
-        HoldingsVisibility.EOD_WEIGHTS)).extracting(r -> r.player().handle()).containsExactly("p3", "p2", "p1");
+    assertThat(LeaderboardRowMapper.rows(entries, LeaderboardMetric.PNL, KindFilter.ALL, false))
+        .extracting(r -> r.player().handle()).containsExactly("p3", "p2", "p1");
   }
 
   @Test
@@ -61,15 +59,14 @@ class LeaderboardRowMapperTest {
     LeagueEntry apiHuman = entry(2, PlayerKind.HUMAN, "0.2", "2", 0, true, true, null);
     LeagueEntry bot = entry(3, PlayerKind.AI, "0.3", "3", 0, true, false, null);
     List<LeagueEntry> all = List.of(human, apiHuman, bot);
-    assertThat(LeaderboardRowMapper.rows(all, LeaderboardMetric.RETURN, KindFilter.HUMAN, false,
-        HoldingsVisibility.EOD_WEIGHTS)).extracting(r -> r.player().handle()).containsExactly("p2", "p1");
+    assertThat(LeaderboardRowMapper.rows(all, LeaderboardMetric.RETURN, KindFilter.HUMAN, false))
+        .extracting(r -> r.player().handle()).containsExactly("p2", "p1");
     // league.humanKindExcludesApiTraders: the API-trading human is listed under AI and ALL, not HUMAN
-    assertThat(LeaderboardRowMapper.rows(all, LeaderboardMetric.RETURN, KindFilter.HUMAN, true,
-        HoldingsVisibility.EOD_WEIGHTS)).extracting(r -> r.player().handle()).containsExactly("p1");
-    assertThat(LeaderboardRowMapper.rows(all, LeaderboardMetric.RETURN, KindFilter.AI, true,
-        HoldingsVisibility.EOD_WEIGHTS)).extracting(r -> r.player().handle()).containsExactly("p3", "p2");
-    assertThat(LeaderboardRowMapper.rows(all, LeaderboardMetric.RETURN, KindFilter.ALL, true,
-        HoldingsVisibility.EOD_WEIGHTS)).hasSize(3);
+    assertThat(LeaderboardRowMapper.rows(all, LeaderboardMetric.RETURN, KindFilter.HUMAN, true))
+        .extracting(r -> r.player().handle()).containsExactly("p1");
+    assertThat(LeaderboardRowMapper.rows(all, LeaderboardMetric.RETURN, KindFilter.AI, true))
+        .extracting(r -> r.player().handle()).containsExactly("p3", "p2");
+    assertThat(LeaderboardRowMapper.rows(all, LeaderboardMetric.RETURN, KindFilter.ALL, true)).hasSize(3);
     var arena = LeaderboardRowMapper.arena(all);
     assertThat(arena.humansMedianReturn()).isEqualByComparingTo("0.15");
     assertThat(arena.aiMedianReturn()).isEqualByComparingTo("0.3");
@@ -79,30 +76,24 @@ class LeaderboardRowMapperTest {
   void rankArrowsOnlyForReturnAndAllKinds() {
     List<LeagueEntry> entries = List.of(entry(1, PlayerKind.HUMAN, "0.2", "1", 0, true, false, 3),
         entry(2, PlayerKind.HUMAN, "0.1", "1", 0, true, false, null));
-    List<LeaderboardRowDto> rows = LeaderboardRowMapper.rows(entries, LeaderboardMetric.RETURN, KindFilter.ALL, false,
-        HoldingsVisibility.EOD_WEIGHTS);
+    List<LeaderboardRowDto> rows = LeaderboardRowMapper.rows(entries, LeaderboardMetric.RETURN, KindFilter.ALL, false);
     assertThat(rows.get(0).rankChange()).isEqualTo(2);              // was 3rd, now 1st
     assertThat(rows.get(1).rankChange()).isNull();                 // no previous rank
-    assertThat(LeaderboardRowMapper.rows(entries, LeaderboardMetric.PNL, KindFilter.ALL, false,
-        HoldingsVisibility.EOD_WEIGHTS).get(0).rankChange()).isNull();
-    assertThat(LeaderboardRowMapper.rows(entries, LeaderboardMetric.RETURN, KindFilter.HUMAN, false,
-        HoldingsVisibility.EOD_WEIGHTS).get(0).rankChange()).isNull();
+    assertThat(LeaderboardRowMapper.rows(entries, LeaderboardMetric.PNL, KindFilter.ALL, false)
+        .get(0).rankChange()).isNull();
+    assertThat(LeaderboardRowMapper.rows(entries, LeaderboardMetric.RETURN, KindFilter.HUMAN, false)
+        .get(0).rankChange()).isNull();
   }
 
   @Test
-  void hiddenHoldingsHideEquityAndTopHoldingButNeverDeposits() {
+  void equityAndTopHoldingAreAlwaysShownWithDeposits() {
     List<LeaderboardRowDto> rows = LeaderboardRowMapper.rows(
         List.of(entry(1, PlayerKind.HUMAN, "0.1", "1", 0, true, false, null)), LeaderboardMetric.RETURN,
-        KindFilter.ALL, false, HoldingsVisibility.HIDDEN);
-    assertThat(rows.get(0).equity()).isNull();
-    assertThat(rows.get(0).topHolding()).isNull();
+        KindFilter.ALL, false);
+    assertThat(rows.get(0).equity()).isEqualByComparingTo("500.00");   // public mode (§16.7)
+    assertThat(rows.get(0).topHolding()).isEqualTo("SIMA");
     assertThat(rows.get(0).netContributions()).isEqualByComparingTo("500.00");
     assertThat(rows.get(0).flowsInPeriod()).isEqualByComparingTo("0");
-    List<LeaderboardRowDto> shown = LeaderboardRowMapper.rows(
-        List.of(entry(1, PlayerKind.HUMAN, "0.1", "1", 0, true, false, null)), LeaderboardMetric.RETURN,
-        KindFilter.ALL, false, HoldingsVisibility.EOD_WEIGHTS);
-    assertThat(shown.get(0).equity()).isEqualByComparingTo("500.00");
-    assertThat(shown.get(0).topHolding()).isEqualTo("SIMA");
   }
 
   @Test

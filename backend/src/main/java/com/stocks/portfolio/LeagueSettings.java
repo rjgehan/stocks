@@ -1,6 +1,5 @@
 package com.stocks.portfolio;
 
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.contract.identity.SettingsService;
@@ -21,7 +20,7 @@ public class LeagueSettings {
   public static final LocalDate DEFAULT_SEASON_START = LocalDate.of(2026, 10, 12);
   public static final int DEFAULT_MIN_FILLS = 5;
   public static final int DEFAULT_MIN_SYMBOLS = 2;
-  public static final Duration DEFAULT_TRADE_FEED_DELAY = Duration.ofMinutes(15);
+  public static final Duration DEFAULT_TRADE_FEED_DELAY = Duration.ZERO;
 
   private final SettingsService settings;
 
@@ -43,10 +42,6 @@ public class LeagueSettings {
 
   public Duration tradeFeedDelay() {
     return orDefault(settings::tradeFeedDelay, DEFAULT_TRADE_FEED_DELAY);
-  }
-
-  public HoldingsVisibility holdingsVisibility() {
-    return orDefault(settings::holdingsVisibility, HoldingsVisibility.EOD_WEIGHTS);
   }
 
   public boolean showDepositsInFeed() {

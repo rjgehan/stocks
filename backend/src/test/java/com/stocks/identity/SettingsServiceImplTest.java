@@ -3,7 +3,6 @@ package com.stocks.identity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.common.time.MutableTimeSource;
@@ -53,14 +52,14 @@ class SettingsServiceImplTest {
     assertThat(s.seasonStart()).isEqualTo(LocalDate.of(2026, 10, 12));
     assertThat(s.eligibilityMinFills()).isEqualTo(5);
     assertThat(s.eligibilityMinSymbols()).isEqualTo(2);
-    assertThat(s.tradeFeedDelay()).isEqualTo(Duration.ofMinutes(15));
-    assertThat(s.holdingsVisibility()).isEqualTo(HoldingsVisibility.EOD_WEIGHTS);
+    assertThat(s.tradeFeedDelay()).isZero();                      // public mode (§16.7): no feed delay by default
     assertThat(s.showDepositsInFeed()).isTrue();
     assertThat(s.botsRequireRationale()).isTrue();
     assertThat(s.humanKindExcludesApiTraders()).isFalse();
-    assertThat(s.all()).containsEntry("league.defaultStartingCash", "1000.00").hasSize(10);
+    assertThat(s.all()).containsEntry("league.defaultStartingCash", "1000.00").hasSize(9)
+        .doesNotContainKey("social.holdingsVisibility");
     assertThat(db.jdbc().sql("SELECT COUNT(*) FROM app_setting WHERE updated_by IS NULL").query(Long.class).single())
-        .isEqualTo(10);
+        .isEqualTo(9);
 
     // the environment seeds once: a later boot with another value keeps the admin's value
     SettingsServiceImpl later = service(TestProperties.stocks("stocks.bootstrap.default-starting-cash", "250"));
@@ -78,8 +77,6 @@ class SettingsServiceImplTest {
     assertThat(s.tradeFeedDelay()).isZero();
     s.put("league.defaultStartingCash", "750", admin);
     assertThat(s.all()).containsEntry("league.defaultStartingCash", "750.00");
-    s.put("social.holdingsVisibility", "hidden", admin);
-    assertThat(s.holdingsVisibility()).isEqualTo(HoldingsVisibility.HIDDEN);
     s.put("league.allowSelfReset", "TRUE", admin);
     assertThat(s.allowSelfReset()).isTrue();
     assertThat(db.jdbc().sql("SELECT updated_by FROM app_setting WHERE setting_key = 'league.allowSelfReset'")
@@ -88,7 +85,8 @@ class SettingsServiceImplTest {
     for (String[] bad : new String[][] {{"league.defaultStartingCash", "0.99"}, {"league.defaultStartingCash", "1.001"},
         {"league.defaultStartingCash", "abc"}, {"league.allowSelfReset", "yes"}, {"league.seasonStart", "tomorrow"},
         {"league.eligibility.minFills", "-1"}, {"social.tradeFeedDelay", "P8D"}, {"social.tradeFeedDelay", "-PT1M"},
-        {"social.holdingsVisibility", "PUBLIC"}, {"no.such.key", "1"}, {"league.allowSelfReset", ""}}) {
+        {"social.holdingsVisibility", "PUBLIC"}, {"social.holdingsVisibility", "EOD_WEIGHTS"}, {"no.such.key", "1"},
+        {"league.allowSelfReset", ""}}) {
       assertThatThrownBy(() -> s.put(bad[0], bad[1], admin)).as(bad[0] + "=" + bad[1])
           .isInstanceOfSatisfying(ApiException.class, e -> {
             assertThat(e.code()).isEqualTo(ErrorCode.SETTING_INVALID);

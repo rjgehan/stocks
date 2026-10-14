@@ -4,7 +4,6 @@ import com.stocks.audit.AuditCategory;
 import com.stocks.audit.AuditEntry;
 import com.stocks.audit.AuditOutcome;
 import com.stocks.audit.AuditService;
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.contract.admin.dto.SettingsDto;
 import com.stocks.contract.admin.dto.UpdateSettingsRequest;
 import com.stocks.contract.security.CurrentPlayer;
@@ -29,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * §21.1 league settings ({@code app_setting}, §23.4): starting cash for new players and resets, self-reset, season
- * start, leaderboard eligibility, feed delay, holdings visibility, deposits in the feed, bot rationales.
+ * start, leaderboard eligibility, feed delay, deposits in the feed, bot rationales.
  * {@code PUT} takes {@code Partial<Settings>} (all values validated, then written in one transaction);
  * {@code PATCH} is the same operation under its conventional verb.
  */
@@ -57,7 +56,9 @@ public class AdminSettingsController {
   @Operation(summary = "Change league settings",
       description = "Recent password check. Partial: only the keys present change. league.defaultStartingCash is a "
           + "decimal string >= 1.00 (applies to new players and resets, never to existing accounts); "
-          + "social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D). Errors: SETTING_INVALID.")
+          + "social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only "
+          + "the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live). "
+          + "Errors: SETTING_INVALID.")
   public SettingsDto put(@RequestBody UpdateSettingsRequest body, HttpServletRequest request) {
     PlayerPrincipal admin = CurrentPlayer.require();
     Map<SettingKey, String> values = new LinkedHashMap<>();
@@ -67,7 +68,6 @@ public class AdminSettingsController {
     put(values, SettingKey.ELIGIBILITY_MIN_FILLS, body.eligibilityMinFills());
     put(values, SettingKey.ELIGIBILITY_MIN_SYMBOLS, body.eligibilityMinSymbols());
     put(values, SettingKey.TRADE_FEED_DELAY, body.tradeFeedDelay());
-    put(values, SettingKey.HOLDINGS_VISIBILITY, body.holdingsVisibility());
     put(values, SettingKey.SHOW_DEPOSITS_IN_FEED, body.showDepositsInFeed());
     put(values, SettingKey.BOTS_REQUIRE_RATIONALE, body.botsRequireRationale());
     put(values, SettingKey.HUMAN_KIND_EXCLUDES_API_TRADERS, body.humanKindExcludesApiTraders());
@@ -93,7 +93,6 @@ public class AdminSettingsController {
       return;
     }
     String s = value instanceof BigDecimal d ? d.toPlainString()
-        : value instanceof HoldingsVisibility h ? h.name()
         : value instanceof LocalDate date ? date.toString()
         : value.toString();
     values.put(key, s);
@@ -102,7 +101,6 @@ public class AdminSettingsController {
   private SettingsDto dto() {
     return new SettingsDto(settings.defaultStartingCash(), settings.allowSelfReset(), settings.seasonStart(),
         settings.eligibilityMinFills(), settings.eligibilityMinSymbols(), settings.tradeFeedDelay().toString(),
-        settings.holdingsVisibility(), settings.showDepositsInFeed(), settings.botsRequireRationale(),
-        settings.humanKindExcludesApiTraders());
+        settings.showDepositsInFeed(), settings.botsRequireRationale(), settings.humanKindExcludesApiTraders());
   }
 }

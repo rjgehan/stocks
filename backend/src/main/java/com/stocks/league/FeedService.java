@@ -19,6 +19,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -31,8 +33,10 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * The league feed (§18.2 {@code GET /feed}, MCP {@code get_league_feed}): only rows with {@code visible_at ≤ now},
  * newest first. Also the feed visibility publisher ({@code FEED_PUBLISHER}, a 5 s {@link PeriodicTask}, §19): each
- * row is pushed to {@code /topic/feed} once, when it becomes visible (when a STOMP broker is configured). Rows of
- * players hidden from the league (DISABLED) are skipped. Phase 2 (§16.11): every item carries its reactions, and a
+ * row is pushed to {@code /topic/feed} once, when it becomes visible (when a STOMP broker is configured). Each tick
+ * looks back {@link #OVERLAP} before the last one and skips the ids it already pushed, because with no feed delay
+ * (public mode, §16.7) a row's {@code visible_at} falls just before its asynchronous insert commits. Rows of players
+ * hidden from the league (DISABLED) are skipped. Phase 2 (§16.11): every item carries its reactions, and a
  * reaction change pushes the item's {@code FeedReactions} on the same topic.
  */
 @Service
@@ -43,6 +47,10 @@ public class FeedService implements PeriodicTask {
   public static final String NAME = "FEED_PUBLISHER";
   public static final String TOPIC = "/topic/feed";
   static final Duration INTERVAL = Duration.ofSeconds(5);
+  /** How far each tick looks back before the previous one, for rows committed after their {@code visible_at}. */
+  static final Duration OVERLAP = Duration.ofSeconds(15);
+  /** The ids remembered as pushed (far more than {@link #OVERLAP} of feed rows). */
+  static final int PUSHED_MAX = 2_000;
 
   private final FeedRepository feed;
   private final FeedReactionRepository reactions;
@@ -51,6 +59,8 @@ public class FeedService implements PeriodicTask {
   private final TimeSource time;
   private final ObjectProvider<SimpMessageSendingOperations> messaging;
   private volatile Instant published;
+  /** The last {@link #PUSHED_MAX} pushed row ids, oldest first; guarded by itself. */
+  private final LinkedHashSet<Long> pushed = new LinkedHashSet<>();
 
   public FeedService(FeedRepository feed, FeedReactionRepository reactions, PlayerDirectory players, JsonMapper json,
                      TimeSource time, ObjectProvider<SimpMessageSendingOperations> messaging) {
@@ -150,7 +160,11 @@ public class FeedService implements PeriodicTask {
     publishNewlyVisible();
   }
 
-  /** Pushes rows that became visible since the last tick; returns how many. */
+  /**
+   * Pushes rows that became visible since the last tick (looking back {@link #OVERLAP} further, minus the rows already
+   * pushed); returns how many. Rows the EOD backfill writes hours later are not pushed live; they appear in
+   * {@code GET /feed} at their original place.
+   */
   public int publishNewlyVisible() {
     Instant now = time.now();
     Instant from = published;
@@ -160,13 +174,14 @@ public class FeedService implements PeriodicTask {
       return 0;                                      // first tick only sets the watermark
     }
     Map<Long, PlayerRow> all = players.all();
-    List<FeedRow> rows = feed.visibleBetween(from, now);
+    List<FeedRow> rows = feed.visibleBetween(from.minus(OVERLAP), now).stream()
+        .filter(r -> !wasPushed(r.id())).toList();
     Map<Long, List<ReactionRow>> byItem = rows.isEmpty() ? Map.of()
         : reactions.forItems(rows.stream().map(FeedRow::id).toList());
     int n = 0;
     for (FeedRow r : rows) {
       PlayerRow p = all.get(r.playerId());
-      if (p == null || !p.listed()) {
+      if (p == null || !p.listed() || !markPushed(r.id())) {
         continue;
       }
       try {
@@ -177,5 +192,26 @@ public class FeedService implements PeriodicTask {
       }
     }
     return n;
+  }
+
+  private boolean wasPushed(long id) {
+    synchronized (pushed) {
+      return pushed.contains(id);
+    }
+  }
+
+  /** Remembers {@code id} as pushed (evicting the oldest beyond {@link #PUSHED_MAX}); false if it already was. */
+  private boolean markPushed(long id) {
+    synchronized (pushed) {
+      if (!pushed.add(id)) {
+        return false;
+      }
+      if (pushed.size() > PUSHED_MAX) {
+        Iterator<Long> oldest = pushed.iterator();
+        oldest.next();
+        oldest.remove();
+      }
+      return true;
+    }
   }
 }

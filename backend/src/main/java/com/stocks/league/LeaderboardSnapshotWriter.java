@@ -1,6 +1,5 @@
 package com.stocks.league;
 
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.domain.KindFilter;
 import com.stocks.common.domain.LeaderboardMetric;
 import com.stocks.common.domain.LeaderboardPeriod;
@@ -60,8 +59,7 @@ public class LeaderboardSnapshotWriter {
     int rows = 0;
     Map<LeaderboardPeriod, Long> leaders = new HashMap<>();
     for (PeriodBoard p : board.periods().values()) {
-      for (var r : LeaderboardRowMapper.rows(p.entries(), LeaderboardMetric.RETURN, KindFilter.ALL, false,
-          HoldingsVisibility.EOD_FULL)) {
+      for (var r : LeaderboardRowMapper.rows(p.entries(), LeaderboardMetric.RETURN, KindFilter.ALL, false)) {
         LeagueEntry e = p.entries().stream().filter(x -> x.player().publicId().equals(r.player().playerId()))
             .findFirst().orElseThrow();
         repository.upsertSnapshot(new SnapshotRow(p.period(), tradeDate, e.accountId(), e.player().id(), r.rank(),

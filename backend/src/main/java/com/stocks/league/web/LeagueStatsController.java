@@ -46,8 +46,8 @@ public class LeagueStatsController {
   @GetMapping("/players/{handle}/stats")
   @Operation(summary = "A player's league stats", description = "Return, P&L and drawdown as on the leaderboard; "
       + "Sharpe ratio and volatility (annualized, from daily unit-value returns, at least 20 of them), win rate, "
-      + "profit factor, closed lots with the average hold, best and worst trade (closed after the feed delay), rank "
-      + "and the EOD rank history.")
+      + "profit factor, closed lots with the average hold, best and worst trade (closed after the feed delay, if "
+      + "any), rank and the EOD rank history.")
   public PlayerStatsDto getPlayerStats(
       @PathVariable("handle") String handle,
       @Parameter(description = "TODAY, WEEK, MONTH, YTD, SEASON or ALL (default)")

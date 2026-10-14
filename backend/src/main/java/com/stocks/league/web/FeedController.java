@@ -26,8 +26,8 @@ public class FeedController {
   }
 
   @GetMapping("/feed")
-  @Operation(summary = "The league feed", description = "Fills (after the 15-minute delay), closed positions, "
-      + "deposits, resets, new leaders and new players; newest first. Player text is inside `untrusted`.")
+  @Operation(summary = "The league feed", description = "Fills (after the feed delay, none by default), closed "
+      + "positions, deposits, resets, new leaders and new players; newest first. Player text is inside `untrusted`.")
   public Page<FeedItemDto> getFeed(
       @RequestParam(name = "cursor", required = false) String cursor,
       @Parameter(description = "1..200, default 50")

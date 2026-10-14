@@ -1,6 +1,5 @@
 package com.stocks.portfolio;
 
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.time.MutableTimeSource;
 import com.stocks.config.stubs.NotImplementedStub;
 import com.stocks.contract.calendar.MarketCalendar;
@@ -125,13 +124,13 @@ public final class PortfolioKit implements AutoCloseable {
     time.set(instant);
   }
 
-  /** A settings service with §23.4 defaults except holdings visibility. */
-  public static SettingsService visibility(HoldingsVisibility v) {
+  /** A settings service with §23.4 defaults (no feed delay, public mode §16.7) except {@code social.tradeFeedDelay}. */
+  public static SettingsService feedDelay(java.time.Duration delay) {
     SettingsService stub = NotImplementedStub.of(SettingsService.class, "WS1");
     return (SettingsService) java.lang.reflect.Proxy.newProxyInstance(SettingsService.class.getClassLoader(),
         new Class<?>[] {SettingsService.class}, (proxy, method, args) -> {
-          if (method.getName().equals("holdingsVisibility")) {
-            return v;
+          if (method.getName().equals("tradeFeedDelay")) {
+            return delay;
           }
           try {
             return method.invoke(stub, args);

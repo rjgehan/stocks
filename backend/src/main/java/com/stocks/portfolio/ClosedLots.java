@@ -162,7 +162,7 @@ public final class ClosedLots {
 
   /**
    * Count and average hold of {@code lots}; best and worst among those closed at or before {@code bestWorstAsOf}
-   * (the feed delay for other players, §16.7), ties to the earliest close.
+   * (after the feed delay, if any, for other players, §16.7), ties to the earliest close.
    */
   public static Summary summarize(List<Lot> lots, Instant bestWorstAsOf) {
     Objects.requireNonNull(bestWorstAsOf, "bestWorstAsOf");

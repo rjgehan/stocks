@@ -6,8 +6,8 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * §18.3 {@code LeaderboardRow} (§16.5). {@code rank} null when ineligible; {@code equity} null when
- * {@code holdingsVisibility=HIDDEN}; {@code spark} up to 30 daily unit values plus the live one. Phase 2 (§16.8):
+ * §18.3 {@code LeaderboardRow} (§16.5). {@code rank} null when ineligible; {@code equity} and {@code topHolding} are
+ * always shown (public mode, §16.7); {@code spark} up to 30 daily unit values plus the live one. Phase 2 (§16.8):
  * {@code sharpe} (null below 20 daily returns) and {@code profitFactor} (null without a losing sell) for the period.
  */
 public record LeaderboardRowDto(Integer rank, Integer rankChange, boolean eligible, String eligibilityNote,

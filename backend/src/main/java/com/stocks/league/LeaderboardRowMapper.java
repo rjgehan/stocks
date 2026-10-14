@@ -1,6 +1,5 @@
 package com.stocks.league;
 
-import com.stocks.common.domain.HoldingsVisibility;
 import com.stocks.common.domain.KindFilter;
 import com.stocks.common.domain.LeaderboardMetric;
 import com.stocks.common.domain.PlayerKind;
@@ -15,9 +14,8 @@ import java.util.List;
 
 /**
  * Turns {@link LeagueEntry} values into §18.3 {@code LeaderboardRow}s for one view (§16.5): kind filter, sort by
- * metric, ranks for eligible rows (ineligible rows follow, unranked), rank change and the §16.7 visibility rules.
- * This is the only place leaderboard visibility is applied: {@code equity} and {@code topHolding} are null under
- * {@code HIDDEN}; net contributions and flows are always public (charter item 2).
+ * metric, ranks for eligible rows (ineligible rows follow, unranked) and rank change. Public mode (§16.7):
+ * {@code equity}, {@code topHolding}, net contributions and flows are always shown.
  */
 public final class LeaderboardRowMapper {
 
@@ -55,12 +53,11 @@ public final class LeaderboardRowMapper {
 
   /** Every row of the view in order: ranked (eligible) rows first, then the unranked ones. */
   public static List<LeaderboardRowDto> rows(List<LeagueEntry> entries, LeaderboardMetric metric, KindFilter kind,
-                                             boolean humanExcludesApiTraders, HoldingsVisibility visibility) {
+                                             boolean humanExcludesApiTraders) {
     List<LeagueEntry> filtered = new ArrayList<>(entries.stream()
         .filter(e -> inKind(e, kind, humanExcludesApiTraders)).toList());
     filtered.sort(Comparator.comparing((LeagueEntry e) -> !e.eligible()).thenComparing(order(metric)));
     boolean showRankChange = metric == LeaderboardMetric.RETURN && kind == KindFilter.ALL;
-    boolean hidden = visibility == HoldingsVisibility.HIDDEN;
     List<LeaderboardRowDto> out = new ArrayList<>();
     int rank = 0;
     for (LeagueEntry e : filtered) {
@@ -68,8 +65,8 @@ public final class LeaderboardRowMapper {
       Integer change = showRankChange && r != null && e.previousRank() != null ? e.previousRank() - r : null;
       out.add(new LeaderboardRowDto(r, change, e.eligible(), e.eligibilityNote(), e.partialPeriod(), e.rebased(),
           e.player().summary(), e.apiTrader(), e.twr(), e.pnl(), e.excess(), e.maxDrawdown(),
-          hidden ? null : e.equity(), e.netContributions(), e.flowsInPeriod(), e.fills(), e.symbolsTraded(),
-          e.winRate(), hidden ? null : e.topHolding(), e.spark(), e.extras().risk().sharpe(),
+          e.equity(), e.netContributions(), e.flowsInPeriod(), e.fills(), e.symbolsTraded(),
+          e.winRate(), e.topHolding(), e.spark(), e.extras().risk().sharpe(),
           e.extras().profitFactor()));
     }
     return out;

@@ -7,8 +7,8 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * §18.3 {@code PlayerProfile}. {@code equity} null when {@code holdingsVisibility=HIDDEN}; {@code holdings} are
- * previous-EOD weights ({@code qty} only with {@code EOD_FULL}).
+ * §18.3 {@code PlayerProfile} (public mode, §16.7): equity live; holdings = previous-close rows with weight and qty
+ * ({@code equity} null only without a valuation).
  */
 public record PlayerProfileDto(PlayerSummaryDto player, String ownerHandle, int runNo, ProfileStatsDto stats,
                                BigDecimal equity, BigDecimal netContributions, DepositsSummaryDto deposits, int fills,

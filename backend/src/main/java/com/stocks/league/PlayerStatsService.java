@@ -121,7 +121,7 @@ public class PlayerStatsService implements LeagueStatsQueries {
     LeagueEntry e = pb.entries().stream().filter(x -> x.player().id() == p.id()).findFirst()
         .orElseThrow(PlayerStatsService::noAccount);
     LeaderboardRowDto row = LeaderboardRowMapper.rows(pb.entries(), LeaderboardMetric.RETURN, KindFilter.ALL,
-            settings.humanKindExcludesApiTraders(), settings.holdingsVisibility()).stream()
+            settings.humanKindExcludesApiTraders()).stream()
         .filter(r -> r.player().playerId().equals(p.publicId())).findFirst().orElse(null);
     LeagueEntry.Extras x = e.extras();
     Instant start = x.curve().isEmpty() ? pb.periodStart() : x.curve().get(0).t();
@@ -199,7 +199,7 @@ public class PlayerStatsService implements LeagueStatsQueries {
   RaceChartDto compute(Board board, LeaderboardPeriod per, KindFilter kind) {
     PeriodBoard pb = board.periods().get(per);
     List<LeaderboardRowDto> rows = LeaderboardRowMapper.rows(pb.entries(), LeaderboardMetric.RETURN, kind,
-        settings.humanKindExcludesApiTraders(), settings.holdingsVisibility());
+        settings.humanKindExcludesApiTraders());
     Map<String, LeagueEntry> byPublicId = new HashMap<>();
     pb.entries().forEach(e -> byPublicId.put(e.player().publicId(), e));
     Map<Long, List<RankRow>> ranks = league.rankHistories(per, board.pnlDay(), RANK_HISTORY);

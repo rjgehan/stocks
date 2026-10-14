@@ -13,7 +13,7 @@ public interface LeagueStatsQueries {
 
   /**
    * A listed player's stats ({@code PLAYER_NOT_FOUND}; {@code ACCOUNT_NOT_FOUND} without an active run). Unless the
-   * viewer is that player, best and worst trades only consider lots closed before the feed delay (§16.7).
+   * viewer is that player, best and worst trades only consider lots closed after the feed delay, if any (§16.7).
    */
   PlayerStatsDto playerStats(String handle, LeaderboardPeriod period, Long viewerPlayerId);
 
