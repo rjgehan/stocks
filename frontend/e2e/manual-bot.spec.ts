@@ -103,8 +103,23 @@ test('a manual bot: prompt out, reply in, one order placed as the bot', async ({
     expect(body.items[0]!.actions[0]!.result?.status).toBe('PLACED')
     expect(body.items[0]!.actions[1]!.result).toBeNull()
   }
-  // B-INT: /players/<h>/history shows the order with the "Manual console" pill and the session (ManualSessionsSection).
   await page.getByRole('link', { name: 'Public profile' }).click()
   await expect(page).toHaveURL(new RegExp(`/players/${handle}$`))
   await expect(page.getByText('AI · Gemini 3').first()).toBeVisible()
+
+  // 8. History: the placed order (only the market buy) carries a "Manual console" link to its session, which the
+  //    "Manual sessions" section shows first, highlighted, with the pasted reply open.
+  await open(page, `/players/${handle}/history`)
+  const orders = page.getByRole('list', { name: 'Orders' })
+  const pill = orders.getByRole('link', { name: 'Manual console: open the session' })
+  await expect(pill).toHaveCount(1, { timeout: 15_000 })
+  await expect(orders.getByText(`1 sh ${SYMBOL} · Market`)).toBeVisible()
+  const sessions = page.getByRole('region', { name: 'Manual sessions' })
+  await expect(sessions.getByRole('listitem', { name: `Manual session ${sessionId}` })).toBeVisible()
+  await pill.click()
+  await expect(page).toHaveURL(new RegExp(`/players/${handle}/history\\?session=${sessionId}$`))
+  const card = sessions.getByRole('listitem', { name: `Manual session ${sessionId}` })
+  await expect(card).toHaveAttribute('aria-current', 'true')
+  await expect(card.getByText('pasted by @', { exact: false })).toBeVisible()
+  await expect(card.getByLabel('Reply text')).toContainText("Here is my plan. AAPL's pullback", { timeout: 15_000 })
 })

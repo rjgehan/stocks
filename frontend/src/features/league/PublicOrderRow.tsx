@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import type { PublicOrder, WaitReason } from '@/lib/api/types'
 import { formatDateTimeEt } from '@/lib/format/time'
 import { Pill } from '@/components/ui/Pill'
@@ -44,8 +45,30 @@ export function StatusPill({ o }: { o: Pick<PublicOrder, 'status'> }) {
   return <Pill tone={o.status ? STATUS_TONE[o.status] : 'neutral'}>{o.status ? STATUS_LABEL[o.status] : '--'}</Pill>
 }
 
-/** The pills after an order line: its group, "via API" (a key or MCP client placed it) and "Manual console" (§20.8). */
-export function OrderSourcePills({ o }: { o: PublicOrder }) {
+/**
+ * "Manual console" (§20.8): with the player's handle, a link to the session on their History (`?session=mbs_…`);
+ * without one, a plain pill.
+ */
+export function ManualConsolePill({ handle, sessionId, className }: { handle?: string; sessionId: string; className?: string }) {
+  const pill = (
+    <Pill tone="ai" title="Placed from the bot's manual console (prompt out, reply in)">
+      Manual console
+    </Pill>
+  )
+  if (!handle) return className ? <span className={cx('inline-flex', className)}>{pill}</span> : pill
+  return (
+    <Link to="/players/$handle/history" params={{ handle }} search={{ session: sessionId }} aria-label="Manual console: open the session" className={cx('inline-flex rounded-full', className)}>
+      {pill}
+    </Link>
+  )
+}
+
+/**
+ * The pills after an order line: its group, "via API" (a key or MCP client placed it) and "Manual console" (§20.8),
+ * which links to its session when `handle` is given. `manual={false}` leaves that pill to the caller (a row whose
+ * line is a button, where a link cannot go).
+ */
+export function OrderSourcePills({ o, handle, manual = true }: { o: PublicOrder; handle?: string; manual?: boolean }) {
   const group = publicGroupLabel(o.group)
   return (
     <>
@@ -55,9 +78,9 @@ export function OrderSourcePills({ o }: { o: PublicOrder }) {
         </Pill>
       ) : null}
       {o.manualSessionId ? (
-        <Pill tone="ai" title="Placed from the bot's manual console (prompt out, reply in)">
-          Manual console
-        </Pill>
+        manual ? (
+          <ManualConsolePill handle={handle} sessionId={o.manualSessionId} />
+        ) : null
       ) : o.viaApi ? (
         <Pill tone="neutral">via API</Pill>
       ) : null}
@@ -81,7 +104,7 @@ export function RationaleQuote({ text, clamp, className }: { text: string; clamp
  * One open order of another player's portfolio: side · size · symbol · type and prices · TIF/ext, the status pill,
  * when it was placed, its group and source, and the note. Read-only: there is no Cancel (`action` is the admin's).
  */
-export function PublicOrderRow({ o, action }: { o: PublicOrder; action?: React.ReactNode }) {
+export function PublicOrderRow({ o, handle, action }: { o: PublicOrder; handle?: string; action?: React.ReactNode }) {
   const note = o.untrusted?.rationale
   return (
     <li className="px-4 py-3">
@@ -91,7 +114,7 @@ export function PublicOrderRow({ o, action }: { o: PublicOrder; action?: React.R
             <span className={cx('font-semibold', o.side === 'SELL' ? 'text-down' : 'text-up')}>{o.side === 'SELL' ? 'Sell' : 'Buy'}</span>
             <span className="font-semibold">{publicOrderLine(o).replace(/^(Buy|Sell) /, '')}</span>
             <StatusPill o={o} />
-            <OrderSourcePills o={o} />
+            <OrderSourcePills o={o} handle={handle} />
           </div>
           <p className="mt-0.5 text-caption text-text-3">
             {publicStatusLine(o)} · placed {formatDateTimeEt(o.receivedAt)}

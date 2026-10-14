@@ -38,6 +38,13 @@ function SessionCard({ handle, s, focused }: { handle: string; s: ManualSession;
   const detail = useManualSession(handle, s.sessionId, promptOpen || replyOpen || focused)
   const full = detail.data ?? s
   const actions = full.actions ?? []
+  // focused later (a "Manual console" pill on the same History while this card is shown): open it the same way
+  const [wasFocused, setWasFocused] = useState(focused)
+  if (focused !== wasFocused) {
+    setWasFocused(focused)
+    if (focused && s.repliedAt) setReplyOpen(true)
+    else if (focused) setPromptOpen(true)
+  }
   useEffect(() => {
     if (focused) ref.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
   }, [focused])

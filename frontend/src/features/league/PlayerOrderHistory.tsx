@@ -17,7 +17,7 @@ import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { GROUP_TYPE_LABEL, ROLE_LABEL } from '@/features/groups/groupLabels'
 import { feedDayLabel } from './FeedList'
-import { OrderSourcePills, RationaleQuote, StatusPill, publicOrderLine, publicStatusLine, publicWaitLabel } from './PublicOrderRow'
+import { ManualConsolePill, OrderSourcePills, RationaleQuote, StatusPill, publicOrderLine, publicStatusLine, publicWaitLabel } from './PublicOrderRow'
 
 const positive = (d: string | null | undefined): boolean => d != null && isDecimal(d) && sign(d) > 0
 const nonZero = (d: string | null | undefined): boolean => d != null && isDecimal(d) && !isZero(d)
@@ -98,7 +98,7 @@ function OrderDetail({ o }: { o: PublicOrder }) {
  * One order of a player's History: placed time (ET), the order line, status, average fill and fees, its source and
  * the first line of the note; tapping it shows the rest (fills, replace chain, group, run).
  */
-export function OrderHistoryRow({ o }: { o: PublicOrder }) {
+export function OrderHistoryRow({ o, handle }: { o: PublicOrder; handle?: string }) {
   const [open, setOpen] = useState(false)
   const note = o.untrusted?.rationale
   return (
@@ -110,7 +110,7 @@ export function OrderHistoryRow({ o }: { o: PublicOrder }) {
             <span className={cx('font-semibold', o.side === 'SELL' ? 'text-down' : 'text-up')}>{o.side === 'SELL' ? 'Sell' : 'Buy'}</span>
             <span className="font-semibold">{publicOrderLine(o).replace(/^(Buy|Sell) /, '')}</span>
             <StatusPill o={o} />
-            <OrderSourcePills o={o} />
+            <OrderSourcePills o={o} manual={false} />
           </span>
           <span className="mt-0.5 block text-caption text-text-3">
             {positive(o.filledQty) ? `Filled ${formatQty(o.filledQty)} @ ${formatPrice(o.avgFillPrice)}` : publicStatusLine(o)}
@@ -120,6 +120,8 @@ export function OrderHistoryRow({ o }: { o: PublicOrder }) {
         </span>
         <IconChevronDown size={16} className={cx('mt-0.5 shrink-0 text-text-3 transition-transform', open && 'rotate-180')} />
       </button>
+      {/* outside the row's button: a link cannot sit inside it */}
+      {o.manualSessionId ? <ManualConsolePill handle={handle} sessionId={o.manualSessionId} className="mt-1 ml-19" /> : null}
       {open ? <OrderDetail o={o} /> : null}
     </li>
   )
@@ -223,7 +225,7 @@ export function PlayerOrderHistory({
                         </li>
                       ) : (
                         <Fragment key={e.o.orderId}>
-                          <OrderHistoryRow o={e.o} />
+                          <OrderHistoryRow o={e.o} handle={handle} />
                         </Fragment>
                       ),
                     )}

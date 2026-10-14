@@ -204,7 +204,7 @@ export function PublicPortfolio({ handle }: { handle: string }) {
         {orders.length ? (
           <ul className="divide-y divide-divider" aria-label="Open orders">
             {orders.map((o) => (
-              <PublicOrderRow key={o.orderId} o={o} />
+              <PublicOrderRow key={o.orderId} o={o} handle={handle} />
             ))}
           </ul>
         ) : (
