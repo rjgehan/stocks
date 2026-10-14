@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import type { Me, RunRequest, RunRequestList } from '@/lib/api/types'
-import { EXPIRED_NOTE, canRunBot, isOpenRequest, runNowBlocked, runRequestView, serverNow } from './runNowView'
+import type { Me, RunAllResult, RunRequest, RunRequestList } from '@/lib/api/types'
+import {
+  EXPIRED_NOTE,
+  type RunAllState,
+  canRunBot,
+  isOpenRequest,
+  runAllHeadline,
+  runAllItemView,
+  runAllPlan,
+  runAllToast,
+  runNowBlocked,
+  runRequestView,
+  serverNow,
+} from './runNowView'
 
 const me = (over: Partial<Me> = {}): Me => ({ handle: 'ryan', role: 'PLAYER', status: 'ACTIVE', kind: 'HUMAN', ...over }) as Me
 
@@ -110,5 +122,66 @@ describe('a run request as the button shows it', () => {
     expect(runRequestView(req({ status: 'DONE', requestedAt: '2026-10-13T14:31:00Z', finishedAt: '2026-10-13T14:35:00Z' }), NOW, 'ryan').line).toBe(
       'Requested Oct 13, 10:31 AM ET · done 10:35 AM',
     )
+  })
+})
+
+const loaded = (over: Partial<RunRequestList> = {}): RunAllState => ({ data: list(over), dataUpdatedAt: NOW, isPending: false, isError: false })
+
+const result = (over: Partial<RunAllResult> = {}): RunAllResult => ({
+  dryRun: false,
+  asOf: '2026-10-14T14:31:00Z',
+  requested: 1,
+  results: [
+    { handle: 'chatgpt', outcome: 'SKIPPED', reason: 'NO_TRADER', message: "No claude-trader service has asked for @chatgpt's runs in the last 5 minutes, so nothing would pick a run up.", request: null },
+    { handle: 'claude', outcome: 'REQUESTED', reason: null, message: null, request: req({}) },
+    { handle: 'gpt5', outcome: 'ALREADY_OPEN', reason: null, message: '@gpt5 is already running a requested check-in (picked up at 10:30 ET); wait until it reports back.', request: req({ handle: 'gpt5', status: 'CLAIMED' }) },
+  ],
+  ...over,
+})
+
+describe('Run all (§20.9)', () => {
+  it('names the bots it would run and why it would not run the others, like the per-bot button', () => {
+    const plan = runAllPlan(
+      [{ handle: 'claude', status: 'ACTIVE' }, { handle: 'frozen', status: 'FROZEN' }, { handle: 'busy' }, { handle: 'chatgpt' }, { handle: 'iced' }, { handle: 'gpt5' }],
+      [
+        loaded(),
+        { dataUpdatedAt: 0, isPending: true, isError: false },        // never fetched: the admin list says FROZEN
+        loaded({ requests: [req({ handle: 'busy', status: 'CLAIMED' })] }),
+        loaded({ traderSeenAt: null }),
+        loaded({ botStatus: 'FROZEN' }),
+        loaded({ requests: [req({ handle: 'gpt5', status: 'DONE' })] }),
+      ],
+    )
+    expect(plan).toEqual({
+      run: ['claude', 'gpt5'],
+      skipped: [
+        { handle: 'frozen', why: 'FROZEN: it cannot trade' },
+        { handle: 'busy', why: 'a run is already on its way' },
+        { handle: 'chatgpt', why: 'no claude-trader service serves it' },
+        { handle: 'iced', why: 'FROZEN: it cannot trade' },
+      ],
+      unknown: [],
+      checking: false,
+    })
+  })
+
+  it('waits for the lists, and leaves a bot it could not check to the server', () => {
+    expect(runAllPlan([{ handle: 'claude' }], [{ dataUpdatedAt: 0, isPending: true, isError: false }]).checking).toBe(true)
+    expect(runAllPlan([{ handle: 'claude' }], [{ dataUpdatedAt: 0, isPending: false, isError: true }])).toMatchObject({ run: [], unknown: ['claude'], checking: false })
+    // a trader seen 6 minutes before the server's clock no longer serves the bot
+    expect(runAllPlan([{ handle: 'claude' }], [loaded({ traderSeenAt: '2026-10-14T14:54:00Z' })]).skipped).toEqual([{ handle: 'claude', why: 'no claude-trader service serves it' }])
+  })
+
+  it('sums up what the server did, per bot', () => {
+    expect(runAllHeadline(result())).toBe('Run all at 10:31 AM ET: 1 requested · 1 already on its way · 1 skipped')
+    expect(runAllHeadline(result({ dryRun: true, requested: 0, results: [] }))).toBe('Dry run all at 10:31 AM ET: you have no bots to run')
+    const [skipped, requested, open] = result().results!
+    expect(runAllItemView(skipped!)).toEqual({ label: 'Skipped', tone: 'warn', note: expect.stringContaining('No claude-trader service') })
+    expect(runAllItemView(requested!)).toEqual({ label: 'Requested', tone: 'accent', note: null })
+    expect(runAllItemView({ ...requested!, request: req({ dryRun: true }) }).label).toBe('Dry run requested')
+    expect(runAllItemView(open!)).toMatchObject({ label: 'Already on its way', note: expect.stringContaining('already running') })
+    expect(runAllToast(result({ requested: 2 })).title).toBe('Run requested for 2 bots')
+    expect(runAllToast(result({ dryRun: true })).title).toBe('Dry run requested for 1 bot')
+    expect(runAllToast(result({ requested: 0 })).title).toBe('No run requested')
   })
 })

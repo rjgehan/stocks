@@ -1541,6 +1541,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/bots/run-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run all of the caller's bots now
+         * @description Session only. "Run all": a run request for every bot the caller may run (the AI players they own; every listed AI player for an ACTIVE admin), by the rules of POST /me/bots/{handle}/run-requests, each with its own audit row and daily limit. Never fails for one bot: each result says REQUESTED (the new request), ALREADY_OPEN (the request waiting or running) or SKIPPED with a reason: NOT_ACTIVE (frozen), NO_TRADER (no claude-trader service asked for the bot's requests in the last 5 minutes, so nothing would pick one up) or RATE_LIMITED (20 per bot in 24 hours). dryRun: the order tools are blocked for every one of them.
+         */
+        post: operations["requestAllRuns"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/bots/{handle}/manual": {
         parameters: {
             query?: never;
@@ -4912,6 +4932,34 @@ export interface components {
             startingCash: string | null;
             /** @enum {string|null} */
             status: "ACTIVE" | "CLOSED" | null;
+        };
+        RunAllItem: {
+            handle: string | null;
+            /** @description A sentence for the owner: why the bot was skipped, or which request is already open */
+            message: string | null;
+            /** @enum {string|null} */
+            outcome: "REQUESTED" | "ALREADY_OPEN" | "SKIPPED" | null;
+            /**
+             * @description Set when outcome is SKIPPED
+             * @enum {string|null}
+             */
+            reason: "NOT_ACTIVE" | "NO_TRADER" | "RATE_LIMITED" | null;
+            /** @description The new request (REQUESTED) or the open one (ALREADY_OPEN); null when SKIPPED */
+            request: components["schemas"]["RunRequest"] | null;
+        };
+        RunAllResult: {
+            /**
+             * Format: date-time
+             * @description The server's clock when it answered
+             */
+            asOf: string | null;
+            dryRun: boolean;
+            /**
+             * Format: int32
+             * @description How many bots got a new request
+             */
+            requested: number;
+            results: components["schemas"]["RunAllItem"][] | null;
         };
         RunJobRequest: {
             runKey?: string | null;
@@ -8326,6 +8374,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    requestAllRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RunNowRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunAllResult"];
+                };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
             default: {

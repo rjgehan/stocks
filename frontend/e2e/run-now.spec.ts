@@ -1,5 +1,6 @@
 import { type Locator, type Page, expect, test } from '@playwright/test'
 import { MOCK, open } from './support/app'
+import { csrfToken } from './support/clock'
 
 /**
  * "Run now" (§20.9) at all three viewports: the bot's owner or the admin asks for a check-in from the app, and the
@@ -9,6 +10,10 @@ import { MOCK, open } from './support/app'
  *  - a real backend (`make e2e`): the admin creates a bot, runs it from Admin → Bots and dry-runs it from its
  *    profile, and the test plays the trader with the bot's own key (claim, then finish DONE or FAILED). Until a
  *    trader has asked for the new bot's requests, its button is disabled: nothing would pick a run up.
+ * "Run all" from Admin → Bots: a confirmation naming the bots, then a per-bot summary, and each bot's Run now line
+ * follows its request. Against a real backend it asks for every bot a trader serves, the Run now bots of the viewport
+ * projects included, so that test (tagged @run-all-backend) runs alone in the `run-all` project, after them
+ * (playwright.config.ts; `--project=run-all --no-deps` runs just it).
  */
 
 // a fresh route chunk per page in Vite's dev server, and up to two 5 s polls per state
@@ -115,3 +120,102 @@ test('Run now against the real backend: the trader claims the request with the b
   await expect(onProfile.getByText('Failed', { exact: true })).toBeVisible()
   expect((await page.request.post('/api/v1/agent-runs/requests/claim', { headers: auth })).status()).toBe(204)
 })
+
+const runAllGroup = (page: Page): Locator => page.getByRole('group', { name: 'Run all bots' })
+
+async function startRunAll(page: Page, dry: boolean): Promise<Locator> {
+  const group = runAllGroup(page)
+  if (dry) {
+    await group.getByRole('button', { name: 'More Run all options' }).click()
+    await page.getByRole('dialog', { name: 'Run all options' }).getByRole('button', { name: 'Dry run all (no orders)' }).click()
+  } else {
+    await group.getByRole('button', { name: 'Run all', exact: true }).click()
+  }
+  return page.getByRole('dialog', { name: dry ? 'Dry run all bots?' : 'Run all bots now?' })
+}
+
+test('Run all from Admin → Bots names the bots, runs the ones a trader serves and sums up per bot', async ({ page }) => {
+  test.skip(!MOCK, 'The real-backend Run all is its own test')
+  await open(page, '/admin/bots')
+  const dialog = await startRunAll(page, false)
+  // the mock's pretend trader serves @claude, not @chatgpt (the agent runner's bot)
+  await expect(dialog.getByRole('list', { name: 'Bots to run' })).toContainText('@claude')
+  await expect(dialog.getByRole('list', { name: 'Bots not run' })).toContainText('@chatgpt: no claude-trader service serves it')
+  await expect(dialog).toContainText('They trade for real.')
+  await dialog.getByRole('button', { name: 'Run 1 bot' }).click()
+  await expect(dialog).toBeHidden()
+
+  const summary = page.getByRole('status', { name: 'Run all result' })
+  await expect(summary).toContainText(/Run all at .* ET: 1 requested · 1 skipped/)
+  await expect(summary.getByRole('listitem').filter({ hasText: '@claude' })).toContainText('Requested')
+  await expect(summary.getByRole('listitem').filter({ hasText: '@chatgpt' })).toContainText("No claude-trader service has asked for @chatgpt's runs")
+  // the bot's own card follows the request until the trader reports back
+  const card = page.getByRole('list', { name: 'Bots' }).getByRole('listitem', { name: 'Bot claude' })
+  const status = runNow(card, 'claude').getByRole('status')
+  await expect(status).toContainText(/Requested .* · waiting for the trader/)
+  await expect(status).toContainText(/ · done /, POLL)
+
+  // Dry run all: the confirmation says what a dry run does
+  const dry = await startRunAll(page, true)
+  await expect(dry).toContainText('each bot only says what it would trade')
+  await dry.getByRole('button', { name: 'Dry run 1 bot' }).click()
+  await expect(summary).toContainText(/Dry run all at .* ET: 1 requested/)
+  await expect(status).toContainText(/Dry run requested .* · waiting for the trader/)
+  await summary.getByRole('button', { name: 'Dismiss' }).click()
+  await expect(summary).toBeHidden()
+
+  // Admin → Players has it too, under the header (each bot's ⋯ menu has Run now)
+  await open(page, '/admin/players')
+  await expect(runAllGroup(page).getByRole('button', { name: 'Run all', exact: true })).toBeVisible()
+})
+
+test('Run all against the real backend: every bot a trader serves, and the bot key claims its request', { tag: '@run-all-backend' }, async ({ page }) => {
+  test.skip(MOCK, 'Needs the real backend: the test claims and finishes the request with the bot key')
+  const handle = `ra${Date.now() % 1_000_000}`
+  const key = await createBot(page, handle)
+  const auth = { Authorization: `Bearer ${key}`, 'X-Stocks-Client': 'claude-code/trader' }
+  // this bot's row: "@ra123456" then its pill or reason (no \b: "@ra123456Requested" has no word boundary)
+  const mine = (list: Locator) => list.getByRole('listitem').filter({ hasText: new RegExp(`@${handle}(?![a-z0-9_])`) })
+
+  // no trader serves the new bot yet: the confirmation leaves it out, and says why
+  await open(page, '/admin/bots')
+  let dialog = await startRunAll(page, true)
+  await expect(mine(dialog.getByRole('list', { name: 'Bots not run' }))).toHaveText(`@${handle}: no claude-trader service serves it`)
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+
+  // the trader's minute poll; then Run all asks for it (and for any other bot a trader served lately)
+  expect((await page.request.post('/api/v1/agent-runs/requests/claim', { headers: auth })).status()).toBe(204)
+  await page.reload()
+  dialog = await startRunAll(page, false)
+  await expect(dialog.getByRole('list', { name: 'Bots to run' })).toContainText(`@${handle}`)
+  await dialog.getByRole('button', { name: /^Run \d+ bots?$/ }).click()
+  const summary = page.getByRole('status', { name: 'Run all result' })
+  await expect(mine(summary)).toContainText('Requested')
+  const card = page.getByRole('list', { name: 'Bots' }).getByRole('listitem', { name: `Bot ${handle}` })
+  const status = runNow(card, handle).getByRole('status')
+  await expect(status).toContainText(/Requested .* · waiting for the trader/)
+
+  // the trader's side: claim with the bot's own key, then report
+  const claim = await page.request.post('/api/v1/agent-runs/requests/claim', { headers: auth })
+  expect(claim.status(), await claim.text()).toBe(200)
+  const claimed = (await claim.json()) as { id: string; handle: string; dryRun: boolean; status: string }
+  expect(claimed).toMatchObject({ handle, dryRun: false, status: 'CLAIMED' })
+  await expect(status).toContainText(/picked up .* · running/, POLL)
+  const finish = await page.request.post(`/api/v1/agent-runs/requests/${claimed.id}/finish`, { headers: auth, data: { status: 'DONE', message: 'Check-in done in 52 s, 7 turns. Held.' } })
+  expect(finish.status(), await finish.text()).toBe(200)
+  await expect(status).toContainText('Check-in done in 52 s, 7 turns. Held.', POLL)
+
+  // Dry run all; a second one finds the request on its way
+  dialog = await startRunAll(page, true)
+  await expect(dialog.getByRole('list', { name: 'Bots to run' })).toContainText(`@${handle}`)
+  await dialog.getByRole('button', { name: /^Dry run \d+ bots?$/ }).click()
+  await expect(mine(summary)).toContainText('Dry run requested')
+  await expect(status).toContainText(/Dry run requested .* · waiting for the trader/)
+  const again = await page.request.post('/api/v1/me/bots/run-requests', { data: { dryRun: true }, headers: { 'X-XSRF-TOKEN': await csrfToken(page) } })
+  expect(again.status(), await again.text()).toBe(200)
+  const item = ((await again.json()) as { results: { handle: string; outcome: string }[] }).results.find((i) => i.handle === handle)
+  expect(item?.outcome).toBe('ALREADY_OPEN')
+  const dryClaim = await page.request.post('/api/v1/agent-runs/requests/claim', { headers: auth })
+  expect(((await dryClaim.json()) as { dryRun: boolean }).dryRun).toBe(true)
+})
+

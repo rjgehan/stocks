@@ -1,10 +1,10 @@
 /**
- * Mock mode (§22.9) for "Run now" (§20.9): the owner's routes, with a pretend claude-trader that picks a request up
- * a few seconds after it is made and reports DONE a few seconds later, so the button's states can be seen. It serves
- * every AI bot but @chatgpt (the agent runner's bot), which shows the button disabled. Requests live in memory (a
- * reload forgets them).
+ * Mock mode (§22.9) for "Run now" and "Run all" (§20.9): the owner's routes, with a pretend claude-trader that picks a
+ * request up a few seconds after it is made and reports DONE a few seconds later, so the button's states can be seen.
+ * It serves every AI bot but @chatgpt (the agent runner's bot), which shows the button disabled and which Run all
+ * skips. Requests live in memory (a reload forgets them).
  */
-import type { RunRequest, RunRequestList } from '../types'
+import type { RunAllItem, RunAllResult, RunRequest, RunRequestList } from '../types'
 import type { AgentMockDeps, RouteFn } from './agents'
 
 /** The pretend trader: claimed this long after the request, done this long after it. */
@@ -29,6 +29,9 @@ function problem(status: number, code: string, title: string, detail: string): R
     headers: { 'Content-Type': 'application/problem+json' },
   })
 }
+
+const onItsWay = (h: string, open: RunRequest) => `@${h} already has a run request on its way (requested by @${open.requestedBy}); wait until it reports back.`
+const dryRunOf = (body: unknown) => (body as { dryRun?: boolean | null } | null)?.dryRun === true
 
 /** A stored request as the trader would have moved it by `now`. */
 export function mockRunRequestAt(s: Stored, now: number): RunRequest {
@@ -83,17 +86,42 @@ export function registerRunRequestRoutes(r: RouteFn, d: Pick<AgentMockDeps, 'pla
     }
     return json(list)
   })
+  const openOf = (handle: string, now: number) => latest(handle, now).find((x) => x.status === 'PENDING' || x.status === 'CLAIMED')
+  const create = (handle: string, dryRun: boolean, now: number): RunRequest => {
+    const s: Stored = { id: `arq_mock${String(++seq).padStart(4, '0')}`, handle, requestedBy: d.me().handle ?? 'demo', requestedAt: now, dryRun }
+    store.push(s)
+    return mockRunRequestAt(s, now)
+  }
+
   r('POST', '/me/bots/{handle}/run-requests', ({ params, body }) => {
     const h = bot(params[0]!)
     if (h instanceof Response) return h
     const now = Date.now()
-    const open = latest(h, now).find((x) => x.status === 'PENDING' || x.status === 'CLAIMED')
-    if (open) {
-      return problem(409, 'RUN_REQUEST_CONFLICT', 'Conflict', `@${h} already has a run request on its way (requested by @${open.requestedBy}); wait until it reports back.`)
-    }
-    const dryRun = (body as { dryRun?: boolean | null } | null)?.dryRun === true
-    const s: Stored = { id: `arq_mock${String(++seq).padStart(4, '0')}`, handle: h, requestedBy: d.me().handle ?? 'demo', requestedAt: now, dryRun }
-    store.push(s)
-    return json(mockRunRequestAt(s, now), 201)
+    const open = openOf(h, now)
+    if (open) return problem(409, 'RUN_REQUEST_CONFLICT', 'Conflict', onItsWay(h, open))
+    return json(create(h, dryRunOf(body), now), 201)
+  })
+  // Run all: every bot the caller may run, by handle, by the per-bot rules plus "a trader serves it"
+  r('POST', '/me/bots/run-requests', ({ body }) => {
+    const now = Date.now()
+    const dryRun = dryRunOf(body)
+    const owned = new Set(d.ownedBots())
+    const handles = d
+      .players()
+      .filter((p) => p.kind === 'AI' && p.handle && (d.isAdmin() || owned.has(p.handle)))
+      .map((p) => p.handle!)
+      .sort()
+    const results = handles.map((h): RunAllItem => {
+      const status = d.botStatus?.(h) ?? 'ACTIVE'
+      if (status !== 'ACTIVE') return { handle: h, outcome: 'SKIPPED', reason: 'NOT_ACTIVE', message: `@${h} is ${status}: it cannot trade, so it cannot be run.`, request: null }
+      const open = openOf(h, now)
+      if (open) return { handle: h, outcome: 'ALREADY_OPEN', reason: null, message: onItsWay(h, open), request: open }
+      if (MOCK_UNSERVED.has(h)) {
+        return { handle: h, outcome: 'SKIPPED', reason: 'NO_TRADER', message: `No claude-trader service has asked for @${h}'s runs in the last 5 minutes, so nothing would pick a run up.`, request: null }
+      }
+      return { handle: h, outcome: 'REQUESTED', reason: null, message: null, request: create(h, dryRun, now) }
+    })
+    const result: RunAllResult = { dryRun, asOf: iso(now), requested: results.filter((i) => i.outcome === 'REQUESTED').length, results }
+    return json(result)
   })
 }

@@ -542,6 +542,14 @@ claude.ai connector), so each agent trades as its own player and shows up on the
   the agent is `enabled = false`: disabled agents claim nothing); a picked-up one without a report after 30 minutes
   becomes `FAILED`. One request per bot at a time, at most 20 per bot a day (ARCHITECTURE §20.9). The Mac mode of
   §2.10 does not take requests.
+- **Run all from the app**: Admin → Bots (above the cards) and Admin → Players (under the header) have a **Run all**
+  button (its menu has **Dry run all**). It asks for one check-in of every bot at once: the confirmation names the
+  bots it will run and the ones it will not, with why (frozen, a run already on its way, or no claude-trader service
+  serves it: only the bots of this agents file that claimed in the last 5 minutes are run). Each bot's request is an
+  ordinary Run now request (the same claim, report, limits and log lines above); the agents claim them every minute as
+  usual, each when it is idle and a session slot is free, so with more agents than `STOCKS_TRADER_MAX_PARALLEL` (3)
+  the rest start as slots free up. A summary under the button says per bot "Requested", "Already on its way" or
+  "Skipped" and why, and each bot's own Run now line follows its request.
 - **Every check-in posts one public journal note** (`add_journal_note`: what the agent did and why, or why it held),
   as in §2.10, unless its strategy check told it to stop. The league is public: every player sees the agent's
   portfolio, orders, rationales and notes at once. One note per check-in stays under the journal limits (3 per 10

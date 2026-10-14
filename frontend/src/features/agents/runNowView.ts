@@ -1,9 +1,9 @@
 /**
  * "Run now" (§20.9) as the button shows it: who may run a bot, whether anything would run it, and one timeline line
- * per request state.
+ * per request state; "Run all" as its confirmation and its per-bot summary show it.
  */
 import type { PillTone } from '@/components/ui/Pill'
-import type { Me, RunRequest, RunRequestList, RunRequestStatus } from '@/lib/api/types'
+import type { Me, RunAllItem, RunAllOutcome, RunAllResult, RunRequest, RunRequestList, RunRequestStatus } from '@/lib/api/types'
 import { formatDateTimeEt, formatTimeEt } from '@/lib/format/time'
 
 /** The tooltip of the button. */
@@ -110,4 +110,89 @@ export function runRequestView(r: RunRequest, now: number, myHandle?: string | n
       break
   }
   return { label: RUN_REQUEST_LABEL[status], tone: RUN_REQUEST_TONE[status], line: parts.join(' · '), note }
+}
+
+// ---------------------------------------------------------------------------------------------------- Run all
+
+/** A bot Run all may ask for: its handle, and its status when the page knows it (the admin lists do). */
+export interface RunAllBot {
+  handle: string
+  status?: string | null
+}
+
+/** What Run all's confirmation shows: which bots it would run, which not and why, judged like the per-bot button. */
+export interface RunAllPlan {
+  run: string[]
+  skipped: { handle: string; why: string }[]
+  /** Bots whose Run now state could not be read: the server decides when it asks. */
+  unknown: string[]
+  /** Some bot's Run now state is still loading. */
+  checking: boolean
+}
+
+/** One bot's Run now state as Run all's confirmation reads it (a `useQueries` result of `runRequestsQuery`). */
+export interface RunAllState {
+  data?: RunRequestList
+  dataUpdatedAt: number
+  isPending: boolean
+  isError: boolean
+}
+
+/**
+ * Run all's plan, by the per-bot button's rules ({@link runNowBlocked}, {@link isOpenRequest}): a bot that is not
+ * ACTIVE, already has a run on its way, or that no claude-trader service serves is not run. The server judges again
+ * when it asks (the same rules), so this only names the bots for the confirmation.
+ */
+export function runAllPlan(bots: RunAllBot[], states: RunAllState[]): RunAllPlan {
+  const plan: RunAllPlan = { run: [], skipped: [], unknown: [], checking: false }
+  bots.forEach((b, i) => {
+    if (b.status && b.status !== 'ACTIVE') {
+      plan.skipped.push({ handle: b.handle, why: `${b.status}: it cannot trade` })
+      return
+    }
+    const q = states[i]
+    const list = q?.data
+    if (!list) {
+      if (q?.isError) plan.unknown.push(b.handle)
+      else plan.checking = true
+      return
+    }
+    if (list.botStatus && list.botStatus !== 'ACTIVE') plan.skipped.push({ handle: b.handle, why: `${list.botStatus}: it cannot trade` })
+    else if (isOpenRequest(list.requests?.[0])) plan.skipped.push({ handle: b.handle, why: 'a run is already on its way' })
+    else if (runNowBlocked(b.handle, list, serverNow(list, q.dataUpdatedAt))) plan.skipped.push({ handle: b.handle, why: 'no claude-trader service serves it' })
+    else plan.run.push(b.handle)
+  })
+  return plan
+}
+
+/** "1 bot", "3 bots" */
+export const botCount = (n: number) => `${n} bot${n === 1 ? '' : 's'}`
+
+export const RUN_ALL_LABEL: Record<RunAllOutcome, string> = { REQUESTED: 'Requested', ALREADY_OPEN: 'Already on its way', SKIPPED: 'Skipped' }
+export const RUN_ALL_TONE: Record<RunAllOutcome, PillTone> = { REQUESTED: 'accent', ALREADY_OPEN: 'neutral', SKIPPED: 'warn' }
+
+/** "Dry run all at 10:31 AM ET: 2 requested · 1 already on its way · 2 skipped" */
+export function runAllHeadline(r: RunAllResult): string {
+  const items = r.results ?? []
+  const count = (o: RunAllOutcome) => items.filter((i) => i.outcome === o).length
+  const parts = [`${r.requested} requested`]
+  if (count('ALREADY_OPEN')) parts.push(`${count('ALREADY_OPEN')} already on its way`)
+  if (count('SKIPPED')) parts.push(`${count('SKIPPED')} skipped`)
+  return `${r.dryRun ? 'Dry run all' : 'Run all'} at ${formatTimeEt(r.asOf)}: ${items.length ? parts.join(' · ') : 'you have no bots to run'}`
+}
+
+/** One bot of the summary: a pill and the server's sentence (why it was skipped, or which request is open). */
+export function runAllItemView(i: RunAllItem): { label: string; tone: PillTone; note: string | null } {
+  const outcome: RunAllOutcome = i.outcome ?? 'SKIPPED'
+  const label = outcome === 'REQUESTED' && i.request?.dryRun ? 'Dry run requested' : RUN_ALL_LABEL[outcome]
+  return { label, tone: RUN_ALL_TONE[outcome], note: outcome === 'REQUESTED' ? null : i.message }
+}
+
+/** The toast after Run all. */
+export function runAllToast(r: RunAllResult): { title: string; body: string } {
+  if (!r.requested) return { title: r.dryRun ? 'No dry run requested' : 'No run requested', body: 'No bot could be run right now; the summary says why.' }
+  return {
+    title: `${r.dryRun ? 'Dry run' : 'Run'} requested for ${botCount(r.requested)}`,
+    body: 'The trader picks them up within about a minute; each bot\'s line follows its run.',
+  }
 }

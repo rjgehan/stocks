@@ -14,6 +14,10 @@ import com.stocks.common.id.PublicId;
 import com.stocks.common.time.MutableTimeSource;
 import com.stocks.config.JacksonConfig;
 import com.stocks.contract.agents.dto.FinishRunRequest;
+import com.stocks.contract.agents.dto.RunAllItemDto;
+import com.stocks.contract.agents.dto.RunAllOutcome;
+import com.stocks.contract.agents.dto.RunAllResultDto;
+import com.stocks.contract.agents.dto.RunAllSkipReason;
 import com.stocks.contract.agents.dto.RunNowRequest;
 import com.stocks.contract.agents.dto.RunRequestDto;
 import com.stocks.contract.agents.dto.RunRequestListDto;
@@ -41,7 +45,8 @@ import org.springframework.dao.DuplicateKeyException;
  * §20.9 "Run now" on a real database (PostgreSQL under {@code -Ppg-it}): the owner or an ACTIVE admin asks, the bot's
  * own key claims and finishes; one open request per bot (also against a race, by the table's constraint), 20 per bot
  * in 24 hours, lazy expiry of unclaimed and unreported requests, and what the list tells the button (the bot's status,
- * when a trader last asked).
+ * when a trader last asked). "Run all" asks for every bot the caller may run by the same rules, and says per bot what
+ * it did.
  */
 class RunRequestServiceTest {
 
@@ -308,5 +313,132 @@ class RunRequestServiceTest {
     assertThat(ask(ownerSession, "chatgpt", false).status()).isEqualTo(RunRequestStatus.PENDING);  // per bot
     time.set(NOW.plus(Duration.ofHours(24)).plusSeconds(1));
     assertThat(ask(ownerSession, "claude", false).status()).isEqualTo(RunRequestStatus.PENDING);
+  }
+
+  // ------------------------------------------------------------------------------------------- Run all
+
+  RunAllResultDto runAll(PlayerPrincipal caller, boolean dryRun) {
+    return service.requestAll(caller, new RunNowRequest(dryRun), RequestMeta.system(null));
+  }
+
+  static Map<String, RunAllItemDto> byHandle(RunAllResultDto r) {
+    Map<String, RunAllItemDto> out = new java.util.LinkedHashMap<>();
+    r.results().forEach(i -> out.put(i.handle(), i));
+    return out;
+  }
+
+  @Test
+  void runAllAsksForEveryBotTheOwnerMayRunAndSaysWhatItDidForEach() {
+    PlayerRef frozen = fx.ai("frozenbot", owner);
+    fx.ai("manualbot", owner);                                     // no trader serves it
+    PlayerRef gone = fx.ai("gonebot", owner);
+    fx.ai("strangersbot", stranger);                               // not the owner's
+    fx.status(frozen, "FROZEN");
+    fx.status(gone, "DISABLED");
+    assertThat(service.claim(botKey)).isEmpty();                   // the trader's minute polls: it serves both
+    assertThat(service.claim(otherKey)).isEmpty();
+    RunRequestDto waiting = ask(ownerSession, "chatgpt", false);
+
+    time.advance(Duration.ofMinutes(1));
+    RunAllResultDto all = runAll(ownerSession, true);
+    assertThat(all.dryRun()).isTrue();
+    assertThat(all.asOf()).isEqualTo(time.now());
+    assertThat(all.requested()).isEqualTo(1);
+    Map<String, RunAllItemDto> items = byHandle(all);
+    assertThat(items.keySet()).containsExactly("chatgpt", "claude", "frozenbot", "manualbot");   // by handle
+    assertThat(items.get("claude")).satisfies(i -> {
+      assertThat(i.outcome()).isEqualTo(RunAllOutcome.REQUESTED);
+      assertThat(i.reason()).isNull();
+      assertThat(i.request().status()).isEqualTo(RunRequestStatus.PENDING);
+      assertThat(i.request().dryRun()).isTrue();
+      assertThat(i.request().requestedBy()).isEqualTo("owner");
+    });
+    assertThat(items.get("chatgpt")).satisfies(i -> {
+      assertThat(i.outcome()).isEqualTo(RunAllOutcome.ALREADY_OPEN);
+      assertThat(i.request().id()).isEqualTo(waiting.id());
+      assertThat(i.message()).contains("@chatgpt already has a run request waiting for the trader");
+    });
+    assertThat(items.get("frozenbot")).satisfies(i -> {
+      assertThat(i.outcome()).isEqualTo(RunAllOutcome.SKIPPED);
+      assertThat(i.reason()).isEqualTo(RunAllSkipReason.NOT_ACTIVE);
+      assertThat(i.message()).isEqualTo("@frozenbot is FROZEN: it cannot trade, so it cannot be run.");
+      assertThat(i.request()).isNull();
+    });
+    assertThat(items.get("manualbot")).satisfies(i -> {
+      assertThat(i.outcome()).isEqualTo(RunAllOutcome.SKIPPED);
+      assertThat(i.reason()).isEqualTo(RunAllSkipReason.NO_TRADER);
+      assertThat(i.message()).isEqualTo("No claude-trader service has asked for @manualbot's runs in the last 5 "
+          + "minutes, so nothing would pick a run up.");
+    });
+    // the same claim and audit as one request, plus one summary row
+    assertThat(service.claim(botKey).orElseThrow().id()).isEqualTo(items.get("claude").request().id());
+    List<Map<String, Object>> audit = db.jdbc().sql("SELECT * FROM audit_log WHERE action = 'BOT_RUN_REQUEST' "
+        + "AND target_id = 'claude'").query().listOfRows();
+    assertThat(audit).singleElement().satisfies(row ->
+        assertThat((String) row.get("detail")).contains("\"runAll\":true").contains("\"dryRun\":true"));
+    assertThat(db.jdbc().sql("SELECT detail FROM audit_log WHERE action = 'BOT_RUN_ALL' AND actor_player_id = ?")
+        .param(owner.id()).query(String.class).single()).contains("\"bots\":4").contains("\"requested\":1");
+
+    // again: both claude-trader bots now have a request on its way
+    RunAllResultDto again = runAll(ownerSession, false);
+    assertThat(again.requested()).isZero();
+    assertThat(byHandle(again).get("claude").outcome()).isEqualTo(RunAllOutcome.ALREADY_OPEN);
+    assertThat(byHandle(again).get("claude").message()).contains("@claude is already running a requested check-in");
+  }
+
+  @Test
+  void runAllAsTheAdminCoversEveryListedBotAndNeedsATraderOfTheLastFiveMinutes() {
+    PlayerRef strangersBot = fx.ai("strangersbot", stranger);
+    PlayerPrincipal strangersKey = key(strangersBot);
+    PlayerPrincipal adminSession = TestPrincipals.adminSession(admin.id(), admin.publicId(), admin.handle());
+    assertThat(service.claim(botKey)).isEmpty();
+    assertThat(service.claim(strangersKey)).isEmpty();
+    time.advance(Duration.ofMinutes(5));                           // still served: seen exactly 5 minutes ago
+    Map<String, RunAllItemDto> items = byHandle(runAll(adminSession, false));
+    assertThat(items.keySet()).containsExactly("chatgpt", "claude", "strangersbot");
+    assertThat(items.get("claude").outcome()).isEqualTo(RunAllOutcome.REQUESTED);
+    assertThat(items.get("claude").request().requestedBy()).isEqualTo("root");
+    assertThat(items.get("strangersbot").outcome()).isEqualTo(RunAllOutcome.REQUESTED);
+    assertThat(items.get("chatgpt").reason()).isEqualTo(RunAllSkipReason.NO_TRADER);
+
+    service.finish(botKey, service.claim(botKey).orElseThrow().id(), new FinishRunRequest(RunRequestStatus.DONE,
+        "ok"));
+    time.advance(Duration.ofMinutes(5).plusSeconds(1));            // the claim above was the trader's last visit
+    assertThat(byHandle(runAll(adminSession, false)).get("claude").reason()).isEqualTo(RunAllSkipReason.NO_TRADER);
+
+    // a frozen admin is not the admin; a human without bots runs none
+    fx.status(admin, "FROZEN");
+    assertThat(runAll(adminSession, false).results()).isEmpty();
+    PlayerRef nobody = fx.human("nobots");
+    RunAllResultDto none = runAll(TestPrincipals.session(nobody.id(), nobody.publicId(), nobody.handle()), true);
+    assertThat(none.results()).isEmpty();
+    assertThat(none.requested()).isZero();
+  }
+
+  @Test
+  void runAllKeepsTheDailyLimitAndClosesAFrozenBotsWaitingRequest() {
+    for (int i = 0; i < 20; i++) {
+      RunRequestDto r = ask(ownerSession, "claude", false);
+      service.claim(botKey).orElseThrow();
+      service.finish(botKey, r.id(), new FinishRunRequest(RunRequestStatus.DONE, "ok"));
+      time.advance(Duration.ofMinutes(10));
+    }
+    assertThat(service.claim(botKey)).isEmpty();
+    assertThat(service.claim(otherKey)).isEmpty();
+    Map<String, RunAllItemDto> items = byHandle(runAll(ownerSession, false));
+    assertThat(items.get("claude")).satisfies(i -> {
+      assertThat(i.outcome()).isEqualTo(RunAllOutcome.SKIPPED);
+      assertThat(i.reason()).isEqualTo(RunAllSkipReason.RATE_LIMITED);
+      assertThat(i.message()).startsWith("At most 20 run requests per bot in 24 hours. Retry in ");
+    });
+    assertThat(db.jdbc().sql("SELECT COUNT(*) FROM audit_log WHERE action = 'BOT_RUN_REQUEST' "
+        + "AND outcome = 'RATE_LIMITED'").query(Integer.class).single()).isEqualTo(1);
+    RunAllItemDto chatgpt = items.get("chatgpt");
+    assertThat(chatgpt.outcome()).isEqualTo(RunAllOutcome.REQUESTED);  // per bot
+
+    fx.status(other, "FROZEN");
+    assertThat(byHandle(runAll(ownerSession, false)).get("chatgpt").reason()).isEqualTo(RunAllSkipReason.NOT_ACTIVE);
+    assertThat(db.jdbc().sql("SELECT status FROM agent_run_request WHERE public_id = ?")
+        .param(chatgpt.request().id()).query(String.class).single()).isEqualTo("EXPIRED");
   }
 }

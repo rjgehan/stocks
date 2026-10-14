@@ -2,6 +2,7 @@ package com.stocks.agents.web;
 
 import com.stocks.agents.RunRequestService;
 import com.stocks.contract.agents.dto.FinishRunRequest;
+import com.stocks.contract.agents.dto.RunAllResultDto;
 import com.stocks.contract.agents.dto.RunNowRequest;
 import com.stocks.contract.agents.dto.RunRequestDto;
 import com.stocks.contract.agents.dto.RunRequestListDto;
@@ -28,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * §20.9 "Run now": the bot's owner or the admin asks for a check-in on a browser session ({@code /me/**}: session
- * only, CSRF), and the claude-trader service claims and finishes it with the bot's own key ({@code trade} scope, AI
+ * only, CSRF), for one bot or for all of them ("Run all"), and the claude-trader service claims and finishes it with the bot's own key ({@code trade} scope, AI
  * players only, like {@code POST /agent-runs}; route rules in {@code SecurityConfig}).
  */
 @RestController
@@ -54,6 +55,21 @@ public class RunRequestController {
                                   @RequestBody(required = false) RunNowRequest body, HttpServletRequest request) {
     PlayerPrincipal caller = CurrentPlayer.require();
     return requests.request(caller, handle, body, RequestMetas.of(request, caller));
+  }
+
+  @PostMapping("/me/bots/run-requests")
+  @Tag(name = "me", description = "The authenticated player")
+  @Operation(summary = "Run all of the caller's bots now", description = "Session only. \"Run all\": a run request "
+      + "for every bot the caller may run (the AI players they own; every listed AI player for an ACTIVE admin), by "
+      + "the rules of POST /me/bots/{handle}/run-requests, each with its own audit row and daily limit. Never fails "
+      + "for one bot: each result says REQUESTED (the new request), ALREADY_OPEN (the request waiting or running) or "
+      + "SKIPPED with a reason: NOT_ACTIVE (frozen), NO_TRADER (no claude-trader service asked for the bot's "
+      + "requests in the last 5 minutes, so nothing would pick one up) or RATE_LIMITED (20 per bot in 24 hours). "
+      + "dryRun: the order tools are blocked for every one of them.")
+  public RunAllResultDto requestAllRuns(@RequestBody(required = false) RunNowRequest body,
+                                        HttpServletRequest request) {
+    PlayerPrincipal caller = CurrentPlayer.require();
+    return requests.requestAll(caller, body, RequestMetas.of(request, caller));
   }
 
   @GetMapping("/me/bots/{handle}/run-requests")

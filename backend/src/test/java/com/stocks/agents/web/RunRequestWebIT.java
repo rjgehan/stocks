@@ -31,7 +31,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /**
  * §20.9 "Run now" through the real chains: the owner's session routes ({@code /me/**}: session only, CSRF), the bot's
- * claim and finish with its own key ({@code trade}, AI keys only), and who may call which.
+ * claim and finish with its own key ({@code trade}, AI keys only), and who may call which; "Run all" likewise.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -167,5 +167,47 @@ class RunRequestWebIT {
         "{\"status\":\"DONE\"}"));
     assertThat(unknown.getStatus()).isEqualTo(404);
     assertThat(bearer(botKey, post(claim)).getStatus()).isEqualTo(200);
+  }
+
+  @Test
+  void runAllOnTheOwnersSessionAsksForEveryBotATraderServes() throws Exception {
+    String all = "/api/v1/me/bots/run-requests";
+    String quiet = "rr_quiet" + SEQ.incrementAndGet();
+    fx.ai(quiet, owner);                                           // no trader asks for it
+    assertThat(bearer(botKey, post("/api/v1/agent-runs/requests/claim")).getStatus()).isEqualTo(204);
+
+    // session only, with CSRF, like the per-bot route
+    WebSession session = WebSession.login(mvc, owner.handle(), Fixtures.PASSWORD);
+    MockHttpServletResponse noCsrf = session.performWithoutCsrf(json(post(all), "{}")).getResponse();
+    assertThat(noCsrf.getStatus()).isEqualTo(403);
+    assertThat((String) read(noCsrf, "$.code")).isEqualTo("CSRF_INVALID");
+    MockHttpServletResponse withKey = bearer(botKey, json(post(all), "{}"));
+    assertThat(withKey.getStatus()).isEqualTo(403);
+    assertThat((String) read(withKey, "$.code")).isEqualTo("FORBIDDEN");
+
+    MockHttpServletResponse ran = session.perform(json(post(all), "{\"dryRun\":true}")).getResponse();
+    assertThat(ran.getStatus()).as(ran.getContentAsString()).isEqualTo(200);
+    assertThat((Boolean) read(ran, "$.dryRun")).isTrue();
+    assertThat((Integer) read(ran, "$.requested")).isEqualTo(1);
+    assertThat((List<String>) read(ran, "$.results[*].handle")).containsExactly(botHandle, quiet);
+    assertThat((String) read(ran, "$.results[0].outcome")).isEqualTo("REQUESTED");
+    assertThat((String) read(ran, "$.results[0].request.status")).isEqualTo("PENDING");
+    assertThat((Boolean) read(ran, "$.results[0].request.dryRun")).isTrue();
+    assertThat((String) read(ran, "$.results[1].outcome")).isEqualTo("SKIPPED");
+    assertThat((String) read(ran, "$.results[1].reason")).isEqualTo("NO_TRADER");
+    assertThat((String) read(ran, "$.results[1].request")).isNull();
+
+    // the per-bot list shows it, and a second Run all finds it on its way
+    MockHttpServletResponse list = session.perform(get(runs)).getResponse();
+    assertThat((List<String>) read(list, "$.requests[*].id")).containsExactly(
+        (String) read(ran, "$.results[0].request.id"));
+    MockHttpServletResponse again = session.perform(json(post(all), "{}")).getResponse();
+    assertThat((String) read(again, "$.results[0].outcome")).isEqualTo("ALREADY_OPEN");
+    assertThat((Integer) read(again, "$.requested")).isZero();
+    // a player without bots runs none
+    WebSession other = WebSession.login(mvc, stranger.handle(), Fixtures.PASSWORD);
+    MockHttpServletResponse none = other.perform(post(all)).getResponse();
+    assertThat(none.getStatus()).as(none.getContentAsString()).isEqualTo(200);
+    assertThat((List<Object>) read(none, "$.results")).isEmpty();
   }
 }

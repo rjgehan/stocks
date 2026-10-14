@@ -4518,6 +4518,47 @@
         ]
       }
     },
+    "/api/v1/me/bots/run-requests": {
+      "post": {
+        "description": "Session only. \"Run all\": a run request for every bot the caller may run (the AI players they own; every listed AI player for an ACTIVE admin), by the rules of POST /me/bots/{handle}/run-requests, each with its own audit row and daily limit. Never fails for one bot: each result says REQUESTED (the new request), ALREADY_OPEN (the request waiting or running) or SKIPPED with a reason: NOT_ACTIVE (frozen), NO_TRADER (no claude-trader service asked for the bot's requests in the last 5 minutes, so nothing would pick one up) or RATE_LIMITED (20 per bot in 24 hours). dryRun: the order tools are blocked for every one of them.",
+        "operationId": "requestAllRuns",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunNowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunAllResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Run all of the caller's bots now",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/me/bots/{handle}/manual": {
       "get": {
         "description": "The owner (or the admin) only: instructions, the bot's status, active API keys and connectors, prompts made today and the console limits. Works for frozen bots (writes do not).",
@@ -19274,6 +19315,104 @@
           "runNo",
           "startingCash",
           "status"
+        ]
+      },
+      "RunAllItem": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A sentence for the owner: why the bot was skipped, or which request is already open"
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REQUESTED",
+              "ALREADY_OPEN",
+              "SKIPPED",
+              null
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when outcome is SKIPPED",
+            "enum": [
+              "NOT_ACTIVE",
+              "NO_TRADER",
+              "RATE_LIMITED",
+              null
+            ]
+          },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunRequest",
+                "description": "The new request (REQUESTED) or the open one (ALREADY_OPEN); null when SKIPPED"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The new request (REQUESTED) or the open one (ALREADY_OPEN); null when SKIPPED"
+          }
+        },
+        "required": [
+          "handle",
+          "message",
+          "outcome",
+          "reason",
+          "request"
+        ]
+      },
+      "RunAllResult": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "The server's clock when it answered"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "requested": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many bots got a new request"
+          },
+          "results": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RunAllItem"
+            }
+          }
+        },
+        "required": [
+          "asOf",
+          "dryRun",
+          "requested",
+          "results"
         ]
       },
       "RunJobRequest": {

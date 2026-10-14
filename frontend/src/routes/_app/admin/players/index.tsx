@@ -16,6 +16,7 @@ import { cx } from '@/components/ui/cx'
 import { CreatePlayerDialog } from '@/features/admin/CreatePlayerDialog'
 import { IssueKeyDialog } from '@/features/admin/IssueKeyDialog'
 import { PlayerActions } from '@/features/admin/PlayerActions'
+import { RunAll } from '@/features/agents/RunAll'
 import { KeyRevealDialog } from '@/features/keys/ApiKeys'
 import { AiChip, Avatar } from '@/features/league/PlayerBadge'
 import { DIRECTION_TEXT } from '@/features/market/Change'
@@ -61,7 +62,10 @@ function ConsoleLink({ p }: { p: AdminPlayer }) {
   )
 }
 
-/** Admin · Players (§21.3): every account with its balances, status, keys and last activity; create humans and bots. */
+/**
+ * Admin · Players (§21.3): every account with its balances, status, keys and last activity; create humans and bots;
+ * run every bot now (Run all, §20.9; one bot from its ⋯ menu).
+ */
 function PlayersPage() {
   const { data, isPending, isError } = useAdminPlayers()
   const { data: me } = useMe()
@@ -70,6 +74,8 @@ function PlayersPage() {
   const [revealed, setRevealed] = useState<{ key: ApiKeyCreated; handle: string } | null>(null)
   const [issueFor, setIssueFor] = useState<string | null>(null)
   const players = useMemo(() => (data ?? []).filter((p) => kind === 'ALL' || p.kind === kind), [data, kind])
+  // Run all (§20.9): every listed AI bot, as the server sees it for the admin
+  const bots = useMemo(() => (data ?? []).flatMap((p) => (p.kind === 'AI' && p.handle && p.status !== 'DISABLED' ? [{ handle: p.handle, status: p.status }] : [])), [data])
 
   return (
     <div className="space-y-3">
@@ -93,6 +99,7 @@ function PlayersPage() {
           <IconPlus size={16} /> Add player
         </Button>
       </div>
+      {bots.length ? <RunAll bots={bots} /> : null}
 
       {isPending ? (
         <div className="rounded-lg border border-divider bg-bg-1 px-4">

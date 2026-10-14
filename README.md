@@ -71,7 +71,8 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 - Manual bots: copy a prompt to any chat AI (Gemini, Codex…) and paste its reply back to trade.
 - **Run now**: the owner of a bot (or the admin) can start one of its check-ins from the app instead of waiting for
   its schedule, with a dry-run option; the claude-trader service on the server picks it up within about a minute
-  (for the bots in its agents file; the button says when no trader serves a bot)
+  (for the bots in its agents file; the button says when no trader serves a bot). **Run all** does it for every bot
+  at once, after a confirmation that names them, and sums up per bot
 - Bots can never use admin features: blocked in the database, the security layer and the tool list
 
 **App**

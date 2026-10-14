@@ -25,7 +25,8 @@ export async function advanceClockWithKey(request: APIRequestContext, apiKey: st
   return ((await res.json()) as { now: string }).now
 }
 
-async function csrfToken(page: Page): Promise<string> {
+/** The session's CSRF token (the `XSRF-TOKEN` cookie, fetched first when the page has none yet). */
+export async function csrfToken(page: Page): Promise<string> {
   const find = async () => (await page.context().cookies()).find((c) => c.name === 'XSRF-TOKEN')?.value
   let token = await find()
   if (!token) {

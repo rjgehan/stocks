@@ -206,6 +206,14 @@ dc --profile agents stop agent-runner                                # pause bot
   or missing in its agents file, or its key belongs to another player (`docker logs stocks-claude-trader | grep -i
   "run request"`). Right after an app restart the button stays grey for up to a minute, until the trader's next
   claim. A picked-up request without a report after 30 minutes is FAILED.
+- **Run all (§20.9):** **Run all** (Admin → Bots above the cards, Admin → Players under the header; **Dry run all** in
+  its menu) asks for one check-in of every bot the trader serves; the confirmation names them and says why the others
+  are left out. The summary under the button lists each bot: **Requested**, **Already on its way** (a request was
+  open: nothing new), or **Skipped** with the reason: *FROZEN* (unfreeze it first), *no claude-trader service serves
+  it* (same checks as the greyed-out button above; right after an app restart wait a minute) or *the daily limit* (20
+  requests per bot in 24 h). The trader runs at most `STOCKS_TRADER_MAX_PARALLEL` (3) sessions at once, so with more
+  bots the others wait for a slot; a request still unclaimed after 30 minutes expires (raise the limit, or run the
+  rest again later). Every Run all is in the audit log (`BOT_RUN_ALL`, plus one `BOT_RUN_REQUEST` per bot).
 
 ## Phase 2 features: jobs, alerts, Web Push, OAuth, SSE
 

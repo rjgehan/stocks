@@ -12,6 +12,7 @@ import { IconRobot } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { AiChip, Avatar } from '@/features/league/PlayerBadge'
 import { RUN_STATUSES, formatTokens, formatUsd, runCounts, spendMeter, statusLabel, statusTone } from './agentView'
+import { RunAll } from './RunAll'
 import { RunNow } from './RunNow'
 
 const METER_TONE = { ok: 'bg-accent', warn: 'bg-warn', over: 'bg-down', none: 'bg-bg-3' } as const
@@ -193,8 +194,8 @@ function RunRow({ r }: { r: AgentRun }) {
 }
 
 /**
- * Admin → Bots (§20.6, §21.3): one card per AI player (Run now, §20.9; last run, last problem, today's spend against
- * the cap, a 14-day spend chart, the 7-day tool-call breakdown), then the reported runs with filters.
+ * Admin → Bots (§20.6, §21.3): Run all (§20.9), one card per AI player (Run now, §20.9; last run, last problem, today's
+ * spend against the cap, a 14-day spend chart, the 7-day tool-call breakdown), then the reported runs with filters.
  */
 export function AdminBots() {
   const bots = useAdminBots()
@@ -204,11 +205,16 @@ export function AdminBots() {
   const runs = useAdminAgentRuns(filter)
   const rows = (runs.data?.pages ?? []).flatMap((p) => p.items ?? [])
   const list = bots.data ?? []
+  // Run all (§20.9): the listed bots, as the server sees them (a DISABLED bot is not even listed)
+  const runnable = useMemo(() => (bots.data ?? []).flatMap((b) => (b.player?.handle && b.status !== 'DISABLED' ? [{ handle: b.player.handle, status: b.status }] : [])), [bots.data])
   return (
     <div className="space-y-4">
-      <p className="text-caption text-text-2">
-        The agent runner reports every run with the bot&apos;s own key. Spend is the runner&apos;s own count against its daily cap (AGENT_DAILY_USD_CAP).
-      </p>
+      <div className="flex flex-wrap items-start gap-3">
+        <p className="min-w-0 flex-1 basis-64 text-caption text-text-2">
+          The agent runner reports every run with the bot&apos;s own key. Spend is the runner&apos;s own count against its daily cap (AGENT_DAILY_USD_CAP).
+        </p>
+        {runnable.length ? <RunAll bots={runnable} className="w-full tablet:w-auto tablet:max-w-md" /> : null}
+      </div>
       {bots.isPending ? (
         <div className="rounded-lg border border-divider bg-bg-1 px-4">
           <SkeletonRows rows={3} cols={3} />

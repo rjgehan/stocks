@@ -1,8 +1,8 @@
 /**
  * Phase 2 agent hooks (WS5): a bot's public run summary and AI journal (§20.6, §20.7), the admin Bots page, the
- * "Recent API calls" views (§17.10) and "Run now" (§20.9).
+ * "Recent API calls" views (§17.10), "Run now" and "Run all" (§20.9).
  */
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, queryOptions, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '../client'
 import { queryKeys } from '../queryKeys'
 import type { RunRequest, RunRequestList } from '../types'
@@ -25,17 +25,27 @@ const openRequest = (r: RunRequest | null | undefined) => r?.status === 'PENDING
 /**
  * `GET /me/bots/{handle}/run-requests` (§20.9, the bot's owner or the admin): the latest requests, newest first, the
  * bot's status and when a trader last asked for its requests. Polled every 5 s while the latest one waits for the
- * trader or runs, so the button follows it to DONE.
+ * trader or runs, so the button follows it to DONE. Run all reads the same queries.
  */
-export function useRunRequests(handle: string, enabled = true) {
-  return useQuery({
+export const runRequestsQuery = (handle: string) =>
+  queryOptions({
     queryKey: agentKeys.runRequests(handle),
     queryFn: () => unwrap(api.GET('/api/v1/me/bots/{handle}/run-requests', { params: { path: { handle }, query: { limit: 5 } } })),
-    enabled: enabled && Boolean(handle),
     staleTime: 10_000,
     retry: false,
     refetchInterval: (q) => (openRequest(q.state.data?.requests?.[0]) ? RUN_REQUEST_POLL_MS : false),
   })
+
+export function useRunRequests(handle: string, enabled = true) {
+  return useQuery({ ...runRequestsQuery(handle), enabled: enabled && Boolean(handle) })
+}
+
+/** `r` as the bot's latest request in its cached list (when the list is cached), so its Run now line follows it. */
+function showRequest(qc: QueryClient, r: RunRequest): void {
+  if (!r.handle) return
+  qc.setQueryData<RunRequestList>(agentKeys.runRequests(r.handle), (prev) =>
+    prev ? { ...prev, requests: [r, ...(prev.requests ?? []).filter((x) => x.id !== r.id)] } : prev,
+  )
 }
 
 /** `POST /me/bots/{handle}/run-requests`: ask the claude-trader service for one of the bot's check-ins now. */
@@ -44,13 +54,27 @@ export function useRequestRun() {
   return useMutation({
     mutationFn: ({ handle, dryRun }: { handle: string; dryRun: boolean }) =>
       unwrap(api.POST('/api/v1/me/bots/{handle}/run-requests', { params: { path: { handle } }, body: { dryRun } })),
-    onSuccess: (r, { handle }) => {
-      qc.setQueryData<RunRequestList>(agentKeys.runRequests(handle), (prev) =>
-        prev ? { ...prev, requests: [r, ...(prev.requests ?? []).filter((x) => x.id !== r.id)] } : prev,
-      )
-    },
+    onSuccess: (r) => showRequest(qc, r),
     // a 409 means another request is open: show it
     onError: (_e, { handle }) => void qc.invalidateQueries({ queryKey: agentKeys.runRequests(handle) }),
+  })
+}
+
+/**
+ * `POST /me/bots/run-requests` ("Run all", §20.9): a request for every bot the caller may run, by the per-bot rules;
+ * the answer says per bot what happened. The new (or already open) requests go into each bot's cached list, so the
+ * Run now lines on the page follow them; the lists of skipped bots are fetched again.
+ */
+export function useRunAll() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ dryRun }: { dryRun: boolean }) => unwrap(api.POST('/api/v1/me/bots/run-requests', { body: { dryRun } })),
+    onSuccess: (result) => {
+      for (const item of result.results ?? []) {
+        if (item.request) showRequest(qc, item.request)
+        else if (item.handle) void qc.invalidateQueries({ queryKey: agentKeys.runRequests(item.handle) })
+      }
+    },
   })
 }
 

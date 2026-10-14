@@ -16,6 +16,10 @@ import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
 import com.stocks.common.web.Text;
 import com.stocks.contract.agents.dto.FinishRunRequest;
+import com.stocks.contract.agents.dto.RunAllItemDto;
+import com.stocks.contract.agents.dto.RunAllOutcome;
+import com.stocks.contract.agents.dto.RunAllResultDto;
+import com.stocks.contract.agents.dto.RunAllSkipReason;
 import com.stocks.contract.agents.dto.RunNowRequest;
 import com.stocks.contract.agents.dto.RunRequestDto;
 import com.stocks.contract.agents.dto.RunRequestListDto;
@@ -25,6 +29,8 @@ import com.stocks.contract.security.RequestMeta;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -56,6 +62,10 @@ import org.springframework.stereotype.Service;
  * </ul>
  * Every accepted request is audited ({@code ACCOUNT BOT_RUN_REQUEST}: who asked, for which bot), and so is one refused
  * by the daily limit.
+ *
+ * <p>"Run all" ({@link #requestAll}) asks for every bot the caller may run, each by the same rules and with the same
+ * audit as one request; it also skips the bots no trader serves (the per-bot button is disabled for them, so the
+ * owner never asks), and reports per bot instead of failing (one {@code ACCOUNT BOT_RUN_ALL} row sums it up).
  */
 @Service
 public class RunRequestService {
@@ -63,6 +73,11 @@ public class RunRequestService {
   static final int LIST_DEFAULT = 10;
   static final int LIST_MAX = 50;
   static final Duration LIMIT_WINDOW = Duration.ofHours(24);
+  /**
+   * A bot is served by a trader when one asked for its requests this recently (the claude-trader service asks every
+   * minute for each agent it serves): Run all's rule, and the SPA's for the per-bot button ({@code TRADER_SEEN_MS}).
+   */
+  static final Duration TRADER_SEEN = Duration.ofMinutes(5);
   private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
 
   private final RunRequestRepository requests;
@@ -89,17 +104,86 @@ public class RunRequestService {
   /** {@code POST /me/bots/{handle}/run-requests}: a new PENDING request for the caller's (or, as admin, any) bot. */
   public RunRequestDto request(PlayerPrincipal caller, String handle, RunNowRequest body, RequestMeta meta) {
     AgentPlayers.PlayerRef bot = botFor(caller, handle);
-    if (bot.status() != PlayerStatus.ACTIVE) {
-      throw ApiException.of(ErrorCode.PLAYER_FROZEN, "@" + bot.handle() + " is " + bot.status()
-          + ": it cannot trade, so it cannot be run.");
-    }
-    boolean dryRun = body != null && Boolean.TRUE.equals(body.dryRun());
+    requireActive(bot);
     Instant now = time.now();
     expire(bot, now);
     Optional<RequestRow> open = requests.open(bot.id());
     if (open.isPresent()) {
       throw conflict(open.get());
     }
+    return dto(create(caller, bot, dryRun(body), now, meta, false));
+  }
+
+  /**
+   * {@code POST /me/bots/run-requests} ("Run all"): a request for every bot {@code caller} may run (the AI players
+   * they own, or every listed one for an ACTIVE admin), by handle, each by the rules of {@link #request}: a bot that
+   * is not ACTIVE, has an open request or used its daily budget gets none, and neither does a bot no trader has asked
+   * for in the last {@link #TRADER_SEEN} (nothing would pick its request up). Never fails for one bot: each gets an
+   * item saying what happened.
+   */
+  public RunAllResultDto requestAll(PlayerPrincipal caller, RunNowRequest body, RequestMeta meta) {
+    boolean dryRun = dryRun(body);
+    Instant now = time.now();
+    boolean admin = activeAdmin(caller);
+    List<RunAllItemDto> items = new ArrayList<>();
+    for (AgentPlayers.PlayerRef bot : players.aiPlayers()) {
+      if (bot.listed() && (admin || Objects.equals(bot.ownerId(), caller.playerId()))) {
+        items.add(requestOne(caller, bot, dryRun, now, meta));
+      }
+    }
+    int requested = (int) items.stream().filter(i -> i.outcome() == RunAllOutcome.REQUESTED).count();
+    audit.record(AuditEntry.of(AuditCategory.ACCOUNT, "BOT_RUN_ALL", AuditOutcome.OK).withActor(caller)
+        .withMeta(meta).withDetail("dryRun", dryRun).withDetail("bots", items.size())
+        .withDetail("requested", requested));
+    return new RunAllResultDto(dryRun, now, requested, items);
+  }
+
+  private RunAllItemDto requestOne(PlayerPrincipal caller, AgentPlayers.PlayerRef bot, boolean dryRun, Instant now,
+                                   RequestMeta meta) {
+    expire(bot, now);                                              // also closes a waiting request of a frozen bot
+    if (bot.status() != PlayerStatus.ACTIVE) {
+      return skipped(bot, RunAllSkipReason.NOT_ACTIVE, notActive(bot));
+    }
+    Optional<RequestRow> open = requests.open(bot.id());
+    if (open.isPresent()) {
+      return alreadyOpen(open.get());
+    }
+    if (!servedByTrader(bot, now)) {
+      return skipped(bot, RunAllSkipReason.NO_TRADER, "No claude-trader service has asked for @" + bot.handle()
+          + "'s runs in the last " + minutes(TRADER_SEEN) + ", so nothing would pick a run up.");
+    }
+    try {
+      return new RunAllItemDto(bot.handle(), RunAllOutcome.REQUESTED, null, null,
+          dto(create(caller, bot, dryRun, now, meta, true)));
+    } catch (ApiException e) {
+      return switch (e.code()) {
+        case RATE_LIMITED -> skipped(bot, RunAllSkipReason.RATE_LIMITED, e.detail());
+        case RUN_REQUEST_CONFLICT -> requests.open(bot.id()).map(RunRequestService::alreadyOpen).orElseThrow(() -> e);
+        default -> throw e;
+      };
+    }
+  }
+
+  private static RunAllItemDto alreadyOpen(RequestRow open) {
+    return new RunAllItemDto(open.handle(), RunAllOutcome.ALREADY_OPEN, null, conflict(open).detail(), dto(open));
+  }
+
+  private static RunAllItemDto skipped(AgentPlayers.PlayerRef bot, RunAllSkipReason reason, String message) {
+    return new RunAllItemDto(bot.handle(), RunAllOutcome.SKIPPED, reason, message, null);
+  }
+
+  /** A trader asked for the bot's requests within {@link #TRADER_SEEN} of {@code now}. */
+  boolean servedByTrader(AgentPlayers.PlayerRef bot, Instant now) {
+    Instant seen = traderSeen.get(bot.id());
+    return seen != null && !seen.isBefore(now.minus(TRADER_SEEN));
+  }
+
+  /**
+   * The daily budget, then a new PENDING request of {@code bot} (whose open request the caller checked), audited:
+   * {@code RATE_LIMITED} past the budget, {@code RUN_REQUEST_CONFLICT} when another request raced in.
+   */
+  private RequestRow create(PlayerPrincipal caller, AgentPlayers.PlayerRef bot, boolean dryRun, Instant now,
+                            RequestMeta meta, boolean runAll) {
     requireBudget(caller, bot, now, meta);
     String id = publicIds.next(Prefix.AGENT_RUN_REQUEST);
     try {
@@ -108,9 +192,24 @@ public class RunRequestService {
       // another request for the bot raced in between the check and the insert
       throw requests.open(bot.id()).map(RunRequestService::conflict).orElseThrow(() -> e);
     }
-    audit.record(AuditEntry.of(AuditCategory.ACCOUNT, "BOT_RUN_REQUEST", AuditOutcome.OK).withActor(caller)
-        .withMeta(meta).withTarget("player", bot.handle()).withDetail("requestId", id).withDetail("dryRun", dryRun));
-    return dto(requests.byPublicId(id).orElseThrow());
+    AuditEntry entry = AuditEntry.of(AuditCategory.ACCOUNT, "BOT_RUN_REQUEST", AuditOutcome.OK).withActor(caller)
+        .withMeta(meta).withTarget("player", bot.handle()).withDetail("requestId", id).withDetail("dryRun", dryRun);
+    audit.record(runAll ? entry.withDetail("runAll", true) : entry);
+    return requests.byPublicId(id).orElseThrow();
+  }
+
+  private static boolean dryRun(RunNowRequest body) {
+    return body != null && Boolean.TRUE.equals(body.dryRun());
+  }
+
+  private static void requireActive(AgentPlayers.PlayerRef bot) {
+    if (bot.status() != PlayerStatus.ACTIVE) {
+      throw ApiException.of(ErrorCode.PLAYER_FROZEN, notActive(bot));
+    }
+  }
+
+  private static String notActive(AgentPlayers.PlayerRef bot) {
+    return "@" + bot.handle() + " is " + bot.status() + ": it cannot trade, so it cannot be run.";
   }
 
   /**
@@ -133,12 +232,15 @@ public class RunRequestService {
       throw ApiException.of(ErrorCode.FORBIDDEN, "@" + bot.handle() + " is not an AI player; only bots can be run.");
     }
     boolean owner = Objects.equals(bot.ownerId(), caller.playerId());
-    boolean admin = caller.isAdmin() && players.byId(caller.playerId())
-        .map(p -> p.status() == PlayerStatus.ACTIVE).orElse(false);
-    if (!owner && !admin) {
+    if (!owner && !activeAdmin(caller)) {
       throw ApiException.of(ErrorCode.FORBIDDEN, "Only @" + bot.handle() + "'s owner or the admin can run it.");
     }
     return bot;
+  }
+
+  private boolean activeAdmin(PlayerPrincipal caller) {
+    return caller.isAdmin() && players.byId(caller.playerId()).map(p -> p.status() == PlayerStatus.ACTIVE)
+        .orElse(false);
   }
 
   /** At most {@code max-per-day} requests per bot in any 24 hours; beyond that 429 until the oldest leaves. */
