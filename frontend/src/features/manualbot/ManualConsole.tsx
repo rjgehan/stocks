@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { describeError, errorBody } from '@/lib/api/errors'
 import {
@@ -60,9 +60,10 @@ function CardTitle({ children, aside }: { children: React.ReactNode; aside?: Rea
   )
 }
 
+/** Not a live region (it changes on every keystroke); going over the limit is the field's error (aria-describedby). */
 function Counter({ n, max }: { n: number; max: number }) {
   return (
-    <span className={cx('text-micro tabular-nums', n > max ? 'font-semibold text-down' : 'text-text-3')} aria-live="polite">
+    <span className={cx('text-micro tabular-nums', n > max ? 'font-semibold text-down' : 'text-text-3')}>
       {formatInteger(n)} / {formatInteger(max)}
     </span>
   )
@@ -411,13 +412,30 @@ function ReplyCard({ handle, session, maxChars, canWrite }: { handle: string; se
 
 // ------------------------------------------------------------------------------------------- 3 · Review and place
 
+/** The public rationale, two lines until "More": the toggle shows whenever the clamp actually cuts the text. */
 function Rationale({ text }: { text: string | null | undefined }) {
   const [more, setMore] = useState(false)
+  const [clipped, setClipped] = useState(false)
+  const ref = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || more || !text) return
+    const measure = () => setClipped(el.scrollHeight > el.clientHeight + 1)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [text, more])
   if (!text) return <span className="text-text-3">--</span>
+  // measured overflow, plus what surely overflows where nothing is measured (no layout)
+  const long = clipped || text.length > 140 || text.split('\n').length > 2
   return (
     <span className="block">
-      <span className={cx('block break-words whitespace-pre-wrap text-text-2', !more && 'line-clamp-2')}>{text}</span>
-      {text.length > 140 ? (
+      <span ref={ref} className={cx('block break-words whitespace-pre-wrap text-text-2', !more && 'line-clamp-2')}>
+        {text}
+      </span>
+      {more || long ? (
         <button type="button" onClick={() => setMore((v) => !v)} className="text-micro font-semibold text-accent">
           {more ? 'Less' : 'More'}
         </button>
