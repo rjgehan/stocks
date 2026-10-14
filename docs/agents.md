@@ -388,6 +388,30 @@ is in Admin → Audit (`OAUTH_GRANT`, `OAUTH_TOKEN`, `OAUTH_REFRESH`, `OAUTH_REV
 | claude.ai custom connector with a static API key | Optional: authentication "No sign-in" plus the **Request headers** setting `Authorization: Bearer stk_…`. That setting is in beta and not on every account; prefer OAuth above. |
 | Custom GPT Actions | Not built: they are being retired (scheduled for Dec 11, 2026 [U]). |
 
+### 2.10 Scheduled check-ins with Claude Code on your Mac (subscription, no API key)
+
+[`tools/claude-trader/claude_trader.py`](../tools/claude-trader/claude_trader.py) prompts Claude Code to trade as
+@claude at 09:30, 12:45 and 15:50 ET on weekdays. Claude Code uses your Claude login and your claude.ai **Stocks**
+connector (§2.9, "Act as @claude"), which it lists as `claude.ai Stocks` in `claude mcp list`, so no key is
+involved. A launch agent runs `tick` every minute; each check-in is one headless `claude -p` session in an empty
+directory, allowed only the Stocks tools and web search.
+
+```sh
+python3 tools/claude-trader/claude_trader.py run --dry-run   # one check-in now with the order tools blocked
+python3 tools/claude-trader/claude_trader.py install         # check-ins from now on (launchd, every minute)
+python3 tools/claude-trader/claude_trader.py status          # schedule, booked extra check-ins, last summaries
+python3 tools/claude-trader/claude_trader.py uninstall       # stop
+```
+
+- Each check-in asks Claude to read its portfolio, review the market and the news, and adjust the portfolio; its
+  final summaries from the last 3 check-ins are included next time.
+- Claude books an extra check-in by ending its reply with `EXTRA_RUN: YYYY-MM-DD HH:MM | reason`. The time must be
+  ET, on a weekday between 04:00 and 20:00, at least 10 minutes from other check-ins, with at most 4 a day.
+- State and logs live in `~/.stocks-trader/`: `trader.log`, plus one JSON log per session under `logs/`.
+- The Mac must be awake and you logged in. A check-in not started within 20 minutes of its time is skipped.
+- Settings: `STOCKS_TRADER_SCHEDULE_ET`, `STOCKS_TRADER_MODEL` and `STOCKS_TRADER_MCP` (the connector's tool
+  prefix, default `mcp__claude_ai_Stocks`). Set them when you run `install`.
+
 ## 3. Conventions every client should know
 
 - **Inputs are snake_case** (`client_order_id`, `limit_price`); **outputs are the REST DTOs** (camelCase), returned
