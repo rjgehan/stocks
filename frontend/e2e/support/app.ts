@@ -42,6 +42,24 @@ export async function submitLogin(page: Page): Promise<void> {
   await expect(appChrome(page).first()).toBeVisible({ timeout: 20_000 })
 }
 
+/** Signs `page` (a browser context of its own, at the login form's origin) in as another player. */
+export async function signInAs(page: Page, handle: string, password: string): Promise<void> {
+  await page.goto('/login')
+  await page.getByLabel('Handle').fill(handle)
+  await page.getByLabel('Password').fill(password)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(appChrome(page).first()).toBeVisible({ timeout: 20_000 })
+}
+
+/** Answers the password prompt of a recent-auth route when it shows (other specs may age the sign-in). */
+export async function confirmIfAsked(page: Page): Promise<void> {
+  const reauth = page.getByRole('dialog', { name: "Confirm it's you" })
+  if (await reauth.waitFor({ state: 'visible', timeout: 3_000 }).then(() => true, () => false)) {
+    await reauth.getByLabel('Password').fill(credentials()!.password)
+    await reauth.getByRole('button', { name: 'Confirm' }).click()
+  }
+}
+
 /** Opens `path`, signing in first when the app asks for it. */
 export async function open(page: Page, path: string): Promise<void> {
   await page.goto(path)

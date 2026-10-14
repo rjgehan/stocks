@@ -55,6 +55,10 @@ describe("a player's order history (public mode, §16.7)", () => {
     const row = screen.getByRole('button', { name: /\$25\.00 AAPL/ })
     expect(row.getAttribute('aria-expanded')).toBe('false')
     expect(row.textContent).not.toContain('Second line')
+    // one line cut with an ellipsis: no padded line-clamp box for the next wrapped line to show through
+    const quote = within(row).getByText(/Starter/)
+    expect(quote.className).toContain('truncate')
+    expect(quote.className).not.toContain('line-clamp')
     fireEvent.click(row)
     expect(row.getAttribute('aria-expanded')).toBe('true')
     const fills = screen.getByRole('table', { name: 'Fills' })
@@ -65,6 +69,19 @@ describe("a player's order history (public mode, §16.7)", () => {
     expect(container.querySelector('b')).toBeNull()
     expect(container.querySelector('script')).toBeNull()
     expect(screen.getByText(/Second line of the thesis/)).toBeTruthy()
+  })
+
+  it('re-checks after 2 s while an order is on its way to the market, else every 30 s', async () => {
+    const qc = client()
+    seed(qc, [publicOrder({ orderId: 'ord_NEW', status: 'PENDING', waitReason: 'LATENCY' })])
+    renderWithRouter(<PlayerOrderHistory handle="claude" onFilter={() => {}} />, qc)
+    await screen.findByRole('list', { name: 'Orders' })
+    const query = qc.getQueryCache().find({ queryKey: queryKeys.playerOrders('claude', 'ALL', undefined) })!
+    // the mounted observer's option: a function of the query's latest data
+    const interval = query.observers[0]!.options.refetchInterval as unknown as (q: typeof query) => number | false
+    expect(interval(query)).toBe(2_000)
+    seed(qc, [publicOrder({ orderId: 'ord_NEW' })])               // working, waiting for its limit
+    expect(interval(query)).toBe(30_000)
   })
 
   it('says when nothing matches, and asks for the filter it is given', async () => {

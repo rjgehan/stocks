@@ -88,11 +88,15 @@ export function OrderSourcePills({ o, handle, manual = true }: { o: PublicOrder;
   )
 }
 
-/** The player's note: untrusted text (§17.8), shown as written, never as Markdown or links. */
+/**
+ * The player's note: untrusted text (§17.8), shown as written, never as Markdown or links. `clamp`: its first line
+ * only, cut with an ellipsis (`truncate`, not `line-clamp-1`: a clamped box with padding shows the top of the next
+ * wrapped line through its bottom padding).
+ */
 export function RationaleQuote({ text, clamp, className }: { text: string; clamp?: boolean; className?: string }) {
   return (
     <p
-      className={cx('rounded-sm bg-bg-2 px-2 py-1 text-caption text-text-2 break-words', clamp ? 'line-clamp-1' : 'whitespace-pre-wrap', className)}
+      className={cx('rounded-sm bg-bg-2 px-2 py-1 text-caption text-text-2', clamp ? 'truncate' : 'break-words whitespace-pre-wrap', className)}
       title="The player's own words (shown as written)"
     >
       “{clamp ? text.split('\n')[0] : text}”

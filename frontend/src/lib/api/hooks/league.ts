@@ -4,6 +4,7 @@ import { api, unwrap } from '../client'
 import { type OrdersFilter, queryKeys } from '../queryKeys'
 import type { CalendarView, FeedItem, HistoryRange, KindFilter, LeaderboardMetric, LeaderboardPeriod } from '../types'
 import { realtime } from '../../realtime/stomp'
+import { SETTLE_POLL_MS, settling } from './account'
 import { agentKeys } from './agents'
 import { applyFeedReactions, isFeedReactions } from './stats'
 
@@ -54,13 +55,16 @@ export function usePlayerTrades(handle: string) {
 
 // ---------------------------------------------------------------- public mode (§16.7)
 
-/** `GET /players/{handle}/portfolio`: a player's live run (cash, positions, open orders); polls every 15 s while visible. */
+/**
+ * `GET /players/{handle}/portfolio`: a player's live run (cash, positions, open orders); polls every 15 s while
+ * visible, and after 2 s while an open order only waits out the order latency ("sending to market", §11.3).
+ */
 export function usePlayerPortfolio(handle: string) {
   return useQuery({
     queryKey: queryKeys.playerPortfolio(handle),
     queryFn: () => unwrap(api.GET('/api/v1/players/{handle}/portfolio', { params: { path: { handle } } })),
     staleTime: 5_000,
-    refetchInterval: 15_000,
+    refetchInterval: (q) => ((q.state.data?.openOrders ?? []).some(settling) ? SETTLE_POLL_MS : 15_000),
     refetchIntervalInBackground: false,
     retry: false,
   })
@@ -69,7 +73,11 @@ export function usePlayerPortfolio(handle: string) {
 /** Orders per page of a player's History. */
 export const PLAYER_ORDERS_PAGE = 25
 
-/** `GET /players/{handle}/orders`: every stored order of every run, newest first, 25 a page; polls every 30 s while visible. */
+/**
+ * `GET /players/{handle}/orders`: every stored order of every run, newest first, 25 a page; polls every 30 s while
+ * visible, and after 2 s while an order only waits out the order latency (≈ 0.5 s), so a new order never sits on
+ * "Pending · sending to market" for half a minute.
+ */
 export function usePlayerOrders(handle: string, filter: { status?: OrdersFilter; symbol?: string } = {}) {
   const { status, symbol } = filter
   return useInfiniteQuery({
@@ -86,7 +94,7 @@ export function usePlayerOrders(handle: string, filter: { status?: OrdersFilter;
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     staleTime: 5_000,
-    refetchInterval: 30_000,
+    refetchInterval: (q) => ((q.state.data?.pages ?? []).some((p) => (p.items ?? []).some(settling)) ? SETTLE_POLL_MS : 30_000),
     retry: false,
   })
 }

@@ -25,8 +25,8 @@ export function usePositions() {
  * triggered stop on its way to the market. Lists showing one re-check after 2 s, so a missed push (a page that was
  * still connecting) never leaves it on "sending to market".
  */
-const settling = (o: { status?: string | null; waitReason?: string | null }): boolean => (o.status === 'PENDING' || o.status === 'WORKING') && o.waitReason === 'LATENCY'
-const SETTLE_POLL_MS = 2_000
+export const settling = (o: { status?: string | null; waitReason?: string | null }): boolean => (o.status === 'PENDING' || o.status === 'WORKING') && o.waitReason === 'LATENCY'
+export const SETTLE_POLL_MS = 2_000
 
 /** First page (≤ 100) of orders; `symbol` narrows server-side. Open orders poll while the socket is down. */
 export function useOrders(status: OrdersFilter, symbol?: string) {

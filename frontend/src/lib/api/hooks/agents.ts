@@ -19,13 +19,34 @@ export const agentKeys = {
 
 /** How often the Run now state is polled while the latest request is open (PENDING or CLAIMED). */
 export const RUN_REQUEST_POLL_MS = 5_000
+/** How often it is polled while an ACTIVE bot has no trader, so the button turns on by itself once one asks again. */
+export const NO_TRADER_POLL_MS = 30_000
+/**
+ * The claude-trader service claims, or sends a heartbeat, every minute for each bot it serves; not within this long,
+ * nothing serves the bot (the server's `RunRequestService.TRADER_SEEN`, Run all's rule).
+ */
+export const TRADER_SEEN_MS = 5 * 60_000
 
 const openRequest = (r: RunRequest | null | undefined) => r?.status === 'PENDING' || r?.status === 'CLAIMED'
+
+/** The server's clock when it answered the list (`asOf`), else `fallback`: ages are measured against it. */
+export function serverNow(list: RunRequestList | null | undefined, fallback: number): number {
+  const t = Date.parse(list?.asOf ?? '')
+  return Number.isFinite(t) ? t : fallback
+}
+
+/** The bot is ACTIVE, but no trader asked for its requests within {@link TRADER_SEEN_MS} of `now`. */
+export function noTrader(list: RunRequestList | null | undefined, now: number): boolean {
+  if (!list || (list.botStatus && list.botStatus !== 'ACTIVE')) return false
+  const seen = Date.parse(list.traderSeenAt ?? '')
+  return !(Number.isFinite(seen) && now - seen <= TRADER_SEEN_MS)
+}
 
 /**
  * `GET /me/bots/{handle}/run-requests` (§20.9, the bot's owner or the admin): the latest requests, newest first, the
  * bot's status and when a trader last asked for its requests. Polled every 5 s while the latest one waits for the
- * trader or runs, so the button follows it to DONE. Run all reads the same queries.
+ * trader or runs, so the button follows it to DONE, and every 30 s while no trader serves the bot (e.g. right after
+ * an app restart), so the button turns on again by itself. Run all reads the same queries.
  */
 export const runRequestsQuery = (handle: string) =>
   queryOptions({
@@ -33,7 +54,11 @@ export const runRequestsQuery = (handle: string) =>
     queryFn: () => unwrap(api.GET('/api/v1/me/bots/{handle}/run-requests', { params: { path: { handle }, query: { limit: 5 } } })),
     staleTime: 10_000,
     retry: false,
-    refetchInterval: (q) => (openRequest(q.state.data?.requests?.[0]) ? RUN_REQUEST_POLL_MS : false),
+    refetchInterval: (q) => {
+      const list = q.state.data
+      if (openRequest(list?.requests?.[0])) return RUN_REQUEST_POLL_MS
+      return noTrader(list, serverNow(list, q.state.dataUpdatedAt)) ? NO_TRADER_POLL_MS : false
+    },
   })
 
 export function useRunRequests(handle: string, enabled = true) {

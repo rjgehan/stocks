@@ -31,7 +31,8 @@ export function useStartRun() {
  * "Run now" (§20.9) for one AI bot, shown to its owner and the admin (the caller decides; the server checks): a
  * split button (Run now, or a Dry run that blocks the orders) and the latest request's state, polled while it waits
  * for the claude-trader service or runs: "Requested 10:31 AM ET · picked up 10:31 AM · done 10:35 AM". The button is
- * disabled, with the reason, for a bot that is not ACTIVE or that no claude-trader service serves.
+ * disabled, with the reason, for a bot that is not ACTIVE or that no claude-trader service serves, and while that is
+ * still being checked (the first answer of the list).
  */
 export function RunNow({ handle, className }: { handle: string; className?: string }) {
   const { data: me } = useMe()
@@ -41,6 +42,8 @@ export function RunNow({ handle, className }: { handle: string; className?: stri
   const latest = requests.data?.requests?.[0] ?? null
   const open = isOpenRequest(latest)
   const busy = pending || open
+  // until the list answers, nothing says whether a trader serves the bot (the per-bot route does not check)
+  const checking = requests.isPending
   // "today", the trader's last visit and a long wait are judged against the server's clock when the list was fetched
   // (no clock read while rendering, and a browser clock that is off does not matter)
   const now = serverNow(requests.data, requests.dataUpdatedAt)
@@ -55,9 +58,9 @@ export function RunNow({ handle, className }: { handle: string; className?: stri
             variant="primary"
             size="sm"
             className="rounded-r-none"
-            title={busy ? 'A run is on its way; wait until the trader reports back.' : (blocked ?? tip)}
+            title={busy ? 'A run is on its way; wait until the trader reports back.' : checking ? 'Checking…' : (blocked ?? tip)}
             aria-describedby={tipId}
-            disabled={busy || blocked !== null}
+            disabled={busy || checking || blocked !== null}
             onClick={() => start(handle, false)}
           >
             <IconBolt size={16} /> Run now
@@ -73,7 +76,7 @@ export function RunNow({ handle, className }: { handle: string; className?: stri
                 className="rounded-l-none border-l border-white/30 px-2"
                 aria-label="More run options"
                 title="More run options"
-                disabled={busy || blocked !== null}
+                disabled={busy || checking || blocked !== null}
                 {...props}
               >
                 <IconChevronDown size={16} />

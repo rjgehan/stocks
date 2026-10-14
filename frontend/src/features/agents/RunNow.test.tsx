@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RUN_REQUEST_POLL_MS, agentKeys } from '@/lib/api/hooks/agents'
+import { NO_TRADER_POLL_MS, RUN_REQUEST_POLL_MS, agentKeys } from '@/lib/api/hooks/agents'
 import { queryKeys } from '@/lib/api/queryKeys'
 import type { AdminPlayer, Me, PlayerProfile, RunRequest, RunRequestList } from '@/lib/api/types'
 import { renderWithRouter } from '@/test/router'
@@ -37,6 +37,13 @@ const list = (requests: RunRequest[] = [], over: Partial<RunRequestList> = {}): 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': status < 300 ? 'application/json' : 'application/problem+json' } })
 
+/** The button once the list answered (it is disabled while it checks whether a trader serves the bot). */
+async function enabled(name: string): Promise<HTMLButtonElement> {
+  const button = (await screen.findByRole('button', { name })) as HTMLButtonElement
+  await waitFor(() => expect(button.disabled).toBe(false))
+  return button
+}
+
 function client(me: Me | null = ME): QueryClient {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   qc.setQueryData(queryKeys.me, me)
@@ -63,7 +70,7 @@ describe('Run now (§20.9)', () => {
   it('asks for a run and shows it waiting for the trader', async () => {
     fetchMock.mockImplementation(async (r) => (r.method === 'POST' ? json(req(), 201) : json(list())))
     renderWithRouter(<RunNow handle="claude" />, client())
-    const run = await screen.findByRole('button', { name: 'Run now' })
+    const run = await enabled('Run now')
     expect(run.getAttribute('title')).toContain('within about a minute')
     fireEvent.click(run)
     await waitFor(() => expect(fetchMock.mock.calls.some(([r]) => r.method === 'POST')).toBe(true))
@@ -79,7 +86,7 @@ describe('Run now (§20.9)', () => {
   it('offers a dry run from the menu', async () => {
     fetchMock.mockImplementation(async (r) => (r.method === 'POST' ? json(req({ dryRun: true }), 201) : json(list())))
     renderWithRouter(<RunNow handle="claude" />, client())
-    fireEvent.click(await screen.findByRole('button', { name: 'More run options' }))
+    fireEvent.click(await enabled('More run options'))
     const menu = screen.getByRole('dialog', { name: 'Run options for @claude' })
     expect(within(menu).getByText(/A dry run blocks the order tools/)).toBeTruthy()
     fireEvent.click(within(menu).getByRole('button', { name: 'Dry run (no orders)' }))
@@ -123,12 +130,12 @@ describe('Run now (§20.9)', () => {
         : json(list()),
     )
     renderWithRouter(<RunNow handle="claude" />, client())
-    fireEvent.click(await screen.findByRole('button', { name: 'Run now' }))
+    fireEvent.click(await enabled('Run now'))
     await waitFor(() => expect(useToastStore.getState().toasts).toHaveLength(1))
     expect(useToastStore.getState().toasts[0]).toMatchObject({ tone: 'error', title: 'Run not requested', body: expect.stringContaining('already running a requested check-in') })
   })
 
-  it('appears on the Bot activity card for the owner only', async () => {
+  it('appears on the Bot activity card for the owner only, with the link to the console', async () => {
     fetchMock.mockImplementation(async () => json(list()))
     const profile = { player: { handle: 'claude', kind: 'AI' }, ownerHandle: 'ryan' } as PlayerProfile
     const qc = client()
@@ -136,12 +143,24 @@ describe('Run now (§20.9)', () => {
     qc.setQueryData(agentKeys.summary('claude'), { handle: 'claude', runs: 0, runsLast7Days: 0, lastRunAt: null, lastStatus: null, lastRunOrders: null, lastRunToolCalls: null })
     const { unmount } = renderWithRouter(<BotActivityCard handle="claude" />, qc)
     expect(await screen.findByRole('group', { name: 'Run @claude now' })).toBeTruthy()
+    // an owner who is not the admin has no Admin pages: the card is their way to the bot's manual console
+    expect(screen.getByRole('link', { name: 'Open console' }).getAttribute('href')).toBe('/bots/claude')
     unmount()
 
     const stranger = client({ ...ME, handle: 'alice' })
     stranger.setQueryData(queryKeys.player('claude'), profile)
     stranger.setQueryData(agentKeys.summary('claude'), qc.getQueryData(agentKeys.summary('claude')))
-    renderWithRouter(<BotActivityCard handle="claude" />, stranger)
+    const other = renderWithRouter(<BotActivityCard handle="claude" />, stranger)
+    expect(await screen.findByText(/No runs reported yet/)).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Run @claude now' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Open console' })).toBeNull()
+    other.unmount()
+
+    // a frozen owner may still look, but not run the bot or drive it (the server answers PLAYER_FROZEN)
+    const frozen = client({ ...ME, status: 'FROZEN' })
+    frozen.setQueryData(queryKeys.player('claude'), profile)
+    frozen.setQueryData(agentKeys.summary('claude'), qc.getQueryData(agentKeys.summary('claude')))
+    renderWithRouter(<BotActivityCard handle="claude" />, frozen)
     expect(await screen.findByText(/No runs reported yet/)).toBeTruthy()
     expect(screen.queryByRole('group', { name: 'Run @claude now' })).toBeNull()
   })
@@ -178,6 +197,38 @@ describe('Run now (§20.9)', () => {
     expect(await screen.findByText(new RegExp(reason))).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Run now' }) as HTMLButtonElement).disabled).toBe(true)
     expect(fetchMock.mock.calls.every(([r]) => r.method === 'GET')).toBe(true)
+  })
+
+  it('is disabled while it checks whether a trader serves the bot', async () => {
+    const pending: { resolve?: (r: Response) => void } = {}
+    fetchMock.mockImplementation(() => new Promise<Response>((resolve) => void (pending.resolve = resolve)))
+    renderWithRouter(<RunNow handle="chatgpt" />, client())
+    const run = (await screen.findByRole('button', { name: 'Run now' })) as HTMLButtonElement
+    expect(run.disabled).toBe(true)
+    expect(run.getAttribute('title')).toBe('Checking…')
+    expect((screen.getByRole('button', { name: 'More run options' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(run)
+    pending.resolve!(json(list([], { traderSeenAt: null })))
+    expect(await screen.findByText(/No claude-trader service has asked for @chatgpt's runs/)).toBeTruthy()
+    expect(run.disabled).toBe(true)
+    expect(fetchMock.mock.calls.every(([r]) => r.method === 'GET')).toBe(true)  // nothing was requested
+  })
+
+  it('polls every 30 s while no trader serves the bot, so the button turns on by itself', async () => {
+    const qc = client()
+    fetchMock.mockImplementation(async () => json(list([], { traderSeenAt: '2026-10-14T14:50:00Z' })))   // 10 min ago
+    renderWithRouter(<RunNow handle="claude" />, qc)
+    expect(await screen.findByText(/No claude-trader service has asked for @claude's runs/)).toBeTruthy()
+    const query = qc.getQueryCache().find({ queryKey: agentKeys.runRequests('claude') })!
+    const interval = query.observers[0]!.options.refetchInterval as unknown as (q: typeof query) => number | false
+    expect(interval(query)).toBe(NO_TRADER_POLL_MS)
+    // e.g. after an app restart: the trader's next claim or heartbeat, and the next poll turns the button on
+    qc.setQueryData(agentKeys.runRequests('claude'), list())
+    await enabled('Run now')
+    expect(interval(query)).toBe(false)
+    // a frozen bot is not waiting for a trader: no poll
+    qc.setQueryData(agentKeys.runRequests('claude'), list([], { botStatus: 'FROZEN', traderSeenAt: null }))
+    expect(interval(query)).toBe(false)
   })
 
   it("measures ages against the server's clock, not the browser's", async () => {

@@ -97,6 +97,20 @@ class ApiAccessLogFilterTest {
   }
 
   @Test
+  void theTradersHeartbeatIsNotRecorded() throws Exception {
+    SecurityContextHolder.getContext().setAuthentication(new PlayerAuthenticationToken(key));
+    for (int status : new int[] {204, 403}) {
+      new ApiAccessLogFilter(recorder).doFilter(request("POST", "/api/v1/agent-runs/requests/heartbeat"),
+          new MockHttpServletResponse(), (req, res) -> {
+            req.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/v1/agent-runs/requests/heartbeat");
+            ((MockHttpServletResponse) res).setStatus(status);
+          });
+    }
+    assertThat(calls).extracting(Call::endpoint, Call::outcome)
+        .containsExactly(org.assertj.core.groups.Tuple.tuple("POST /api/v1/agent-runs/requests/heartbeat", "403"));
+  }
+
+  @Test
   void normalizeKeepsRouteWordsAndHidesValues() {
     assertThat(ApiAccessLogFilter.normalize("/api/v1/orders/ord_01J9ZC7M0Q8W5T3K2R1N6B4V8X"))
         .isEqualTo("/api/v1/orders/{id}");

@@ -204,8 +204,11 @@ dc --profile agents stop agent-runner                                # pause bot
   button** ("No claude-trader service has asked for @x's runs …") or **"Expired: the trader did not pick it up"**:
   the trader is not running (`dc --profile trader up -d --no-deps claude-trader`), or the agent is `enabled = false`
   or missing in its agents file, or its key belongs to another player (`docker logs stocks-claude-trader | grep -i
-  "run request"`). Right after an app restart the button stays grey for up to a minute, until the trader's next
-  claim. A picked-up request without a report after 30 minutes is FAILED.
+  "run request"`). A busy trader (long check-ins, every `STOCKS_TRADER_MAX_PARALLEL` slot in use) does not grey it
+  out: it sends a heartbeat for each agent it cannot claim for, and the request waits for a free slot. Right after
+  an app restart the button stays grey for up to a minute, until the trader's next claim or heartbeat; an open page
+  re-checks every 30 s and turns it on by itself. A picked-up request without a report after 30 minutes is FAILED.
+  A frozen owner cannot run their bots (`PLAYER_FROZEN`; unfreeze them first).
 - **Run all (§20.9):** **Run all** (Admin → Bots above the cards, Admin → Players under the header; **Dry run all** in
   its menu) asks for one check-in of every bot the trader serves; the confirmation names them and says why the others
   are left out. The summary under the button lists each bot: **Requested**, **Already on its way** (a request was
@@ -333,8 +336,13 @@ more than 15 minutes old (`POST /api/v1/auth/reauth`).
   `Idempotency-Key`; retrying with the same key never pays twice.
 - **Starting cash**: new players get `league.defaultStartingCash` (Admin → Settings), $500,000.00 since 2026-10-14
   (V11 raised the stored value from $500.00; `STARTING_CASH_DEFAULT` only seeds a fresh database). Players who
-  started with $500 keep it until topped up: a deposit to ALL of $499,500.00 (memo e.g. "New starting cash") brings
-  each of them to $500,000 of contributions without changing anyone's return.
+  started with $500 keep it until topped up. Deposit to ALL has no "only $500 accounts" filter: a deposit to ALL of
+  $499,500.00 (memo e.g. "New starting cash") is correct only while **every** account has exactly $500.00 of net
+  contributions, i.e. right after the deploy, before any player or bot is created, and only if no admin deposit or
+  withdrawal was ever made. A player created after V11 (e.g. a new manual bot) already has $500,000.00, and an
+  earlier deposit adds to the $500: a deposit to ALL would give them more than everyone else. Otherwise top up per
+  player (Admin → Money → one player) only those whose net contributions are still $500.00, by $499,500.00 each, and
+  check the preview before applying.
 - **Forgotten password**: player → Set password (ends their sessions and revokes their keys); tell them the
   temporary password and ask them to change it under Settings.
 - **Personal API keys** of humans are read-only unless the player is allowed to trade by API (player →

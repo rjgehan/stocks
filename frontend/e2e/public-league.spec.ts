@@ -1,5 +1,5 @@
-import { type Page, expect, test } from '@playwright/test'
-import { MOCK, chooseOrderType, choose, credentials, open, openTicket, submitTicket, toastWith, viewport } from './support/app'
+import { expect, test } from '@playwright/test'
+import { MOCK, chooseOrderType, choose, confirmIfAsked, open, openTicket, signInAs, submitTicket, toastWith, viewport } from './support/app'
 
 /**
  * Public mode (§16.7) at all three viewports: every player's live portfolio, order history, account activity and
@@ -14,15 +14,6 @@ import { MOCK, chooseOrderType, choose, credentials, open, openTicket, submitTic
 test.describe.configure({ timeout: 90_000 })
 
 const PASSWORD = 'a long enough password'
-
-/** Answers the password prompt of a recent-auth route when it shows (other specs may age the sign-in). */
-async function confirmIfAsked(page: Page): Promise<void> {
-  const reauth = page.getByRole('dialog', { name: "Confirm it's you" })
-  if (await reauth.waitFor({ state: 'visible', timeout: 3_000 }).then(() => true, () => false)) {
-    await reauth.getByLabel('Password').fill(credentials()!.password)
-    await reauth.getByRole('button', { name: 'Confirm' }).click()
-  }
-}
 
 test("a bot's Portfolio, History and Analysis are public", async ({ page }, testInfo) => {
   test.skip(!MOCK, 'The league members are seeded in mock mode; the real-backend test below covers a live order')
@@ -98,11 +89,7 @@ test("another player's working order and note are public at once", async ({ page
   let limit = ''
   try {
     const player = await ctx.newPage()
-    await player.goto('/login')
-    await player.getByLabel('Handle').fill(handle)
-    await player.getByLabel('Password').fill(PASSWORD)
-    await player.getByRole('button', { name: 'Sign in' }).click()
-    await expect(player.getByRole('navigation', { name: 'Main' }).or(player.getByRole('button', { name: 'Back', exact: true })).first()).toBeVisible({ timeout: 20_000 })
+    await signInAs(player, handle, PASSWORD)
     await player.goto('/stock/AAPL')
     await expect(player.getByRole('heading', { name: 'AAPL', level: 1 })).toBeVisible()
     const ticket = await openTicket(player, vp, 'AAPL', 'Buy')

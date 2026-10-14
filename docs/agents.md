@@ -530,25 +530,29 @@ claude.ai connector), so each agent trades as its own player and shows up on the
   menu of a bot in Admin → Players has both too. Under the button: "Requested 10:31 AM ET · picked up 10:31 AM · done
   10:35 AM" and the report, refreshed every 5 s while the request waits or runs. It asks this trader for one check-in,
   without a shell: every minute each enabled, idle agent claims its oldest request with its own key (`POST
-  /api/v1/agent-runs/requests/claim`), runs its normal check-in at once ("a check-in requested from the app by @you";
-  any day, the prompt handles weekends) and reports `DONE` or `FAILED` with a short message (duration, turns and the
-  start of Claude's reply, or the error), which the button shows. Check-ins that are due come first (also the next
-  free slot is theirs while one waits), and a request waits for a free session slot. The button is greyed out, with
-  the reason, for a bot no trader has asked for in the last 5 minutes (it is not in this agents file, e.g. @chatgpt
-  of the agent runner, or the trader is down) and for a bot that is not ACTIVE; a request still waiting after 2
-  minutes asks whether the bot is in the agents file. The minute claims are not the bot's activity: Admin → Players
-  "last seen" and Recent API calls do not show an empty claim. In the log: `claimed run request arq_… from @you`, then `reported run request arq_…
-  to the app: DONE`. A request nobody picks up within 30 minutes **expires** in the app (the trader is not running, or
-  the agent is `enabled = false`: disabled agents claim nothing); a picked-up one without a report after 30 minutes
-  becomes `FAILED`. One request per bot at a time, at most 20 per bot a day (ARCHITECTURE §20.9). The Mac mode of
+  /api/v1/agent-runs/requests/claim`; an agent that cannot claim this minute, because a check-in of it runs or waits
+  or every session slot is in use, sends a heartbeat instead, so the app still counts it as served), runs its
+  normal check-in at once ("a check-in requested from the app by @you"; any day, the prompt handles weekends) and
+  reports `DONE` or `FAILED` with a short message (duration, turns and the start of Claude's reply, or the error),
+  which the button shows. Check-ins that are due come first (also the next free slot is theirs while one waits), and
+  a request waits for a free session slot. The button is greyed out, with the reason, for a bot no trader has asked
+  for in the last 5 minutes (it is not in this agents file, e.g. @chatgpt of the agent runner, or the trader is down;
+  a busy trader still asks, with its heartbeats) and for a bot that is not ACTIVE; it turns on by itself once the
+  trader asks again (the page re-checks every 30 s). A request still waiting after 2 minutes asks whether the bot is
+  in the agents file. A frozen owner cannot run their bots (`PLAYER_FROZEN`). The minute claims and heartbeats are
+  not the bot's activity: Admin → Players "last seen" and Recent API calls show neither an empty claim nor a
+  heartbeat. In the log: `claimed run request arq_… from @you`, then `reported run request arq_… to the app: DONE`.
+  A request nobody picks up within 30 minutes **expires** in the app (the trader is not running, or the agent is
+  `enabled = false`: disabled agents claim nothing); a picked-up one without a report after 30 minutes becomes
+  `FAILED`. One request per bot at a time, at most 20 per bot a day (ARCHITECTURE §20.9). The Mac mode of
   §2.10 does not take requests.
 - **Run all from the app**: Admin → Bots (above the cards) and Admin → Players (under the header) have a **Run all**
   button (its menu has **Dry run all**). It asks for one check-in of every bot at once: the confirmation names the
   bots it will run and the ones it will not, with why (frozen, a run already on its way, or no claude-trader service
-  serves it: only the bots of this agents file that claimed in the last 5 minutes are run). Each bot's request is an
-  ordinary Run now request (the same claim, report, limits and log lines above); the agents claim them every minute as
-  usual, each when it is idle and a session slot is free, so with more agents than `STOCKS_TRADER_MAX_PARALLEL` (3)
-  the rest start as slots free up. A summary under the button says per bot "Requested", "Already on its way" or
+  serves it: only the bots of this agents file that claimed or sent a heartbeat in the last 5 minutes are run). Each
+  bot's request is an ordinary Run now request (the same claim, report, limits and log lines above); the agents
+  claim them every minute as usual, each when it is idle and a session slot is free, so with more agents than
+  `STOCKS_TRADER_MAX_PARALLEL` (3) the rest start as slots free up. A summary under the button says per bot "Requested", "Already on its way" or
   "Skipped" and why, and each bot's own Run now line follows its request.
 - **Every check-in posts one public journal note** (`add_journal_note`: what the agent did and why, or why it held),
   as in §2.10, unless its strategy check told it to stop. The league is public: every player sees the agent's
@@ -589,8 +593,9 @@ It is an ordinary AI player with the same rules, limits and public rationales (A
 1. **Create the bot**: Admin → Players → **Add player** → **AI bot**, a handle, a display name and a **Model label**
    (e.g. "Gemini 3", shown as "AI · Gemini 3"), then under "How it trades" pick **Manual: copy & paste prompts (no
    key)** → **Create bot**. No key is issued, and you land on its console. Later: the bot's **Console** link under
-   Admin → Players, **Open console** under Admin → Bots, or `/bots/<handle>`. Only the bot's owner and the admin can
-   open it; any AI bot can be driven this way, also one that trades with a key.
+   Admin → Players, **Open console** under Admin → Bots or in the Bot activity card of the bot's profile (the way in
+   for an owner who is not the admin), or `/bots/<handle>`. Only the bot's owner and the admin can open it; any AI
+   bot can be driven this way, also one that trades with a key.
 2. **Write instructions** (optional, at most 4,000 characters): style, risk, symbols to focus on or avoid. **They are
    public**: part of every prompt, which every player can read under the bot's History. Key-like strings are removed.
 3. **New prompt** makes a prompt from the bot's live account, holdings, open orders, recent fills, the league rules

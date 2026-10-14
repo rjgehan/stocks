@@ -924,6 +924,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-runs/requests/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run requests: the trader still serves this bot
+         * @description Sent by the claude-trader service with the bot's own API key (trade scope; AI players only) every minute it cannot claim for the bot: a check-in of the bot runs, or every session slot is in use. Claims nothing; the trader's sign of life for the bot like a claim (traderSeenAt), so its Run now stays available. Always 204; not the bot's activity (last seen, Recent API calls). Errors: FORBIDDEN, FORBIDDEN_SCOPE.
+         */
+        post: operations["runRequestHeartbeat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent-runs/requests/{requestId}/finish": {
         parameters: {
             query?: never;
@@ -1552,7 +1572,7 @@ export interface paths {
         put?: never;
         /**
          * Run all of the caller's bots now
-         * @description Session only. "Run all": a run request for every bot the caller may run (the AI players they own; every listed AI player for an ACTIVE admin), by the rules of POST /me/bots/{handle}/run-requests, each with its own audit row and daily limit. Never fails for one bot: each result says REQUESTED (the new request), ALREADY_OPEN (the request waiting or running) or SKIPPED with a reason: NOT_ACTIVE (frozen), NO_TRADER (no claude-trader service asked for the bot's requests in the last 5 minutes, so nothing would pick one up) or RATE_LIMITED (20 per bot in 24 hours). dryRun: the order tools are blocked for every one of them.
+         * @description Session only. "Run all": a run request for every bot the caller may run (the AI players they own; every listed AI player for an ACTIVE admin), by the rules of POST /me/bots/{handle}/run-requests, each with its own audit row and daily limit. Never fails for one bot: each result says REQUESTED (the new request), ALREADY_OPEN (the request waiting or running) or SKIPPED with a reason: NOT_ACTIVE (frozen), NO_TRADER (no claude-trader service asked for the bot's requests in the last 5 minutes, so nothing would pick one up) or RATE_LIMITED (20 per bot in 24 hours). dryRun: the order tools are blocked for every one of them. The caller must be ACTIVE: PLAYER_FROZEN or PLAYER_DISABLED refuse the whole call.
          */
         post: operations["requestAllRuns"];
         delete?: never;
@@ -1654,13 +1674,13 @@ export interface paths {
         };
         /**
          * A bot's run requests
-         * @description Session only; the bot's owner or the admin. The latest requests, newest first (limit 1-50, default 10), the bot's status and when a trader last asked for its requests (traderSeenAt: the claude-trader service asks every minute for each agent it serves).
+         * @description Session only; the bot's owner or the admin. The latest requests, newest first (limit 1-50, default 10), the bot's status and when a trader last asked for its requests (traderSeenAt: the claude-trader service claims, or sends a heartbeat while it cannot claim, every minute for each agent it serves).
          */
         get: operations["listRunRequests"];
         put?: never;
         /**
          * Run a bot's check-in now
-         * @description Session only; the bot's owner or the admin. The claude-trader service picks the request up within about a minute and runs the bot's normal check-in (dryRun: the order tools are blocked). One open request per bot (409 RUN_REQUEST_CONFLICT while one is PENDING or CLAIMED); at most 20 per bot in 24 hours (RATE_LIMITED). A request nobody picks up within 30 minutes becomes EXPIRED. Errors: PLAYER_NOT_FOUND, FORBIDDEN (not an AI player, not yours), PLAYER_FROZEN, RUN_REQUEST_CONFLICT, RATE_LIMITED.
+         * @description Session only; the bot's owner or the admin. The claude-trader service picks the request up within about a minute and runs the bot's normal check-in (dryRun: the order tools are blocked). One open request per bot (409 RUN_REQUEST_CONFLICT while one is PENDING or CLAIMED); at most 20 per bot in 24 hours (RATE_LIMITED). A request nobody picks up within 30 minutes becomes EXPIRED. Errors: PLAYER_NOT_FOUND, FORBIDDEN (not an AI player, not yours), PLAYER_FROZEN (the bot, or you), PLAYER_DISABLED (you), RUN_REQUEST_CONFLICT, RATE_LIMITED.
          */
         post: operations["requestRun"];
         delete?: never;
@@ -7209,6 +7229,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RunRequest"];
                 };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    runRequestHeartbeat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recorded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
             default: {

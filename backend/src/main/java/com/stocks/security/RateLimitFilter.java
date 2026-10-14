@@ -8,6 +8,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.core.Authentication;
@@ -36,8 +37,8 @@ import org.springframework.web.util.UrlPathHelper;
  * {@code Retry-After} and {@code retryAfterS}. The admin chain is never limited (§17.5). Not a Spring bean.
  *
  * <p>Every authenticated request also counts as the player's activity ({@link ActivityRecorder}: "last seen", the
- * key's "last used"), except Run now's claim poll when it finds nothing (204, §20.9): the claude-trader service asks
- * every minute for each bot it serves, and that is not the bot doing anything.
+ * key's "last used"), except Run now's claim poll when it finds nothing and the trader's heartbeat (both 204, §20.9):
+ * the claude-trader service asks every minute for each bot it serves, and that is not the bot doing anything.
  */
 public final class RateLimitFilter extends OncePerRequestFilter {
 
@@ -48,8 +49,9 @@ public final class RateLimitFilter extends OncePerRequestFilter {
   private static final Pattern HEAVY = Pattern.compile(
       "^/api/v1/(bars/.*|account/history|leaderboard|players/[^/]+(/history|/trades|/stats|/portfolio|/orders"
           + "|/activities|/pnl-analysis|/pnl-calendar)?|league/race|account/(stats|pnl-analysis|pnl-calendar))$");
-  /** Run now's claim poll (§20.9). */
-  static final String CLAIM_PATH = "/api/v1/agent-runs/requests/claim";
+  /** Run now's claim poll and the trader's heartbeat (§20.9): not the bot's activity when they answer 204. */
+  static final Set<String> TRADER_POLLS = Set.of("/api/v1/agent-runs/requests/claim",
+      "/api/v1/agent-runs/requests/heartbeat");
   private static final Pattern ORDER_WRITE_PATH = Pattern.compile(
       "^/api/v1/(orders|orders/[^/]+|order-groups|order-groups/[^/]+|account/positions/[^/]+/close)$");
 
@@ -71,7 +73,7 @@ public final class RateLimitFilter extends OncePerRequestFilter {
         ? p : null;
     String path = path(request);
     FilterChain next = chain;
-    if (principal != null && HttpMethod.POST.matches(request.getMethod()) && CLAIM_PATH.equals(path)) {
+    if (principal != null && HttpMethod.POST.matches(request.getMethod()) && TRADER_POLLS.contains(path)) {
       next = seenUnlessNoContent(chain, principal, ClientIp.resolve(request));
     } else if (principal != null) {
       activity.seen(principal, ClientIp.resolve(request));

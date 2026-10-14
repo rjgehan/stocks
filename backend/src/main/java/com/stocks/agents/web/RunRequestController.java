@@ -29,8 +29,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * §20.9 "Run now": the bot's owner or the admin asks for a check-in on a browser session ({@code /me/**}: session
- * only, CSRF), for one bot or for all of them ("Run all"), and the claude-trader service claims and finishes it with the bot's own key ({@code trade} scope, AI
- * players only, like {@code POST /agent-runs}; route rules in {@code SecurityConfig}).
+ * only, CSRF), for one bot or for all of them ("Run all"), and the claude-trader service claims and finishes it with
+ * the bot's own key ({@code trade} scope, AI players only, like {@code POST /agent-runs}; route rules in
+ * {@code SecurityConfig}), sending a heartbeat instead of a claim while it cannot take one.
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -49,8 +50,8 @@ public class RunRequestController {
       + "claude-trader service picks the request up within about a minute and runs the bot's normal check-in "
       + "(dryRun: the order tools are blocked). One open request per bot (409 RUN_REQUEST_CONFLICT while one is "
       + "PENDING or CLAIMED); at most 20 per bot in 24 hours (RATE_LIMITED). A request nobody picks up within 30 "
-      + "minutes becomes EXPIRED. Errors: PLAYER_NOT_FOUND, FORBIDDEN (not an AI player, not yours), PLAYER_FROZEN, "
-      + "RUN_REQUEST_CONFLICT, RATE_LIMITED.")
+      + "minutes becomes EXPIRED. Errors: PLAYER_NOT_FOUND, FORBIDDEN (not an AI player, not yours), PLAYER_FROZEN "
+      + "(the bot, or you), PLAYER_DISABLED (you), RUN_REQUEST_CONFLICT, RATE_LIMITED.")
   public RunRequestDto requestRun(@PathVariable("handle") String handle,
                                   @RequestBody(required = false) RunNowRequest body, HttpServletRequest request) {
     PlayerPrincipal caller = CurrentPlayer.require();
@@ -65,7 +66,8 @@ public class RunRequestController {
       + "for one bot: each result says REQUESTED (the new request), ALREADY_OPEN (the request waiting or running) or "
       + "SKIPPED with a reason: NOT_ACTIVE (frozen), NO_TRADER (no claude-trader service asked for the bot's "
       + "requests in the last 5 minutes, so nothing would pick one up) or RATE_LIMITED (20 per bot in 24 hours). "
-      + "dryRun: the order tools are blocked for every one of them.")
+      + "dryRun: the order tools are blocked for every one of them. The caller must be ACTIVE: PLAYER_FROZEN or "
+      + "PLAYER_DISABLED refuse the whole call.")
   public RunAllResultDto requestAllRuns(@RequestBody(required = false) RunNowRequest body,
                                         HttpServletRequest request) {
     PlayerPrincipal caller = CurrentPlayer.require();
@@ -76,7 +78,8 @@ public class RunRequestController {
   @Tag(name = "me", description = "The authenticated player")
   @Operation(summary = "A bot's run requests", description = "Session only; the bot's owner or the admin. The latest "
       + "requests, newest first (limit 1-50, default 10), the bot's status and when a trader last asked for its "
-      + "requests (traderSeenAt: the claude-trader service asks every minute for each agent it serves).")
+      + "requests (traderSeenAt: the claude-trader service claims, or sends a heartbeat while it cannot claim, every "
+      + "minute for each agent it serves).")
   public RunRequestListDto listRunRequests(
       @PathVariable("handle") String handle,
       @Parameter(description = "1-50, default 10") @RequestParam(required = false) Integer limit) {
@@ -99,6 +102,19 @@ public class RunRequestController {
   public ResponseEntity<RunRequestDto> claimRunRequest() {
     return requests.claim(CurrentPlayer.require()).map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.noContent().build());
+  }
+
+  @PostMapping("/agent-runs/requests/heartbeat")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  @Tag(name = "agents", description = "AI players: run reports and the public AI journal (Phase 2)")
+  @Operation(summary = "Run requests: the trader still serves this bot", description = "Sent by the claude-trader "
+      + "service with the bot's own API key (trade scope; AI players only) every minute it cannot claim for the bot: "
+      + "a check-in of the bot runs, or every session slot is in use. Claims nothing; the trader's sign of life for "
+      + "the bot like a claim (traderSeenAt), so its Run now stays available. Always 204; not the bot's activity "
+      + "(last seen, Recent API calls). Errors: FORBIDDEN, FORBIDDEN_SCOPE.",
+      responses = @ApiResponse(responseCode = "204", description = "Recorded"))
+  public void runRequestHeartbeat() {
+    requests.heartbeat(CurrentPlayer.require());
   }
 
   @PostMapping("/agent-runs/requests/{requestId}/finish")

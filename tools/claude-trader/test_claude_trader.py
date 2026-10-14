@@ -74,8 +74,9 @@ print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "nu
 class FakeApp:
     """The app's GET /api/v1/me on a local port: the handle of the key's player, 401 for an unknown key, or
     `status` for every request when it is set. POST .../requests/claim hands out the key's queued `claims` (204 when
-    none); POST .../requests/{id}/finish records the report in `finished` and answers `finish_status` (200). With
-    `broken`, every POST gets a cut-off answer (http.client's IncompleteRead, not an OSError)."""
+    none); POST .../requests/heartbeat records the key's player in `heartbeats` (204); POST .../requests/{id}/finish
+    records the report in `finished` and answers `finish_status` (200). With `broken`, every POST gets a cut-off
+    answer (http.client's IncompleteRead, not an OSError)."""
 
     def __init__(self):
         self.players = {KEY_A: "claude", KEY_B: "claude_tech", KEY_C: "claude_aggressive"}
@@ -83,6 +84,7 @@ class FakeApp:
         self.requests = []
         self.claims = {}          # key -> [run requests], oldest first
         self.finished = []        # (request id, body, headers)
+        self.heartbeats = []      # the handle of each heartbeat's key
         self.finish_status = None
         self.broken = False
         app = self
@@ -115,6 +117,12 @@ class FakeApp:
                     elif app.claims.get(key):
                         code, out = 200, app.claims[key].pop(0)
                     else:
+                        code, out = 204, None
+                elif self.path == "/api/v1/agent-runs/requests/heartbeat":
+                    if key not in app.players:
+                        code, out = 401, {"code": "INVALID_API_KEY", "detail": "Unknown API key."}
+                    else:
+                        app.heartbeats.append(app.players[key])
                         code, out = 204, None
                 elif self.path.endswith("/finish"):
                     app.finished.append((self.path.split("/")[-2], body, dict(self.headers)))
@@ -1043,12 +1051,15 @@ class RunRequestTest(Base):
         self.assertEqual(started[2], ("claude_tech", "a check-in requested from the app by @ryan"))
         self.assertEqual([(rid, body["status"]) for rid, body, _ in self.app.finished],
                          [("arq_10", "DONE"), ("arq_11", "DONE")])
-        # an agent whose check-in runs in another process (its lock) does not claim; Mac mode never asks the app
+        # an agent whose check-in runs in another process (its lock) does not claim, it sends a heartbeat; Mac mode
+        # never asks the app
         self.app.claims[KEY_A] = [run_request("arq_12")]
         lock = ct.acquire_lock(agents[0])
+        del self.app.heartbeats[:]
         self.tick()
         lock.close()
         self.assertEqual(len(self.app.claims[KEY_A]), 1)
+        self.assertEqual(self.app.heartbeats, ["claude"])
         before = len(self.app.requests)
         with fixed(WED), capture():
             ct.tick_requests(self.cfg(server=False), ct.load_agents(self.cfg(server=False)).agents, ct.Sessions(3))
@@ -1117,6 +1128,64 @@ class RunRequestTest(Base):
         # a waiting agent that is disabled since then holds no slot
         sessions.waiting["claude_aggressive"] = {"2026-10-14 09:30": f"{ct.NO_SLOT}, STOCKS_TRADER_MAX_PARALLEL=1"}
         self.assertEqual(sessions.slot_waiters([a.handle for a in agents]), 0)
+
+    def test_an_agent_that_cannot_claim_now_sends_a_heartbeat(self):
+        """The app counts a bot as served while a trader asked for it in the last 5 minutes; a check-in runs up to 15,
+        and with every slot in use the claims stop for all agents. Their heartbeats keep Run now available."""
+        release = threading.Event()
+        started = []
+
+        def fake_run_session(cfg, agent, why, dry_run=False, outcome=None):
+            started.append(agent.handle)
+            release.wait(10)
+            return 0
+
+        cfg = self.cfg()
+        agents = self.agents(cfg)
+        agents[0].schedule = ["09:30"]
+        agents[1].schedule = ["15:00"]
+        self.app.claims[KEY_B] = [run_request("arq_30", handle="claude_tech")]
+        sessions = ct.Sessions(1)
+        try:
+            with mock.patch.object(ct, "run_session", fake_run_session), \
+                    mock.patch.object(ct, "check_player", lambda cfg, agent: ("ok", "")), fixed(WED), capture() as out:
+                ct.tick_agents(cfg, agents, sessions, WED)           # claude's check-in takes the only slot
+                self.assertTrue(until(lambda: started == ["claude"]))
+                for _ in range(2):                                   # minute after minute while it runs
+                    ct.tick_requests(cfg, agents, sessions)
+                # claude is busy, claude_tech has no free slot: heartbeats, no claim; never the disabled agent
+                self.assertEqual(self.app.heartbeats, ["claude", "claude_tech"] * 2)
+                self.assertFalse([p for p, _ in self.app.requests if p.endswith("/claim")])
+                self.assertEqual(len(self.app.claims[KEY_B]), 1)
+                # a second slot: claude (still busy) beats, claude_tech claims its request and runs it
+                sessions.limit = 2
+                del self.app.heartbeats[:]
+                ct.tick_requests(cfg, agents, sessions)
+                self.assertTrue(until(lambda: started == ["claude", "claude_tech"]))
+                self.assertEqual(self.app.heartbeats, ["claude"])
+                self.assertEqual(self.app.claims[KEY_B], [])
+                release.set()
+                self.assertTrue(sessions.wait(10))
+                # a due check-in waiting for a slot: its agent beats, the idle one claims (nothing there: 204)
+                del self.app.heartbeats[:]
+                sessions.waiting["claude_tech"] = {"2026-10-14 15:00": f"{ct.NO_SLOT}, STOCKS_TRADER_MAX_PARALLEL=2"}
+                claims = len([p for p, _ in self.app.requests if p.endswith("/claim")])
+                ct.tick_requests(cfg, agents, sessions)
+                self.assertEqual(self.app.heartbeats, ["claude_tech"])
+                self.assertEqual(len([p for p, _ in self.app.requests if p.endswith("/claim")]), claims + 1)
+        finally:
+            release.set()
+            self.assertTrue(sessions.wait(10))
+        self.assertNotIn("heartbeat", out.getvalue())                # quiet
+        # an app without the route (404) or that does not answer: nothing breaks, nothing is logged
+        with capture() as out:
+            ct.send_heartbeat(self.cfg(STOCKS_TRADER_MCP_URL="http://127.0.0.1:9/mcp"), agents[0])
+            self.app.status = 404
+            ct.send_heartbeat(cfg, agents[0])
+        self.assertEqual(out.getvalue(), "")
+        _, headers = self.app.requests[-1]
+        self.assertEqual(headers["Authorization"], f"Bearer {KEY_A}")
+        self.assertEqual(headers["X-Stocks-Client"], "claude-code/trader")
 
     def test_a_broken_answer_is_network_trouble_and_no_report_is_lost(self):
         cfg = self.cfg()

@@ -12,7 +12,8 @@ the container's main loop. Each agent's state and logs live in $STOCKS_TRADER_HO
 check-in starts, GET /api/v1/me with the agent's key must answer with the agent's handle (else it waits, see
 check_player); a check-in that a shutdown cuts short (e.g. Watchtower's update) runs again after the restart. Every
 minute each idle agent also claims a "Run now" request from the app (the owner's button, tick_requests) and reports
-how the check-in went.
+how the check-in went; an agent that cannot claim now (busy, or no free session slot) sends a heartbeat instead, so
+the app knows the trader still serves it.
 
 A check-in starts at 09:30, 12:45 and 15:50 ET on weekdays (per agent: `schedule_et`), plus any extra check-in Claude
 asked for at the end of a session (`EXTRA_RUN: YYYY-MM-DD HH:MM | reason`).
@@ -70,6 +71,7 @@ PROBE_TIMEOUT_S = 5       # server mode: GET /api/v1/me before a check-in starts
 REQUEST_TIMEOUT_S = 10    # server mode: claiming and reporting a "Run now" request
 REPORT_MAX_CHARS = 480    # a run request's report (the app keeps 500 characters)
 CLAIM_PATH = "/api/v1/agent-runs/requests/claim"
+HEARTBEAT_PATH = "/api/v1/agent-runs/requests/heartbeat"
 NO_SLOT = "no free session slot"  # why a due check-in waits (Sessions.waiting); run requests leave it that slot
 MAX_TURNS = 60
 SELFTEST_MAX_TURNS = 5
@@ -1104,22 +1106,37 @@ def tick_requests(cfg: Config, agents: list, sessions: Sessions) -> None:
     then each enabled agent that is idle, with no check-in waiting to start, claims its oldest "Run now" request from
     the app while session slots are free, and runs it at once: the agent's normal check-in (any day; the prompt
     handles weekends). A slot is free for a request only after every due check-in waiting for a slot has one (a
-    session that ended since tick_agents leaves its slot to them for the next minute). A disabled agent claims
+    session that ended since tick_agents leaves its slot to them for the next minute). Every other enabled agent (a
+    check-in of it runs or waits, or no slot is free) sends a heartbeat instead: the app counts a bot as served by a
+    trader only while one asked for it in the last 5 minutes, and a check-in can run for 15. A disabled agent claims
     nothing; the app expires its requests after 30 minutes."""
     if not cfg.server or STOP.is_set():
         return
     flush_reports(cfg, sessions)
     enabled = [a.handle for a in agents if a.enabled]
     for agent in agents:
-        if sessions.running() + sessions.slot_waiters(enabled) >= sessions.limit:
-            return
-        if not agent.enabled or sessions.busy(agent.handle) or sessions.waiting.get(agent.handle):
+        if not agent.enabled:
             continue
+        no_slot = sessions.running() + sessions.slot_waiters(enabled) >= sessions.limit
         try:
+            if no_slot or sessions.busy(agent.handle) or sessions.waiting.get(agent.handle):
+                send_heartbeat(cfg, agent)  # served, just not now
+                continue
             problem = tick_request(cfg, agent, sessions)
         except Exception as e:
             problem = f"ERROR: run requests: {type(e).__name__}: {e}"
         sessions.report(agent.handle, problem, "requests")
+
+
+def send_heartbeat(cfg: Config, agent: Agent) -> None:
+    """POST /api/v1/agent-runs/requests/heartbeat with the agent's key: the trader still serves the agent but cannot
+    claim for it this minute, so the app keeps its Run now available (a request waits for the next free slot). Best
+    effort and quiet: the agent's next claim reports any problem; an app without the route answers 404, which changes
+    nothing."""
+    try:
+        api_post(cfg, agent, HEARTBEAT_PATH)
+    except OSError:
+        pass
 
 
 def flush_reports(cfg: Config, sessions: Sessions) -> None:
@@ -1131,8 +1148,9 @@ def tick_request(cfg: Config, agent: Agent, sessions: Sessions) -> str | None:
     """tick_requests for one agent; returns its problem (a log line), if it has one."""
     h = agent.handle
     lock = acquire_lock(agent)
-    if lock is None:
-        return None  # a check-in of this agent runs in another process; the request waits for the next minute
+    if lock is None:  # a check-in of this agent runs in another process; the request waits for the next minute
+        send_heartbeat(cfg, agent)
+        return None
     started = False
     try:
         verdict, got = claim_request(cfg, agent)

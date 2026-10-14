@@ -51,4 +51,12 @@ class RateLimitFilterTest {
     call("GET", "/api/v1/account", 204);                            // any other route counts, whatever it answers
     verify(activity, times(2)).seen(key, "10.0.0.5");
   }
+
+  @Test
+  void theTradersHeartbeatIsNotTheBotsActivity() throws Exception {
+    call("POST", "/api/v1/agent-runs/requests/heartbeat", 204);     // busy or no free slot: still served
+    verifyNoInteractions(activity);
+    call("POST", "/api/v1/agent-runs/requests/heartbeat", 403);     // a refused call is recorded like any other
+    verify(activity).seen(key, "10.0.0.5");
+  }
 }

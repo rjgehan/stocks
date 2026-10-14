@@ -3,8 +3,11 @@
  * per request state; "Run all" as its confirmation and its per-bot summary show it.
  */
 import type { PillTone } from '@/components/ui/Pill'
+import { TRADER_SEEN_MS, noTrader, serverNow } from '@/lib/api/hooks/agents'
 import type { Me, RunAllItem, RunAllOutcome, RunAllResult, RunRequest, RunRequestList, RunRequestStatus } from '@/lib/api/types'
 import { formatDateTimeEt, formatTimeEt } from '@/lib/format/time'
+
+export { TRADER_SEEN_MS, serverNow }
 
 /** The tooltip of the button. */
 export const runNowTip = (handle: string) => `Runs @${handle}'s normal check-in on the server (the claude-trader service) within about a minute.`
@@ -27,16 +30,8 @@ export const RUN_REQUEST_TONE: Record<RunRequestStatus, PillTone> = {
 
 export const EXPIRED_NOTE = 'Expired: the trader did not pick it up — is the claude-trader service running?'
 
-/** The claude-trader service asks every minute for each bot it serves; not within this long, nothing serves the bot. */
-export const TRADER_SEEN_MS = 5 * 60_000
 /** A request still waiting this long gets a hint about the trader's agents file. */
 export const PENDING_HINT_MS = 2 * 60_000
-
-/** The server's clock when it answered the list (`asOf`), else `fallback`: ages are measured against it. */
-export function serverNow(list: RunRequestList | null | undefined, fallback: number): number {
-  const t = Date.parse(list?.asOf ?? '')
-  return Number.isFinite(t) ? t : fallback
-}
 
 /**
  * Why the bot cannot be run from here (the button is disabled and says so), or null: it is not ACTIVE, or no
@@ -47,15 +42,17 @@ export function serverNow(list: RunRequestList | null | undefined, fallback: num
 export function runNowBlocked(handle: string, list: RunRequestList | null | undefined, now: number): string | null {
   if (!list) return null
   if (list.botStatus && list.botStatus !== 'ACTIVE') return `@${handle} is ${list.botStatus}: it cannot trade, so it cannot be run.`
-  const seen = Date.parse(list.traderSeenAt ?? '')
-  if (Number.isFinite(seen) && now - seen <= TRADER_SEEN_MS) return null
+  if (!noTrader(list, now)) return null
   return `No claude-trader service has asked for @${handle}'s runs in the last few minutes (it asks every minute for each bot in its agents file), so nothing would pick a run up.`
 }
 
-/** The bot's owner or an ACTIVE admin sees the button, as the server decides (it checks again on every request). */
+/**
+ * The bot's owner or the admin, while ACTIVE, sees the button (and the console link), as the server decides (it
+ * checks again on every request): a frozen player may still sign in and look, but not make bots trade.
+ */
 export function canRunBot(me: Me | null | undefined, ownerHandle: string | null | undefined): boolean {
   if (!me?.handle) return false
-  if (ownerHandle && ownerHandle === me.handle) return true
+  if (ownerHandle && ownerHandle === me.handle) return !me.status || me.status === 'ACTIVE'
   return me.role === 'ADMIN' && me.status === 'ACTIVE'
 }
 

@@ -200,6 +200,55 @@ class RunRequestServiceTest {
   }
 
   @Test
+  void aFrozenOwnerMayLookButNotRunTheirBots() {
+    assertThat(service.claim(botKey)).isEmpty();                   // a trader serves @claude
+    RunRequestDto waiting = ask(ownerSession, "claude", false);
+    fx.status(owner, "FROZEN");                                    // may still sign in and look (LoginService)
+    fails(() -> ask(ownerSession, "chatgpt", true), ErrorCode.PLAYER_FROZEN, "Your player is frozen by the admin");
+    fails(() -> runAll(ownerSession, false), ErrorCode.PLAYER_FROZEN, "Your player is frozen by the admin");
+    assertThat(listed(ownerSession, "claude", null)).extracting(RunRequestDto::id).containsExactly(waiting.id());
+    // not the owner's bot: the ownership answer comes first, as for anyone else
+    fails(() -> ask(ownerSession, "stranger", false), ErrorCode.FORBIDDEN, "@stranger is not an AI player");
+    assertThat(db.jdbc().sql("SELECT COUNT(*) FROM agent_run_request").query(Integer.class).single()).isEqualTo(1);
+    assertThat(db.jdbc().sql("SELECT COUNT(*) FROM audit_log WHERE action = 'BOT_RUN_ALL'").query(Integer.class)
+        .single()).isZero();
+
+    fx.status(owner, "DISABLED");
+    fails(() -> ask(ownerSession, "claude", false), ErrorCode.PLAYER_DISABLED, "Your player is disabled");
+    fails(() -> runAll(ownerSession, false), ErrorCode.PLAYER_DISABLED, "Your player is disabled");
+    fx.status(owner, "ACTIVE");
+    assertThat(ask(ownerSession, "chatgpt", false).status()).isEqualTo(RunRequestStatus.PENDING);
+  }
+
+  @Test
+  void aHeartbeatKeepsABusyBotServedAndClaimsNothing() {
+    RunRequestDto waiting = ask(ownerSession, "claude", false);
+    service.heartbeat(botKey);                                     // the trader is busy with @claude, or slots are full
+    assertThat(service.list(ownerSession, "claude", null).traderSeenAt()).isEqualTo(NOW);
+    assertThat(listed(ownerSession, "claude", null)).singleElement().satisfies(r -> {
+      assertThat(r.id()).isEqualTo(waiting.id());
+      assertThat(r.status()).isEqualTo(RunRequestStatus.PENDING);  // still waiting: a heartbeat claims nothing
+    });
+    // a check-in of up to 15 minutes, with a heartbeat every minute: Run all still counts the bot as served
+    for (int minute = 0; minute < 14; minute++) {
+      time.advance(Duration.ofMinutes(1));
+      service.heartbeat(botKey);
+      service.heartbeat(otherKey);
+    }
+    Map<String, RunAllItemDto> items = byHandle(runAll(ownerSession, false));
+    assertThat(items.get("claude").outcome()).isEqualTo(RunAllOutcome.ALREADY_OPEN);
+    assertThat(items.get("chatgpt").outcome()).isEqualTo(RunAllOutcome.REQUESTED);
+    assertThat(service.list(ownerSession, "chatgpt", null).traderSeenAt()).isEqualTo(time.now());
+
+    // only a bot's own key
+    PlayerPrincipal humanKey = TestPrincipals.apiKey(owner.id(), owner.publicId(), owner.handle(), PlayerKind.HUMAN,
+        Scopes.ALL, 1L);
+    for (PlayerPrincipal caller : List.of(ownerSession, humanKey)) {
+      fails(() -> service.heartbeat(caller), ErrorCode.FORBIDDEN, "Only the bot's own API key");
+    }
+  }
+
+  @Test
   void unclaimedRequestsExpireAndUnreportedClaimsFail() {
     RunRequestDto first = ask(ownerSession, "claude", false);
     time.advance(Duration.ofMinutes(29));
@@ -406,9 +455,9 @@ class RunRequestServiceTest {
     time.advance(Duration.ofMinutes(5).plusSeconds(1));            // the claim above was the trader's last visit
     assertThat(byHandle(runAll(adminSession, false)).get("claude").reason()).isEqualTo(RunAllSkipReason.NO_TRADER);
 
-    // a frozen admin is not the admin; a human without bots runs none
+    // a frozen admin runs nothing (not even as an owner); a human without bots runs none
     fx.status(admin, "FROZEN");
-    assertThat(runAll(adminSession, false).results()).isEmpty();
+    fails(() -> runAll(adminSession, false), ErrorCode.PLAYER_FROZEN, "Your player is frozen by the admin");
     PlayerRef nobody = fx.human("nobots");
     RunAllResultDto none = runAll(TestPrincipals.session(nobody.id(), nobody.publicId(), nobody.handle()), true);
     assertThat(none.results()).isEmpty();

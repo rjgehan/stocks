@@ -56,9 +56,12 @@ import org.springframework.stereotype.Service;
  *       it reaches the claim anyway; this also covers a status that changes while the request waits.)</li>
  *   <li>Claiming is an UPDATE guarded by {@code status = 'PENDING'}, so two claims never both win (PostgreSQL and
  *       H2). Finishing moves CLAIMED to DONE or FAILED; the same final status again answers the stored request.</li>
- *   <li>Every claim records when a trader last asked for the bot ({@code traderSeenAt} of the list), in memory: the
- *       button tells the owner when no trader serves the bot (one instance, §5; empty for up to a minute after a
- *       restart, until the trader's next claim).</li>
+ *   <li>Every claim, and every heartbeat (the trader's sign of life for a bot it serves but cannot claim for now:
+ *       busy with a check-in, or every session slot in use), records when a trader last asked for the bot
+ *       ({@code traderSeenAt} of the list), in memory: the button tells the owner when no trader serves the bot (one
+ *       instance, §5; empty for up to a minute after a restart, until the trader's next claim or heartbeat).</li>
+ *   <li>Asking (one bot or Run all) needs the caller ACTIVE, like every write of the manual console: a FROZEN owner
+ *       may still sign in and look (the list), but not make their bots trade ({@code PLAYER_FROZEN}).</li>
  * </ul>
  * Every accepted request is audited ({@code ACCOUNT BOT_RUN_REQUEST}: who asked, for which bot), and so is one refused
  * by the daily limit.
@@ -74,8 +77,9 @@ public class RunRequestService {
   static final int LIST_MAX = 50;
   static final Duration LIMIT_WINDOW = Duration.ofHours(24);
   /**
-   * A bot is served by a trader when one asked for its requests this recently (the claude-trader service asks every
-   * minute for each agent it serves): Run all's rule, and the SPA's for the per-bot button ({@code TRADER_SEEN_MS}).
+   * A bot is served by a trader when one asked for its requests this recently (the claude-trader service claims, or
+   * sends a heartbeat while it cannot claim, every minute for each enabled agent): Run all's rule, and the SPA's for
+   * the per-bot button ({@code TRADER_SEEN_MS}).
    */
   static final Duration TRADER_SEEN = Duration.ofMinutes(5);
   private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
@@ -86,7 +90,7 @@ public class RunRequestService {
   private final TimeSource time;
   private final AuditService audit;
   private final AgentsProperties.RunRequests settings;
-  /** The bot's player id → when a trader last claimed (or asked for) its requests. */
+  /** The bot's player id → when a trader last claimed its requests or sent a heartbeat for it. */
   private final Map<Long, Instant> traderSeen = new ConcurrentHashMap<>();
 
   public RunRequestService(RunRequestRepository requests, AgentPlayers players, PublicId publicIds, TimeSource time,
@@ -104,6 +108,7 @@ public class RunRequestService {
   /** {@code POST /me/bots/{handle}/run-requests}: a new PENDING request for the caller's (or, as admin, any) bot. */
   public RunRequestDto request(PlayerPrincipal caller, String handle, RunNowRequest body, RequestMeta meta) {
     AgentPlayers.PlayerRef bot = botFor(caller, handle);
+    requireActiveCaller(caller);
     requireActive(bot);
     Instant now = time.now();
     expire(bot, now);
@@ -119,9 +124,11 @@ public class RunRequestService {
    * they own, or every listed one for an ACTIVE admin), by handle, each by the rules of {@link #request}: a bot that
    * is not ACTIVE, has an open request or used its daily budget gets none, and neither does a bot no trader has asked
    * for in the last {@link #TRADER_SEEN} (nothing would pick its request up). Never fails for one bot: each gets an
-   * item saying what happened.
+   * item saying what happened. The caller must be ACTIVE ({@code PLAYER_FROZEN} / {@code PLAYER_DISABLED} for the
+   * whole call).
    */
   public RunAllResultDto requestAll(PlayerPrincipal caller, RunNowRequest body, RequestMeta meta) {
+    requireActiveCaller(caller);
     boolean dryRun = dryRun(body);
     Instant now = time.now();
     boolean admin = activeAdmin(caller);
@@ -202,6 +209,22 @@ public class RunRequestService {
     return body != null && Boolean.TRUE.equals(body.dryRun());
   }
 
+  /**
+   * The caller asking for a run is ACTIVE: a FROZEN human may still sign in and look, but not make their bots trade
+   * (as in the manual console and for OAuth act-as tokens).
+   */
+  private void requireActiveCaller(PlayerPrincipal caller) {
+    PlayerStatus status = players.byId(caller.playerId()).map(AgentPlayers.PlayerRef::status)
+        .orElse(PlayerStatus.DISABLED);
+    if (status == PlayerStatus.FROZEN) {
+      throw ApiException.of(ErrorCode.PLAYER_FROZEN, "Your player is frozen by the admin: you cannot run bots until "
+          + "it is unfrozen.");
+    }
+    if (status == PlayerStatus.DISABLED) {
+      throw ApiException.of(ErrorCode.PLAYER_DISABLED, "Your player is disabled.");
+    }
+  }
+
   private static void requireActive(AgentPlayers.PlayerRef bot) {
     if (bot.status() != PlayerStatus.ACTIVE) {
       throw ApiException.of(ErrorCode.PLAYER_FROZEN, notActive(bot));
@@ -273,6 +296,15 @@ public class RunRequestService {
   // ------------------------------------------------------------------------------------------- the trader
 
   /**
+   * {@code POST /agent-runs/requests/heartbeat}: the trader still serves the calling bot but cannot claim for it now
+   * (a check-in of the bot runs, or every session slot is in use); records the visit like a claim, claims nothing.
+   */
+  public void heartbeat(PlayerPrincipal caller) {
+    requireBotKey(caller);
+    traderSeen.put(caller.playerId(), time.now());
+  }
+
+  /**
    * {@code POST /agent-runs/requests/claim}: the calling bot's oldest PENDING request, now CLAIMED by the caller's
    * key; empty when there is none (or another claim won it) and when the bot is not ACTIVE.
    */
@@ -326,7 +358,10 @@ public class RunRequestService {
         + "; only a CLAIMED request can be finished" + (r.status().open() ? "." : ", and only once."));
   }
 
-  /** Only an AI player's API key claims and finishes run requests (a human's key or a browser session is FORBIDDEN). */
+  /**
+   * Only an AI player's API key claims, finishes and sends heartbeats for run requests (a human's key or a browser
+   * session is FORBIDDEN).
+   */
   public static void requireBotKey(PlayerPrincipal caller) {
     if (caller == null || caller.authMethod() != AuthMethod.API_KEY || caller.kind() != PlayerKind.AI) {
       throw ApiException.of(ErrorCode.FORBIDDEN, "Only the bot's own API key may claim and finish its run requests.");

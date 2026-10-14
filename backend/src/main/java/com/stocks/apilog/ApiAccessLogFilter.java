@@ -9,6 +9,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -23,8 +24,9 @@ import org.springframework.web.util.UrlPathHelper;
  * API key is counted, after the rest of the chain answered it, so the 403 {@code FORBIDDEN_SCOPE} and 429
  * {@code RATE_LIMITED} answers of later filters are recorded too. The {@code /mcp} envelope is not (each MCP
  * {@code tools/call} is recorded by the tool handler with its own result code), and neither are browser sessions,
- * anonymous requests, bodies or query strings. Neither is Run now's claim poll when it finds nothing (204, §20.9):
- * the claude-trader service asks every minute for each bot it serves, which would bury the bot's own calls.
+ * anonymous requests, bodies or query strings. Neither are Run now's claim poll when it finds nothing and the
+ * trader's heartbeat (both 204, §20.9): the claude-trader service asks every minute for each bot it serves, which
+ * would bury the bot's own calls.
  *
  * <p>The endpoint is the MVC route template ({@code GET /api/v1/orders/{orderId}}); a request that never reached MVC
  * gets its path with public ids replaced by {@code {id}} and other variable-looking segments by {@code {value}}
@@ -37,8 +39,9 @@ public final class ApiAccessLogFilter extends OncePerRequestFilter {
   private static final Pattern PUBLIC_ID = Pattern.compile("^[a-z]{3}_[0-9A-HJKMNP-TV-Z]{26}$");
   /** A fixed route word: lower-case letters and dashes, or a version ({@code v1}). */
   private static final Pattern WORD = Pattern.compile("^([a-z][a-z-]*|v[0-9]+)$");
-  /** Run now's claim poll (§20.9): not recorded when it answers 204. */
-  static final String CLAIM = "POST /api/v1/agent-runs/requests/claim";
+  /** Run now's claim poll and the trader's heartbeat (§20.9): not recorded when they answer 204. */
+  static final Set<String> TRADER_POLLS = Set.of("POST /api/v1/agent-runs/requests/claim",
+      "POST /api/v1/agent-runs/requests/heartbeat");
 
   private final ApiAccessRecorder recorder;
 
@@ -68,7 +71,7 @@ public final class ApiAccessLogFilter extends OncePerRequestFilter {
       status = response.getStatus();
     } finally {
       String endpoint = caller == null ? null : endpoint(request);
-      if (caller != null && !(status == HttpServletResponse.SC_NO_CONTENT && CLAIM.equals(endpoint))) {
+      if (caller != null && !(status == HttpServletResponse.SC_NO_CONTENT && TRADER_POLLS.contains(endpoint))) {
         long ms = (System.nanoTime() - start) / 1_000_000;
         recorder.record(caller, Channel.REST_KEY, endpoint, Integer.toString(status), ms,
             request.getRemoteAddr(), request.getHeader(HttpHeaders.USER_AGENT));

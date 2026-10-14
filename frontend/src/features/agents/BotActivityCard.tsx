@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { useAgentRunSummary } from '@/lib/api/hooks/agents'
 import { useMe } from '@/lib/api/hooks/identity'
 import { usePlayerProfile } from '@/lib/api/hooks/league'
@@ -14,7 +15,8 @@ const runs = (n: number) => `${n} run${n === 1 ? '' : 's'}`
 /**
  * A bot's public "Bot activity" card (§20.6): runs in the last 7 days and in total, the last run's time and status.
  * No cost and no error message (those stay with the admin, Admin → Bots). The bot's owner and the admin also get
- * Run now (§20.9); the profile query is the page's own, so it costs no request.
+ * Run now (§20.9) and the link to the bot's manual console (§20.8: the only way in for an owner who is not the admin);
+ * the profile query is the page's own, so it costs no request.
  */
 export function BotActivityCard({ handle }: { handle: string }) {
   const q = useAgentRunSummary(handle)
@@ -58,7 +60,19 @@ export function BotActivityCard({ handle }: { handle: string }) {
           </div>
         </>
       )}
-      {canRunBot(me, owner) ? <RunNow handle={handle} className="mt-3 border-t border-divider pt-3" /> : null}
+      {canRunBot(me, owner) ? (
+        <div className="mt-3 border-t border-divider pt-3">
+          <RunNow handle={handle} />
+          <Link
+            to="/bots/$handle"
+            params={{ handle }}
+            title={`Trade for @${handle} by hand: a prompt for any AI, its reply pasted back, then review and place`}
+            className="mt-2 inline-flex min-h-11 items-center text-caption font-semibold text-accent hover:text-accent-hover tablet:min-h-0"
+          >
+            Open console
+          </Link>
+        </div>
+      ) : null}
     </section>
   )
 }

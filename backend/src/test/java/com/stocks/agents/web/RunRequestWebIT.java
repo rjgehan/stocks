@@ -167,6 +167,43 @@ class RunRequestWebIT {
         "{\"status\":\"DONE\"}"));
     assertThat(unknown.getStatus()).isEqualTo(404);
     assertThat(bearer(botKey, post(claim)).getStatus()).isEqualTo(200);
+
+    // the trader's heartbeat (busy, or no free session slot): the same callers, 204, claims nothing
+    String heartbeat = "/api/v1/agent-runs/requests/heartbeat";
+    assertThat((String) read(session.perform(post(heartbeat)).getResponse(), "$.code")).isEqualTo("FORBIDDEN");
+    assertThat((String) read(bearer(humanKey, post(heartbeat)), "$.code")).isEqualTo("FORBIDDEN");
+    assertThat((String) read(bearer(readOnly, post(heartbeat)), "$.code")).isEqualTo("FORBIDDEN_SCOPE");
+    MockHttpServletResponse alive = bearer(botKey, post(heartbeat));
+    assertThat(alive.getStatus()).as(alive.getContentAsString()).isEqualTo(204);
+    assertThat(alive.getContentAsString()).isEmpty();
+  }
+
+  @Test
+  void aHeartbeatKeepsTheBotServedWithoutClaiming() throws Exception {
+    WebSession session = WebSession.login(mvc, owner.handle(), Fixtures.PASSWORD);
+    MockHttpServletResponse before = session.perform(get(runs)).getResponse();
+    assertThat((Object) read(before, "$.traderSeenAt")).isNull();
+    assertThat(session.perform(json(post(runs), "{}")).getResponse().getStatus()).isEqualTo(201);
+    assertThat(bearer(botKey, post("/api/v1/agent-runs/requests/heartbeat")).getStatus()).isEqualTo(204);
+    MockHttpServletResponse after = session.perform(get(runs)).getResponse();
+    assertThat((String) read(after, "$.traderSeenAt")).isNotNull();
+    assertThat((List<String>) read(after, "$.requests[*].status")).containsExactly("PENDING");
+  }
+
+  @Test
+  void aFrozenOwnerSignsInAndLooksButRunsNothing() throws Exception {
+    assertThat(bearer(botKey, post("/api/v1/agent-runs/requests/claim")).getStatus()).isEqualTo(204);
+    fx.status(owner, "FROZEN");
+    WebSession session = WebSession.login(mvc, owner.handle(), Fixtures.PASSWORD);   // a FROZEN human may sign in
+    MockHttpServletResponse one = session.perform(json(post(runs), "{}")).getResponse();
+    assertThat(one.getStatus()).as(one.getContentAsString()).isEqualTo(403);
+    assertThat((String) read(one, "$.code")).isEqualTo("PLAYER_FROZEN");
+    MockHttpServletResponse all = session.perform(json(post("/api/v1/me/bots/run-requests"), "{}")).getResponse();
+    assertThat(all.getStatus()).as(all.getContentAsString()).isEqualTo(403);
+    assertThat((String) read(all, "$.code")).isEqualTo("PLAYER_FROZEN");
+    MockHttpServletResponse list = session.perform(get(runs)).getResponse();
+    assertThat(list.getStatus()).isEqualTo(200);
+    assertThat((List<Object>) read(list, "$.requests")).isEmpty();
   }
 
   @Test
