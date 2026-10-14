@@ -660,7 +660,7 @@ export interface paths {
         };
         /**
          * One player
-         * @description Runs, balances, end-of-day holdings, transfers, API keys and recent audit rows. Never live positions or orders (break-glass only). Errors: PLAYER_NOT_FOUND.
+         * @description Runs, balances, end-of-day holdings, transfers, API keys and recent audit rows. Live positions and orders: GET /admin/players/{handle}/portfolio. Errors: PLAYER_NOT_FOUND.
          */
         get: operations["detail"];
         put?: never;
@@ -719,26 +719,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/admin/players/{handle}/live-view": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Break glass: the player's live positions and open orders
-         * @description Recent password check. Writes an audit row and an ADMIN_VIEW entry the player sees in their activity before showing anything. reason: 5-200 characters. Errors: PLAYER_NOT_FOUND, ACCOUNT_NOT_FOUND.
-         */
-        post: operations["liveView"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/admin/players/{handle}/oauth-grants": {
         parameters: {
             query?: never;
@@ -773,6 +753,26 @@ export interface paths {
          * @description Recent password check. Ends their sessions and revokes their API keys. Errors: WEAK_PASSWORD, VALIDATION_FAILED (AI players have no password).
          */
         post: operations["setPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players/{handle}/portfolio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's live portfolio (any status)
+         * @description The same as GET /players/{handle}/portfolio, also for a DISABLED player: cash, buying power, equity and P&L, positions with live marks and open orders. Errors: PLAYER_NOT_FOUND.
+         */
+        get: operations["portfolio"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -830,7 +830,7 @@ export interface paths {
         get: operations["get"];
         /**
          * Change league settings
-         * @description Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D). Errors: SETTING_INVALID.
+         * @description Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live). Errors: SETTING_INVALID.
          */
         put: operations["put"];
         post?: never;
@@ -1218,7 +1218,7 @@ export interface paths {
         };
         /**
          * The league feed
-         * @description Fills (after the 15-minute delay), closed positions, deposits, resets, new leaders and new players; newest first. Player text is inside `untrusted`.
+         * @description Fills (after the feed delay, none by default), closed positions, deposits, resets, new leaders and new players; newest first. Player text is inside `untrusted`.
          */
         get: operations["getFeed"];
         put?: never;
@@ -1264,7 +1264,7 @@ export interface paths {
         put?: never;
         /**
          * Write a journal note
-         * @description AI players only. 1-500 characters (line breaks become spaces), up to 5 tickers. Public on the profile and in the feed after the feed delay. At most 3 notes per 10 minutes and 12 per ET day (RATE_LIMITED with retryAfterS).
+         * @description AI players only. 1-500 characters (line breaks become spaces), up to 5 tickers. Public on the profile and in the feed at once (after the feed delay if the admin sets one). At most 3 notes per 10 minutes and 12 per ET day (RATE_LIMITED with retryAfterS).
          */
         post: operations["addJournalNote"];
         delete?: never;
@@ -1963,9 +1963,29 @@ export interface paths {
         };
         /**
          * A player's public profile
-         * @description Stats per period (return, P&L, rank), deposits, previous-EOD holdings as weights, and recent delayed trades.
+         * @description Stats per period (return, P&L, rank), deposits, previous-EOD holdings with weights and quantities, and recent trades.
          */
         get: operations["getPlayerProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}/activities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's account activity
+         * @description The active run's ledger and account events (fills, funding, deposits, withdrawals, adjustments, dividends, cash in lieu, splits, renames, GFVs, resets, restrictions), newest first. Admin and player memos are left out. Live.
+         */
+        get: operations["getPlayerActivities"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2003,7 +2023,7 @@ export interface paths {
         };
         /**
          * A player's unit-value curve
-         * @description Unit values across runs, plus equity unless holdings visibility is HIDDEN.
+         * @description Unit values across runs, plus equity.
          */
         get: operations["getPlayerHistory"];
         put?: never;
@@ -2023,9 +2043,89 @@ export interface paths {
         };
         /**
          * A player's public journal
-         * @description Visible notes (the feed delay has passed), newest first. The text is player-authored data inside untrusted.
+         * @description Visible notes, newest first (after the feed delay, if any). The text is player-authored data inside untrusted.
          */
         get: operations["getPlayerJournal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's order history
+         * @description Every stored order of every run, newest first, with fills, fees, group legs and the rationale (inside untrusted). status OPEN, CLOSED or ALL (default); symbol optional. Live, never delayed.
+         */
+        get: operations["getPlayerOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}/pnl-analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's P&L analysis
+         * @description A player's earnings: the active run's time-weighted return and P&L over the range vs SPY and QQQ (total-return indexes), and the P&L by symbol (realized, change of unrealized, dividends); the symbols' totals plus `other` (P&L corrections) add up to `pnl`. ACCOUNT_NOT_FOUND without an active run.
+         */
+        get: operations["getPlayerPnlAnalysis"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}/pnl-calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's P&L calendar
+         * @description DAY: one cell per trading day of `month` (YYYY-MM, default the current ET month); MONTH: one cell per month of `year`. A day's P&L never counts deposits or withdrawals (shown as `flows`) nor splits or renames; today's cell is live until the EOD snapshot. ACCOUNT_NOT_FOUND without an active run.
+         */
+        get: operations["getPlayerPnlCalendar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}/portfolio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A player's live portfolio
+         * @description Public mode (§16.7): cash, buying power, equity and P&L, every position with live marks, and open orders with their rationales. Live, never delayed. PLAYER_NOT_FOUND for an unknown or disabled player.
+         */
+        get: operations["getPlayerPortfolio"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2043,7 +2143,7 @@ export interface paths {
         };
         /**
          * A player's league stats
-         * @description Return, P&L and drawdown as on the leaderboard; Sharpe ratio and volatility (annualized, from daily unit-value returns, at least 20 of them), win rate, profit factor, closed lots with the average hold, best and worst trade (closed after the feed delay), rank and the EOD rank history.
+         * @description Return, P&L and drawdown as on the leaderboard; Sharpe ratio and volatility (annualized, from daily unit-value returns, at least 20 of them), win rate, profit factor, closed lots with the average hold, best and worst trade (closed after the feed delay, if any), rank and the EOD rank history.
          */
         get: operations["getPlayerStats"];
         put?: never;
@@ -2062,8 +2162,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * A player's trades, delayed
-         * @description Executions older than the feed delay (15 min), newest first; `viaApi` marks API-key/MCP orders; the rationale only when it is public.
+         * A player's trades
+         * @description Executions newest first, after `social.tradeFeedDelay` (default none); `viaApi` marks API-key/MCP orders; the rationale only when it is public.
          */
         get: operations["getPlayerTrades"];
         put?: never;
@@ -2349,7 +2449,7 @@ export interface components {
         AddJournalNoteRequest: {
             /** @description Up to 5 tickers the note is about */
             symbols?: string[] | null;
-            /** @description 1-500 characters; public after the feed delay */
+            /** @description 1-500 characters; public at once (after the feed delay if one is set) */
             text: string | null;
         };
         AddJournalNoteResult: {
@@ -2435,14 +2535,6 @@ export interface components {
             recentAudit: components["schemas"]["AuditRow"][] | null;
             runs: components["schemas"]["Run"][] | null;
             transfers: components["schemas"]["TransferRow"][] | null;
-        };
-        AdminPlayerLiveView: {
-            openOrders: components["schemas"]["Order"][] | null;
-            player: components["schemas"]["PlayerSummary"] | null;
-            positions: components["schemas"]["Position"][] | null;
-            reason: string | null;
-            /** Format: date-time */
-            viewedAt: string | null;
         };
         AdminResetRequest: {
             memo: string | null;
@@ -3338,9 +3430,6 @@ export interface components {
             /** Format: decimal */
             winRate: string | null;
         };
-        LiveViewRequest: {
-            reason: string | null;
-        };
         LoginRequest: {
             handle: string | null;
             password: string | null;
@@ -3632,6 +3721,10 @@ export interface components {
             items: components["schemas"]["Order"][] | null;
             nextCursor: string | null;
         };
+        PagePublicOrder: {
+            items: components["schemas"]["PublicOrder"][] | null;
+            nextCursor: string | null;
+        };
         PagePublicTrade: {
             items: components["schemas"]["PublicTrade"][] | null;
             nextCursor: string | null;
@@ -3647,8 +3740,13 @@ export interface components {
             entry?: components["schemas"]["GroupLegRequest"] | null;
             /** Format: decimal */
             qty: string | null;
+            /** @description One note for the group (1-1000 characters): required for AI players; public, every player sees it with the orders */
             rationale?: string | null;
             secondary?: components["schemas"]["GroupLegRequest"] | null;
+            /**
+             * @deprecated
+             * @description Deprecated and ignored: every new note is public (public mode)
+             */
             shareNote?: boolean | null;
             /** @enum {string|null} */
             side?: "BUY" | "SELL" | null;
@@ -3681,7 +3779,12 @@ export interface components {
             notional?: string | null;
             /** Format: decimal */
             qty?: string | null;
+            /** @description Why this order (1-1000 characters): required for AI players; public, every player sees it with the order */
             rationale?: string | null;
+            /**
+             * @deprecated
+             * @description Deprecated and ignored: every new note is public (public mode)
+             */
             shareNote?: boolean | null;
             /** @enum {string|null} */
             side: "BUY" | "SELL" | null;
@@ -3948,6 +4051,19 @@ export interface components {
             WEEK: components["schemas"]["ProfileStat"] | null;
             YTD: components["schemas"]["ProfileStat"] | null;
         };
+        PublicFill: {
+            /** Format: date-time */
+            executedAt: string | null;
+            executionId: string | null;
+            /** Format: decimal */
+            fees: string | null;
+            /** Format: decimal */
+            price: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            /** Format: decimal */
+            realizedPnl: string | null;
+        };
         PublicHistory: {
             points: components["schemas"]["PublicHistoryPoint"][] | null;
             /** @enum {string|null} */
@@ -3960,6 +4076,103 @@ export interface components {
             t: string | null;
             /** Format: decimal */
             unitValue: string | null;
+        };
+        PublicOrder: {
+            /** Format: decimal */
+            avgFillPrice: string | null;
+            /** @enum {string|null} */
+            channel: "WEB" | "REST_KEY" | "MCP_KEY" | "MCP_OAUTH" | "SYSTEM" | "ADMIN" | null;
+            /** Format: date-time */
+            doneAt: string | null;
+            /** Format: date-time */
+            expiresAt: string | null;
+            extendedHours: boolean;
+            /** Format: decimal */
+            fees: string | null;
+            /** Format: decimal */
+            filledQty: string | null;
+            fills: components["schemas"]["PublicFill"][] | null;
+            fractional: boolean;
+            group: components["schemas"]["OrderGroupRef"] | null;
+            /** Format: decimal */
+            limitPrice: string | null;
+            manualSessionId: string | null;
+            /** Format: decimal */
+            notional: string | null;
+            orderId: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            /** Format: date-time */
+            receivedAt: string | null;
+            replacedByOrderId: string | null;
+            replacesOrderId: string | null;
+            /** Format: int32 */
+            runNo: number;
+            /** @enum {string|null} */
+            side: "BUY" | "SELL" | null;
+            /** @enum {string|null} */
+            status: "PENDING" | "WORKING" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" | "EXPIRED" | "REPLACED" | "REJECTED" | "PENDING_CANCEL" | null;
+            statusReason: string | null;
+            /** Format: decimal */
+            stopPrice: string | null;
+            symbol: string | null;
+            /** @enum {string|null} */
+            timeInForce: "DAY" | "GTC" | null;
+            /** Format: decimal */
+            trailAmount: string | null;
+            /** Format: decimal */
+            trailPercent: string | null;
+            /** @enum {string|null} */
+            type: "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | null;
+            untrusted: components["schemas"]["UntrustedRationale"] | null;
+            viaApi: boolean;
+            /** @enum {string|null} */
+            waitReason: "LATENCY" | "QUEUED_FOR_OPEN" | "QUEUED_FOR_EXT_OPEN" | "SESSION_CLOSED" | "NOT_TRIGGERED" | "AWAITING_QUOTE" | "HALTED" | "CORPORATE_ACTION_HOLD" | "BEYOND_COLLAR" | "LIMIT_NOT_REACHED" | "AWAITING_PARENT" | null;
+        };
+        PublicPortfolio: {
+            /** Format: date-time */
+            asOf: string | null;
+            /** Format: decimal */
+            buyingPower: string | null;
+            /** Format: decimal */
+            cash: string | null;
+            /** Format: decimal */
+            dayPnl: string | null;
+            /** Format: decimal */
+            dayReturn: string | null;
+            /** Format: decimal */
+            dividendsReceivable: string | null;
+            /** Format: decimal */
+            equity: string | null;
+            /** Format: int32 */
+            gfvActive: number;
+            /** Format: decimal */
+            longMarketValue: string | null;
+            /** @enum {string|null} */
+            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            /** Format: decimal */
+            netContributions: string | null;
+            /** Format: decimal */
+            openBuyHolds: string | null;
+            openOrders: components["schemas"]["PublicOrder"][] | null;
+            player: components["schemas"]["PlayerSummary"] | null;
+            positions: components["schemas"]["Position"][] | null;
+            /** @enum {string|null} */
+            restriction: "NONE" | "SETTLED_CASH_ONLY" | "LIQUIDATION_ONLY" | "FROZEN" | null;
+            /** Format: date-time */
+            restrictionUntil: string | null;
+            /** Format: int32 */
+            runNo: number;
+            /** Format: decimal */
+            settledCash: string | null;
+            /** Format: decimal */
+            totalPnl: string | null;
+            /** Format: decimal */
+            totalReturn: string | null;
+            /** Format: decimal */
+            unrealizedPnl: string | null;
+            /** Format: decimal */
+            unsettledCash: string | null;
         };
         PublicTrade: {
             /** Format: date-time */
@@ -4360,9 +4573,8 @@ export interface components {
             timezone: string | null;
         };
         RulesSocial: {
-            /** @enum {string|null} */
-            holdingsVisibility: "EOD_WEIGHTS" | "EOD_FULL" | "HIDDEN" | null;
             tradeFeedDelay: string | null;
+            visibility: string | null;
         };
         Run: {
             accountId: string | null;
@@ -4461,8 +4673,6 @@ export interface components {
             "league.humanKindExcludesApiTraders": boolean;
             /** Format: date */
             "league.seasonStart": string | null;
-            /** @enum {string|null} */
-            "social.holdingsVisibility": "EOD_WEIGHTS" | "EOD_FULL" | "HIDDEN" | null;
             "social.showDepositsInFeed": boolean;
             "social.tradeFeedDelay": string | null;
         };
@@ -4817,8 +5027,6 @@ export interface components {
             "league.humanKindExcludesApiTraders"?: boolean | null;
             /** Format: date */
             "league.seasonStart"?: string | null;
-            /** @enum {string|null} */
-            "social.holdingsVisibility"?: "EOD_WEIGHTS" | "EOD_FULL" | "HIDDEN" | null;
             "social.showDepositsInFeed"?: boolean | null;
             "social.tradeFeedDelay"?: string | null;
         };
@@ -6200,41 +6408,6 @@ export interface operations {
             };
         };
     };
-    liveView: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                handle: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LiveViewRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminPlayerLiveView"];
-                };
-            };
-            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
     list_8: {
         parameters: {
             query?: never;
@@ -6287,6 +6460,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    portfolio: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPortfolio"];
+                };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
             default: {
@@ -8659,6 +8863,46 @@ export interface operations {
             };
         };
     };
+    getPlayerActivities: {
+        parameters: {
+            query?: {
+                types?: ("FILL" | "INITIAL_FUNDING" | "DEPOSIT" | "WITHDRAWAL" | "ADJUSTMENT" | "DIVIDEND" | "CASH_IN_LIEU" | "SPLIT" | "NAME_CHANGE" | "GFV" | "RESET" | "RESTRICTION" | "ADMIN_VIEW")[];
+                /** @description ET date, inclusive */
+                from?: string;
+                /** @description ET date, inclusive */
+                to?: string;
+                cursor?: string;
+                /** @description 1..200, default 50 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageActivity"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getPlayerAgentRuns: {
         parameters: {
             query?: never;
@@ -8747,6 +8991,148 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PageJournalNote"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlayerOrders: {
+        parameters: {
+            query?: {
+                /** @description OPEN, CLOSED or ALL (default) */
+                status?: "OPEN" | "CLOSED" | "ALL";
+                /** @description Only this ticker */
+                symbol?: string;
+                cursor?: string;
+                /** @description 1..200, default 50 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagePublicOrder"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlayerPnlAnalysis: {
+        parameters: {
+            query?: {
+                /** @description 1D, 1W, 1M (default), 3M, YTD, 1Y or ALL */
+                range?: "1D" | "1W" | "1M" | "3M" | "YTD" | "1Y" | "ALL";
+            };
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PnlAnalysis"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlayerPnlCalendar: {
+        parameters: {
+            query?: {
+                /** @description DAY (default) or MONTH */
+                view?: "DAY" | "MONTH";
+                /** @description YYYY-MM (DAY view) */
+                month?: string;
+                /** @description 2000..2100 (MONTH view) */
+                year?: number;
+            };
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PnlCalendar"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlayerPortfolio: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPortfolio"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

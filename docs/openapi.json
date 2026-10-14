@@ -1892,7 +1892,7 @@
     },
     "/api/v1/admin/players/{handle}": {
       "get": {
-        "description": "Runs, balances, end-of-day holdings, transfers, API keys and recent audit rows. Never live positions or orders (break-glass only). Errors: PLAYER_NOT_FOUND.",
+        "description": "Runs, balances, end-of-day holdings, transfers, API keys and recent audit rows. Live positions and orders: GET /admin/players/{handle}/portfolio. Errors: PLAYER_NOT_FOUND.",
         "operationId": "detail",
         "parameters": [
           {
@@ -2129,58 +2129,6 @@
         ]
       }
     },
-    "/api/v1/admin/players/{handle}/live-view": {
-      "post": {
-        "description": "Recent password check. Writes an audit row and an ADMIN_VIEW entry the player sees in their activity before showing anything. reason: 5-200 characters. Errors: PLAYER_NOT_FOUND, ACCOUNT_NOT_FOUND.",
-        "operationId": "liveView",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "handle",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LiveViewRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminPlayerLiveView"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
-          }
-        },
-        "summary": "Break glass: the player's live positions and open orders",
-        "tags": [
-          "admin"
-        ]
-      }
-    },
     "/api/v1/admin/players/{handle}/oauth-grants": {
       "get": {
         "description": "Live grants the player approved or that act as the player (a bot's connector), newest first: the client, the redirect host, who approved it, who it acts as, the scopes and when it was last used. Never a token. Errors: PLAYER_NOT_FOUND.",
@@ -2266,6 +2214,48 @@
           }
         },
         "summary": "Set a human's password",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/players/{handle}/portfolio": {
+      "get": {
+        "description": "The same as GET /players/{handle}/portfolio, also for a DISABLED player: cash, buying power, equity and P&L, positions with live marks and open orders. Errors: PLAYER_NOT_FOUND.",
+        "operationId": "portfolio",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicPortfolio"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A player's live portfolio (any status)",
         "tags": [
           "admin"
         ]
@@ -2445,7 +2435,7 @@
         ]
       },
       "put": {
-        "description": "Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D). Errors: SETTING_INVALID.",
+        "description": "Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live). Errors: SETTING_INVALID.",
         "operationId": "put",
         "requestBody": {
           "content": {
@@ -3428,7 +3418,7 @@
     },
     "/api/v1/feed": {
       "get": {
-        "description": "Fills (after the 15-minute delay), closed positions, deposits, resets, new leaders and new players; newest first. Player text is inside `untrusted`.",
+        "description": "Fills (after the feed delay, none by default), closed positions, deposits, resets, new leaders and new players; newest first. Player text is inside `untrusted`.",
         "operationId": "getFeed",
         "parameters": [
           {
@@ -3572,7 +3562,7 @@
     },
     "/api/v1/journal": {
       "post": {
-        "description": "AI players only. 1-500 characters (line breaks become spaces), up to 5 tickers. Public on the profile and in the feed after the feed delay. At most 3 notes per 10 minutes and 12 per ET day (RATE_LIMITED with retryAfterS).",
+        "description": "AI players only. 1-500 characters (line breaks become spaces), up to 5 tickers. Public on the profile and in the feed at once (after the feed delay if the admin sets one). At most 3 notes per 10 minutes and 12 per ET day (RATE_LIMITED with retryAfterS).",
         "operationId": "addJournalNote",
         "requestBody": {
           "content": {
@@ -5698,7 +5688,7 @@
     },
     "/api/v1/players/{handle}": {
       "get": {
-        "description": "Stats per period (return, P&L, rank), deposits, previous-EOD holdings as weights, and recent delayed trades.",
+        "description": "Stats per period (return, P&L, rank), deposits, previous-EOD holdings with weights and quantities, and recent trades.",
         "operationId": "getPlayerProfile",
         "parameters": [
           {
@@ -5733,6 +5723,113 @@
           }
         },
         "summary": "A player's public profile",
+        "tags": [
+          "league"
+        ]
+      }
+    },
+    "/api/v1/players/{handle}/activities": {
+      "get": {
+        "description": "The active run's ledger and account events (fills, funding, deposits, withdrawals, adjustments, dividends, cash in lieu, splits, renames, GFVs, resets, restrictions), newest first. Admin and player memos are left out. Live.",
+        "operationId": "getPlayerActivities",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "types",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "FILL",
+                  "INITIAL_FUNDING",
+                  "DEPOSIT",
+                  "WITHDRAWAL",
+                  "ADJUSTMENT",
+                  "DIVIDEND",
+                  "CASH_IN_LIEU",
+                  "SPLIT",
+                  "NAME_CHANGE",
+                  "GFV",
+                  "RESET",
+                  "RESTRICTION",
+                  "ADMIN_VIEW"
+                ]
+              },
+              "uniqueItems": true
+            }
+          },
+          {
+            "description": "ET date, inclusive",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "description": "ET date, inclusive",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1..200, default 50",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageActivity"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A player's account activity",
         "tags": [
           "league"
         ]
@@ -5782,7 +5879,7 @@
     },
     "/api/v1/players/{handle}/history": {
       "get": {
-        "description": "Unit values across runs, plus equity unless holdings visibility is HIDDEN.",
+        "description": "Unit values across runs, plus equity.",
         "operationId": "getPlayerHistory",
         "parameters": [
           {
@@ -5842,7 +5939,7 @@
     },
     "/api/v1/players/{handle}/journal": {
       "get": {
-        "description": "Visible notes (the feed delay has passed), newest first. The text is player-authored data inside untrusted.",
+        "description": "Visible notes, newest first (after the feed delay, if any). The text is player-authored data inside untrusted.",
         "operationId": "getPlayerJournal",
         "parameters": [
           {
@@ -5901,9 +5998,268 @@
         ]
       }
     },
+    "/api/v1/players/{handle}/orders": {
+      "get": {
+        "description": "Every stored order of every run, newest first, with fills, fees, group legs and the rationale (inside untrusted). status OPEN, CLOSED or ALL (default); symbol optional. Live, never delayed.",
+        "operationId": "getPlayerOrders",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "OPEN, CLOSED or ALL (default)",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "CLOSED",
+                "ALL"
+              ]
+            }
+          },
+          {
+            "description": "Only this ticker",
+            "in": "query",
+            "name": "symbol",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1..200, default 50",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagePublicOrder"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A player's order history",
+        "tags": [
+          "league"
+        ]
+      }
+    },
+    "/api/v1/players/{handle}/pnl-analysis": {
+      "get": {
+        "description": "A player's earnings: the active run's time-weighted return and P&L over the range vs SPY and QQQ (total-return indexes), and the P&L by symbol (realized, change of unrealized, dividends); the symbols' totals plus `other` (P&L corrections) add up to `pnl`. ACCOUNT_NOT_FOUND without an active run.",
+        "operationId": "getPlayerPnlAnalysis",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1D, 1W, 1M (default), 3M, YTD, 1Y or ALL",
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1D",
+                "1W",
+                "1M",
+                "3M",
+                "YTD",
+                "1Y",
+                "ALL"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PnlAnalysis"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A player's P&L analysis",
+        "tags": [
+          "league"
+        ]
+      }
+    },
+    "/api/v1/players/{handle}/pnl-calendar": {
+      "get": {
+        "description": "DAY: one cell per trading day of `month` (YYYY-MM, default the current ET month); MONTH: one cell per month of `year`. A day's P&L never counts deposits or withdrawals (shown as `flows`) nor splits or renames; today's cell is live until the EOD snapshot. ACCOUNT_NOT_FOUND without an active run.",
+        "operationId": "getPlayerPnlCalendar",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "DAY (default) or MONTH",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DAY",
+                "MONTH"
+              ]
+            }
+          },
+          {
+            "description": "YYYY-MM (DAY view)",
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "2000..2100 (MONTH view)",
+            "in": "query",
+            "name": "year",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PnlCalendar"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A player's P&L calendar",
+        "tags": [
+          "league"
+        ]
+      }
+    },
+    "/api/v1/players/{handle}/portfolio": {
+      "get": {
+        "description": "Public mode (§16.7): cash, buying power, equity and P&L, every position with live marks, and open orders with their rationales. Live, never delayed. PLAYER_NOT_FOUND for an unknown or disabled player.",
+        "operationId": "getPlayerPortfolio",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicPortfolio"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A player's live portfolio",
+        "tags": [
+          "league"
+        ]
+      }
+    },
     "/api/v1/players/{handle}/stats": {
       "get": {
-        "description": "Return, P&L and drawdown as on the leaderboard; Sharpe ratio and volatility (annualized, from daily unit-value returns, at least 20 of them), win rate, profit factor, closed lots with the average hold, best and worst trade (closed after the feed delay), rank and the EOD rank history.",
+        "description": "Return, P&L and drawdown as on the leaderboard; Sharpe ratio and volatility (annualized, from daily unit-value returns, at least 20 of them), win rate, profit factor, closed lots with the average hold, best and worst trade (closed after the feed delay, if any), rank and the EOD rank history.",
         "operationId": "getPlayerStats",
         "parameters": [
           {
@@ -5962,7 +6318,7 @@
     },
     "/api/v1/players/{handle}/trades": {
       "get": {
-        "description": "Executions older than the feed delay (15 min), newest first; `viaApi` marks API-key/MCP orders; the rationale only when it is public.",
+        "description": "Executions newest first, after `social.tradeFeedDelay` (default none); `viaApi` marks API-key/MCP orders; the rationale only when it is public.",
         "operationId": "getPlayerTrades",
         "parameters": [
           {
@@ -6014,7 +6370,7 @@
             "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
           }
         },
-        "summary": "A player's trades, delayed",
+        "summary": "A player's trades",
         "tags": [
           "league"
         ]
@@ -7005,7 +7361,7 @@
               "string",
               "null"
             ],
-            "description": "1-500 characters; public after the feed delay"
+            "description": "1-500 characters; public at once (after the feed delay if one is set)"
           }
         },
         "required": [
@@ -7498,59 +7854,6 @@
           "recentAudit",
           "runs",
           "transfers"
-        ]
-      },
-      "AdminPlayerLiveView": {
-        "type": "object",
-        "properties": {
-          "openOrders": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "$ref": "#/components/schemas/Order"
-            }
-          },
-          "player": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlayerSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "positions": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "$ref": "#/components/schemas/Position"
-            }
-          },
-          "reason": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "viewedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "openOrders",
-          "player",
-          "positions",
-          "reason",
-          "viewedAt"
         ]
       },
       "AdminResetRequest": {
@@ -11804,21 +12107,6 @@
           "winRate"
         ]
       },
-      "LiveViewRequest": {
-        "type": "object",
-        "properties": {
-          "reason": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1
-          }
-        },
-        "required": [
-          "reason"
-        ]
-      },
       "LoginRequest": {
         "type": "object",
         "properties": {
@@ -13457,6 +13745,30 @@
           "nextCursor"
         ]
       },
+      "PagePublicOrder": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PublicOrder"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
       "PagePublicTrade": {
         "type": "object",
         "properties": {
@@ -13551,7 +13863,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "One note for the group (1-1000 characters): required for AI players; public, every player sees it with the orders"
           },
           "secondary": {
             "anyOf": [
@@ -13567,7 +13880,9 @@
             "type": [
               "boolean",
               "null"
-            ]
+            ],
+            "deprecated": true,
+            "description": "Deprecated and ignored: every new note is public (public mode)"
           },
           "side": {
             "type": [
@@ -13753,13 +14068,16 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Why this order (1-1000 characters): required for AI players; public, every player sees it with the order"
           },
           "shareNote": {
             "type": [
               "boolean",
               "null"
-            ]
+            ],
+            "deprecated": true,
+            "description": "Deprecated and ignored: every new note is public (public mode)"
           },
           "side": {
             "type": [
@@ -15114,6 +15432,60 @@
           "YTD"
         ]
       },
+      "PublicFill": {
+        "type": "object",
+        "properties": {
+          "executedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "executionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fees": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "realizedPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "executedAt",
+          "executionId",
+          "fees",
+          "price",
+          "qty",
+          "realizedPnl"
+        ]
+      },
       "PublicHistory": {
         "type": "object",
         "properties": {
@@ -15177,6 +15549,502 @@
           "equity",
           "t",
           "unitValue"
+        ]
+      },
+      "PublicOrder": {
+        "type": "object",
+        "properties": {
+          "avgFillPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "WEB",
+              "REST_KEY",
+              "MCP_KEY",
+              "MCP_OAUTH",
+              "SYSTEM",
+              "ADMIN",
+              null
+            ]
+          },
+          "doneAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "extendedHours": {
+            "type": "boolean"
+          },
+          "fees": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "filledQty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "fills": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PublicFill"
+            }
+          },
+          "fractional": {
+            "type": "boolean"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderGroupRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limitPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "manualSessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notional": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "orderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "receivedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "replacedByOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replacesOrderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "side": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "BUY",
+              "SELL",
+              null
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PENDING",
+              "WORKING",
+              "PARTIALLY_FILLED",
+              "FILLED",
+              "CANCELLED",
+              "EXPIRED",
+              "REPLACED",
+              "REJECTED",
+              "PENDING_CANCEL",
+              null
+            ]
+          },
+          "statusReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stopPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeInForce": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "GTC",
+              null
+            ]
+          },
+          "trailAmount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "trailPercent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "MARKET",
+              "LIMIT",
+              "STOP",
+              "STOP_LIMIT",
+              "TRAILING_STOP",
+              null
+            ]
+          },
+          "untrusted": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UntrustedRationale"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "viaApi": {
+            "type": "boolean"
+          },
+          "waitReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "LATENCY",
+              "QUEUED_FOR_OPEN",
+              "QUEUED_FOR_EXT_OPEN",
+              "SESSION_CLOSED",
+              "NOT_TRIGGERED",
+              "AWAITING_QUOTE",
+              "HALTED",
+              "CORPORATE_ACTION_HOLD",
+              "BEYOND_COLLAR",
+              "LIMIT_NOT_REACHED",
+              "AWAITING_PARENT",
+              null
+            ]
+          }
+        },
+        "required": [
+          "avgFillPrice",
+          "channel",
+          "doneAt",
+          "expiresAt",
+          "extendedHours",
+          "fees",
+          "filledQty",
+          "fills",
+          "fractional",
+          "group",
+          "limitPrice",
+          "manualSessionId",
+          "notional",
+          "orderId",
+          "qty",
+          "receivedAt",
+          "replacedByOrderId",
+          "replacesOrderId",
+          "runNo",
+          "side",
+          "status",
+          "statusReason",
+          "stopPrice",
+          "symbol",
+          "timeInForce",
+          "trailAmount",
+          "trailPercent",
+          "type",
+          "untrusted",
+          "viaApi",
+          "waitReason"
+        ]
+      },
+      "PublicPortfolio": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "buyingPower": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "cash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dividendsReceivable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "equity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "gfvActive": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "longMarketValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "marksQuality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              null
+            ]
+          },
+          "netContributions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "openBuyHolds": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "openOrders": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PublicOrder"
+            }
+          },
+          "player": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlayerSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "positions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Position"
+            }
+          },
+          "restriction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NONE",
+              "SETTLED_CASH_ONLY",
+              "LIQUIDATION_ONLY",
+              "FROZEN",
+              null
+            ]
+          },
+          "restrictionUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "runNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "settledCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "totalPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "totalReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "unrealizedPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "unsettledCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "asOf",
+          "buyingPower",
+          "cash",
+          "dayPnl",
+          "dayReturn",
+          "dividendsReceivable",
+          "equity",
+          "gfvActive",
+          "longMarketValue",
+          "marksQuality",
+          "netContributions",
+          "openBuyHolds",
+          "openOrders",
+          "player",
+          "positions",
+          "restriction",
+          "restrictionUntil",
+          "runNo",
+          "settledCash",
+          "totalPnl",
+          "totalReturn",
+          "unrealizedPnl",
+          "unsettledCash"
         ]
       },
       "PublicTrade": {
@@ -17077,19 +17945,13 @@
       "RulesSocial": {
         "type": "object",
         "properties": {
-          "holdingsVisibility": {
+          "tradeFeedDelay": {
             "type": [
               "string",
               "null"
-            ],
-            "enum": [
-              "EOD_WEIGHTS",
-              "EOD_FULL",
-              "HIDDEN",
-              null
             ]
           },
-          "tradeFeedDelay": {
+          "visibility": {
             "type": [
               "string",
               "null"
@@ -17097,8 +17959,8 @@
           }
         },
         "required": [
-          "holdingsVisibility",
-          "tradeFeedDelay"
+          "tradeFeedDelay",
+          "visibility"
         ]
       },
       "Run": {
@@ -17545,18 +18407,6 @@
             ],
             "format": "date"
           },
-          "social.holdingsVisibility": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "EOD_WEIGHTS",
-              "EOD_FULL",
-              "HIDDEN",
-              null
-            ]
-          },
           "social.showDepositsInFeed": {
             "type": "boolean"
           },
@@ -17575,7 +18425,6 @@
           "league.eligibility.minSymbols",
           "league.humanKindExcludesApiTraders",
           "league.seasonStart",
-          "social.holdingsVisibility",
           "social.showDepositsInFeed",
           "social.tradeFeedDelay"
         ]
@@ -19260,18 +20109,6 @@
               "null"
             ],
             "format": "date"
-          },
-          "social.holdingsVisibility": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "EOD_WEIGHTS",
-              "EOD_FULL",
-              "HIDDEN",
-              null
-            ]
           },
           "social.showDepositsInFeed": {
             "type": [
