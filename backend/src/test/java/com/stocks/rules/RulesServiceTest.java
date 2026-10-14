@@ -70,7 +70,7 @@ class RulesServiceTest {
     RulesDto r = withStubSettings().rules();
     assertThat(r.asOf()).isEqualTo(TestTimes.START);
     assertThat(r.version()).startsWith("1.").hasSize(14);
-    assertThat(r.account().startingCash()).isEqualByComparingTo("500.00");
+    assertThat(r.account().startingCash()).isEqualByComparingTo("500000.00");
     assertThat(r.account().settlement()).isEqualTo("T+1");
     assertThat(r.account().pdtEnforced()).isFalse();
     assertThat(r.account().shortSelling()).isFalse();

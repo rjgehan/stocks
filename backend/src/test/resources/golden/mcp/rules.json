@@ -1,9 +1,9 @@
 {
-  "version" : "1.8eb55bcb729d",
+  "version" : "1.269ee34169d7",
   "asOf" : "2026-10-09T14:00:00.000Z",
   "account" : {
     "type" : "CASH",
-    "startingCash" : "500.00",
+    "startingCash" : "500000.00",
     "settlement" : "T+1",
     "pdtEnforced" : false,
     "shortSelling" : false,

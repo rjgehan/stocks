@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class TradingSettings {
 
-  public static final BigDecimal DEFAULT_STARTING_CASH = new BigDecimal("500.00");
+  public static final BigDecimal DEFAULT_STARTING_CASH = new BigDecimal("500000.00");
 
   private final SettingsService settings;
 
@@ -21,7 +21,7 @@ public class TradingSettings {
     this.settings = settings;
   }
 
-  /** {@code league.defaultStartingCash}, default 500.00. */
+  /** {@code league.defaultStartingCash}, default 500000.00. */
   public BigDecimal defaultStartingCash() {
     try {
       return settings.defaultStartingCash();

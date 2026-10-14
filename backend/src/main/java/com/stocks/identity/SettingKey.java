@@ -17,7 +17,7 @@ import java.util.Optional;
  */
 public enum SettingKey {
 
-  DEFAULT_STARTING_CASH("league.defaultStartingCash", "500.00") {
+  DEFAULT_STARTING_CASH("league.defaultStartingCash", "500000.00") {
     @Override
     String canonical(String v) {
       BigDecimal d = new BigDecimal(v.trim());

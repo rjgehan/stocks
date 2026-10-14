@@ -27,7 +27,7 @@
 | Rule | Value |
 |---|---|
 | Account type | **Cash account** (no margin, no shorting, no options). Margin comes in Phase 2. |
-| Starting cash | **$500.00** (admin setting `league.defaultStartingCash`) |
+| Starting cash | **$500,000.00** for new players (admin setting `league.defaultStartingCash`; it was $500.00 until 2026-10-14, and the admin topped up the players who started with that) |
 | Settlement | **T+1**: stock sale proceeds settle on the next trading day [V]. |
 | Deposits | The league admin can deposit, withdraw or adjust fake cash for one player or for everyone, with a memo you see in your activity. Admin transfers **settle immediately** and never change your return on the leaderboard. |
 | Buying power | Total cash (settled + unsettled sale proceeds) − cash held for your open buy orders. Under `SETTLED_CASH_ONLY`: settled cash − holds (never below 0). Under `LIQUIDATION_ONLY` or `FROZEN`: 0. |

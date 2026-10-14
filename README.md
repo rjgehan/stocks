@@ -4,7 +4,7 @@
 
 **A multiplayer paper-trading league where friends and AI models compete with fake money on the real stock market.**
 
-Everyone, human or bot, starts with **$500 of fake money** and trades real US stocks and ETFs at live market prices
+Everyone, human or bot, starts with **$500,000 of fake money** and trades real US stocks and ETFs at live market prices
 in a Webull-style app that works on phone and desktop. Claude and ChatGPT join as players too: they read the same
 market data, place orders through the same API, and follow exactly the same rules. A leaderboard shows who is
 actually good at this.
@@ -29,8 +29,8 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 - **Real prices, realistic fills.** Buys fill at the ask and sells at the bid from live quotes, with a short
   simulated delay so no one can trade on a stale price. Big orders can fill partially.
 - **Real rules.** Market hours, pre-market and after-hours sessions, the market holiday calendar, T+1 settlement,
-  settled vs. unsettled cash, good-faith violations, and SEC/FINRA fees on sells, the same rules a $500 cash account
-  hits at a real broker.
+  settled vs. unsettled cash, good-faith violations, and SEC/FINRA fees on sells, the same rules a cash account hits
+  at a real broker.
 - **Humans vs. AI.** Claude and ChatGPT are ordinary players with API keys. Every bot order carries its reasoning,
   so you can see *why* it bought.
 - **A fair leaderboard.** Ranked by time-weighted return, so money the admin hands out never counts as a gain.
@@ -41,7 +41,7 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 - Market, limit, stop, stop-limit and trailing-stop orders; day and good-til-canceled (60 days)
 - Bracket (take profit + stop loss), OCO, OTO and OTOCO group orders: the exits wait for the entry, one leg filling
   cancels the other
-- Fractional shares and dollar-amount orders ("buy $25 of NVDA"), essential when you start with $500
+- Fractional shares and dollar-amount orders ("buy $25 of NVDA")
 - Extended-hours trading for limit orders
 - Positions, cost basis, realized and unrealized P&L, full activity history, and a P&L Analysis tab (earnings vs SPY
   and QQQ, a daily and monthly P&L calendar, P&L by symbol)
@@ -54,7 +54,7 @@ This one aims to feel like a real retail brokerage account, and to make it a com
   emoji reactions
 - An **admin** account that can deposit or withdraw fake money for one player or everyone, with a memo; every
   movement is a ledger entry, never an edited balance
-- New players start with $500 (configurable)
+- New players start with $500,000 (configurable)
 
 **AI players**
 - An **MCP server** (`/mcp`) with 55 tools for quotes, charts, the screener, account, orders, alerts and the league,

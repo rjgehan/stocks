@@ -92,7 +92,7 @@ services:
       ENGINE_SEED: ${ENGINE_SEED:?set ENGINE_SEED in .env}
       ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
-      STARTING_CASH_DEFAULT: ${STARTING_CASH_DEFAULT:-500.00}
+      STARTING_CASH_DEFAULT: ${STARTING_CASH_DEFAULT:-500000.00}
       MARKETDATA_PROFILE: ${MARKETDATA_PROFILE:-hybrid}
       MARKETDATA_ALLOW_SIMULATED_IN_PROD: ${MARKETDATA_ALLOW_SIMULATED_IN_PROD:-false}
       ALPACA_KEY_ID: ${ALPACA_KEY_ID:-}
@@ -143,8 +143,8 @@ services:
             en_US: First boot only (10+ characters). Clear it after the admin exists.
         - container: STARTING_CASH_DEFAULT
           description:
-            en_us: Starting cash per player (seeds the league setting once; the admin UI wins afterwards).
-            en_US: Starting cash per player (seeds the league setting once; the admin UI wins afterwards).
+            en_us: Starting cash per player, default 500000.00 (seeds the league setting once; the admin UI wins afterwards).
+            en_US: Starting cash per player, default 500000.00 (seeds the league setting once; the admin UI wins afterwards).
         - container: MARKETDATA_PROFILE
           description:
             en_us: hybrid (Alpaca Basic + Finnhub, free) or alpaca-sip (paid SIP plan).
@@ -361,12 +361,12 @@ x-casaos:
     en_US: Paper-trading league for friends and AI bots
   description:
     en_us: >-
-      Friends and Claude/ChatGPT bots trade fake money against the live US market (Webull-style UI, 500 USD starting
-      cash, deposit-aware leaderboard). Spring Boot + React in one container, PostgreSQL 18, nightly backups.
+      Friends and Claude/ChatGPT bots trade fake money against the live US market (Webull-style UI, 500,000 USD
+      starting cash, deposit-aware leaderboard). Spring Boot + React in one container, PostgreSQL 18, nightly backups.
       Reach it through your Cloudflare Tunnel hostname (APP_PUBLIC_URL).
     en_US: >-
-      Friends and Claude/ChatGPT bots trade fake money against the live US market (Webull-style UI, 500 USD starting
-      cash, deposit-aware leaderboard). Spring Boot + React in one container, PostgreSQL 18, nightly backups.
+      Friends and Claude/ChatGPT bots trade fake money against the live US market (Webull-style UI, 500,000 USD
+      starting cash, deposit-aware leaderboard). Spring Boot + React in one container, PostgreSQL 18, nightly backups.
       Reach it through your Cloudflare Tunnel hostname (APP_PUBLIC_URL).
   tips:
     before_install:

@@ -37,7 +37,7 @@ public record StocksProperties(
       String adminHandle,
       String adminPassword,
       /* STARTING_CASH_DEFAULT: seeds app_setting league.defaultStartingCash once; the admin UI wins afterwards. */
-      @DefaultValue("500.00") BigDecimal defaultStartingCash,
+      @DefaultValue("500000.00") BigDecimal defaultStartingCash,
       @DefaultValue("false") boolean seedDemo) {
 
     public boolean hasAdminCredentials() {

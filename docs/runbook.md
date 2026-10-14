@@ -315,6 +315,10 @@ more than 15 minutes old (`POST /api/v1/auth/reauth`).
   apply to one player or to ALL (optionally only humans or only AI) with a memo every player sees. Deposits never
   change anyone's return (unit-value accounting), so the leaderboard stays fair. Each apply carries an
   `Idempotency-Key`; retrying with the same key never pays twice.
+- **Starting cash**: new players get `league.defaultStartingCash` (Admin → Settings), $500,000.00 since 2026-10-14
+  (V11 raised the stored value from $500.00; `STARTING_CASH_DEFAULT` only seeds a fresh database). Players who
+  started with $500 keep it until topped up: a deposit to ALL of $499,500.00 (memo e.g. "New starting cash") brings
+  each of them to $500,000 of contributions without changing anyone's return.
 - **Forgotten password**: player → Set password (ends their sessions and revokes their keys); tell them the
   temporary password and ask them to change it under Settings.
 - **Personal API keys** of humans are read-only unless the player is allowed to trade by API (player →
