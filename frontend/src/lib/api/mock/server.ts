@@ -174,7 +174,7 @@ const HANDLE_RE = /^[a-z0-9_]{2,32}$/
 
 function defaultSettings(): Settings {
   return {
-    'league.defaultStartingCash': '500.00',
+    'league.defaultStartingCash': '500000.00',
     'league.allowSelfReset': false,
     'league.seasonStart': '2026-10-12',
     'league.eligibility.minFills': 5,
@@ -1169,7 +1169,7 @@ export class MockServer {
       return problem(422, 'WEAK_PASSWORD', 'Weak password', 'Use at least 10 characters.', null, [{ field: 'password', code: 'WEAK_PASSWORD', message: 'Use at least 10 characters.' }])
     }
     invite.uses += 1
-    // The previous identity becomes a regular league member; the new player gets a fresh $500 account.
+    // The previous identity becomes a regular league member; the new player gets a fresh account (the default cash).
     const prevU = this.unitValue()
     this.s.others.push({
       playerId: this.s.me.playerId,

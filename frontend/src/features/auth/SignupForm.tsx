@@ -25,7 +25,7 @@ export function validateSignup(v: { handle: string; displayName: string; passwor
 
 /**
  * Invite signup (§17.3 `POST /auth/signup`): handle, display name and password; the server funds the starting
- * account (default $500) and seeds "My List". Reached from `/join/$code` (spec) and `/signup?invite=` (alias).
+ * account (default $500,000) and seeds "My List". Reached from `/join/$code` (spec) and `/signup?invite=` (alias).
  */
 export function SignupForm({ initialCode }: { initialCode: string }) {
   const navigate = useNavigate()
@@ -69,7 +69,7 @@ export function SignupForm({ initialCode }: { initialCode: string }) {
       <form onSubmit={submit} className="flex flex-col gap-3.5" noValidate>
         {initialCode ? (
           <p className="rounded-md bg-accent-bg px-3 py-2 text-caption text-text-1">
-            Invite <span className="font-mono font-semibold">{initialCode}</span> · you start with the league's starting cash (usually $500.00).
+            Invite <span className="font-mono font-semibold">{initialCode}</span> · you start with the league's starting cash (usually $500,000.00).
           </p>
         ) : (
           <TextField label="Invite code" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} autoCapitalize="none" spellCheck={false} error={fieldError('inviteCode')} />

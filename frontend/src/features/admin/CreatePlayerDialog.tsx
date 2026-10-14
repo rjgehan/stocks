@@ -30,7 +30,7 @@ export function CreatePlayerDialog({ open, onClose, onCreated }: { open: boolean
   const [startingCash, setStartingCash] = useState('')
   const [issueKey, setIssueKey] = useState(true)
   const [touched, setTouched] = useState(false)
-  const defaultCash = settings.data?.['league.defaultStartingCash'] ?? '500.00'
+  const defaultCash = settings.data?.['league.defaultStartingCash'] ?? '500000.00'
 
   const local: Record<string, string> = {}
   if (!HANDLE_RE.test(handle)) local.handle = HANDLE_HINT
