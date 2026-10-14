@@ -34,6 +34,10 @@ import org.springframework.web.util.UrlPathHelper;
  * Every charged response carries {@code X-RateLimit-Limit} (the bucket's rate per period), {@code X-RateLimit-Remaining}
  * and {@code X-RateLimit-Reset} (seconds until the bucket is full again). Over the limit: 429 {@code RATE_LIMITED} with
  * {@code Retry-After} and {@code retryAfterS}. The admin chain is never limited (§17.5). Not a Spring bean.
+ *
+ * <p>Every authenticated request also counts as the player's activity ({@link ActivityRecorder}: "last seen", the
+ * key's "last used"), except Run now's claim poll when it finds nothing (204, §20.9): the claude-trader service asks
+ * every minute for each bot it serves, and that is not the bot doing anything.
  */
 public final class RateLimitFilter extends OncePerRequestFilter {
 
@@ -44,6 +48,8 @@ public final class RateLimitFilter extends OncePerRequestFilter {
   private static final Pattern HEAVY = Pattern.compile(
       "^/api/v1/(bars/.*|account/history|leaderboard|players/[^/]+(/history|/trades|/stats)?|league/race"
           + "|account/(stats|pnl-analysis|pnl-calendar))$");
+  /** Run now's claim poll (§20.9). */
+  static final String CLAIM_PATH = "/api/v1/agent-runs/requests/claim";
   private static final Pattern ORDER_WRITE_PATH = Pattern.compile(
       "^/api/v1/(orders|orders/[^/]+|order-groups|order-groups/[^/]+|account/positions/[^/]+/close)$");
 
@@ -63,14 +69,17 @@ public final class RateLimitFilter extends OncePerRequestFilter {
     Authentication auth = SecurityContextHolder.getContextHolderStrategy().getContext().getAuthentication();
     PlayerPrincipal principal = RouteAuthorization.isAuthenticated(auth) && auth.getPrincipal() instanceof PlayerPrincipal p
         ? p : null;
-    if (principal != null) {
+    String path = path(request);
+    FilterChain next = chain;
+    if (principal != null && HttpMethod.POST.matches(request.getMethod()) && CLAIM_PATH.equals(path)) {
+      next = seenUnlessNoContent(chain, principal, ClientIp.resolve(request));
+    } else if (principal != null) {
       activity.seen(principal, ClientIp.resolve(request));
     }
     if (!limits.enabled()) {
-      chain.doFilter(request, response);
+      next.doFilter(request, response);
       return;
     }
-    String path = path(request);
     RateLimitServiceImpl.Decision decision;
     RateLimitServiceImpl.IpClass credentials = credentialClass(request.getMethod(), path);
     if (credentials != null) {
@@ -78,7 +87,7 @@ public final class RateLimitFilter extends OncePerRequestFilter {
       decision = limits.consumeIp(ClientIp.resolve(request), credentials);
     } else if (principal != null) {
       if (isOrderWrite(request.getMethod(), path)) {
-        chain.doFilter(request, response);
+        next.doFilter(request, response);
         return;
       }
       RateLimitServiceImpl.ReadClass readClass = HttpMethod.GET.matches(request.getMethod())
@@ -95,7 +104,17 @@ public final class RateLimitFilter extends OncePerRequestFilter {
           "Rate limit exceeded; retry in " + decision.retryAfterSeconds() + " s.", null, decision.retryAfterSeconds());
       return;
     }
-    chain.doFilter(request, response);
+    next.doFilter(request, response);
+  }
+
+  /** {@code chain}, then the activity of {@code principal} unless the answer was 204 (the trader's empty poll). */
+  private FilterChain seenUnlessNoContent(FilterChain chain, PlayerPrincipal principal, String ip) {
+    return (req, res) -> {
+      chain.doFilter(req, res);
+      if (((HttpServletResponse) res).getStatus() != HttpServletResponse.SC_NO_CONTENT) {
+        activity.seen(principal, ip);
+      }
+    };
   }
 
   static boolean isOrderWrite(String method, String path) {
