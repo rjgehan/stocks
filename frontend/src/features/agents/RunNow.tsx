@@ -8,7 +8,7 @@ import { MenuItem, Popover } from '@/components/ui/Popover'
 import { IconBolt, IconChevronDown } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { toast } from '@/features/notifications/toastStore'
-import { isOpenRequest, runNowBlocked, runNowTip, runRequestView } from './runNowView'
+import { isOpenRequest, runNowBlocked, runNowTip, runRequestView, serverNow } from './runNowView'
 
 /** `POST /me/bots/{handle}/run-requests` with the error as a toast (409 names the open request, 429 the wait). */
 export function useStartRun() {
@@ -41,10 +41,11 @@ export function RunNow({ handle, className }: { handle: string; className?: stri
   const latest = requests.data?.requests?.[0] ?? null
   const open = isOpenRequest(latest)
   const busy = pending || open
-  // "today", the trader's last visit and a long wait are judged against when the list was fetched (no clock read
-  // while rendering)
-  const blocked = runNowBlocked(handle, requests.data, requests.dataUpdatedAt)
-  const v = latest ? runRequestView(latest, requests.dataUpdatedAt, me?.handle) : null
+  // "today", the trader's last visit and a long wait are judged against the server's clock when the list was fetched
+  // (no clock read while rendering, and a browser clock that is off does not matter)
+  const now = serverNow(requests.data, requests.dataUpdatedAt)
+  const blocked = runNowBlocked(handle, requests.data, now)
+  const v = latest ? runRequestView(latest, now, me?.handle) : null
   const tip = runNowTip(handle)
   return (
     <div role="group" aria-label={`Run @${handle} now`} className={cx('space-y-1.5', className)}>
@@ -120,7 +121,7 @@ export function RunNow({ handle, className }: { handle: string; className?: stri
  */
 export function RunNowMenuItems({ handle, busy, close, onStart }: { handle: string; busy: boolean; close: () => void; onStart: (dryRun: boolean) => void }) {
   const requests = useRunRequests(handle)
-  const blocked = runNowBlocked(handle, requests.data, requests.dataUpdatedAt)
+  const blocked = runNowBlocked(handle, requests.data, serverNow(requests.data, requests.dataUpdatedAt))
   const open = isOpenRequest(requests.data?.requests?.[0])
   const disabled = busy || requests.isPending || open || blocked !== null
   const why = blocked ?? (open ? 'A run is on its way; follow it under Admin → Bots.' : null)

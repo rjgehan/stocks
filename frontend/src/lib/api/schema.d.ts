@@ -4482,6 +4482,11 @@ export interface components {
         };
         RunRequestList: {
             /**
+             * Format: date-time
+             * @description The server's clock when it answered: the ages of traderSeenAt and of a waiting request are measured against it
+             */
+            asOf: string | null;
+            /**
              * @description The bot's status; only an ACTIVE bot can be run
              * @enum {string|null}
              */

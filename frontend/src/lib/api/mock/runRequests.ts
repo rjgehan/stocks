@@ -78,6 +78,7 @@ export function registerRunRequestRoutes(r: RouteFn, d: Pick<AgentMockDeps, 'pla
       botStatus: d.botStatus?.(h) ?? 'ACTIVE',
       // the pretend trader asked at the start of this minute
       traderSeenAt: MOCK_UNSERVED.has(h) ? null : iso(now - (now % 60_000)),
+      asOf: iso(now),
       requests: latest(h, now).slice(0, limit),
     }
     return json(list)

@@ -48,7 +48,12 @@ describe('mock Run now (§20.9, §22.9)', () => {
   it("lists the bot's status and when the pretend trader last asked (every bot but @chatgpt)", async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-10-14T14:31:25Z') })
     const admin = routes(true, [])
-    expect((await (await admin.list('claude')).json()) as RunRequestList).toEqual({ botStatus: 'ACTIVE', traderSeenAt: '2026-10-14T14:31:00.000Z', requests: [] })
+    expect((await (await admin.list('claude')).json()) as RunRequestList).toEqual({
+      botStatus: 'ACTIVE',
+      traderSeenAt: '2026-10-14T14:31:00.000Z',
+      asOf: '2026-10-14T14:31:25.000Z',
+      requests: [],
+    })
     expect(((await (await admin.list('chatgpt')).json()) as RunRequestList).traderSeenAt).toBeNull()
   })
 

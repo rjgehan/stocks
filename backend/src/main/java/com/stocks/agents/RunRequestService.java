@@ -115,13 +115,14 @@ public class RunRequestService {
 
   /**
    * {@code GET /me/bots/{handle}/run-requests}: the bot's latest requests, newest first (any status of the bot), its
-   * status and when a trader last asked for its requests.
+   * status and when a trader last asked for its requests, as of the server's clock.
    */
   public RunRequestListDto list(PlayerPrincipal caller, String handle, Integer limit) {
     AgentPlayers.PlayerRef bot = botFor(caller, handle);
-    expire(bot, time.now());
+    Instant now = time.now();
+    expire(bot, now);
     int n = limit == null || limit < 1 ? LIST_DEFAULT : Math.min(limit, LIST_MAX);
-    return new RunRequestListDto(bot.status(), traderSeen.get(bot.id()),
+    return new RunRequestListDto(bot.status(), traderSeen.get(bot.id()), now,
         requests.latest(bot.id(), n).stream().map(RunRequestService::dto).toList());
   }
 

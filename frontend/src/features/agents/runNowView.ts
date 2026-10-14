@@ -32,10 +32,17 @@ export const TRADER_SEEN_MS = 5 * 60_000
 /** A request still waiting this long gets a hint about the trader's agents file. */
 export const PENDING_HINT_MS = 2 * 60_000
 
+/** The server's clock when it answered the list (`asOf`), else `fallback`: ages are measured against it. */
+export function serverNow(list: RunRequestList | null | undefined, fallback: number): number {
+  const t = Date.parse(list?.asOf ?? '')
+  return Number.isFinite(t) ? t : fallback
+}
+
 /**
  * Why the bot cannot be run from here (the button is disabled and says so), or null: it is not ACTIVE, or no
  * claude-trader service has asked for its requests lately (it is not in the trader's agents file, e.g. a bot of the
- * agent runner or a manual bot, or the service is down). Judged at `now`, when the list was fetched.
+ * agent runner or a manual bot, or the service is down). Judged at `now`, the server's clock when the list was fetched
+ * ({@link serverNow}).
  */
 export function runNowBlocked(handle: string, list: RunRequestList | null | undefined, now: number): string | null {
   if (!list) return null

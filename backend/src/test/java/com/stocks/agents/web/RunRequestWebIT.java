@@ -125,6 +125,7 @@ class RunRequestWebIT {
     assertThat((List<String>) read(list, "$.requests[*].status")).containsExactly("DONE");
     assertThat((String) read(list, "$.botStatus")).isEqualTo("ACTIVE");
     assertThat((String) read(list, "$.traderSeenAt")).isNotNull();   // the claims above
+    assertThat((String) read(list, "$.asOf")).isNotNull();
     assertThat(jdbc.sql("SELECT COUNT(*) FROM audit_log WHERE action = 'BOT_RUN_REQUEST' AND target_id = ?")
         .param(botHandle).query(Integer.class).single()).isEqualTo(1);
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Me, RunRequest, RunRequestList } from '@/lib/api/types'
-import { EXPIRED_NOTE, canRunBot, isOpenRequest, runNowBlocked, runRequestView } from './runNowView'
+import { EXPIRED_NOTE, canRunBot, isOpenRequest, runNowBlocked, runRequestView, serverNow } from './runNowView'
 
 const me = (over: Partial<Me> = {}): Me => ({ handle: 'ryan', role: 'PLAYER', status: 'ACTIVE', kind: 'HUMAN', ...over }) as Me
 
@@ -32,7 +32,13 @@ describe('who sees Run now (§20.9)', () => {
   })
 })
 
-const list = (over: Partial<RunRequestList> = {}): RunRequestList => ({ botStatus: 'ACTIVE', traderSeenAt: '2026-10-14T14:59:00Z', requests: [], ...over })
+const list = (over: Partial<RunRequestList> = {}): RunRequestList => ({
+  botStatus: 'ACTIVE',
+  traderSeenAt: '2026-10-14T14:59:00Z',
+  asOf: '2026-10-14T15:00:00Z',
+  requests: [],
+  ...over,
+})
 
 describe('whether anything would run the bot', () => {
   it('runs an ACTIVE bot that a trader asked for in the last 5 minutes', () => {
@@ -48,6 +54,12 @@ describe('whether anything would run the bot', () => {
     )
     expect(runNowBlocked('claude', list({ traderSeenAt: '2026-10-14T14:54:59Z' }), NOW)).toContain('nothing would pick a run up')
     expect(runNowBlocked('claude', list({ botStatus: 'FROZEN' }), NOW)).toBe('@claude is FROZEN: it cannot trade, so it cannot be run.')
+  })
+
+  it("judges against the server's clock when the list has it", () => {
+    expect(serverNow(list(), 0)).toBe(NOW)
+    expect(serverNow(list({ asOf: null }), 42)).toBe(42)
+    expect(serverNow(undefined, 42)).toBe(42)
   })
 })
 

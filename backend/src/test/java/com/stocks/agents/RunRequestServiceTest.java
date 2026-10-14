@@ -232,6 +232,7 @@ class RunRequestServiceTest {
     assertThat(fresh.botStatus()).isEqualTo(PlayerStatus.ACTIVE);
     assertThat(fresh.traderSeenAt()).isNull();                     // no trader has asked for @claude
     assertThat(fresh.requests()).isEmpty();
+    assertThat(fresh.asOf()).isEqualTo(NOW);                       // the server's clock, not the browser's
     time.advance(Duration.ofSeconds(30));
     assertThat(service.claim(botKey)).isEmpty();                   // an empty claim is a sign of life too
     assertThat(service.list(ownerSession, "claude", null).traderSeenAt()).isEqualTo(NOW.plusSeconds(30));

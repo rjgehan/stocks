@@ -9,10 +9,13 @@ import java.util.List;
  * {@code GET /me/bots/{handle}/run-requests} (§20.9): the bot's latest requests, newest first, and what the Run now
  * button needs to know before it offers a run: the bot's status (only an ACTIVE bot can be run) and when a trader
  * last asked for the bot's requests. The claude-trader service asks every minute for each agent it serves, so a
- * {@code traderSeenAt} that is null or minutes old means nothing would pick a request up.
+ * {@code traderSeenAt} that is null or minutes old means nothing would pick a request up. Ages are measured against
+ * {@code asOf}, the server's clock, not the browser's.
  */
 public record RunRequestListDto(
     @Schema(description = "The bot's status; only an ACTIVE bot can be run") PlayerStatus botStatus,
     @Schema(description = "When a trader last asked for the bot's run requests (with the bot's own key); null when "
         + "none has since the app started") Instant traderSeenAt,
+    @Schema(description = "The server's clock when it answered: the ages of traderSeenAt and of a waiting request "
+        + "are measured against it") Instant asOf,
     List<RunRequestDto> requests) {}

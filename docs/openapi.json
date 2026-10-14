@@ -17517,6 +17517,14 @@
       "RunRequestList": {
         "type": "object",
         "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "The server's clock when it answered: the ages of traderSeenAt and of a waiting request are measured against it"
+          },
           "botStatus": {
             "type": [
               "string",
@@ -17549,6 +17557,7 @@
           }
         },
         "required": [
+          "asOf",
           "botStatus",
           "requests",
           "traderSeenAt"

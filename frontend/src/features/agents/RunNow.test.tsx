@@ -25,8 +25,14 @@ const req = (over: Partial<RunRequest> = {}): RunRequest => ({
   ...over,
 })
 
-// a trader asked for the bot a minute before the fake clock (15:00Z)
-const list = (requests: RunRequest[] = [], over: Partial<RunRequestList> = {}): RunRequestList => ({ botStatus: 'ACTIVE', traderSeenAt: '2026-10-14T14:59:00Z', requests, ...over })
+// a trader asked for the bot a minute before the server's clock (the fake clock, 15:00Z)
+const list = (requests: RunRequest[] = [], over: Partial<RunRequestList> = {}): RunRequestList => ({
+  botStatus: 'ACTIVE',
+  traderSeenAt: '2026-10-14T14:59:00Z',
+  asOf: '2026-10-14T15:00:00Z',
+  requests,
+  ...over,
+})
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': status < 300 ? 'application/json' : 'application/problem+json' } })
@@ -172,6 +178,14 @@ describe('Run now (§20.9)', () => {
     expect(await screen.findByText(new RegExp(reason))).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Run now' }) as HTMLButtonElement).disabled).toBe(true)
     expect(fetchMock.mock.calls.every(([r]) => r.method === 'GET')).toBe(true)
+  })
+
+  it("measures ages against the server's clock, not the browser's", async () => {
+    // a server clock days behind the browser (the e2e backend's SIM clock): its trader asked a minute ago
+    fetchMock.mockImplementation(async () => json(list([], { traderSeenAt: '2026-10-09T13:59:00Z', asOf: '2026-10-09T14:00:00Z' })))
+    renderWithRouter(<RunNow handle="claude" />, client())
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Run now' }) as HTMLButtonElement).disabled).toBe(false))
+    expect(screen.queryByText(/No claude-trader service/)).toBeNull()
   })
 
   it('is disabled on the profile of a frozen bot', async () => {
