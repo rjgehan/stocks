@@ -160,7 +160,8 @@ public class ManualBotService {
   private final JsonMapper json;
   private final ManualPromptBuilder prompts;
   private final ManualBotsProperties props;
-  private final Map<Long, Object> locks = new ConcurrentHashMap<>();
+  private final Map<Long, Object> locks = new ConcurrentHashMap<>();        // per session: reply and execute
+  private final Map<Long, Object> botLocks = new ConcurrentHashMap<>();     // per bot: new prompts
 
   public ManualBotService(ManualBotRepository repo, PlayerService players, PlayerQueries playerQueries,
                           AccountQueries accounts, OrderQueries orderQueries, OrderService orders,
@@ -313,6 +314,12 @@ public class ManualBotService {
   /** {@code POST /me/bots/{handle}/manual-sessions}: builds and stores a prompt (status PROMPTED). */
   public ManualSessionDto newSession(PlayerPrincipal human, String handle) {
     PlayerRecord bot = operator(human, handle, true).bot();
+    synchronized (botLocks.computeIfAbsent(bot.id(), k -> new Object())) {     // the daily cap counts in the database
+      return prompt(human, bot);
+    }
+  }
+
+  private ManualSessionDto prompt(PlayerPrincipal human, PlayerRecord bot) {
     Instant now = time.now();
     LocalDate today = Et.date(now);
     if (repo.sessionsSince(bot.id(), Et.startOfDay(today)) >= props.sessionsPerDay()) {
@@ -622,6 +629,9 @@ public class ManualBotService {
           repo.storeJournalNote(s.id(), note.note().id());
         } catch (ApiException e) {
           issues.add(warning("JOURNAL_SKIPPED", "Journal note skipped: " + e.detail()));
+        } catch (RuntimeException e) {
+          log.error("manual session {}: journal note failed", s.publicId(), e);
+          issues.add(warning("JOURNAL_SKIPPED", "Journal note skipped: unexpected error; place again to retry."));
         }
         repo.storeParsed(s.id(), store(issues, rows));
       }
