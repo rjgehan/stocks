@@ -1,10 +1,11 @@
 /**
- * Phase 2 agent hooks (WS5): a bot's public run summary and AI journal (§20.6, §20.7), the admin Bots page and the
- * "Recent API calls" views (§17.10).
+ * Phase 2 agent hooks (WS5): a bot's public run summary and AI journal (§20.6, §20.7), the admin Bots page, the
+ * "Recent API calls" views (§17.10) and "Run now" (§20.8).
  */
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '../client'
 import { queryKeys } from '../queryKeys'
+import type { RunRequest } from '../types'
 
 export const agentKeys = {
   summary: (handle: string) => ['player', handle, 'agent-runs'] as const,
@@ -13,6 +14,41 @@ export const agentKeys = {
   runs: (filter: { handle?: string; status?: string }) => queryKeys.admin('agent-runs', filter),
   myCalls: (handle: string) => ['apiCalls', 'me', handle] as const,
   allCalls: (handle: string) => queryKeys.admin('api-calls', handle),
+  runRequests: (handle: string) => ['runRequests', handle] as const,
+}
+
+/** How often the Run now state is polled while the latest request is open (PENDING or CLAIMED). */
+export const RUN_REQUEST_POLL_MS = 5_000
+
+const openRequest = (r: RunRequest | null | undefined) => r?.status === 'PENDING' || r?.status === 'CLAIMED'
+
+/**
+ * `GET /me/bots/{handle}/run-requests` (§20.8, the bot's owner or the admin): the latest requests, newest first.
+ * Polled every 5 s while the latest one waits for the trader or runs, so the button follows it to DONE.
+ */
+export function useRunRequests(handle: string, enabled = true) {
+  return useQuery({
+    queryKey: agentKeys.runRequests(handle),
+    queryFn: () => unwrap(api.GET('/api/v1/me/bots/{handle}/run-requests', { params: { path: { handle }, query: { limit: 5 } } })),
+    enabled: enabled && Boolean(handle),
+    staleTime: 10_000,
+    retry: false,
+    refetchInterval: (q) => (openRequest(q.state.data?.[0]) ? RUN_REQUEST_POLL_MS : false),
+  })
+}
+
+/** `POST /me/bots/{handle}/run-requests`: ask the claude-trader service for one of the bot's check-ins now. */
+export function useRequestRun() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ handle, dryRun }: { handle: string; dryRun: boolean }) =>
+      unwrap(api.POST('/api/v1/me/bots/{handle}/run-requests', { params: { path: { handle } }, body: { dryRun } })),
+    onSuccess: (r, { handle }) => {
+      qc.setQueryData<RunRequest[]>(agentKeys.runRequests(handle), (prev) => [r, ...(prev ?? []).filter((x) => x.id !== r.id)])
+    },
+    // a 409 means another request is open: show it
+    onError: (_e, { handle }) => void qc.invalidateQueries({ queryKey: agentKeys.runRequests(handle) }),
+  })
 }
 
 /** `GET /players/{handle}/agent-runs`: the public Bot activity card (no cost, no message). */

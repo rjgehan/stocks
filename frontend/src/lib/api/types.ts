@@ -97,6 +97,8 @@ export type ResolveCorporateActionRequest = S['ResolveCorporateActionRequest']
 // Phase 2 agents (§17.10, §20.6, §20.7)
 export type AgentRun = S['AgentRun']
 export type AgentRunSummary = S['AgentRunSummary']
+// "Run now" (§20.8)
+export type RunRequest = S['RunRequest']
 export type AdminBot = S['AdminBot']
 export type ApiCall = S['ApiCall']
 export type JournalNote = S['JournalNote']
@@ -140,6 +142,7 @@ export type CalendarView = NN<PnlCalendar['view']>
 export type MoverList = 'GAINERS' | 'LOSERS' | 'ACTIVES'
 export type CorporateActionType = NN<CorporateAction['type']>
 export type CorporateActionStatus = NN<CorporateAction['status']>
+export type RunRequestStatus = NN<RunRequest['status']>
 export type AgentRunStatus = NN<AgentRun['status']>
 
 /** `/topic/tick.{SYM}` payload (§19, `TickDto`). */

@@ -39,6 +39,7 @@ export const ERROR_COPY: Record<string, ErrorCopy> = {
   ORDER_NOT_CANCELLABLE: { title: 'This order can no longer be cancelled' },
   ORDER_NOT_REPLACEABLE: { title: 'This order can no longer be changed' },
   HANDLE_TAKEN: { title: 'That handle is taken' },
+  RUN_REQUEST_CONFLICT: { title: 'This bot already has a run on the way' },
   // 422 orders (§11.2)
   CLIENT_ORDER_ID_INVALID: { title: 'Invalid order id; reopen the ticket' },
   RATIONALE_REQUIRED: { title: 'A rationale is required' },
