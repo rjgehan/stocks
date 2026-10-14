@@ -1,9 +1,9 @@
 /** Display helpers for manual-bot sessions (§20.8): issue lines, result chips, row sizes and the place button. */
 import type { ManualAction, ManualActionResult, ManualIssue, ManualResultStatus, ManualSession, ManualSessionStatus } from '@/lib/api/types'
 import type { PillTone } from '@/components/ui/Pill'
-import { ORDER_TYPE_LABEL, STATUS_LABEL } from '@/features/account/orderLabels'
-import { formatMoney, formatTrailAmount } from '@/lib/format/money'
-import { formatPrice, formatQty } from '@/lib/format/number'
+import { ORDER_TYPE_LABEL, STATUS_LABEL, orderPriceLabel } from '@/features/account/orderLabels'
+import { formatMoney } from '@/lib/format/money'
+import { formatQty } from '@/lib/format/number'
 
 export const SESSION_STATUS_LABEL: Record<ManualSessionStatus, string> = { PROMPTED: 'Prompted', REPLIED: 'Replied', EXECUTED: 'Executed' }
 export const SESSION_STATUS_TONE: Record<ManualSessionStatus, PillTone> = { PROMPTED: 'neutral', REPLIED: 'accent', EXECUTED: 'up' }
@@ -56,17 +56,15 @@ export function rowSize(a: Pick<ManualAction, 'action' | 'qty' | 'notional'>): s
   return a.qty ? `${formatQty(a.qty)} sh` : ''
 }
 
-/** "Limit 412.50", "Stop 230.00 / 231.00", "Trail 5%": the prices that define the row; empty for MARKET and CANCEL. */
-export function rowPrices(a: Pick<ManualAction, 'limitPrice' | 'stopPrice' | 'trailAmount' | 'trailPercent'>): string {
-  const parts: string[] = []
-  if (a.stopPrice) parts.push(`Stop ${formatPrice(a.stopPrice)}`)
-  if (a.limitPrice) parts.push(`Limit ${formatPrice(a.limitPrice)}`)
-  if (a.trailAmount) parts.push(`Trail ${formatTrailAmount(a.trailAmount)}`)
-  if (a.trailPercent) parts.push(`Trail ${a.trailPercent}%`)
-  return parts.join(' · ')
-}
+type RowOrder = Pick<ManualAction, 'action' | 'type' | 'limitPrice' | 'stopPrice' | 'trailAmount' | 'trailPercent'>
+
+/** "412.50" (Limit), "230.00 / 231.00" (Stop Limit: stop / limit), "5% trail": the row's prices, as on the Orders page. */
+export const rowPrices = (a: RowOrder): string => (a.action === 'CANCEL' ? '' : orderPriceLabel(a))
 
 export const rowType = (a: Pick<ManualAction, 'action' | 'type'>): string => (a.action === 'CANCEL' ? '' : a.type ? ORDER_TYPE_LABEL[a.type] : '')
+
+/** "Limit 412.50", "Market", "Trailing Stop 5% trail": the type with its prices. */
+export const rowOrder = (a: RowOrder): string => [rowType(a), rowPrices(a)].filter(Boolean).join(' ')
 
 /** "DAY", "GTC · Ext": time in force plus the extended-hours flag. */
 export const rowTif = (a: Pick<ManualAction, 'action' | 'timeInForce' | 'extendedHours'>): string =>

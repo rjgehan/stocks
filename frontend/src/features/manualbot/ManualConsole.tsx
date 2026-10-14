@@ -39,6 +39,7 @@ import {
   placedCount,
   resultLabel,
   resultTone,
+  rowOrder,
   rowPrices,
   rowSize,
   rowTif,
@@ -171,7 +172,7 @@ function InstructionsCard({ m, handle, canWrite }: { m: ManualBot; handle: strin
           )}
         </FieldShell>
         {!textValue ? <p className="text-caption text-text-3">Tell the bot what you want: style, risk, symbols to focus on or avoid.</p> : null}
-        <TextField label="Model label" value={modelValue} onChange={(e) => setModel(e.target.value)} maxLength={AI_MODEL_MAX} placeholder="Gemini 3" disabled={!canWrite} error={modelError} hint="Shown on the profile as “AI · Gemini 3”." />
+        <TextField label="Model label" value={modelValue} onChange={(e) => setModel(e.target.value)} maxLength={AI_MODEL_MAX} placeholder="Gemini 3" disabled={!canWrite} error={modelError} hint={`Shown on the profile as “AI · ${modelValue.trim() || 'Gemini 3'}”.`} />
         <p className="text-caption text-text-2">Public: part of every prompt, which every player can read under @{handle}&apos;s History. Key-like strings are removed.</p>
         {banner ? (
           <p role="alert" className="rounded-sm bg-down-bg p-2 text-caption text-down">
@@ -416,7 +417,7 @@ function Rationale({ text }: { text: string | null | undefined }) {
   return (
     <span className="block">
       <span className={cx('block break-words whitespace-pre-wrap text-text-2', !more && 'line-clamp-2')}>{text}</span>
-      {text.length > 90 ? (
+      {text.length > 140 ? (
         <button type="button" onClick={() => setMore((v) => !v)} className="text-micro font-semibold text-accent">
           {more ? 'Less' : 'More'}
         </button>
@@ -429,14 +430,15 @@ function EstimateCell({ a }: { a: ManualAction }) {
   const e = a.estimate
   if (!e) return <span className="text-text-3">--</span>
   return (
-    <span className="block text-micro leading-4 text-text-2">
+    <span className="block text-micro leading-4 whitespace-nowrap text-text-2">
       <span className="block">
         {e.qty ? `${formatQty(e.qty)} @ ` : '@ '}
-        {formatPrice(e.price)}
+        {formatPrice(e.price)} = {formatMoney(e.principal)}
       </span>
-      <span className="block">{formatMoney(e.principal)}</span>
-      <span className="block">fees {formatMoney(e.fees?.total)}</span>
-      {e.hold && e.hold !== '0.00' ? <span className="block">hold {formatMoney(e.hold)}</span> : null}
+      <span className="block">
+        fees {formatMoney(e.fees?.total)}
+        {e.hold && e.hold !== '0.00' ? ` · hold ${formatMoney(e.hold)}` : ''}
+      </span>
     </span>
   )
 }
@@ -487,7 +489,7 @@ function ActionPill({ a }: { a: ManualAction }) {
 function ReviewTable({ rows, ticked, toggle, disabled }: { rows: ManualAction[]; ticked: Set<number>; toggle: (i: number) => void; disabled: boolean }) {
   return (
     <div className="scrollbar-thin overflow-x-auto">
-      <table aria-label="Orders in the reply" className="w-full min-w-[56rem] text-caption">
+      <table aria-label="Orders in the reply" className="w-full min-w-[40rem] text-caption">
         <thead className="text-left text-micro tracking-wide text-text-3 uppercase">
           <tr className="border-b border-divider">
             <th className="py-1.5 pr-2 font-medium">
@@ -501,38 +503,40 @@ function ReviewTable({ rows, ticked, toggle, disabled }: { rows: ManualAction[];
             <th className="px-1 font-medium">Limit / stop / trail</th>
             <th className="px-1 font-medium">TIF · Ext</th>
             <th className="px-1 font-medium">Estimate</th>
-            <th className="px-1 font-medium">Check</th>
-            <th className="pl-1 font-medium">Rationale</th>
+            <th className="pl-1 font-medium">Check</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-divider align-top">
-          {rows.map((a) => (
-            <tr key={a.index} aria-label={`Row ${a.index}`} className={cx(!a.executable && 'bg-down-bg/30')}>
-              <td className="py-2 pr-2">
+        {/* one row group per order: its columns, then its rationale across the row (it would not fit as a column) */}
+        {rows.map((a) => (
+          <tbody key={a.index} className={cx('border-b border-divider align-top last:border-0', !a.executable && 'bg-down-bg/30')}>
+            <tr aria-label={`Row ${a.index}`}>
+              <td className="pt-2 pr-2">
                 <RowCheckbox a={a} checked={isTickable(a) && ticked.has(a.index)} onToggle={() => toggle(a.index)} disabled={disabled} />
               </td>
-              <td className="px-1 py-2 text-text-3">
+              <td className="px-1 pt-2 text-text-3">
                 {a.index}
                 {a.line != null ? <span className="block text-micro">L{a.line}</span> : null}
               </td>
-              <td className="px-1 py-2">
+              <td className="px-1 pt-2">
                 <ActionPill a={a} />
               </td>
-              <td className="px-1 py-2 font-semibold">{a.symbol ?? '--'}</td>
-              <td className="px-1 py-2">{a.action === 'CANCEL' ? <span className="font-mono text-micro">{a.orderId}</span> : rowType(a)}</td>
-              <td className="px-1 py-2 text-right">{rowSize(a)}</td>
-              <td className="px-1 py-2">{rowPrices(a)}</td>
-              <td className="px-1 py-2">{rowTif(a)}</td>
-              <td className="px-1 py-2">{a.action === 'CANCEL' ? null : <EstimateCell a={a} />}</td>
-              <td className="max-w-[16rem] px-1 py-2">
+              <td className="px-1 pt-2 font-semibold">{a.symbol ?? '--'}</td>
+              <td className="px-1 pt-2 whitespace-nowrap">{a.action === 'CANCEL' ? <span className="font-mono text-micro">{a.orderId}</span> : rowType(a)}</td>
+              <td className="px-1 pt-2 text-right whitespace-nowrap">{rowSize(a)}</td>
+              <td className="px-1 pt-2 whitespace-nowrap">{rowPrices(a)}</td>
+              <td className="px-1 pt-2 whitespace-nowrap">{rowTif(a)}</td>
+              <td className="px-1 pt-2">{a.action === 'CANCEL' ? null : <EstimateCell a={a} />}</td>
+              <td className="min-w-[11rem] pt-2 pl-1">
                 <CheckCell a={a} />
               </td>
-              <td className="max-w-[18rem] py-2 pl-1">
+            </tr>
+            <tr>
+              <td colSpan={10} className="pt-1 pr-1 pb-2 pl-7">
                 <Rationale text={a.rationale} />
               </td>
             </tr>
-          ))}
-        </tbody>
+          </tbody>
+        ))}
       </table>
     </div>
   )
@@ -550,7 +554,7 @@ function ReviewCards({ rows, ticked, toggle, disabled }: { rows: ManualAction[];
             <span className="text-caption text-text-3">#{a.index}</span>
             <ActionPill a={a} />
             <span className="font-semibold">{a.symbol ?? '--'}</span>
-            <span className="text-caption text-text-2">{[rowSize(a), rowType(a), rowPrices(a), rowTif(a)].filter(Boolean).join(' · ')}</span>
+            <span className="text-caption text-text-2">{[rowSize(a), rowOrder(a), rowTif(a)].filter(Boolean).join(' · ')}</span>
           </div>
           {a.action === 'CANCEL' && a.orderId ? <p className="font-mono text-micro text-text-3">{a.orderId}</p> : null}
           {a.action !== 'CANCEL' && a.estimate ? (
@@ -745,16 +749,20 @@ export function ManualConsole({ handle, sessionId, onSession }: { handle: string
   return (
     <div className="space-y-4">
       <ConsoleHeader m={m} handle={handle} />
-      <div className="grid grid-cols-1 gap-4 desktop:grid-cols-[minmax(0,1fr)_22rem] desktop:grid-rows-[auto_1fr]">
+      {/* phone and tablet: one column (instructions first, sessions last); desktop: prompt and reply on the left,
+          instructions and sessions on the right, the review table full width below */}
+      <div className="grid grid-cols-1 items-start gap-4 desktop:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="desktop:col-start-2 desktop:row-start-1">
           <InstructionsCard m={m} handle={handle} canWrite={canWrite} />
         </div>
         <div className="min-w-0 space-y-4 desktop:col-start-1 desktop:row-span-2 desktop:row-start-1">
           <PromptCard handle={handle} session={current} loading={Boolean(sessionId) && session.isPending} missing={missing} canWrite={canWrite} onSession={onSession} />
           <ReplyCard key={current?.sessionId ?? 'none'} handle={handle} session={current} maxChars={m.limits?.maxReplyChars ?? MAX_REPLY_DEFAULT} canWrite={canWrite} />
+        </div>
+        <div className="min-w-0 desktop:col-span-2 desktop:row-start-3">
           <ReviewCard handle={handle} session={current} canWrite={canWrite} />
         </div>
-        <div className="self-start desktop:col-start-2 desktop:row-start-2">
+        <div className="desktop:col-start-2 desktop:row-start-2">
           <RecentSessions handle={handle} current={sessionId} onSession={onSession} />
         </div>
       </div>
