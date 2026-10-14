@@ -3,7 +3,10 @@ package com.stocks.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.stocks.identity.SettingKey;
 import com.stocks.testkit.TestProperties;
+import com.stocks.trading.config.TradingSettings;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
@@ -75,6 +78,20 @@ class ProfileFilesTest {
     assertThat(test.getProperty("stocks.single-instance.enabled")).isEqualTo("false");
     assertThat(test.getProperty("stocks.marketdata.sim.clock")).isEqualTo("fixed");
     assertThat(test.getProperty("stocks.marketdata.sim.seed")).isEqualTo("42"); // merged, not replaced
+  }
+
+  @Test
+  void theShippedStartingCashIs500k() throws Exception {
+    // the code default, application.yml without STARTING_CASH_DEFAULT, and the league setting's own default
+    assertThat(TestProperties.stocks().bootstrap().defaultStartingCash()).isEqualByComparingTo("500000.00");
+    assertThat(load("application.yml").getProperty("stocks.bootstrap.default-starting-cash")).isEqualTo("500000.00");
+    assertThat(load("application.yml", "application-prod.yml").getProperty("stocks.bootstrap.default-starting-cash"))
+        .isEqualTo("500000.00");
+    assertThat(SettingKey.DEFAULT_STARTING_CASH.defaultValue()).isEqualTo("500000.00");
+    assertThat(TradingSettings.DEFAULT_STARTING_CASH).isEqualByComparingTo("500000.00");
+    // the suites (and make e2e) are calibrated to a $500 account: the test profile pins that
+    assertThat(new BigDecimal(load("application.yml", "application-test.yml")
+        .getProperty("stocks.bootstrap.default-starting-cash"))).isEqualByComparingTo("500.00");   // YAML: 500.0
   }
 
   @Test
