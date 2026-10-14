@@ -21,6 +21,9 @@ public interface AccountService {
   /** LiftRestrictionCmd: drop the admin restriction; recompute any GFV restriction from {@code account_violation} (§10.4). */
   void liftAdminRestriction(long playerId, long actorPlayerId);
 
-  /** Break-glass live view (§21.3): writes an {@code ADMIN_VIEW} {@code account_event}. */
+  /**
+   * Break-glass live view (§21.3): writes an {@code ADMIN_VIEW} {@code account_event}. No caller since public mode;
+   * kept for the historical ADMIN_VIEW rows.
+   */
   void recordAdminView(long accountId, String reason, long actorPlayerId);
 }

@@ -72,7 +72,8 @@ public class PnlAnalysisController {
     return analysis.calendar(activeAccount(), view == null ? CalendarView.DAY : view, month(month), year(year));
   }
 
-  static YearMonth month(String raw) {
+  /** A {@code YYYY-MM} month (2000..2100), or null when absent; {@code VALIDATION_FAILED} otherwise. */
+  public static YearMonth month(String raw) {
     if (raw == null || raw.isBlank()) {
       return null;
     }
@@ -90,7 +91,8 @@ public class PnlAnalysisController {
     }
   }
 
-  static Integer year(Integer year) {
+  /** A year in 2000..2100, or null; {@code VALIDATION_FAILED} otherwise. */
+  public static Integer year(Integer year) {
     if (year != null && (year < MIN_YEAR || year > MAX_YEAR)) {
       throw ApiException.validation("year", "year must be between " + MIN_YEAR + " and " + MAX_YEAR);
     }

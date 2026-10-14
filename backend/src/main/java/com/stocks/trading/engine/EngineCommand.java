@@ -79,7 +79,10 @@ public sealed interface EngineCommand {
   /** §10.5 unfreeze/enable step 2: the restriction becomes NONE or the recomputed GFV restriction. */
   record LiftRestrictionCmd(long playerId, long actorPlayerId) implements EngineCommand {}
 
-  /** §21.3 break-glass view: an {@code ADMIN_VIEW} {@code account_event}. */
+  /**
+   * §21.3 break-glass view: an {@code ADMIN_VIEW} {@code account_event}. No caller since public mode; kept for the
+   * historical ADMIN_VIEW rows.
+   */
   record RecordAdminViewCmd(long accountId, String reason, long actorPlayerId) implements EngineCommand {}
 
   /** §25 03:30 ET: lift GFV restrictions whose time has passed. */

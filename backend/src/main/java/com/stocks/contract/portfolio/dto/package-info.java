@@ -3,7 +3,7 @@
  * the §16.7 visibility rules): {@code PortfolioHistory}, {@code LeaderboardRow}, {@code Leaderboard},
  * {@code PublicTrade}, {@code PlayerProfile}, {@code PublicHistory}, {@code FeedItem}; Phase 2 (§16.8–16.11)
  * {@code PlayerStats}, {@code RaceChart}, {@code BenchmarkCurve}, {@code PnlAnalysis}, {@code PnlCalendar},
- * {@code FeedReactions} and {@code SetReactionRequest}. Components named {@code ret} are the JSON {@code return} (a
- * Java keyword).
+ * {@code FeedReactions} and {@code SetReactionRequest}; public mode (§16.7) {@code PublicPortfolio} and
+ * {@code PublicOrder}. Components named {@code ret} are the JSON {@code return} (a Java keyword).
  */
 package com.stocks.contract.portfolio.dto;

@@ -44,7 +44,8 @@ import org.springframework.stereotype.Component;
  * contracts are still Day-0 stubs, the valued fields are null ({@code pnl} falls back to
  * {@code equity − netContributions} when only the valuation exists).
  *
- * <p>The detail never contains live positions or orders: those need the audited break-glass view (§16.7, §21.3).
+ * <p>The detail never contains live positions or orders; live data: GET /admin/players/{h}/portfolio (public mode,
+ * §16.7, §21.3).
  */
 @Component
 public class AdminPlayerViews {

@@ -16,7 +16,6 @@ import com.stocks.common.money.Money;
 import com.stocks.common.time.TimeSource;
 import com.stocks.common.web.IdempotencyKeys;
 import com.stocks.contract.admin.dto.AdminPlayerDto;
-import com.stocks.contract.admin.dto.AdminPlayerLiveViewDto;
 import com.stocks.contract.admin.dto.AdminResetRequest;
 import com.stocks.contract.admin.dto.CreatePlayerRequest;
 import com.stocks.contract.admin.dto.CreatePlayerResponse;
@@ -28,15 +27,9 @@ import com.stocks.contract.identity.dto.PlayerSummaryDto;
 import com.stocks.contract.security.PlayerPrincipal;
 import com.stocks.contract.security.RequestMeta;
 import com.stocks.contract.security.Scopes;
-import com.stocks.contract.trading.AccountQueries;
 import com.stocks.contract.trading.AccountService;
 import com.stocks.contract.trading.IdempotencyRef;
-import com.stocks.contract.trading.OrderFilter;
-import com.stocks.contract.trading.OrderQueries;
-import com.stocks.contract.trading.OrderStatusFilter;
 import com.stocks.contract.trading.dto.AccountDto;
-import com.stocks.contract.trading.dto.OrderDto;
-import com.stocks.contract.trading.dto.PositionDto;
 import com.stocks.identity.AccountProvisioner;
 import com.stocks.identity.ApiKeyService;
 import com.stocks.identity.LoginThrottle;
@@ -49,7 +42,6 @@ import com.stocks.security.ApiKeyAuthenticationProvider;
 import com.stocks.security.PlayerSessions;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -84,8 +76,6 @@ public class AdminPlayerService {
   private final PlayerSessions sessions;
   private final AccountProvisioner accounts;
   private final AccountService accountService;
-  private final AccountQueries accountQueries;
-  private final OrderQueries orderQueries;
   private final IdempotencyFastPath idempotency;
   private final AuditService audit;
   private final ApplicationEventPublisher events;
@@ -96,8 +86,8 @@ public class AdminPlayerService {
 
   public AdminPlayerService(PlayerService players, PlayerQueriesImpl playerQueries, AdminPlayerViews views,
                             ApiKeyService apiKeys, ApiKeyAuthenticationProvider keyCache, PlayerSessions sessions,
-                            AccountProvisioner accounts, AccountService accountService, AccountQueries accountQueries,
-                            OrderQueries orderQueries, IdempotencyFastPath idempotency, AuditService audit,
+                            AccountProvisioner accounts, AccountService accountService, IdempotencyFastPath idempotency,
+                            AuditService audit,
                             ApplicationEventPublisher events, TransactionTemplate tx, TimeSource time,
                             LoginThrottle loginThrottle, OAuthGrants oauthGrants) {
     this.players = players;
@@ -108,8 +98,6 @@ public class AdminPlayerService {
     this.sessions = sessions;
     this.accounts = accounts;
     this.accountService = accountService;
-    this.accountQueries = accountQueries;
-    this.orderQueries = orderQueries;
     this.idempotency = idempotency;
     this.audit = audit;
     this.events = events;
@@ -393,35 +381,12 @@ public class AdminPlayerService {
     return ResponseEntity.ok(account);
   }
 
-  // ------------------------------------------------------------------------------------------- live view
-
-  /**
-   * {@code POST /admin/players/{handle}/live-view}: the audited break-glass view (§16.7, §21.3). The
-   * {@code ADMIN_VIEW} account event the player sees is written <b>before</b> anything is shown; if it cannot be
-   * written, nothing is shown.
-   */
-  public AdminPlayerLiveViewDto liveView(String handle, String rawReason, PlayerPrincipal admin, RequestMeta meta) {
-    PlayerRecord p = players.requireByHandle(handle);
-    String reason = AdminText.require(rawReason, "reason", 5, 200);
-    long accountId = accountQueries.activeAccountId(p.id());
-    accountService.recordAdminView(accountId, reason, admin.playerId());
-    audit.record(AuditEntry.of(AuditCategory.ADMIN, "PLAYER_LIVE_VIEW", AuditOutcome.OK).withActor(admin)
-        .withMeta(meta).withTarget("player", p.publicId()).withDetail("handle", p.handle())
-        .withDetail("reason", reason));
-    List<PositionDto> positions = accountQueries.positions(accountId);
-    List<OrderDto> open = orderQueries.list(accountId, new OrderFilter(OrderStatusFilter.OPEN, null, null, null),
-        null, 200).items();
-    PlayerSummaryDto summary = playerQueries.byId(p.id()).orElseThrow();
-    return new AdminPlayerLiveViewDto(summary, time.now(), reason, positions, open);
-  }
-
   // ------------------------------------------------------------------------------------------- keys
 
   /**
    * {@code POST /admin/players/{handle}/api-keys}: AI players only, all four scopes by default (§17.2). A human's keys
-   * are personal: the admin, who is also a competitor, must not hold a token that reads a friend's live positions and
-   * orders outside the audited break-glass view (§16.7 item 3), so a human creates their own keys in Settings and
-   * the admin only toggles {@code apiTradingAllowed}.
+   * are personal: an admin never acts as a human, so a human creates their own keys in Settings and the admin only
+   * toggles {@code apiTradingAllowed}.
    */
   public ApiKeyCreatedDto issueKey(String handle, CreateApiKeyRequest req, PlayerPrincipal admin, RequestMeta meta) {
     PlayerRecord p = players.requireByHandle(handle);
