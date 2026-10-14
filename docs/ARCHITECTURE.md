@@ -4316,7 +4316,7 @@ CREATE TABLE agent_run_tool (
 
 **Admin UI: Admin → Bots** (`/admin/bots`). One card per bot: handle, model, status; last run (time, status, duration, tool calls, orders, cost) with its message when it failed; the last problem run; **today's spend against the cap** (a meter: `spentUsd / capUsd`, amber from 80 %, red at the cap, with the numbers in text); a 14-day spend chart against the cap line; the 7-day tool breakdown (calls and errors per tool, error codes on expand). Below, the runs table (`GET /admin/agent-runs`, filter by bot and status, newest first, load more): start (ET), bot, trigger/slot, status pill, duration, tool calls/errors, orders, tokens, cost, message.
 
-**Profile.** An AI player's profile shows a **Bot activity** card (`GET /players/{handle}/agent-runs`): runs in the last 7 days and in total, the last run's time and status ("Completed · 9 tool calls · 2 orders").
+**Profile.** An AI player's profile shows a **Bot activity** card (`GET /players/{handle}/agent-runs`): runs in the last 7 days and in total, the last run's time and status ("Completed · 9 tool calls · 2 orders"). For the bot's owner and the admin it also holds **Run now** (§20.8).
 
 ### 20.7 Phase 2: the public AI journal (`add_journal_note`, WS5)
 
@@ -4414,6 +4414,8 @@ CREATE TABLE agent_run_request (
 CREATE INDEX ix_agent_run_request_player ON agent_run_request(player_id, requested_at);          -- latest, daily limit
 CREATE INDEX ix_agent_run_request_status ON agent_run_request(player_id, status, requested_at);  -- oldest PENDING
 ```
+
+**UI** (`features/agents/RunNow.tsx`). A split button, **Run now** with a menu for **Dry run (no orders)**, whose tooltip (and the menu) says that it runs the bot's normal check-in on the server within about a minute. It sits on each ACTIVE bot's card in Admin → Bots and in the **Bot activity** card of the bot's profile, shown to the bot's owner and to an ACTIVE admin only (`Me` against the profile's `ownerHandle`; the server decides again); the **⋯** menu of an ACTIVE bot in Admin → Players has the same two items (a toast confirms). Under the button, the latest request (`GET …/run-requests?limit=5`, polled every 5 s while it is `PENDING` or `CLAIMED`) as a pill and a line: "Requested 10:31 AM ET · picked up 10:31 AM · done 10:35 AM" with the trader's report under it; `FAILED` shows its message; `EXPIRED` says "Expired: the trader did not pick it up — is the claude-trader service running?". The button waits while a request is open; a refused request (409, 429, `PLAYER_FROZEN`) is a toast with the server's detail. Mock mode (§22.9) has a pretend trader that claims a request after 3 s and reports `DONE` after 9 s.
 
 **Trader side** (server mode only; `tick_requests` in `claude_trader.py`). Every minute, after the check-ins that are due (they come first), each enabled agent that is idle and has no check-in waiting to start claims its oldest request while a session slot is free (`STOCKS_TRADER_MAX_PARALLEL`), and runs it at once with the request's `dryRun`, any day of the week (the prompt itself stops on a weekend). When the session ends it posts `DONE` ("Check-in done in 4 min 2 s, 12 turns. <the start of Claude's reply>") or `FAILED` (the error, or "stopped: the trader shut down"); a report the app cannot take is sent again every minute, one the app refuses for good (404, 409) is dropped with a log line. A claim answering a request of another player (a key pasted under the wrong agent) runs nothing and reports `FAILED`. Network problems are logged once per distinct problem. Disabled agents claim nothing, so their requests expire. Mac mode (§2.10) does not claim.
 
@@ -4539,14 +4541,14 @@ type SystemStatus = { version: string; startedAt: Ts; db: "postgresql"|"h2";
 
 | Page | Contents |
 |---|---|
-| **Players** | Table: handle, kind badge, status, equity, cash, net contributions, P&L, return, open orders, keys, last seen. Actions: create human or AI (with "issue key now"), disable or enable, freeze or unfreeze, reset, promote a human to admin. |
+| **Players** | Table: handle, kind badge, status, equity, cash, net contributions, P&L, return, open orders, keys, last seen. Actions: create human or AI (with "issue key now"), disable or enable, freeze or unfreeze, reset, promote a human to admin, run an ACTIVE bot now or dry-run it (§20.8). |
 | **Player detail** | Runs, balances, **end-of-day** holdings, API keys (issue with the copy-once dialog showing Claude Code, Claude API, OpenAI and curl snippets; revoke), **Connected apps** (Phase 2: the player's live OAuth grants with client, redirect host, who approved it, who it acts as, scopes and last use; revoke with a confirmation), "allow API trading" toggle (humans), transfers, recent audit rows. Live positions and open orders (with cancel) appear only after **"Break glass: view live"**, which asks for a reason and re-authentication, and tells the admin that the player will see an "Admin viewed your live account" entry in their activity. The owner is both admin and a competitor, so this keeps charter item 3 honest. |
 | **Money** | Transfer form: target Single or All (+ kinds), type, amount, memo, `treatAs` for adjustments, all-or-nothing. A live preview (`POST /cash-transfers/preview`) lists affected accounts with cash, withdrawable, E⁻, U, **worst mark quality** and warnings (`ACCOUNT_EQUITY_TOO_LOW`, `MARKS_DEGRADED`). Degraded marks require ticking "Value with degraded marks anyway". Confirmation requires **typing the amount**. The transfers table is filterable. |
 | **Invites** | Create (copy link), list, revoke |
 | **Settings** | Default starting cash, self-reset, season start, eligibility, feed delay, holdings visibility, show deposits, require rationale |
 | **System** | Engine state and queue, invariants, provider stream usage ("Alpaca 23/30 · LIVE"), REST budget, probe results, stale symbols, corporate-action holds, jobs (from the `JobScheduler` registry: next occurrence, last `run_key`, status) with "Run now", halt and resume, calendar overrides (add, delete), corporate actions needing admin (a count linking to the **Corp. actions** tab, `/admin/corporate-actions`: the list by status, and resolve: apply with confirmed rates, or skip, with an audited note) |
 | **Audit** | Filterable `audit_log` viewer |
-| **Bots** (Phase 2) | Per AI player: last run, last problem, today's spend against the cap, 14-day spend chart, 7-day tool-call breakdown; the runs table with filters (§20.6) |
+| **Bots** (Phase 2) | Per AI player: **Run now** with the latest request's state (§20.8, ACTIVE bots), last run, last problem, today's spend against the cap, 14-day spend chart, 7-day tool-call breakdown; the runs table with filters (§20.6) |
 
 ---
 

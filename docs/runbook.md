@@ -198,6 +198,11 @@ dc --profile agents stop agent-runner                                # pause bot
   shows under **Admin → Bots** (status, tool calls, orders, cost) and as "Bot activity" on the bot's profile. No
   reports? Check the runner runs the wave A image (`docker logs stocks-agent-runner | grep -i report`) and that
   `AGENT_REPORT_RUNS` is not `false`. A bot can report at most 100 new runs per 24 h (429 beyond that).
+- **Run now (claude-trader bots, §20.8):** the **Run now** button (Admin → Bots, the bot's profile, or the ⋯ menu in
+  Admin → Players) asks `stocks-claude-trader` for one check-in; it is picked up within about a minute. **"Expired:
+  the trader did not pick it up"**: the trader is not running (`dc --profile trader up -d --no-deps claude-trader`),
+  or the agent is `enabled = false` in its agents file, or its key belongs to another player (`docker logs
+  stocks-claude-trader | grep -i "run request"`). A picked-up request without a report after 30 minutes is FAILED.
 
 ## Phase 2 features: jobs, alerts, Web Push, OAuth, SSE
 
