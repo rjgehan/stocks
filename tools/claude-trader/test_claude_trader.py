@@ -3,8 +3,8 @@
     python3 -m unittest discover -s tools/claude-trader -v
 
 Sessions run a fake claude (STOCKS_TRADER_CLAUDE_BIN) that records what it received and prints a JSON result like
-`claude -p --output-format json`, against a fake app that answers GET /api/v1/me. Every test works in its own
-STOCKS_TRADER_HOME; ~/.stocks-trader is never touched.
+`claude -p --output-format json`, against a fake app that answers GET /api/v1/me and the run requests' claim and
+finish. Every test works in its own STOCKS_TRADER_HOME; ~/.stocks-trader is never touched.
 """
 
 from __future__ import annotations
@@ -73,12 +73,16 @@ print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "nu
 
 class FakeApp:
     """The app's GET /api/v1/me on a local port: the handle of the key's player, 401 for an unknown key, or
-    `status` for every request when it is set."""
+    `status` for every request when it is set. POST .../requests/claim hands out the key's queued `claims` (204 when
+    none); POST .../requests/{id}/finish records the report in `finished` and answers `finish_status` (200)."""
 
     def __init__(self):
         self.players = {KEY_A: "claude", KEY_B: "claude_tech", KEY_C: "claude_aggressive"}
         self.status = None
         self.requests = []
+        self.claims = {}          # key -> [run requests], oldest first
+        self.finished = []        # (request id, body, headers)
+        self.finish_status = None
         app = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -91,6 +95,31 @@ class FakeApp:
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(body.encode())
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+                app.requests.append((self.path, dict(self.headers)))
+                key = self.headers.get("Authorization", "").removeprefix("Bearer ")
+                if self.path == "/api/v1/agent-runs/requests/claim":
+                    if key not in app.players:
+                        code, out = 401, {"code": "INVALID_API_KEY", "detail": "Unknown API key."}
+                    elif app.claims.get(key):
+                        code, out = 200, app.claims[key].pop(0)
+                    else:
+                        code, out = 204, None
+                elif self.path.endswith("/finish"):
+                    app.finished.append((self.path.split("/")[-2], body, dict(self.headers)))
+                    code = app.finish_status or 200
+                    out = ({"id": self.path.split("/")[-2], "status": body.get("status")} if code == 200
+                           else {"code": "RUN_REQUEST_CONFLICT" if code == 409 else "INTERNAL_ERROR"})
+                else:
+                    code, out = 404, {"code": "NOT_FOUND"}
+                code = app.status or code
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                if out is not None and code != 204:
+                    self.wfile.write(json.dumps(out).encode())
 
             def log_message(self, *args):
                 pass
@@ -860,6 +889,190 @@ class SelftestTest(Base):
         self.assertEqual(out.getvalue().strip(), "ok claude")
         argv = self.records()[0]["argv"]
         self.assertEqual(argv[argv.index("--allowedTools") + 1], "mcp__claude_ai_Stocks__whoami")
+
+
+# ------------------------------------------------------------------------------------------------ run requests
+
+def run_request(rid: str = "arq_01", by: str = "ryan", dry: bool = False, handle: str = "claude") -> dict:
+    return {"id": rid, "handle": handle, "requestedBy": by, "requestedAt": "2026-10-14T13:31:00.000Z",
+            "dryRun": dry, "status": "CLAIMED", "claimedAt": "2026-10-14T13:31:20.000Z", "finishedAt": None,
+            "message": None}
+
+
+class RunRequestTest(Base):
+    """"Run now" from the app (server mode): claim with the agent's key, run the check-in, report DONE or FAILED."""
+
+    def setUp(self):
+        super().setUp()
+        self.write_agents(agent_toml("claude", KEY_A) + agent_toml("claude_tech", KEY_B)
+                          + agent_toml("claude_aggressive", KEY_C, enabled=False))
+
+    def agents(self, cfg=None):
+        return ct.load_agents(cfg or self.cfg()).agents
+
+    def tick(self, sessions=None, now=WED, cfg=None) -> str:
+        cfg = cfg or self.cfg()
+        sessions = sessions or ct.Sessions(3)
+        with fixed(now), capture() as out:
+            ct.tick_requests(cfg, self.agents(cfg), sessions)
+            self.assertTrue(sessions.wait(15))
+        return out.getvalue()
+
+    def assert_no_key(self, *texts):
+        for text in texts:
+            for k in (KEY_A, KEY_B, KEY_C):
+                self.assertNotIn(k, text)
+
+    def test_claim_answers(self):
+        cfg = self.cfg()
+        claude = self.agents(cfg)[0]
+        self.assertEqual(ct.claim_request(cfg, claude), ("none", ""))
+        path, headers = self.app.requests[-1]
+        self.assertEqual(path, "/api/v1/agent-runs/requests/claim")
+        self.assertEqual(headers["Authorization"], f"Bearer {KEY_A}")
+        self.assertEqual(headers["X-Stocks-Client"], "claude-code/trader")
+        self.app.claims[KEY_A] = [run_request()]
+        self.assertEqual(ct.claim_request(cfg, claude), ("claimed", run_request()))
+        revoked = ct.Agent("claude", self.home, ["09:30"], key="stk_" + "revokedrevokedrevoked")
+        verdict, why = ct.claim_request(cfg, revoked)
+        self.assertEqual(verdict, "problem")
+        self.assertIn("ERROR: the app refuses @claude's key for run requests (HTTP 401 INVALID_API_KEY: Unknown API "
+                      "key.)", why)
+        self.app.status = 503
+        self.assertEqual(ct.claim_request(cfg, claude),
+                         ("problem", "cannot ask the app for run requests: HTTP 503; asking again every minute"))
+        verdict, down = ct.claim_request(self.cfg(STOCKS_TRADER_MCP_URL="http://127.0.0.1:9/mcp"), claude)
+        self.assertEqual(verdict, "problem")
+        self.assertIn("http://127.0.0.1:9/api/v1/agent-runs/requests/claim does not answer", down)
+        self.assert_no_key(why, down)
+
+    def test_a_claimed_request_runs_the_agents_check_in_and_is_reported(self):
+        self.app.claims[KEY_A] = [run_request(dry=True)]
+        os.environ["FAKE_RESULT"] = f"Would buy 2 NVDA.\nEXTRA_RUN: 2026-10-14 14:15 | NVDA\nLeaked {KEY_C} here."
+        log = self.tick()
+        rec = self.records()
+        self.assertEqual(len(rec), 1)
+        self.assertEqual(rec[0]["agent_key"], KEY_A)
+        self.assertIn("This check-in: a check-in requested from the app by @ryan, 2026-10-14 09:30 ET.",
+                      rec[0]["prompt"])
+        argv = rec[0]["argv"]
+        self.assertIn("mcp__stocks__place_order", argv[argv.index("--disallowedTools") + 1])  # the dry run
+        (rid, body, headers), = self.app.finished
+        self.assertEqual(rid, "arq_01")
+        self.assertEqual(headers["Authorization"], f"Bearer {KEY_A}")
+        self.assertEqual(body["status"], "DONE")
+        self.assertRegex(body["message"], r"^Check-in done in \d+ s, 7 turns, dry run\. Would buy 2 NVDA\. Leaked "
+                                          r"stk_\*\*\* here\.$")
+        self.assertIn("[claude] claimed run request arq_01 from @ryan (dry run)", log)
+        self.assertIn("[claude] check-in (a check-in requested from the app by @ryan, dry run) started", log)
+        self.assertIn("[claude] reported run request arq_01 to the app: DONE", log)
+        s = ct.load_state(self.agents()[0])
+        self.assertEqual((s["extra"], s["summaries"]), ([], []))   # a dry run books nothing
+        self.assert_no_key(log, json.dumps(self.app.finished[0][1]))
+        claims = [p for p, _ in self.app.requests if p.endswith("/claim")]
+        self.assertEqual(len(claims), 2)                           # claude and claude_tech; never the disabled one
+        self.assertEqual(self.tick(), "")                          # nothing new: no session, no log line
+
+    def test_a_failed_check_in_is_reported_failed(self):
+        self.app.claims[KEY_B] = [run_request("arq_02", handle="claude_tech")]
+        os.environ["FAKE_MODE"] = "garbage"
+        log = self.tick()
+        (rid, body, _), = self.app.finished
+        self.assertEqual((rid, body["status"]), ("arq_02", "FAILED"))
+        self.assertRegex(body["message"], r"^Check-in failed after \d+ s: claude failed \(exit 3\): boom$")
+        self.assertIn("[claude_tech] reported run request arq_02 to the app: FAILED", log)
+        self.assertEqual(ct.request_report(ct.EXIT_STOPPED, {}, 75, False),
+                         ("FAILED", "Stopped after 1 min 15 s: the trader shut down (e.g. for an update). Request "
+                                    "the run again."))
+        self.assertEqual(ct.request_report(0, {"turns": 3, "reply": "x" * 900}, 5, False)[1][:32],
+                         "Check-in done in 5 s, 3 turns. x")
+        ct.finish_request(self.cfg(), self.agents()[0], "arq_03", "DONE", "y" * 900)
+        self.assertEqual(len(self.app.finished[-1][1]["message"]), ct.REPORT_MAX_CHARS)
+
+    def test_due_check_ins_come_first_and_requests_share_the_slots(self):
+        started, release = [], threading.Event()
+
+        def fake_run_session(cfg, agent, why, dry_run=False, outcome=None):
+            started.append((agent.handle, why))
+            release.wait(10)
+            if outcome is not None:
+                outcome["turns"] = 2
+            return 0
+
+        cfg = self.cfg()
+        agents = [a for a in self.agents(cfg) if a.enabled]
+        agents[0].schedule = ["09:30"]
+        agents[1].schedule = ["15:00"]
+        self.app.claims[KEY_A] = [run_request("arq_10")]
+        self.app.claims[KEY_B] = [run_request("arq_11", handle="claude_tech")]
+        sessions = ct.Sessions(1)
+        with mock.patch.object(ct, "run_session", fake_run_session), \
+                mock.patch.object(ct, "check_player", lambda cfg, agent: ("ok", "")), fixed(WED), capture():
+            ct.tick_agents(cfg, agents, sessions, WED)               # claude's 09:30 check-in takes the only slot
+            ct.tick_requests(cfg, agents, sessions)
+            self.assertTrue(until(lambda: len(started) == 1))
+            self.assertEqual(started, [("claude", "the 09:30 ET scheduled check-in")])
+            self.assertEqual(len(self.app.claims[KEY_A]) + len(self.app.claims[KEY_B]), 2)  # nothing claimed
+            release.set()
+            self.assertTrue(sessions.wait(10))
+            release.clear()
+            ct.tick_agents(cfg, agents, sessions, WED.replace(minute=31))
+            ct.tick_requests(cfg, agents, sessions)                  # one free slot: claude's request first
+            self.assertTrue(until(lambda: len(started) == 2))
+            self.assertEqual(started[1], ("claude", "a check-in requested from the app by @ryan"))
+            self.assertEqual(self.app.claims[KEY_B], [run_request("arq_11", handle="claude_tech")])
+            release.set()
+            self.assertTrue(sessions.wait(10))
+            ct.tick_requests(cfg, agents, sessions)
+            self.assertTrue(sessions.wait(10))
+        self.assertEqual(started[2], ("claude_tech", "a check-in requested from the app by @ryan"))
+        self.assertEqual([(rid, body["status"]) for rid, body, _ in self.app.finished],
+                         [("arq_10", "DONE"), ("arq_11", "DONE")])
+        # an agent whose check-in runs in another process (its lock) does not claim; Mac mode never asks the app
+        self.app.claims[KEY_A] = [run_request("arq_12")]
+        lock = ct.acquire_lock(agents[0])
+        self.tick()
+        lock.close()
+        self.assertEqual(len(self.app.claims[KEY_A]), 1)
+        before = len(self.app.requests)
+        with fixed(WED), capture():
+            ct.tick_requests(self.cfg(server=False), ct.load_agents(self.cfg(server=False)).agents, ct.Sessions(3))
+        self.assertEqual(len(self.app.requests), before)
+
+    def test_reports_are_retried_until_the_app_takes_them(self):
+        self.app.claims[KEY_A] = [run_request()]
+        self.app.finish_status = 503
+        sessions = ct.Sessions(3)
+        log = self.tick(sessions)
+        self.assertIn("[claude] cannot report run request arq_01 to the app (HTTP 503 INTERNAL_ERROR); trying again "
+                      "every minute", log)
+        log = self.tick(sessions)                                 # tried again, still refused: no new line
+        self.assertEqual(log, "")
+        self.assertEqual(len(self.app.finished), 2)
+        self.app.finish_status = None
+        log = self.tick(sessions)
+        self.assertIn("[claude] reported run request arq_01 to the app: DONE", log)
+        self.assertEqual(len(self.app.finished), 3)
+        self.assertEqual(self.tick(sessions), "")                 # reported: not again
+        self.assertEqual(len(self.app.finished), 3)
+        self.app.claims[KEY_A] = [run_request("arq_02")]
+        self.app.finish_status = 409                              # e.g. it failed in the app after 30 minutes
+        log = self.tick(sessions)
+        self.assertIn("[claude] the app did not take the report of run request arq_02 (HTTP 409 RUN_REQUEST_CONFLICT); "
+                      "dropped it", log)
+        self.tick(sessions)
+        self.assertEqual(len(self.app.finished), 4)
+
+    def test_a_key_of_another_player_runs_nothing(self):
+        self.app.claims[KEY_A] = [run_request("arq_05", handle="claude_aggressive")]
+        log = self.tick()
+        self.assertEqual(self.records(), [])
+        (rid, body, _), = self.app.finished
+        self.assertEqual((rid, body["status"]), ("arq_05", "FAILED"))
+        self.assertEqual(body["message"], "Not run: the key in the agents file for @claude belongs to "
+                                          "@claude_aggressive; fix the trader's agents file.")
+        self.assertIn("[claude] ERROR: the key in the agents file for @claude belongs to @claude_aggressive: it "
+                      "claimed @claude_aggressive's run request arq_05 and reported it FAILED; fix the key", log)
 
 
 # ------------------------------------------------------------------------------------------------ serve and signals
