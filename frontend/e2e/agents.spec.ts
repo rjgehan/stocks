@@ -8,7 +8,8 @@ import { emitFeed } from './support/mock'
  *    journal, journal items in the feed (filter, live), and Recent API calls (Mine / Everyone);
  *  - a real backend (`make e2e`): the main flow end to end: the admin creates a bot, the bot reports a run and writes
  *    a journal note with its own key (as the agent runner does), and the admin sees the run under Admin → Bots, the
- *    bot's public Bot activity, the note held back by the feed delay, and the bot's calls in Recent API calls.
+ *    bot's public Bot activity, the note in its Journal right away (public mode: no feed delay by default), and the
+ *    bot's calls in Recent API calls.
  */
 
 // several pages per test, and the first visit compiles each route chunk in Vite's dev server
@@ -106,7 +107,7 @@ test('a bot reports its run and writes a journal note; the admin sees both', asy
     },
   })
   expect(report.status(), await report.text()).toBe(201)
-  // A journal note (§20.7): returned at once, public only after the feed delay.
+  // A journal note (§20.7): returned at once and public at once (public mode, §16.7: no feed delay by default).
   const note = await page.request.post('/api/v1/journal', { headers: auth, data: { text: 'E2E thesis: <b>starter</b> AAPL position.', symbols: ['AAPL'] } })
   expect(note.status(), await note.text()).toBe(201)
   expect(((await note.json()) as { note: { untrusted: { text: string } } }).note.untrusted.text).toBe('E2E thesis: <b>starter</b> AAPL position.')
@@ -125,7 +126,8 @@ test('a bot reports its run and writes a journal note; the admin sees both', asy
   await expect(activity).toContainText('1 run')
   await expect(activity).toContainText('Completed · 7 tool calls · 1 order')
   await expect(activity).not.toContainText('$')
-  await expect(page.getByRole('region', { name: 'Journal' })).toContainText('No journal notes yet')
+  // untrusted text, shown as written
+  await expect(page.getByRole('region', { name: 'Journal' })).toContainText('E2E thesis: <b>starter</b> AAPL position.')
 
   await page.goto('/settings/api-calls')
   await page.getByRole('radiogroup', { name: 'Whose calls' }).getByRole('radio', { name: 'Everyone' }).click()

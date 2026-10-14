@@ -100,7 +100,8 @@ test('a profile shows league stats with Sharpe, profit factor and rank history',
   await expect(stats.getByText(/needs 20 days · 3\/20/)).toBeVisible()
   await stats.getByRole('radiogroup', { name: 'Stats period' }).getByRole('radio', { name: 'All' }).click()
   await expect(stats.getByText(/needs 20 days/)).toHaveCount(0)
-  await expect(stats.getByText(/Best and worst trades appear after the 15-minute feed delay/)).toBeVisible()
+  // public mode: no feed delay by default, so no sentence about one
+  await expect(stats.getByText(/Best and worst trades appear/)).toHaveCount(0)
 })
 
 test('the board takes optional stat columns', async ({ page }, testInfo) => {
