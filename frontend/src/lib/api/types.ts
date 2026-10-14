@@ -58,6 +58,10 @@ export type PlayerProfile = S['PlayerProfile']
 export type PublicTrade = S['PublicTrade']
 export type PublicHistory = S['PublicHistory']
 export type FeedItem = S['FeedItem']
+// public mode (§16.7): any player's live portfolio and order history
+export type PublicPortfolio = S['PublicPortfolio']
+export type PublicOrder = S['PublicOrder']
+export type PublicFill = S['PublicFill']
 // league stats, race chart, P&L analysis and reactions (Phase 2, §16.8–16.11)
 export type PlayerStats = S['PlayerStats']
 export type ClosedLot = S['ClosedLot']
@@ -77,7 +81,6 @@ export type Reactor = S['Reactor']
 // admin
 export type AdminPlayer = S['AdminPlayer']
 export type AdminPlayerDetail = S['AdminPlayerDetail']
-export type AdminPlayerLiveView = S['AdminPlayerLiveView']
 export type CreatePlayerRequest = S['CreatePlayerRequest']
 export type CreatePlayerResponse = S['CreatePlayerResponse']
 export type Settings = S['Settings']

@@ -9,7 +9,7 @@ import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { QualityBadge } from '@/features/market/QualityBadge'
 
-function Signed({ value, pct, className }: { value: string | null | undefined; pct?: string | null; className?: string }) {
+export function Signed({ value, pct, className }: { value: string | null | undefined; pct?: string | null; className?: string }) {
   return (
     <span className={cx(DIRECTION_TEXT[moneyDirection(value)], className)}>
       {formatMoney(value, { signed: true })}
@@ -18,7 +18,8 @@ function Signed({ value, pct, className }: { value: string | null | undefined; p
   )
 }
 
-function PositionCard({ p }: { p: Position }) {
+/** One position as a phone card: a read-only link to the stock (also another player's portfolio, public mode). */
+export function PositionCard({ p }: { p: Position }) {
   return (
     <Link to="/stock/$symbol" params={{ symbol: p.symbol ?? '' }} className="flex items-center justify-between gap-3 px-4 py-3 active:bg-bg-2">
       <div className="min-w-0">

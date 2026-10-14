@@ -27,9 +27,10 @@ const ICON: Record<ActivityIcon, { icon: (p: { size?: number }) => React.ReactNo
 
 /**
  * One activity row (§22.4): fills with fees, deposits with the memo and a "by admin" badge, dividends (accrued or
- * paid), splits (quantity before → after, cash in lieu), symbol changes and account events.
+ * paid), splits (quantity before → after, cash in lieu), symbol changes and account events. `linkOrders` links a
+ * fill to its order detail; another player's activity (public mode) passes false, since that page is yours only.
  */
-export function ActivityRow({ a }: { a: Activity }) {
+export function ActivityRow({ a, linkOrders = true }: { a: Activity; linkOrders?: boolean }) {
   const v = activityView(a)
   const detail = a.detail as ActivityDetailView | null
   const memo = a.memo ?? (a.type === 'ADMIN_VIEW' ? detail?.reason : null)
@@ -72,7 +73,7 @@ export function ActivityRow({ a }: { a: Activity }) {
       </div>
     </div>
   )
-  return a.orderId ? (
+  return a.orderId && linkOrders ? (
     <Link to="/account/orders/$orderId" params={{ orderId: a.orderId }} className="block hover:bg-bg-2">
       {body}
     </Link>

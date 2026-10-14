@@ -2,6 +2,7 @@
 export const MARKET_TZ = 'America/New_York'
 
 const timeEt = new Intl.DateTimeFormat('en-US', { timeZone: MARKET_TZ, hour: 'numeric', minute: '2-digit' })
+const timeSecondsEt = new Intl.DateTimeFormat('en-US', { timeZone: MARKET_TZ, hour: 'numeric', minute: '2-digit', second: '2-digit' })
 const dateTimeEt = new Intl.DateTimeFormat('en-US', {
   timeZone: MARKET_TZ,
   month: 'short',
@@ -22,6 +23,12 @@ function toDate(ts: string | number | Date): Date | null {
 export function formatTimeEt(ts: string | number | Date | null | undefined): string {
   const d = ts == null ? null : toDate(ts)
   return d ? `${timeEt.format(d)} ET` : '--'
+}
+
+/** "4:12:07 PM ET": when live data was last refreshed. */
+export function formatTimeSecondsEt(ts: string | number | Date | null | undefined): string {
+  const d = ts == null ? null : toDate(ts)
+  return d ? `${timeSecondsEt.format(d)} ET` : '--'
 }
 
 /** "Oct 9, 4:12 PM ET" */

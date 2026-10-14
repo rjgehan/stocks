@@ -24,12 +24,18 @@ export function MyEarnings({
   analysis: a,
   isPending,
   isError,
+  title = 'My earnings',
+  who = 'You',
 }: {
   range: HistoryRange
   onRange: (r: HistoryRange) => void
   analysis: PnlAnalysis | undefined
   isPending: boolean
   isError: boolean
+  /** "My earnings" on the account; "Earnings" on a player's profile (public mode, §16.7). */
+  title?: string
+  /** The player's own line: "You", or "@handle" on a profile. */
+  who?: string
 }) {
   const lines = useMemo<LineSpec[]>(() => {
     if (!a) return []
@@ -40,8 +46,8 @@ export function MyEarnings({
     return out
   }, [a])
   return (
-    <section aria-label="My earnings" className="space-y-3 rounded-lg border border-divider bg-bg-1 p-4">
-      <h2 className="text-section font-semibold">My earnings</h2>
+    <section aria-label={title} className="space-y-3 rounded-lg border border-divider bg-bg-1 p-4">
+      <h2 className="text-section font-semibold">{title}</h2>
       <div role="radiogroup" aria-label="Earnings range" className="scrollbar-none flex gap-1 overflow-x-auto">
         {EARNINGS_RANGES.map((r) => (
           <button
@@ -62,7 +68,7 @@ export function MyEarnings({
         <>
           <dl className="grid grid-cols-2 gap-3 tablet:grid-cols-4">
             <div>
-              <dt className="text-micro text-text-3 uppercase">You</dt>
+              <dt className="text-micro text-text-3 uppercase">{who}</dt>
               <dd className={cx('text-section font-semibold tabular-nums', DIRECTION_TEXT[pctDirection(a?.return)])}>{a ? formatPct(a.return) : <Skeleton className="h-5 w-16" />}</dd>
             </div>
             <div>
@@ -86,8 +92,8 @@ export function MyEarnings({
             )}
           </div>
           <p className="text-micro text-text-3">
-            <span className="text-accent">━</span> You (time-weighted, deposits excluded) · <span>┅</span> SPY · <span className="text-warn">┅</span> QQQ (both total
-            return, measured from your start, even one in the middle of a trading day)
+            <span className="text-accent">━</span> {who} (time-weighted, deposits excluded) · <span>┅</span> SPY · <span className="text-warn">┅</span> QQQ (both total
+            return, measured from {who === 'You' ? 'your' : 'the same'} start, even one in the middle of a trading day)
           </p>
         </>
       )}

@@ -42,8 +42,20 @@ export function Tabs<T extends string>({
   )
 }
 
-/** Underline tabs that are router links (sub-routes such as /account/orders). */
-export function LinkTabs({ items, className, label }: { items: ReadonlyArray<{ to: LinkProps['to']; label: string; exact?: boolean }>; className?: string; label: string }) {
+export interface LinkTabItem {
+  to: LinkProps['to']
+  /** Path params of `to` (e.g. `{ handle }` for /players/$handle/portfolio). */
+  params?: LinkProps['params']
+  search?: LinkProps['search']
+  label: string
+  exact?: boolean
+}
+
+/**
+ * Underline tabs that are router links (sub-routes such as /account/orders). A tab stays active whatever the search
+ * (`?range=`, `?status=`): only the path decides.
+ */
+export function LinkTabs({ items, className, label }: { items: ReadonlyArray<LinkTabItem>; className?: string; label: string }) {
   const nav = useRef<HTMLElement>(null)
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   // a strip wider than the phone scrolls sideways: bring the active tab into view (the last tabs start off-screen)
@@ -62,7 +74,9 @@ export function LinkTabs({ items, className, label }: { items: ReadonlyArray<{ t
         <Link
           key={t.label}
           to={t.to}
-          activeOptions={{ exact: t.exact ?? false }}
+          params={t.params}
+          search={t.search}
+          activeOptions={{ exact: t.exact ?? false, includeSearch: false }}
           className="-mb-px flex h-11 shrink-0 items-center tablet:h-10 border-b-2 border-transparent text-body font-semibold text-text-2 transition-colors hover:text-text-1 data-[status=active]:border-accent data-[status=active]:text-text-1"
         >
           {t.label}

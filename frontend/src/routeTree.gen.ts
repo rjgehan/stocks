@@ -52,6 +52,10 @@ import { Route as AppAccountOrdersIndexRouteImport } from './routes/_app/account
 import { Route as AppAccountOrdersOrderIdRouteImport } from './routes/_app/account/orders/$orderId'
 import { Route as AppAdminPlayersIndexRouteImport } from './routes/_app/admin/players/index'
 import { Route as AppAdminPlayersHandleRouteImport } from './routes/_app/admin/players/$handle'
+import { Route as AppPlayersHandleIndexRouteImport } from './routes/_app/players.$handle.index'
+import { Route as AppPlayersHandleAnalysisRouteImport } from './routes/_app/players.$handle.analysis'
+import { Route as AppPlayersHandleHistoryRouteImport } from './routes/_app/players.$handle.history'
+import { Route as AppPlayersHandlePortfolioRouteImport } from './routes/_app/players.$handle.portfolio'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -270,6 +274,28 @@ const AppAdminPlayersHandleRoute = AppAdminPlayersHandleRouteImport.update({
   path: '/players/$handle',
   getParentRoute: () => AppAdminRouteRoute,
 } as any)
+const AppPlayersHandleIndexRoute = AppPlayersHandleIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppPlayersHandleRoute,
+} as any)
+const AppPlayersHandleAnalysisRoute =
+  AppPlayersHandleAnalysisRouteImport.update({
+    id: '/analysis',
+    path: '/analysis',
+    getParentRoute: () => AppPlayersHandleRoute,
+  } as any)
+const AppPlayersHandleHistoryRoute = AppPlayersHandleHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => AppPlayersHandleRoute,
+} as any)
+const AppPlayersHandlePortfolioRoute =
+  AppPlayersHandlePortfolioRouteImport.update({
+    id: '/portfolio',
+    path: '/portfolio',
+    getParentRoute: () => AppPlayersHandleRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -298,7 +324,7 @@ export interface FileRoutesByFullPath {
   '/admin/money': typeof AppAdminMoneyRoute
   '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/system': typeof AppAdminSystemRoute
-  '/players/$handle': typeof AppPlayersHandleRoute
+  '/players/$handle': typeof AppPlayersHandleRouteWithChildren
   '/settings/account': typeof AppSettingsAccountRoute
   '/settings/api-calls': typeof AppSettingsApiCallsRoute
   '/settings/api-keys': typeof AppSettingsApiKeysRoute
@@ -312,8 +338,12 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AppSettingsIndexRoute
   '/account/orders/$orderId': typeof AppAccountOrdersOrderIdRoute
   '/admin/players/$handle': typeof AppAdminPlayersHandleRoute
+  '/players/$handle/analysis': typeof AppPlayersHandleAnalysisRoute
+  '/players/$handle/history': typeof AppPlayersHandleHistoryRoute
+  '/players/$handle/portfolio': typeof AppPlayersHandlePortfolioRoute
   '/account/orders/': typeof AppAccountOrdersIndexRoute
   '/admin/players/': typeof AppAdminPlayersIndexRoute
+  '/players/$handle/': typeof AppPlayersHandleIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -339,7 +369,6 @@ export interface FileRoutesByTo {
   '/admin/money': typeof AppAdminMoneyRoute
   '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/system': typeof AppAdminSystemRoute
-  '/players/$handle': typeof AppPlayersHandleRoute
   '/settings/account': typeof AppSettingsAccountRoute
   '/settings/api-calls': typeof AppSettingsApiCallsRoute
   '/settings/api-keys': typeof AppSettingsApiKeysRoute
@@ -353,8 +382,12 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsIndexRoute
   '/account/orders/$orderId': typeof AppAccountOrdersOrderIdRoute
   '/admin/players/$handle': typeof AppAdminPlayersHandleRoute
+  '/players/$handle/analysis': typeof AppPlayersHandleAnalysisRoute
+  '/players/$handle/history': typeof AppPlayersHandleHistoryRoute
+  '/players/$handle/portfolio': typeof AppPlayersHandlePortfolioRoute
   '/account/orders': typeof AppAccountOrdersIndexRoute
   '/admin/players': typeof AppAdminPlayersIndexRoute
+  '/players/$handle': typeof AppPlayersHandleIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -385,7 +418,7 @@ export interface FileRoutesById {
   '/_app/admin/money': typeof AppAdminMoneyRoute
   '/_app/admin/settings': typeof AppAdminSettingsRoute
   '/_app/admin/system': typeof AppAdminSystemRoute
-  '/_app/players/$handle': typeof AppPlayersHandleRoute
+  '/_app/players/$handle': typeof AppPlayersHandleRouteWithChildren
   '/_app/settings/account': typeof AppSettingsAccountRoute
   '/_app/settings/api-calls': typeof AppSettingsApiCallsRoute
   '/_app/settings/api-keys': typeof AppSettingsApiKeysRoute
@@ -399,8 +432,12 @@ export interface FileRoutesById {
   '/_app/settings/': typeof AppSettingsIndexRoute
   '/_app/account/orders/$orderId': typeof AppAccountOrdersOrderIdRoute
   '/_app/admin/players/$handle': typeof AppAdminPlayersHandleRoute
+  '/_app/players/$handle/analysis': typeof AppPlayersHandleAnalysisRoute
+  '/_app/players/$handle/history': typeof AppPlayersHandleHistoryRoute
+  '/_app/players/$handle/portfolio': typeof AppPlayersHandlePortfolioRoute
   '/_app/account/orders/': typeof AppAccountOrdersIndexRoute
   '/_app/admin/players/': typeof AppAdminPlayersIndexRoute
+  '/_app/players/$handle/': typeof AppPlayersHandleIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -445,8 +482,12 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/account/orders/$orderId'
     | '/admin/players/$handle'
+    | '/players/$handle/analysis'
+    | '/players/$handle/history'
+    | '/players/$handle/portfolio'
     | '/account/orders/'
     | '/admin/players/'
+    | '/players/$handle/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -472,7 +513,6 @@ export interface FileRouteTypes {
     | '/admin/money'
     | '/admin/settings'
     | '/admin/system'
-    | '/players/$handle'
     | '/settings/account'
     | '/settings/api-calls'
     | '/settings/api-keys'
@@ -486,8 +526,12 @@ export interface FileRouteTypes {
     | '/settings'
     | '/account/orders/$orderId'
     | '/admin/players/$handle'
+    | '/players/$handle/analysis'
+    | '/players/$handle/history'
+    | '/players/$handle/portfolio'
     | '/account/orders'
     | '/admin/players'
+    | '/players/$handle'
   id:
     | '__root__'
     | '/_app'
@@ -531,8 +575,12 @@ export interface FileRouteTypes {
     | '/_app/settings/'
     | '/_app/account/orders/$orderId'
     | '/_app/admin/players/$handle'
+    | '/_app/players/$handle/analysis'
+    | '/_app/players/$handle/history'
+    | '/_app/players/$handle/portfolio'
     | '/_app/account/orders/'
     | '/_app/admin/players/'
+    | '/_app/players/$handle/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -847,6 +895,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminPlayersHandleRouteImport
       parentRoute: typeof AppAdminRouteRoute
     }
+    '/_app/players/$handle/': {
+      id: '/_app/players/$handle/'
+      path: '/'
+      fullPath: '/players/$handle/'
+      preLoaderRoute: typeof AppPlayersHandleIndexRouteImport
+      parentRoute: typeof AppPlayersHandleRoute
+    }
+    '/_app/players/$handle/analysis': {
+      id: '/_app/players/$handle/analysis'
+      path: '/analysis'
+      fullPath: '/players/$handle/analysis'
+      preLoaderRoute: typeof AppPlayersHandleAnalysisRouteImport
+      parentRoute: typeof AppPlayersHandleRoute
+    }
+    '/_app/players/$handle/history': {
+      id: '/_app/players/$handle/history'
+      path: '/history'
+      fullPath: '/players/$handle/history'
+      preLoaderRoute: typeof AppPlayersHandleHistoryRouteImport
+      parentRoute: typeof AppPlayersHandleRoute
+    }
+    '/_app/players/$handle/portfolio': {
+      id: '/_app/players/$handle/portfolio'
+      path: '/portfolio'
+      fullPath: '/players/$handle/portfolio'
+      preLoaderRoute: typeof AppPlayersHandlePortfolioRouteImport
+      parentRoute: typeof AppPlayersHandleRoute
+    }
   }
 }
 
@@ -929,6 +1005,23 @@ const AppSettingsRouteRouteChildren: AppSettingsRouteRouteChildren = {
 const AppSettingsRouteRouteWithChildren =
   AppSettingsRouteRoute._addFileChildren(AppSettingsRouteRouteChildren)
 
+interface AppPlayersHandleRouteChildren {
+  AppPlayersHandleAnalysisRoute: typeof AppPlayersHandleAnalysisRoute
+  AppPlayersHandleHistoryRoute: typeof AppPlayersHandleHistoryRoute
+  AppPlayersHandlePortfolioRoute: typeof AppPlayersHandlePortfolioRoute
+  AppPlayersHandleIndexRoute: typeof AppPlayersHandleIndexRoute
+}
+
+const AppPlayersHandleRouteChildren: AppPlayersHandleRouteChildren = {
+  AppPlayersHandleAnalysisRoute: AppPlayersHandleAnalysisRoute,
+  AppPlayersHandleHistoryRoute: AppPlayersHandleHistoryRoute,
+  AppPlayersHandlePortfolioRoute: AppPlayersHandlePortfolioRoute,
+  AppPlayersHandleIndexRoute: AppPlayersHandleIndexRoute,
+}
+
+const AppPlayersHandleRouteWithChildren =
+  AppPlayersHandleRoute._addFileChildren(AppPlayersHandleRouteChildren)
+
 interface AppRouteChildren {
   AppAccountRouteRoute: typeof AppAccountRouteRouteWithChildren
   AppAdminRouteRoute: typeof AppAdminRouteRouteWithChildren
@@ -940,7 +1033,7 @@ interface AppRouteChildren {
   AppSearchRoute: typeof AppSearchRoute
   AppWatchlistRoute: typeof AppWatchlistRoute
   AppIndexRoute: typeof AppIndexRoute
-  AppPlayersHandleRoute: typeof AppPlayersHandleRoute
+  AppPlayersHandleRoute: typeof AppPlayersHandleRouteWithChildren
   AppStockSymbolRoute: typeof AppStockSymbolRoute
 }
 
@@ -955,7 +1048,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSearchRoute: AppSearchRoute,
   AppWatchlistRoute: AppWatchlistRoute,
   AppIndexRoute: AppIndexRoute,
-  AppPlayersHandleRoute: AppPlayersHandleRoute,
+  AppPlayersHandleRoute: AppPlayersHandleRouteWithChildren,
   AppStockSymbolRoute: AppStockSymbolRoute,
 }
 

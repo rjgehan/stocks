@@ -21,6 +21,7 @@ const K = {
   players: queryKeys.admin('players'),
   player: (handle: string) => queryKeys.admin('player', handle),
   keys: (handle: string) => queryKeys.admin('player', handle, 'keys'),
+  portfolio: (handle: string) => queryKeys.admin('player', handle, 'portfolio'),
   oauthGrants: (handle: string) => queryKeys.admin('player', handle, 'oauth-grants'),
   transfers: (filter: Record<string, unknown>) => queryKeys.admin('transfers', filter),
   settings: queryKeys.admin('settings'),
@@ -121,10 +122,17 @@ export function useResetPlayer() {
   })
 }
 
-export function useLiveView() {
-  return useMutation({
-    mutationFn: ({ handle, reason }: { handle: string; reason: string }) =>
-      withRecentAuth(() => unwrap(api.POST('/api/v1/admin/players/{handle}/live-view', { params: { path: { handle } }, body: { reason } }))),
+/**
+ * `GET /admin/players/{handle}/portfolio`: the player's live portfolio for any status (public mode, §16.7; the break
+ * glass is gone). Polls every 15 s while the page is open.
+ */
+export function useAdminPlayerPortfolio(handle: string) {
+  return useQuery({
+    queryKey: K.portfolio(handle),
+    queryFn: () => unwrap(api.GET('/api/v1/admin/players/{handle}/portfolio', { params: { path: { handle } } })),
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+    retry: false,
   })
 }
 

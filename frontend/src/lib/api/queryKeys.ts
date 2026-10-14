@@ -27,6 +27,12 @@ export const queryKeys = {
   player: (handle: string) => ['player', handle] as const,
   playerHistory: (handle: string, range: HistoryRange) => ['player', handle, 'history', range] as const,
   playerTrades: (handle: string) => ['player', handle, 'trades'] as const,
+  // public mode (§16.7): every player's live portfolio, orders, activity and P&L, all under ['player', handle, …]
+  playerPortfolio: (handle: string) => ['player', handle, 'portfolio'] as const,
+  playerOrders: (handle: string, status?: OrdersFilter, symbol?: string) => ['player', handle, 'orders', status ?? 'ALL', symbol ?? ''] as const,
+  playerActivity: (handle: string) => ['player', handle, 'activity'] as const,
+  playerPnlAnalysis: (handle: string, range: HistoryRange) => ['player', handle, 'pnlAnalysis', range] as const,
+  playerPnlCalendar: (handle: string, view: CalendarView, key: string) => ['player', handle, 'pnlCalendar', view, key] as const,
   feed: ['feed'] as const,
   // Phase 2 league stats (§16.8–16.10)
   race: (period: LeaderboardPeriod, kind: KindFilter) => ['race', period, kind] as const,

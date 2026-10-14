@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { describeError, errorBody } from '@/lib/api/errors'
 import {
+  adminKeys,
   useAdminCancelOrder,
   useAdminPlayer,
-  useLiveView,
+  useAdminPlayerPortfolio,
   useResetPlayer,
   useRevokeKey,
   useSetPlayerPassword,
@@ -12,25 +14,25 @@ import {
 } from '@/lib/api/hooks/admin'
 import { useMe } from '@/lib/api/hooks/identity'
 import { isApiError } from '@/lib/api/problem'
-import type { AdminPlayerLiveView } from '@/lib/api/types'
 import { formatMoney } from '@/lib/format/money'
 import { formatPct, formatPrice, formatQty, moneyDirection, pctDirection } from '@/lib/format/number'
 import { formatDateEt, formatDateTimeEt } from '@/lib/format/time'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { Switch, TextAreaField, TextField } from '@/components/ui/Field'
+import { Switch, TextField } from '@/components/ui/Field'
 import { Pill } from '@/components/ui/Pill'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { IconChevronLeft, IconShield } from '@/components/ui/icons'
+import { Skeleton, SkeletonRows } from '@/components/ui/Skeleton'
+import { IconChevronLeft } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { IssueKeyDialog } from '@/features/admin/IssueKeyDialog'
 import { OAuthGrantsSection } from '@/features/admin/OAuthGrantsSection'
 import { PlayerActions } from '@/features/admin/PlayerActions'
 import { TransferRows } from '@/features/admin/TransferRows'
-import { ORDER_TYPE_LABEL, orderSizeLabel } from '@/features/account/orderLabels'
 import { ApiKeyList } from '@/features/keys/ApiKeys'
 import { AiChip, Avatar } from '@/features/league/PlayerBadge'
+import { PortfolioSummary } from '@/features/league/PublicPortfolio'
+import { PublicOrderRow } from '@/features/league/PublicOrderRow'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { toast } from '@/features/notifications/toastStore'
 
@@ -60,9 +62,9 @@ function Section({ title, children, aside }: { title: string; children: React.Re
 }
 
 /**
- * Admin · Player detail (§21.3): runs, balances, END-OF-DAY holdings, API keys, "allow API trading", transfers and
- * recent audit rows. Live positions and orders only after "Break glass: view live" (reason + re-auth), which the player
- * sees as "Admin viewed your live account" in their activity.
+ * Admin · Player detail (§21.3): runs, balances, the live portfolio (public mode, §16.7: the same data every player
+ * sees, for any status, with Cancel on open orders), end-of-day holdings, API keys, "allow API trading", transfers and
+ * recent audit rows.
  */
 function AdminPlayerPage() {
   const { handle } = Route.useParams()
@@ -71,8 +73,6 @@ function AdminPlayerPage() {
   const update = useUpdatePlayer()
   const revoke = useRevokeKey()
   const [issueFor, setIssueFor] = useState<string | null>(null)
-  const [breakGlass, setBreakGlass] = useState(false)
-  const [live, setLive] = useState<AdminPlayerLiveView | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
   const [pwOpen, setPwOpen] = useState(false)
 
@@ -145,6 +145,8 @@ function AdminPlayerPage() {
         </section>
       ) : null}
 
+      <LivePortfolioSection handle={handle} listed={p.status !== 'DISABLED'} />
+
       <div className="grid gap-4 desktop:grid-cols-2">
         <Section title="Holdings at last close" aside={<span className="text-micro text-text-3">{d.holdingsAsOf ? formatDateEt(d.holdingsAsOf) : ''}</span>}>
           {(d.eodHoldings ?? []).length ? (
@@ -161,12 +163,6 @@ function AdminPlayerPage() {
           ) : (
             <p className="px-4 pb-3 text-caption text-text-3">No holdings at the last end-of-day snapshot.</p>
           )}
-          <div className="border-t border-divider px-4 py-3">
-            <Button variant="secondary" size="sm" onClick={() => setBreakGlass(true)}>
-              <IconShield size={16} /> Break glass: view live
-            </Button>
-            <p className="mt-1 text-micro text-text-3">You are also a competitor: live positions stay hidden unless you have a reason, and the player is told.</p>
-          </div>
         </Section>
         <Section title="Runs">
           <ul className="divide-y divide-divider">
@@ -245,117 +241,79 @@ function AdminPlayerPage() {
       </Section>
 
       <IssueKeyDialog handle={issueFor} onClose={() => setIssueFor(null)} />
-      <BreakGlassDialog open={breakGlass} handle={handle} onClose={() => setBreakGlass(false)} onViewed={setLive} />
-      <LiveViewDialog view={live} onClose={() => setLive(null)} />
       <ResetDialog open={resetOpen} handle={handle} onClose={() => setResetOpen(false)} />
       <PasswordDialog open={pwOpen} handle={handle} onClose={() => setPwOpen(false)} />
     </div>
   )
 }
 
-function BreakGlassDialog({ open, handle, onClose, onViewed }: { open: boolean; handle: string; onClose: () => void; onViewed: (v: AdminPlayerLiveView) => void }) {
-  const liveView = useLiveView()
-  const [reason, setReason] = useState('')
-  const valid = reason.trim().length >= 5 && reason.trim().length <= 200
-  return (
-    <Dialog open={open} onClose={onClose} title="Break glass: view live account">
-      <form
-        className="space-y-3 p-4"
-        onSubmit={(e) => {
-          e.preventDefault()
-          liveView.mutate(
-            { handle, reason: reason.trim() },
-            {
-              onSuccess: (v) => {
-                setReason('')
-                onClose()
-                onViewed(v)
-              },
-            },
-          )
-        }}
-      >
-        <p className="rounded-md bg-warn/10 p-3 text-caption text-warn">
-          @{handle} will see “Admin viewed your live account” with your reason in their activity, and the view is written to the audit log.
-        </p>
-        <TextAreaField label="Reason" value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={200} hint="5–200 characters." />
-        {liveView.error ? (
-          <p role="alert" className="text-caption text-down">
-            {describeError(liveView.error).title}
-          </p>
-        ) : null}
-        <Button type="submit" variant="primary" size="lg" block disabled={!valid || liveView.isPending}>
-          {liveView.isPending ? 'Opening…' : 'View live positions and orders'}
-        </Button>
-      </form>
-    </Dialog>
-  )
-}
-
-function LiveViewDialog({ view, onClose }: { view: AdminPlayerLiveView | null; onClose: () => void }) {
+/**
+ * The player's live portfolio through `GET /admin/players/{handle}/portfolio` (any status, so a disabled player's
+ * too): the summary numbers and open orders, each with the admin Cancel. Polls every 15 s.
+ */
+function LivePortfolioSection({ handle, listed }: { handle: string; listed: boolean }) {
+  const q = useAdminPlayerPortfolio(handle)
+  const qc = useQueryClient()
   const cancel = useAdminCancelOrder()
-  const [cancelled, setCancelled] = useState<string[]>([])
+  const orders = q.data?.openOrders ?? []
   return (
-    <Dialog open={view !== null} onClose={onClose} title={`Live view · @${view?.player?.handle ?? ''}`}>
-      {view ? (
-        <div className="space-y-3 p-4">
-          <p className="text-caption text-text-3">
-            Viewed {formatDateTimeEt(view.viewedAt)} · reason “{view.reason}”
-          </p>
-          <h3 className="text-caption font-semibold tracking-wide text-text-2 uppercase">Positions</h3>
-          {(view.positions ?? []).length ? (
-            <ul className="divide-y divide-divider rounded-md border border-divider">
-              {(view.positions ?? []).map((p) => (
-                <li key={p.symbol} className="flex justify-between px-3 py-2 text-table">
-                  <span className="font-semibold">{p.symbol}</span>
-                  <span>
-                    {formatQty(p.qty)} sh · {formatMoney(p.marketValue)} · <span className={DIRECTION_TEXT[moneyDirection(p.unrealizedPnl)]}>{formatMoney(p.unrealizedPnl, { signed: true })}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-caption text-text-3">No positions.</p>
-          )}
-          <h3 className="text-caption font-semibold tracking-wide text-text-2 uppercase">Open orders</h3>
-          {(view.openOrders ?? []).length ? (
-            <ul className="divide-y divide-divider rounded-md border border-divider">
-              {(view.openOrders ?? []).map((o) => (
-                <li key={o.orderId} className="flex items-center justify-between gap-2 px-3 py-2 text-table">
-                  <span>
-                    {o.side === 'BUY' ? 'Buy' : 'Sell'} {orderSizeLabel(o)} {o.symbol} · {o.type ? ORDER_TYPE_LABEL[o.type] : ''}
-                    {o.limitPrice ? ` ${formatPrice(o.limitPrice)}` : ''}
-                  </span>
-                  {o.orderId && cancelled.includes(o.orderId) ? (
-                    <Pill tone="flat">Cancelled</Pill>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      disabled={cancel.isPending}
-                      onClick={() =>
-                        o.orderId &&
-                        cancel.mutate(o.orderId, {
-                          onSuccess: () => setCancelled((c) => [...c, o.orderId!]),
-                          onError: (e) => toast({ tone: 'error', title: 'Not cancelled', body: errorBody(describeError(e)) }),
-                        })
-                      }
-                    >
-                      Cancel
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-caption text-text-3">No open orders.</p>
-          )}
-          <Button variant="secondary" block onClick={onClose}>
-            Close
-          </Button>
-        </div>
-      ) : null}
-    </Dialog>
+    <Section
+      title="Live portfolio"
+      aside={
+        listed ? (
+          <Link to="/players/$handle/portfolio" params={{ handle }} className="text-caption font-semibold text-accent">
+            As players see it
+          </Link>
+        ) : undefined
+      }
+    >
+      <div className="space-y-3 px-4 pb-3">
+        {q.isPending ? (
+          <SkeletonRows rows={2} cols={4} />
+        ) : q.isError || !q.data ? (
+          <p className="text-caption text-text-3">The live portfolio is unavailable right now.</p>
+        ) : q.data.runNo === 0 ? (
+          <p className="text-caption text-text-3">No active run.</p>
+        ) : (
+          <>
+            <PortfolioSummary p={q.data} />
+            <h3 className="text-caption font-semibold tracking-wide text-text-2 uppercase">Open orders</h3>
+            {orders.length ? (
+              <ul className="-mx-4 divide-y divide-divider border-y border-divider" aria-label="Open orders">
+                {orders.map((o) => (
+                  <PublicOrderRow
+                    key={o.orderId}
+                    o={o}
+                    action={
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        disabled={cancel.isPending}
+                        aria-label={`Cancel ${o.side === 'BUY' ? 'buy' : 'sell'} ${o.symbol} order`}
+                        onClick={() =>
+                          o.orderId &&
+                          cancel.mutate(o.orderId, {
+                            onSuccess: () => {
+                              toast({ tone: 'neutral', title: `Cancel sent: ${o.side === 'BUY' ? 'Buy' : 'Sell'} ${o.symbol}` })
+                              void qc.invalidateQueries({ queryKey: adminKeys.portfolio(handle) })
+                            },
+                            onError: (e) => toast({ tone: 'error', title: 'Not cancelled', body: errorBody(describeError(e)) }),
+                          })
+                        }
+                      >
+                        Cancel
+                      </Button>
+                    }
+                  />
+                ))}
+              </ul>
+            ) : (
+              <p className="text-caption text-text-3">No open orders.</p>
+            )}
+          </>
+        )}
+      </div>
+    </Section>
   )
 }
 
