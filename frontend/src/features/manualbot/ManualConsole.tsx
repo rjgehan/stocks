@@ -760,7 +760,7 @@ export function ManualConsole({ handle, sessionId, onSession }: { handle: string
           <ReplyCard key={current?.sessionId ?? 'none'} handle={handle} session={current} maxChars={m.limits?.maxReplyChars ?? MAX_REPLY_DEFAULT} canWrite={canWrite} />
         </div>
         <div className="min-w-0 desktop:col-span-2 desktop:row-start-3">
-          <ReviewCard handle={handle} session={current} canWrite={canWrite} />
+          <ReviewCard key={current?.sessionId ?? 'none'} handle={handle} session={current} canWrite={canWrite} />
         </div>
         <div className="desktop:col-start-2 desktop:row-start-2">
           <RecentSessions handle={handle} current={sessionId} onSession={onSession} />
