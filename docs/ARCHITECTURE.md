@@ -1081,7 +1081,7 @@ enum PushCategory    { FILLS, ALERTS, MONEY, ACCOUNT, LEAGUE }
 
 **As deployed (2026-10).** The first production deploy shipped without the squash: production applied `V1__init`, `V1_0_1`, `V1_3_01` and `V1_4_01`, and runs `spring.flyway.out-of-order=false`. Those four files are frozen (never edit, rename or delete them), and the per-workstream `V1_<ws>_<nn>` lanes are closed: a file that sorts before `V1_4_01` is "ignored" by Flyway and fails validation at boot. Every new migration is the next whole version (`V2__…`, `V3__…`), numbered at merge time by the integrator. `MigrationOrderTest` enforces this and upgrades a production-baseline database with out-of-order off.
 
-Production has since applied `V2__wait_reason_fits_corporate_action_hold` (Phase 1 review fixes), so `MigrationOrderTest` treats V2 as the newest applied version. **Phase 2 wave A** (integration merge, 2026-10-11) adds, in merge order, `V3__p2_orders` (group orders, FINRA 5330, cancel latency), `V4__p2_league` (feed reactions), `V5__p2_alerts` (price alerts, Web Push), `V6__p2_charts` (screener statistics), `V7__p2_oauth` (OAuth authorization server) and `V8__p2_agents` (agent runs, journal, API access log) in `common/`, plus the vendor halves `h2/` and `postgresql/V8_1__p2_agents_feed_kind` (the `feed_event.event_kind` CHECK gains `JOURNAL`; a CHECK cannot be replaced portably). Production applies all of them in one go at the first boot of the wave A image; each is additive (new tables, new nullable or defaulted columns, one widened CHECK), so the Phase 1 data needs no backfill. The next migration is `V9__…`.
+Production has since applied `V2__wait_reason_fits_corporate_action_hold` (Phase 1 review fixes), so `MigrationOrderTest` treats V2 as the newest applied version. **Phase 2 wave A** (integration merge, 2026-10-11) adds, in merge order, `V3__p2_orders` (group orders, FINRA 5330, cancel latency), `V4__p2_league` (feed reactions), `V5__p2_alerts` (price alerts, Web Push), `V6__p2_charts` (screener statistics), `V7__p2_oauth` (OAuth authorization server) and `V8__p2_agents` (agent runs, journal, API access log) in `common/`, plus the vendor halves `h2/` and `postgresql/V8_1__p2_agents_feed_kind` (the `feed_event.event_kind` CHECK gains `JOURNAL`; a CHECK cannot be replaced portably). Production applies all of them in one go at the first boot of the wave A image; each is additive (new tables, new nullable or defaulted columns, one widened CHECK), so the Phase 1 data needs no backfill. Then `V9__public_mode` (data only, §16.7) and `V10__manual_bots` (two tables, §20.8). The next migration is `V11__…`; the parked wave-B branches renumber when they resume.
 
 **Phase 2 group orders and order realism** (`common/V3__p2_orders.sql`; §11.9, §11.10, §14), portable H2 + PostgreSQL:
 
@@ -3219,7 +3219,7 @@ Phase 2 (§17.9, built) adds the `oauth` chain before chain 1 (`/oauth2/**`, `/.
 
 **Implementation notes** (`security.SecurityConfig`, Phase 0; all chains answer 401/403 with the §6.5 problem body):
 - **Chain order in code:** actuator (management port 8081, `EndpointRequest.toAnyEndpoint()`; the exposed endpoints are open there because the port is never published or tunneled and, in `prod`, binds to the container's loopback only (`management.server.address: 127.0.0.1`, so other containers on `stocks-edge`/`stocks-backend` cannot read it), and the management server has no Spring Session, so no player could authenticate on it anyway), oauth (Phase 2), 1 admin, the dev-only `/h2-console/**` chain (`spring.h2.console.enabled`; no CSRF/CSP, frames same-origin), 2 api, 3 ws, 4 web (`@Order` 0–6).
-- **Per-route rules in chain 2** (`RouteAuthorization`), so feature controllers need no security code: `market:read` for `/market/**`, `/assets/**`, `/quotes`, `/snapshots/**`, `/bars/**`, `/news`, `/rules`; `account:read` for GET `/account/**`, `/orders/**`, `/watchlists/**`, `POST /orders/preview` and `/me/notifications/**`; `trade` for `POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close`, watchlist writes and alert writes (Phase 2); `account:read` for `GET /alerts` (Phase 2); `league:read` for `/leaderboard`, `/players/**`, `/feed`; session only for `/me/**` (except `GET /me` and notifications; this covers `/me/push/**`, Phase 2), `/auth/logout`, `/auth/reauth` and `POST /account/reset` (also `trade`). Everything else in the chain (`/mcp`, `/v3/**`, Swagger UI, `/api/v1/test/**`, new routes) needs any authenticated player. MCP tools enforce the same scopes per call (`McpToolCatalog.SCOPES`, the Scope column of §20.3). A key without the scope gets 403 `FORBIDDEN_SCOPE`; a key on a session-only route 403 `FORBIDDEN`. A session holds all four scopes.
+- **Per-route rules in chain 2** (`RouteAuthorization`), so feature controllers need no security code: `market:read` for `/market/**`, `/assets/**`, `/quotes`, `/snapshots/**`, `/bars/**`, `/news`, `/rules`; `account:read` for GET `/account/**`, `/orders/**`, `/watchlists/**`, `POST /orders/preview` and `/me/notifications/**`; `trade` for `POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close`, watchlist writes and alert writes (Phase 2); `account:read` for `GET /alerts` (Phase 2); `league:read` for `/leaderboard`, `/players/**` (with the public manual sessions, §20.8), `/feed`; session only for `/me/**` (except `GET /me` and notifications; this covers `/me/push/**`, Phase 2, and the manual console `/me/bots/{handle}/manual` and `/me/bots/{handle}/manual-sessions/**`, §20.8), `/auth/logout`, `/auth/reauth` and `POST /account/reset` (also `trade`). Everything else in the chain (`/mcp`, `/v3/**`, Swagger UI, `/api/v1/test/**`, new routes) needs any authenticated player. MCP tools enforce the same scopes per call (`McpToolCatalog.SCOPES`, the Scope column of §20.3). A key without the scope gets 403 `FORBIDDEN_SCOPE`; a key on a session-only route 403 `FORBIDDEN`. A session holds all four scopes.
 - **CSRF failures of anonymous callers** on non-public routes answer 401 `UNAUTHENTICATED` (a bot that forgot its key is not told about CSRF); sessions and the public login/signup routes get 403 `CSRF_INVALID`.
 - **Authorities** (`PlayerAuthenticationToken`): `ROLE_PLAYER`; `ROLE_ADMIN` only for a HUMAN ADMIN **on a session** (an API key never has it, even the admin's own: layer 3 of §17.4 twice over); `AUTH_SESSION`/`AUTH_API_KEY`/`AUTH_OAUTH`; `SCOPE_<scope>`. `getName()` is the player's public id, which Spring Session JDBC stores in `PRINCIPAL_NAME`, so a player's sessions can be found and deleted (§17.3, §10.5). Authorize admin work with the chain, never with `PlayerPrincipal.isAdmin()` (it reports the role for display, e.g. in `Me`).
 - Headers: `Cache-Control: no-store` on chains 1–3 (instead of Spring Security's default), none from chain 4 (`WebConfig` sets them). Header values that Spring Security's `StrictHttpFirewall` rejects lazily (control characters) answer 400 `VALIDATION_FAILED` (`FirewallRejectionAdvice`); `RequestMetas` drops such a `User-Agent` instead of failing.
@@ -3298,11 +3298,11 @@ Every row records actor, kind, channel, API key id, MCP client and tool, IP, use
 | Category | Logged events |
 |---|---|
 | AUTH | Login success and failure, logout, reauth, password change; OAuth (§17.9) code exchange `OAUTH_TOKEN`, refresh `OAUTH_REFRESH`, `OAUTH_REFRESH_REUSE`, `OAUTH_CODE_REUSE` |
-| ORDER | Place, reject (with code), replace, cancel, rate-limited write |
+| ORDER | Place, reject (with code), replace, cancel, rate-limited write; `MANUAL_SESSION_EXECUTE` (§20.8: the human operator as actor, target the `mbs_…` session, details bot, placed, failed and the order ids; the orders' own rows name the bot) |
 | MONEY | Every transfer batch |
 | KEY | Issue, revoke; OAuth consent `OAUTH_GRANT` / `OAUTH_DENY` and revocation `OAUTH_REVOKE` (§17.9) |
 | ADMIN | Player create, update, freeze, disable; settings; invites; calendar overrides; engine halt and resume; corporate-action resolve; admin order cancel; **break-glass live view** (`PLAYER_LIVE_VIEW`, with the reason) |
-| ACCOUNT | Reset, GFV issued, restriction change, split and name-change effects. Audit is the security record only; the player-facing activity history comes from `cash_ledger` and `account_event` (§18.2), never from `audit_log`. |
+| ACCOUNT | Reset, GFV issued, restriction change, split and name-change effects; `MANUAL_BOT_UPDATE` (§20.8: a manual bot's instructions or model label saved, with the character count and the label, never the text). Audit is the security record only; the player-facing activity history comes from `cash_ledger` and `account_event` (§18.2), never from `audit_log`. |
 | SYSTEM | Job failures, invariant failures, provider 406, fill-quality warnings (I10, `FILL_QUALITY_WARNING`) |
 
 Secrets are never logged. Reads are not audited in Phase 1 (structured logs instead), with one exception: the admin's break-glass live view of another player (§21.3). Client-controlled fields are already bounded by `RequestMeta` (§6.6), so an audit insert never fails on length.
@@ -3521,6 +3521,11 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `POST /me/push/unsubscribe` | session | `{endpoint}` → 204 (this device) | |
 | `DELETE /me/push/subscriptions/{deviceId}` | session | → 204 | `NOT_FOUND` |
 | `POST /me/push/test` | session | → `PushTestResult` (waits ≤ 15 s) | `RATE_LIMITED` (1 per 10 s), `PUSH_UNAVAILABLE` |
+| `GET /me/bots/{handle}/manual` (§20.8) | session (the bot's owner or the admin) | → `ManualBot` (works for a FROZEN bot) | `PLAYER_NOT_FOUND`, `FORBIDDEN` (not an AI bot, not its owner) |
+| `PUT /me/bots/{handle}/manual` | session (owner or admin) | `UpdateManualBotRequest` → `ManualBot` | `VALIDATION_FAILED` (`instructions` > 4000, `aiModel` 1-24), `FORBIDDEN`, `PLAYER_FROZEN`, `PLAYER_DISABLED` |
+| `POST /me/bots/{handle}/manual-sessions` | session (owner or admin) | → 201 `ManualSession` (detail shape: the new prompt) | `RATE_LIMITED` (50 prompts per bot per ET day, `retryAfterS` until midnight ET), `FORBIDDEN`, `PLAYER_FROZEN` |
+| `POST /me/bots/{handle}/manual-sessions/{sessionId}/reply` | session (owner or admin) | `ManualReplyRequest` (body ≤ 160 KiB) → `ManualSession` (parsed and previewed; repeatable until the first execute) | `VALIDATION_FAILED` (`body`, `reply` > 20,000 characters, executed, expired, the bot was reset), `NOT_FOUND` (not this bot's session) |
+| `POST /me/bots/{handle}/manual-sessions/{sessionId}/execute` | session (owner or admin) | `ManualExecuteRequest {actions: number[]}` → `ManualSession` (idempotent; `[]` posts the summary only) | `VALIDATION_FAILED` (not checked, an ERROR in the reply, expired, reset, a row unknown or not executable), `NOT_FOUND` |
 | `GET /rules` | `market:read` | → `Rules` | |
 
 ### 18.2 Market, account, orders, watchlists, league
@@ -3577,6 +3582,8 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `GET /players/{handle}/history?range` | league:read | → `PublicHistory` (unit values, plus equity unless HIDDEN) | |
 | `GET /players/{handle}/trades?cursor&limit` | league:read | → `Page<PublicTrade>` (delayed) | |
 | `GET /feed?cursor&limit` | league:read | → `Page<FeedItem>` (only `visible_at ≤ now`) | |
+| `GET /players/{handle}/manual-sessions?cursor&limit` (1-50, default 10; §20.8) | league:read | → `Page<ManualSession>` (list shape: `untrusted.prompt` and `untrusted.reply` null), newest first, `(created_at, id)` cursor | `PLAYER_NOT_FOUND` (unknown or DISABLED) |
+| `GET /players/{handle}/manual-sessions/{sessionId}` | league:read | → `ManualSession` (detail shape: the prompt and the redacted reply) | `PLAYER_NOT_FOUND`, `NOT_FOUND` (not this player's session) |
 | `PUT /feed/{itemId}/reaction` (Phase 2) | trade | `SetReactionRequest {reaction}` → `FeedReactions` (§16.11) | `NOT_FOUND`, `VALIDATION_FAILED` |
 | `DELETE /feed/{itemId}/reaction` (Phase 2) | trade | → `FeedReactions` (idempotent) | `NOT_FOUND` |
 | `GET /league/race?period&kind` (Phase 2) | league:read | defaults WEEK, ALL → `RaceChart` (§16.9) | `VALIDATION_FAILED` |
@@ -3612,6 +3619,7 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `oauth.dto` (Phase 2, §17.9) | `OAuthConsentDto` (+ `OAuthClientInfoDto`, `OAuthActorDto`, enum `OAuthClientKind`), `ConnectedAppDto`, `OAuthRedirectDto`; request `OAuthDecisionRequest` |
 | `agents.dto` (WS5, Phase 2) | §20.6 `AgentRunDto`, `AgentRunSummaryDto`, `AdminBotDto`, `AgentRunReportRequest`, `AgentRunStatus`, `AgentRunTrigger`; §20.7 `JournalNoteDto`, `AddJournalNoteRequest`, `AddJournalNoteResultDto`; §17.10 `ApiCallDto`. Contracts `contract.agents.JournalService` and `contract.agents.ApiAccessRecorder` |
 | `realtime.dto` (WS5, Phase 2) | §19.3 `StreamTopic`, `StreamHelloDto`, `StreamResetDto`, `StreamByeDto` |
+| `manualbot.dto` (§20.8) | `ManualBotDto` (+ `ManualLimitsDto`), `ManualSessionDto` (+ `UntrustedManualTextDto`, `ManualActionDto`, `ManualActionResultDto`, `ManualIssueDto`), the enums `ManualSessionStatus`, `ManualActionKind`, `ManualResultStatus`, `ManualIssueSeverity`; requests `UpdateManualBotRequest`, `ManualReplyRequest`, `ManualExecuteRequest` |
 
 - **Intersections** (`Asset = AssetSummary & …`, `Snapshot = Quote & …`, `AdminPlayer = PlayerSummary & …`) are flattened into one record; the base type's members come first, in order.
 - **Anonymous object types** are nested records with globally unique simple names ending in `Dto` (`AccountDto.AccountCashDto`, `ClockDto.ClockFeedDto`, `NewsItemDto.UntrustedNewsDto`, …), so OpenAPI schema names never collide.
@@ -3860,6 +3868,28 @@ type PnlCalendarCell = { date: DateEt /* the day, or the month's first day */; p
   flows: Dec; live: boolean };
 type PnlCalendar = { view: "DAY"|"MONTH"; from: DateEt; to: DateEt; asOf: Ts; cells: PnlCalendarCell[];
   total: { pnl: Dec; return: Dec|null } };
+
+// ---- manual bots (§20.8)
+type ManualLimits = { maxInstructionsChars: number; maxReplyChars: number; maxOrders: number; expireAfter: string /* PT24H */ };
+type ManualBot = { bot: PlayerSummary; ownerHandle: string|null; status: PlayerStatus; instructions: string;
+  instructionsUpdatedAt: Ts|null; instructionsUpdatedBy: string|null; activeApiKeys: number; activeConnectors: number;
+  sessionsToday: number; sessionsPerDay: number; limits: ManualLimits };
+type UpdateManualBotRequest = { instructions?: string|null /* null = unchanged, "" clears */; aiModel?: string|null };
+type ManualReplyRequest = { reply: string };
+type ManualExecuteRequest = { actions: number[] /* row indexes; [] posts the summary only */ };
+type ManualIssue = { severity: "ERROR"|"WARNING"; code: string /* §20.8 issue code or an ErrorCode from the preview */;
+  field: string|null; line: number|null; column: number|null; message: string; hint: string|null };
+type ManualActionResult = { status: "PLACED"|"REPLAYED"|"CANCELLED"|"CANCEL_REQUESTED"|"FAILED"; orderId: string|null;
+  orderStatus: OrderStatus|null; code: string|null; message: string|null; at: Ts };
+type ManualAction = { index: number; line: number|null; action: "BUY"|"SELL"|"CANCEL"; symbol: string|null;
+  type: OrderType|null; qty: Dec|null; notional: Dec|null; limitPrice: Dec|null; stopPrice: Dec|null; trailAmount: Dec|null;
+  trailPercent: Dec|null; timeInForce: TimeInForce|null; extendedHours: boolean; acknowledge: string[]; orderId: string|null;
+  rationale: string|null; executable: boolean; issues: ManualIssue[]; estimate: Estimate|null; result: ManualActionResult|null };
+type ManualSession = { sessionId: string /* mbs_… */; botHandle: string; operatorHandle: string;
+  status: "PROMPTED"|"REPLIED"|"EXECUTED"; aiModel: string; marketSession: SessionType; createdAt: Ts; repliedAt: Ts|null;
+  executedAt: Ts|null; promptSha256: string; promptChars: number; replyChars: number|null;
+  untrusted: { summary: string|null; prompt: string|null; reply: string|null } /* list shape: prompt and reply null */;
+  issues: ManualIssue[] /* reply-level */; actions: ManualAction[]; journalNoteId: string|null };
 
 // ---- rules (bots read this first)
 type Rules = { version: string; asOf: Ts;
@@ -4361,6 +4391,135 @@ CREATE INDEX ix_journal_player ON journal_note(player_id, created_at);
 
 **Prompt.** The shared system prompt (§20.5, `prompts/system.md`) tells bots that `add_journal_note` exists, that notes are public after the feed delay and limited (3 per 10 min, 12 a day), and to use them for reasoning worth sharing, not for secrets or instructions to others.
 
+### 20.8 Manual bots (copy & paste)
+
+A manual bot is an ordinary AI player that its owner drives by hand: the app writes a prompt, the owner pastes it into any chat AI (Gemini, Codex, ChatGPT, …), pastes the whole answer back, and the app checks it and places the orders as the bot. No API key or connector is involved, so a model without tool use can play. There is no new player column, `Channel` or `AuthMethod`: Admin → Players → Add player → AI bot → **"Manual: copy & paste prompts (no key)"** creates the bot with `issueKey=false`, and any ACTIVE AI bot (one with a key too) can be driven from its console at `/bots/$handle` by its owner or the admin. The console shows a banner when the bot also has an active API key or connector.
+
+**Flow.**
+1. `PUT /me/bots/{h}/manual`: the owner's instructions (optional) and the model label (`PlayerService.setAiModel`, so the profile chip shows it).
+2. `POST /me/bots/{h}/manual-sessions`: a new session (`mbs_…`, status `PROMPTED`) with the prompt, built from the bot's live account. The SPA copies it to the clipboard.
+3. The owner pastes the prompt into a chat and the chat's whole reply back.
+4. `POST …/{sessionId}/reply`: the reply is redacted, parsed (`stocks.manual.v1`, below) and every row previewed live as the bot (status `REPLIED`). It can be repeated, with a corrected reply, until the first execute.
+5. `POST …/{sessionId}/execute` with the ticked row indexes: the rows are placed as the bot (status `EXECUTED`) and the summary goes to the public journal. Repeating it places the rows not placed yet; `[]` only posts the summary.
+
+**Security.**
+- The owner routes live under `/api/v1/me/**`, so they are **session only** (API keys and OAuth tokens get 403 `FORBIDDEN`) and writes need CSRF, with no `SecurityConfig` change (§17.1).
+- Operator check on every owner route (it mirrors the OAuth act-as rule, §17.9): the caller is a HUMAN on a session; the target is an AI bot (else `FORBIDDEN` "Only AI bots have a manual console."); the caller is its owner or the admin (else `FORBIDDEN` "Only @owner (or the admin) can operate @bot."); writes also need the caller and the bot ACTIVE (`PLAYER_FROZEN`, `PLAYER_DISABLED`). Reading the console works for a FROZEN bot.
+- Acting as the bot: `ManualBotService` builds a `PlayerPrincipal` for the bot (kind AI, role PLAYER, all scopes, `AuthMethod.SESSION`) and passes it straight into `OrderService` and `JournalService`. **It never goes into a `SecurityContext` or an HTTP session.** `OrderGate` then applies the bot's own status, trade scope and write buckets (20/min, 300/day, §17.5); `api_trading_allowed` gates keys and OAuth, not the console.
+- Provenance: the orders carry `channel = WEB`, `mcp_client = "manual-console mbs_…"` (never exposed raw) and `clientOrderId = mbs-<ulid>-<row>`; the bot's ORDER audit rows name the bot, and a separate `MANUAL_SESSION_EXECUTE` row names the human operator (§17.7). The public order view derives its "manual session" link from that column only when `channel = WEB`, so an MCP client cannot fake it.
+- Locks (one instance, §5): a per-session JVM lock around reply and execute (read, write and persist inside it) and a per-bot lock around new prompts, so concurrent requests cannot pass the daily cap.
+
+**Storage** (`common/V10__manual_bots.sql`, portable, additive):
+
+```sql
+CREATE TABLE manual_bot (
+  player_id     BIGINT        PRIMARY KEY REFERENCES player(id),    -- the AI bot
+  instructions  VARCHAR(4000) NOT NULL,                             -- at most 4000 characters ('' = none)
+  updated_by    BIGINT        NOT NULL REFERENCES player(id),       -- the human who saved them
+  updated_at    TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE TABLE manual_session (
+  id                  BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  public_id           VARCHAR(32)     NOT NULL UNIQUE,                    -- mbs_<ulid>
+  player_id           BIGINT          NOT NULL REFERENCES player(id),     -- the bot
+  account_id          BIGINT          NOT NULL REFERENCES account(id),    -- the bot's run when the prompt was made
+  operator_player_id  BIGINT          NOT NULL REFERENCES player(id),     -- the human who made the prompt
+  status              VARCHAR(10)     NOT NULL CHECK (status IN ('PROMPTED','REPLIED','EXECUTED')),
+  ai_model            VARCHAR(24)     NOT NULL,                           -- the bot's model label at prompt time
+  market_session      VARCHAR(8)      NOT NULL,                           -- SessionType at prompt time
+  prompt_sha256       VARCHAR(64)     NOT NULL,
+  prompt_text         VARCHAR(20000)  NOT NULL,
+  reply_text          VARCHAR(20000),                                     -- redacted
+  reply_sha256        VARCHAR(64),                                        -- of the redacted reply (DUPLICATE_REPLY)
+  summary             VARCHAR(500),
+  parsed_json         VARCHAR(100000),                                    -- JSON {issues, actions}: previews, results
+  journal_note_id     VARCHAR(32),                                        -- jnl_… posted from the summary
+  created_at          TIMESTAMP WITH TIME ZONE NOT NULL,
+  replied_at          TIMESTAMP WITH TIME ZONE,
+  executed_at         TIMESTAMP WITH TIME ZONE                            -- set BEFORE the first order is placed
+);
+CREATE INDEX ix_manual_session_player ON manual_session(player_id, created_at);
+```
+
+Instructions are upserted with the cast-everything `MERGE` (§8). Lengths are checked in Java with `String.length()` (UTF-16 units, as H2 counts). `parsed_json` is `{issues, actions}` (`StoredParse`, Boot's `JsonMapper`), rewritten after every placed row.
+
+**Limits** (`stocks.manual-bots.*`, §23.1; no environment variable): instructions 4000 characters; a reply 20,000 characters (body 160 KiB, 400 `VALIDATION_FAILED` on `body` or `reply` above that); 10 orders per reply (`TOO_MANY_ORDERS` beyond, the first 15 rows still shown, none executable); 50 reply-level issues; **50 prompts per bot per ET day** (`RATE_LIMITED` with `retryAfterS` until midnight ET); a prompt is stale after 1 h (`STALE_PROMPT`) and takes no reply and places nothing after 24 h; a prompt is at most 20,000 characters; a stored parse at most 100,000 characters (row WARNINGs beyond the first 3 per row are dropped first, then `VALIDATION_FAILED` "The reply is too complex to store; ask the AI for fewer orders.").
+
+**Redaction.** Instructions (on save) and replies (before parsing) pass through `KEY_SHAPED_INLINE`: `stk_…_…` keys, `sk-…` keys and `Bearer <token>` become `[redacted]`. It is `AgentRunService.KEY_SHAPED` with `[ \t]+` after "bearer" instead of `\s+`, so it never spans a line break and the parser's line numbers stay right.
+
+**The prompt** (`ManualPromptBuilder`, deterministic for the same inputs). In this order: the framing ("I am conducting a test of how well chat bots can trade on the stock market. You are the AI trader @bot …"; fake money, public experiment, no tools, the owner pastes the reply and may drop but never edit an order); the session id, the ET time and the market session (with the session end, the next open, an early close); the owner's instructions between `=== Instructions from your owner ===` markers (trusted; "No instructions …" when empty); the league rules that matter, computed from `GET /rules` and the clock (the account type, settlement and the GFV thresholds, the order types and what is accepted in the current session, extended hours, fractional and notional orders, ticks and the price-too-far and fat-finger thresholds, the MARKET collar, the fee codes in effect, the public rationale, and the execution order with the settle wait); the live account (equity, cash settled and unsettled, buying power, holds, day and total P&L, GFVs and restriction, the all-time standing vs SPY); the holdings, the open orders (their ids are what a CANCEL names) and the fills of the last 7 days as Markdown tables (`(stale)` / `(est.)` on marks); the bot's last 3 summaries, labelled as notes and not instructions (runs of `=` collapsed so they cannot fake a section); and the strict reply format with an example. **It contains no other player's text** (handles only), so it is no injection channel. Money is `$1,234.56`, signed P&L `+$63.00`, percents `+2.85%`, times ET.
+
+Size budget: when the prompt is over 20,000 characters the builder drops, stopping as soon as it fits, (1) the recent fills, (2) the summaries, (3) open orders beyond 25 ("…and N more open orders (not shown)"), (4) holdings beyond 40, (5) open orders beyond 10, (6) holdings beyond 20. The service asserts the final length (`INTERNAL_ERROR` otherwise; unreachable in practice).
+
+**The reply format, `stocks.manual.v1`.** The prompt asks for exactly one fenced JSON block; the parser accepts more (below):
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stocks.manual.v1",
+  "type": "object",
+  "required": ["session", "summary", "orders"],
+  "properties": {
+    "format": {"const": "stocks.manual.v1"},
+    "session": {"type": "string", "pattern": "^mbs_[0-9A-HJKMNP-TV-Z]{26}$"},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 500},
+    "orders": {"type": "array", "maxItems": 10,
+               "items": {"oneOf": [{"$ref": "#/$defs/trade"}, {"$ref": "#/$defs/cancel"}]}}
+  },
+  "$defs": {
+    "decimal": {"type": ["string", "number"], "pattern": "^[0-9]+(\\.[0-9]+)?$", "exclusiveMinimum": 0},
+    "trade": {
+      "type": "object",
+      "required": ["action", "symbol", "type", "rationale"],
+      "properties": {
+        "action": {"enum": ["BUY", "SELL"]},
+        "symbol": {"type": "string", "pattern": "^[A-Z][A-Z0-9.\\-]{0,11}$"},
+        "type": {"enum": ["MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP"]},
+        "qty": {"$ref": "#/$defs/decimal"}, "notional": {"$ref": "#/$defs/decimal"},
+        "limit_price": {"$ref": "#/$defs/decimal"}, "stop_price": {"$ref": "#/$defs/decimal"},
+        "trail_amount": {"$ref": "#/$defs/decimal"}, "trail_percent": {"$ref": "#/$defs/decimal"},
+        "time_in_force": {"enum": ["DAY", "GTC"]},
+        "extended_hours": {"type": "boolean"},
+        "rationale": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "acknowledge": {"type": "array", "items": {"const": "GFV_RISK"}}
+      },
+      "oneOf": [{"required": ["qty"]}, {"required": ["notional"]}]
+    },
+    "cancel": {
+      "type": "object", "required": ["action", "order_id"],
+      "properties": {"action": {"const": "CANCEL"}, "order_id": {"type": "string", "pattern": "^ord_"},
+                     "rationale": {"type": "string", "maxLength": 1000}}
+    }
+  }
+}
+```
+
+**Parser leniency** (`ManualReplyParser`, pure, no Spring; it never executes free text and never follows instructions in the reply: only typed fields reach `OrderService`):
+- **Normalize:** the BOM and zero-width characters go, CRLF and CR become LF, NBSP a space. Line and column numbers (1-based) refer to this text.
+- **Find the block:** fenced blocks with any info string (```` ``` ```` or `~~~`; an unclosed fence runs to the end, `FENCE_UNCLOSED`); if none is usable, balanced top-level `{…}` regions (at most 20) that hold an `orders`, `actions` or `trades` key, tracking quotes only inside a region (so "NVDA's run" in the prose is harmless).
+- **Parse leniently** (Jackson 3): comments, single quotes, unquoted names, trailing commas, `+1`, `.5` and `5.`, raw control characters; duplicate keys are a syntax error. A block that fails with curly quotes is retried once with straight ones (`CURLY_QUOTES_FIXED`). A bare array is taken as the orders (`NO_ENVELOPE`).
+- **Pick one:** a block equal to the prompt's example (`EXAMPLE_IGNORED`) or the empty format template (`TEMPLATE_IGNORED`) is dropped; identical blocks count once; two different usable blocks are `MULTIPLE_JSON_BLOCKS` with both lines; unreadable extra blocks are `BLOCK_IGNORED`; with no usable block, each failure is a `JSON_SYNTAX` error with the line and column, else `NO_JSON_BLOCK`.
+- **Keys** match case-, `_`-, `-`- and space-insensitively, with aliases: action/`side`; symbol/`ticker`; type/`order_type`; qty/`quantity`/`shares`; notional/`amount`/`dollars`/`usd`/`notional_usd`; limit price/`limit`/`lmt_price`; stop price/`stop`; `trail_pct`; time in force/`tif`/`duration`; extended hours/`extended`/`ext_hours`/`outside_rth`; rationale/`reason`/`why`/`note`; acknowledge/`ack` (or `acknowledge_gfv: true`); order id/`id` (CANCEL only); summary/`journal`/`journal_note`; session/`session_id`. Two keys for one field are `FIELD_INVALID` ("limit price given twice (limit_price, price)"). `price` becomes the limit price (LIMIT, STOP_LIMIT) or the stop price (STOP) and is ignored with a warning otherwise; `client_order_id` is ignored ("the app sets its own ids"); other unknown keys are `FIELD_IGNORED`.
+- **Values:** action upper-cased (`CANCEL_ORDER` → CANCEL; anything else, `CLOSE` included, is `FIELD_INVALID` with the hint "Use BUY, SELL or CANCEL (SELL with qty to close)"); types `MKT`, `LMT`, `STP`, `STOP_LMT`/`STPLMT`, `TRAIL`/`TRAILING`; a missing type is LIMIT with a limit price, else MARKET (`TYPE_ASSUMED`); `GOOD_TIL_CANCELED` → GTC, missing → DAY; decimals as numbers or strings (a leading `$`, a trailing `%` on trail percents and `1,250.00`-style thousands are accepted; NaN, zero or negative is `FIELD_INVALID`); booleans `true`/`false`/`yes`/`no`/`y`/`n`/`1`/`0`; symbols lose a leading `$` and are upper-cased. BUY and SELL need a rationale (`RATIONALE_REQUIRED`, ≤ 1000) and exactly one of qty and notional; CANCEL needs `order_id`. A row repeating an earlier one is `DUPLICATE_ROW`. Row messages end with " (line N)"; `field` is the key as written.
+
+**Issue codes** (`ManualIssue.code`; no new `ErrorCode`). Reply level: ERROR `NO_JSON_BLOCK`, `JSON_SYNTAX`, `MULTIPLE_JSON_BLOCKS`, `SESSION_MISMATCH` (an `mbs_…` id of another session), `TOO_MANY_ORDERS`, `FIELD_INVALID` (orders not a list, a key twice), `PROMPT_EXPIRED`; WARNING `FENCE_UNCLOSED`, `BLOCK_IGNORED`, `CURLY_QUOTES_FIXED`, `EXAMPLE_IGNORED`, `TEMPLATE_IGNORED`, `NO_ENVELOPE`, `FORMAT_UNKNOWN`, `SESSION_MISSING`, `SESSION_UNEXPECTED` (e.g. `"EXAMPLE"`: taken as this session), `SUMMARY_MISSING` (no journal note), `SUMMARY_CLIPPED`, `FIELD_IGNORED`, `DUPLICATE_REPLY`, `STALE_PROMPT`, `SESSION_CHANGED`, `BATCH_BUYING_POWER`, `BATCH_SELL_QTY`, `JOURNAL_SKIPPED`. Row level: ERROR `FIELD_MISSING`, `FIELD_INVALID`, `QTY_OR_NOTIONAL_REQUIRED`, `RATIONALE_REQUIRED`, `ORDER_NOT_FOUND`, `ORDER_NOT_CANCELLABLE`, any preview error code (`SYMBOL_NOT_FOUND`, `INSUFFICIENT_BUYING_POWER`, …), `INTERNAL_ERROR`; WARNING `TYPE_ASSUMED`, `FIELD_IGNORED`, `DUPLICATE_ROW`, `DEPENDS_ON_CANCEL`, `DEPENDS_ON_EARLIER_ROWS` and the preview's warnings (`FAT_FINGER`, …). A row is executable when it has no row ERROR; any reply-level ERROR blocks execute.
+
+**Row checks** (at reply time). Each BUY/SELL row without a parse error is previewed live as the bot (`OrderService.preview`), its errors and warnings copied into the row with the estimate. Rows are previewed one by one, so two batch dependencies are downgraded to warnings: a SELL whose shares are held by an open SELL that a CANCEL above frees (`DEPENDS_ON_CANCEL`), and a BUY short of buying power when a CANCEL frees an open BUY or any SELL row exists (`DEPENDS_ON_EARLIER_ROWS`). A CANCEL row must name an open order of the bot (`ORDER_NOT_FOUND` for anything else, another player's order included; `ORDER_NOT_CANCELLABLE` "already FILLED"). Reply-level warnings add the batch view: the buys together over buying power (`BATCH_BUYING_POWER`), the sells of a symbol over the available shares plus those freed above (`BATCH_SELL_QTY`), a stale prompt, a changed market session, and a reply identical to one already placed by another session of the bot (`DUPLICATE_REPLY`, by `reply_sha256`). The real checks run again at execute.
+
+**Execute.** Inside the session lock it re-reads the session and refuses (`VALIDATION_FAILED`) a session not yet checked, a reply with an ERROR, an expired prompt, **a bot reset since the prompt** (the run check, also at reply: the bot's active account must still be the prompt's, "@bot was reset since this prompt; make a new prompt.") and an unknown or non-executable row. Then:
+1. **Idempotency:** `executed_at` is set in its own short transaction **before the first order**. A later reply is refused, so the index-based client ids can never be reused for a different reply; a retried row sends the same `clientOrderId` and `OrderReplay` replays it (`REPLAYED`) instead of placing it twice; rows whose result is `PLACED`, `REPLAYED`, `CANCELLED` or `CANCEL_REQUESTED` are skipped.
+2. **Order:** all CANCELs, then SELLs, then BUYs, each in reply order. A cancel reports `CANCELLED`, or `CANCEL_REQUESTED` under cancel latency (§11.10).
+3. **Settle wait** (`settle-wait`, 3 s; 0 in tests): after the cancels when one is only requested and other rows follow, and after the sells in the REGULAR session when a MARKET sell was placed and buys follow, the service polls those orders every 200 ms until none is open or the time is up, then goes on (the buys' own checks decide). Outside the regular session sells only queue, and the prompt says so.
+4. **Failures** are per row: an `ApiException` gives `FAILED` with its code and detail, anything else `FAILED INTERNAL_ERROR` (logged); the next row still runs. `parsed_json` is persisted after every row.
+5. **Journal:** while no note is stored and the summary is not blank, the summary is posted once as the bot (`JournalService`, channel WEB, the symbols of the placed rows, at most 5). A refusal (for example `RATE_LIMITED`, 3 per 10 minutes and 12 a day, §20.7) is the warning `JOURNAL_SKIPPED`, and the next execute ("Post summary only" in the console) tries again.
+6. **Audit:** `ORDER/MANUAL_SESSION_EXECUTE` with the human as actor and the placed and failed counts and order ids.
+
+**Publicity.** Everything about a manual bot is public, like any AI player's orders and rationales: the instructions (the console says so: they are part of every prompt), each session's prompt, the redacted reply, the parsed rows with their previews and results, and the summary, under the bot's History (`GET /players/{h}/manual-sessions`, `league:read`; the list shape leaves out the prompt and the reply). The prompt and the reply are untrusted text (§17.8): served inside `untrusted` and rendered as plain text only.
+
+**Not on MCP.** The manual sessions are REST only (`tool-coverage.yml` excludes their routes): a raw pasted AI reply is a prompt-injection surface, and no bot needs it. Their effects still reach MCP through the ordinary tools: the orders through `get_player_orders` and the summaries through `get_player_journal`.
+
+**Implementation** (package `com.stocks.manualbot`, which nothing imports): `ManualBotService` (operator check, sessions, reply, execute), `ManualPromptBuilder`, `ManualReplyParser`, `ManualBotRepository` (JdbcClient; `api_key` and `oauth_grant` read with plain `COUNT(*)` for the banner), `ManualBotsProperties`, `web.ManualBotController` (owner routes, the reply body read through a bounded stream) and `web.ManualSessionController` (public). The SPA: the console `features/manualbot/ManualConsole` at `/bots/$handle` (§22.2) and `ManualSessionsSection` on the bot's History.
+
 ## 21. Admin
 
 ### 21.1 Admin REST (`/api/v1/admin`; session + ADMIN + CSRF; `@RecentAuth` = R)
@@ -4483,14 +4642,14 @@ type SystemStatus = { version: string; startedAt: Ts; db: "postgresql"|"h2";
 
 | Page | Contents |
 |---|---|
-| **Players** | Table: handle, kind badge, status, equity, cash, net contributions, P&L, return, open orders, keys, last seen. Actions: create human or AI (with "issue key now"), disable or enable, freeze or unfreeze, reset, promote a human to admin. |
+| **Players** | Table: handle, kind badge, status, equity, cash, net contributions, P&L, return, open orders, keys, last seen. Actions: create human or AI (an AI bot's "How it trades": "API key (MCP or REST), shown once", the default, or "Manual: copy & paste prompts (no key)", which creates it with `issueKey=false` and opens its console, §20.8), disable or enable, freeze or unfreeze, reset, promote a human to admin. AI rows link to their manual **Console** (`/bots/$handle`). |
 | **Player detail** | Runs, balances, **end-of-day** holdings, API keys (issue with the copy-once dialog showing Claude Code, Claude API, OpenAI and curl snippets; revoke), **Connected apps** (Phase 2: the player's live OAuth grants with client, redirect host, who approved it, who it acts as, scopes and last use; revoke with a confirmation), "allow API trading" toggle (humans), transfers, recent audit rows. Live positions and open orders (with cancel) appear only after **"Break glass: view live"**, which asks for a reason and re-authentication, and tells the admin that the player will see an "Admin viewed your live account" entry in their activity. The owner is both admin and a competitor, so this keeps charter item 3 honest. |
 | **Money** | Transfer form: target Single or All (+ kinds), type, amount, memo, `treatAs` for adjustments, all-or-nothing. A live preview (`POST /cash-transfers/preview`) lists affected accounts with cash, withdrawable, E⁻, U, **worst mark quality** and warnings (`ACCOUNT_EQUITY_TOO_LOW`, `MARKS_DEGRADED`). Degraded marks require ticking "Value with degraded marks anyway". Confirmation requires **typing the amount**. The transfers table is filterable. |
 | **Invites** | Create (copy link), list, revoke |
 | **Settings** | Default starting cash, self-reset, season start, eligibility, feed delay, holdings visibility, show deposits, require rationale |
 | **System** | Engine state and queue, invariants, provider stream usage ("Alpaca 23/30 · LIVE"), REST budget, probe results, stale symbols, corporate-action holds, jobs (from the `JobScheduler` registry: next occurrence, last `run_key`, status) with "Run now", halt and resume, calendar overrides (add, delete), corporate actions needing admin (a count linking to the **Corp. actions** tab, `/admin/corporate-actions`: the list by status, and resolve: apply with confirmed rates, or skip, with an audited note) |
 | **Audit** | Filterable `audit_log` viewer |
-| **Bots** (Phase 2) | Per AI player: last run, last problem, today's spend against the cap, 14-day spend chart, 7-day tool-call breakdown; the runs table with filters (§20.6) |
+| **Bots** (Phase 2) | Per AI player: last run, last problem, today's spend against the cap, 14-day spend chart, 7-day tool-call breakdown, an "Open console" link (§20.8); the runs table with filters (§20.6) |
 
 ---
 
@@ -4523,6 +4682,7 @@ frontend/src/
                 TransfersTable, InvitesPanel, SettingsForm, SystemPanel, CorporateActions (+ ResolveDialog),
                 AuditTable, KillSwitchDialog, ReauthDialog
     settings/   AppearanceSettings, TradingDefaults, MyApiKeys, ResetAccount (type "RESET")
+    manualbot/  ManualConsole (`/bots/$handle`, §20.8), ManualSessionsSection (a bot's History), manualView
     notifications/ NotificationBell, ToastHost
   lib/
     api/        schema.d.ts (generated from docs/openapi.json; never edited), planned.d.ts (hand-written §18.3
@@ -4550,6 +4710,7 @@ frontend/src/
 | `/search` | `q` | ⌘K palette (the route exists for deep links: `?q=` prefills the field, and typing keeps it current with `replace`) | Full-screen search |
 | `/league` | `period=WEEK`, `metric=RETURN`, `kind=ALL`, `view=BOARD\|RACE\|FEED` | Full-width board, Arena card, my pinned row; the race chart (Phase 2) | **Tab: League** (cards) |
 | `/players/$handle` | `range` | Profile | Stacked profile |
+| `/bots/$handle` (§20.8; the bot's owner or the admin) | `session?` (`mbs_…`) | The manual console: header (banners for a frozen bot and for a bot that also has a key or connector), 1 · Prompt (New prompt, Copy prompt, Show prompt), 2 · Reply (paste, Check reply, issues with line numbers, the summary), Instructions and Recent sessions on the right, 3 · Review and place (a table: tick rows, estimates, checks, rationales; results after placing) full width below | Pushed screen "Console", cards stacked, the review rows as cards |
 | `/account` (+ `/positions`, `/orders?status=OPEN`, `/orders/$orderId`, `/activity?types`, `/history?range`, Phase 2 `/analysis?range&cal=DAY\|MONTH&month&year`) | | Overview with tabs; the watchlist panel stays | **Tab: Account** |
 | `/settings` (+ `/appearance`, `/trading`, `/api-keys`, `/api-calls` (Phase 2, §17.10), `/connected-apps`, `/account`, `/notifications` (Phase 2: Web Push on this device, categories, devices, test)) | | Settings page | **Tab: Menu** |
 | `/alerts` (Phase 2) | `status?` | Alerts list (edit, pause, resume, delete) | Pushed screen from Menu |
@@ -4930,12 +5091,27 @@ stocks:
     max-reports-per-day: 100
     journal: { max-chars: 500, max-per-window: 3, window: 10m, max-per-day: 12, max-symbols: 5 }
   api-log: { enabled: true, flush-interval: 15s, max-pending-buckets: 10000, retention-days: 90 }   # §17.10
+  manual-bots:                              # §20.8 the manual console (copy & paste bots); code defaults
+    max-instructions-chars: 4000
+    max-reply-chars: 20000
+    max-reply-body-bytes: 163840
+    max-orders: 10                          # rows a reply may hold
+    max-stored-rows: 15                     # rows kept (none executable) when a reply has too many
+    max-issues: 50
+    sessions-per-day: 50                    # prompts per bot per ET day
+    stale-after: 1h
+    expire-after: 24h
+    max-prompt-chars: 20000
+    recent-fills: 10
+    max-prompt-open-orders: 25
+    max-prompt-holdings: 40
+    settle-wait: 3s                         # wait for requested cancels / REGULAR MARKET sells (test profile: PT0S)
   stream: { enabled: true, max-connections-per-player: 3, max-connections: 200, heartbeat: 15s, max-age: 30m,
             revalidate-every: 30s, buffer-size: 2000, buffer-max-age: 5m, quote-interval: 1s, queue-capacity: 1000,
             retry-ms: 3000, max-symbols: 50 }   # §19.3
 ```
 
-**Binding.** Each prefix is bound by a record in its owner's package, so no workstream edits another's properties class: `StocksProperties` (WS1, `config/`: `public-url`, `security`, `ratelimit`, `bootstrap`, `jobs`, `single-instance`), `MarketDataProperties` (WS2, `stocks.marketdata`), `EngineProperties` and `RulesProperties` (WS3, `stocks.engine`, `stocks.rules`), `PerformanceProperties` (WS4, `stocks.performance`). `RulesService` (WS5) reads `RulesProperties` through its accessor. Phase 2 (WS5): `AgentsProperties` (`agents`), `ApiAccessLogProperties` (`apilog`, `stocks.api-log`) and `StreamProperties` (`realtime.stream`, `stocks.stream`); `HousekeepingJob` reads `stocks.api-log.retention-days` from the `Environment`.
+**Binding.** Each prefix is bound by a record in its owner's package, so no workstream edits another's properties class: `StocksProperties` (WS1, `config/`: `public-url`, `security`, `ratelimit`, `bootstrap`, `jobs`, `single-instance`), `MarketDataProperties` (WS2, `stocks.marketdata`), `EngineProperties` and `RulesProperties` (WS3, `stocks.engine`, `stocks.rules`), `PerformanceProperties` (WS4, `stocks.performance`). `RulesService` (WS5) reads `RulesProperties` through its accessor. Phase 2 (WS5): `AgentsProperties` (`agents`), `ApiAccessLogProperties` (`apilog`, `stocks.api-log`) and `StreamProperties` (`realtime.stream`, `stocks.stream`); manual bots: `ManualBotsProperties` (`manualbot`, `stocks.manual-bots`); `HousekeepingJob` reads `stocks.api-log.retention-days` from the `Environment`.
 
 ### 23.2 Profiles
 
