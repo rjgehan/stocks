@@ -46,6 +46,21 @@ function PlayerCell({ p }: { p: AdminPlayer }) {
   )
 }
 
+/** An AI bot's manual console (§20.8). */
+function ConsoleLink({ p }: { p: AdminPlayer }) {
+  if (p.kind !== 'AI' || !p.handle) return null
+  return (
+    <Link
+      to="/bots/$handle"
+      params={{ handle: p.handle }}
+      aria-label={`Console of @${p.handle}`}
+      className="inline-flex min-h-11 shrink-0 items-center px-1 text-caption font-semibold text-accent hover:text-accent-hover tablet:min-h-0"
+    >
+      Console
+    </Link>
+  )
+}
+
 /** Admin · Players (§21.3): every account with its balances, status, keys and last activity; create humans and bots. */
 function PlayersPage() {
   const { data, isPending, isError } = useAdminPlayers()
@@ -101,6 +116,7 @@ function PlayersPage() {
                     <span className="text-text-3">NC {formatMoney(p.netContributions)}</span>
                   </div>
                 </div>
+                <ConsoleLink p={p} />
                 <PlayerActions p={p} myHandle={me?.handle} onIssueKey={setIssueFor} />
               </li>
             ))}
@@ -144,7 +160,8 @@ function PlayersPage() {
                     <td className="px-2 text-right">{p.openOrders}</td>
                     <td className="px-2 text-right">{p.activeKeys}</td>
                     <td className="px-2 text-caption text-text-3">{p.lastSeenAt ? formatDateTimeEt(p.lastSeenAt) : 'never'}</td>
-                    <td className="pr-3 text-right">
+                    <td className="pr-3 text-right whitespace-nowrap">
+                      <ConsoleLink p={p} />
                       <PlayerActions p={p} myHandle={me?.handle} onIssueKey={setIssueFor} />
                     </td>
                   </tr>

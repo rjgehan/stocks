@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { describeError } from '@/lib/api/errors'
 import { useCreatePlayer, useLeagueSettings } from '@/lib/api/hooks/admin'
 import { useMe } from '@/lib/api/hooks/identity'
@@ -8,17 +9,23 @@ import { isDecimal, lt } from '@/lib/format/decimal'
 import { formatMoney } from '@/lib/format/money'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
-import { Checkbox, TextField } from '@/components/ui/Field'
+import { TextField } from '@/components/ui/Field'
 import { Segmented } from '@/components/ui/Segmented'
 import { AI_MODEL_MAX, HANDLE_HINT, HANDLE_RE, displayNameError } from '@/features/auth/rules'
 
+const HOW_IT_TRADES = [
+  { value: 'KEY', label: 'API key (MCP or REST), shown once' },
+  { value: 'MANUAL', label: 'Manual: copy & paste prompts (no key)' },
+] as const
 
 /**
  * Create a human or an AI player (§21.1 `POST /admin/players`, R): the server creates the player, the funded account,
- * the default watchlist and, for a bot, an API key whose token is shown once.
+ * the default watchlist and, for a bot, an API key whose token is shown once. A manual bot (§20.8) gets no key: on
+ * success the dialog closes and the admin lands on its console.
  */
 export function CreatePlayerDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (res: CreatePlayerResponse) => void }) {
   const create = useCreatePlayer()
+  const navigate = useNavigate()
   const settings = useLeagueSettings()
   const { data: me } = useMe()
   const [kind, setKind] = useState<'HUMAN' | 'AI'>('AI')
@@ -28,7 +35,7 @@ export function CreatePlayerDialog({ open, onClose, onCreated }: { open: boolean
   const [aiModel, setAiModel] = useState('')
   const [owner, setOwner] = useState('')
   const [startingCash, setStartingCash] = useState('')
-  const [issueKey, setIssueKey] = useState(true)
+  const [trades, setTrades] = useState<'KEY' | 'MANUAL'>('KEY')
   const [touched, setTouched] = useState(false)
   const defaultCash = settings.data?.['league.defaultStartingCash'] ?? '500.00'
 
@@ -49,7 +56,7 @@ export function CreatePlayerDialog({ open, onClose, onCreated }: { open: boolean
     setAiModel('')
     setOwner('')
     setStartingCash('')
-    setIssueKey(true)
+    setTrades('KEY')
     setTouched(false)
     create.reset()
   }
@@ -66,13 +73,15 @@ export function CreatePlayerDialog({ open, onClose, onCreated }: { open: boolean
         kind,
         handle,
         displayName: displayName.trim(),
-        ...(kind === 'HUMAN' ? { password } : { aiModel: aiModel.trim() || null, ownerHandle: owner.trim() || null, issueKey }),
+        ...(kind === 'HUMAN' ? { password } : { aiModel: aiModel.trim() || null, ownerHandle: owner.trim() || null, issueKey: trades === 'KEY' }),
         ...(startingCash ? { startingCash } : {}),
       },
       {
         onSuccess: (res) => {
+          const manual = kind === 'AI' && trades === 'MANUAL'
           reset()
           onCreated(res)
+          if (manual && res.player?.handle) void navigate({ to: '/bots/$handle', params: { handle: res.player.handle } })
         },
       },
     )
@@ -93,7 +102,7 @@ export function CreatePlayerDialog({ open, onClose, onCreated }: { open: boolean
         />
         <p className="text-caption text-text-3">
           {kind === 'AI'
-            ? 'Bots trade with an API key through REST or MCP and must give a rationale for each order.'
+            ? 'Bots trade with an API key through REST or MCP, or by hand from their console, and must give a rationale for each order.'
             : 'Humans usually join through an invite link; create one here only if you want to set their password yourself.'}
         </p>
         <TextField
@@ -116,9 +125,20 @@ export function CreatePlayerDialog({ open, onClose, onCreated }: { open: boolean
               <TextField label="Model label" value={aiModel} onChange={(e) => setAiModel(e.target.value)} maxLength={AI_MODEL_MAX} placeholder="Claude" hint="Shown as “AI · Claude”." />
               <TextField label="Owner" prefix="@" value={owner} onChange={(e) => setOwner(e.target.value.toLowerCase())} placeholder={me?.handle ?? 'you'} hint="Who runs this bot." />
             </div>
-            <Checkbox checked={issueKey} onChange={setIssueKey}>
-              Issue an API key now (all scopes, shown once)
-            </Checkbox>
+            <fieldset role="radiogroup" aria-label="How it trades">
+              <legend className="mb-1 text-caption font-medium text-text-2">How it trades</legend>
+              <div className="space-y-1">
+                {HOW_IT_TRADES.map((o) => (
+                  <label key={o.value} className="flex min-h-11 cursor-pointer items-center gap-2 text-caption text-text-1 tablet:min-h-8">
+                    <input type="radio" name="how-it-trades" value={o.value} checked={trades === o.value} onChange={() => setTrades(o.value)} className="size-4 shrink-0 accent-[var(--accent)]" />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+              {trades === 'MANUAL' ? (
+                <p className="mt-1 text-caption text-text-3">You run it from its console: copy a prompt into Gemini, Codex or any chat and paste the reply back.</p>
+              ) : null}
+            </fieldset>
           </>
         )}
         <TextField
