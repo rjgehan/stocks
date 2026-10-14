@@ -25,6 +25,7 @@ import com.stocks.contract.portfolio.LeaderboardService;
 import com.stocks.contract.portfolio.LeagueStatsQueries;
 import com.stocks.contract.portfolio.PerformanceQueries;
 import com.stocks.contract.portfolio.PnlAnalysisQueries;
+import com.stocks.contract.portfolio.PublicPortfolioQueries;
 import com.stocks.contract.security.CurrentPlayer;
 import com.stocks.contract.security.PlayerPrincipal;
 import com.stocks.contract.security.RateLimitService;
@@ -100,6 +101,7 @@ final class McpToolHarness implements AutoCloseable {
   final LeaderboardService leaderboard = mock(LeaderboardService.class);
   final LeagueStatsQueries leagueStats = mock(LeagueStatsQueries.class);
   final PnlAnalysisQueries pnlAnalysis = mock(PnlAnalysisQueries.class);
+  final PublicPortfolioQueries publicPortfolios = mock(PublicPortfolioQueries.class);
   final FeedReactionService reactions = mock(FeedReactionService.class);
   final PlayerQueries players = mock(PlayerQueries.class);
   final WatchlistService watchlists = mock(WatchlistService.class);
@@ -153,7 +155,7 @@ final class McpToolHarness implements AutoCloseable {
         new AccountTools(accounts, orders, performance, time),
         new OrderTools(orderService, orders, accounts),
         new OrderGroupTools(orderService, orders, accounts),
-        new LeagueTools(leaderboard, players, performance),
+        new LeagueTools(leaderboard, players, performance, publicPortfolios),
         new WatchlistTools(watchlists),
         new NotificationTools(notifications),
         new LeagueStatsTools(leagueStats, pnlAnalysis, reactions, accounts),

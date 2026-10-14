@@ -68,7 +68,8 @@ public class LeagueStatsTools implements McpToolSet {
 
   @McpTool(name = "get_player_stats", title = "Player stats",
       description = "A player's league stats for a period (default ALL), as get_my_stats; best and worst trades "
-          + "only include sells older than the league's feed delay. PLAYER_NOT_FOUND for an unknown handle.",
+          + "include sells older than the league's feed delay (none by default). PLAYER_NOT_FOUND for an unknown "
+          + "handle.",
       generateOutputSchema = true,
       annotations = @McpTool.McpAnnotations(title = "Player stats", readOnlyHint = true, destructiveHint = false,
           idempotentHint = true, openWorldHint = false))

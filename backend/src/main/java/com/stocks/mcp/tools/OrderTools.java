@@ -31,12 +31,13 @@ import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 /**
- * Order tools (§20.3 #15, #16, #23, #31–#35; group orders are {@link OrderGroupTools}). Reads need {@code account:read}; writes need {@code trade} and go
- * through WS3's {@code OrderService} exactly like REST: {@code OrderGate} (engine state, player status, client order
- * id, idempotency fast path, one write token) and the engine's {@code OrderValidator} (rationale for AI players,
- * symbol, quantity, prices, session, buying power, GFV …). Synchronous rejections come back as error results with the
- * same {@code ErrorCode}, {@code hint} and {@code fields} as REST's 422s and are never persisted. Every write passes the
- * call's {@code RequestMeta} (channel {@code MCP_KEY}, MCP client, tool name), so it is audited like a REST order.
+ * Order tools (§20.3 #15, #16, #23, #31–#35; group orders are {@link OrderGroupTools}). Reads need
+ * {@code account:read}; writes need {@code trade} and go through WS3's {@code OrderService} exactly like REST:
+ * {@code OrderGate} (engine state, player status, client order id, idempotency fast path, one write token) and the
+ * engine's {@code OrderValidator} (rationale required for AI; public, symbol, quantity, prices, session, buying power,
+ * GFV …). Synchronous rejections come back as error results with the same {@code ErrorCode}, {@code hint} and
+ * {@code fields} as REST's 422s and are never persisted. Every write passes the call's {@code RequestMeta} (channel
+ * {@code MCP_KEY}, MCP client, tool name), so it is audited like a REST order.
  *
  * <p>Idempotency (§11.7): {@code place_order}, {@code replace_order} and {@code close_position} take a
  * {@code client_order_id}; repeating a call with the same id and the same order returns the existing order with
@@ -144,11 +145,11 @@ public class OrderTools implements McpToolSet {
           + "TRAILING_STOP needs exactly one of trail_amount or trail_percent and can only be entered in the "
           + "REGULAR session (DAY only). Stops trigger only in the REGULAR session (a sell stop below the market, a "
           + "buy stop above it), then work as a market (STOP, TRAILING_STOP) or limit (STOP_LIMIT) order; "
-          + "get_rules orders.matrix lists the types and their rules. AI players must send a "
-          + "rationale (1-1000 characters; it becomes public with the delayed trade). Decimals are strings like "
-          + "\"227.40\". A sell that would cause a good-faith violation needs acknowledge [\"GFV_RISK\"]. Returns the "
-          + "order (usually PENDING; fills arrive after a short latency), the estimate, buying power before and "
-          + "after, warnings, and replayed=true when this client_order_id was already placed.",
+          + "get_rules orders.matrix lists the types and their rules. AI players must send a rationale (1-1000 "
+          + "characters; it is public: every player sees it with the order). Decimals are strings like \"227.40\". "
+          + "A sell that would cause a good-faith violation needs acknowledge [\"GFV_RISK\"]. Returns the order "
+          + "(usually PENDING; fills arrive after a short latency), the estimate, buying power before and after, "
+          + "warnings, and replayed=true when this client_order_id was already placed.",
       generateOutputSchema = true,
       annotations = @McpTool.McpAnnotations(title = "Place an order", readOnlyHint = false, destructiveHint = false,
           idempotentHint = true, openWorldHint = false))
@@ -263,8 +264,8 @@ public class OrderTools implements McpToolSet {
   private static final String EXT = "LIMIT only: also work in PRE (04:00-09:30 ET) and POST (16:00-20:00 ET); "
       + "default false";
   private static final String RATIONALE = "Why you are trading (1-1000 characters). Required for AI players; it "
-      + "becomes public with the delayed trade.";
-  private static final String SHARE_NOTE = "Humans only: publish your rationale with the delayed trade";
+      + "is public: every player sees it with the order.";
+  private static final String SHARE_NOTE = "Deprecated and ignored: every new note is public";
   private static final String ACK = "Warnings you accept; [\"GFV_RISK\"] to sell despite a good-faith-violation risk";
   private static final String DO_NOT_REDUCE = "Keep your limit and stop prices on ex-dividend dates (FINRA 5330 "
       + "\"do not reduce\"); default false: a BUY LIMIT or SELL STOP is reduced by the dividend";

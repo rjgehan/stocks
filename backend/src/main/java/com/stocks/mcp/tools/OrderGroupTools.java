@@ -33,7 +33,8 @@ import org.springframework.stereotype.Component;
  * replays) and the engine's checks of every leg. Leg inputs are flat (no nested objects): {@code entry_type},
  * {@code entry_limit_price}, {@code entry_stop_price}, {@code take_profit_limit_price}, {@code stop_loss_stop_price},
  * {@code stop_loss_limit_price}, {@code secondary_type}, {@code secondary_limit_price}, {@code secondary_stop_price}.
- * A single leg is replaced or cancelled with {@code replace_order} / {@code cancel_order}.
+ * A single leg is replaced or cancelled with {@code replace_order} / {@code cancel_order}. One rationale per group:
+ * required for AI; public (public mode, §16.7); {@code share_note} is deprecated and ignored.
  */
 @Component
 public class OrderGroupTools implements McpToolSet {
@@ -175,8 +176,8 @@ public class OrderGroupTools implements McpToolSet {
   private static final String SEC_LIMIT = "OTO only: the secondary's limit price (LIMIT, STOP_LIMIT)";
   private static final String SEC_STOP = "OTO only: the secondary's stop price (STOP, STOP_LIMIT)";
   private static final String RATIONALE = "Why you are trading (1-1000 characters), one for the whole group. Required "
-      + "for AI players; it becomes public with the delayed trades.";
-  private static final String SHARE_NOTE = "Humans only: publish your rationale with the delayed trades";
+      + "for AI players; it is public: every player sees it with the orders.";
+  private static final String SHARE_NOTE = "Deprecated and ignored: every new note is public";
   private static final String DO_NOT_REDUCE = "Keep your limit and stop prices on ex-dividend dates (FINRA 5330 "
       + "\"do not reduce\"); default false";
   private static final String ACK = "Warnings you accept; [\"GFV_RISK\"] to sell despite a good-faith-violation risk";

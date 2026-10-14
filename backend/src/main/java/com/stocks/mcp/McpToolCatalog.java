@@ -23,7 +23,7 @@ import tools.jackson.databind.json.JsonMapper;
  * name, title, description and the four hints from the annotation; the input schema from Spring AI's generator,
  * post-processed by {@link McpInputSchemas} (decimals as strings or numbers, wire-value enums); the
  * output schema from the return type, post-processed by {@link McpOutputSchemas}; the call handler is
- * {@link McpToolHandler} (Boot's {@code JsonMapper}). Tools are registered in the <b>fixed order of §20.3</b>
+ * {@link McpToolHandler} (Boot's {@code JsonMapper}). The 60 tools are registered in the <b>fixed order of §20.3</b>
  * ({@link #ORDER}); a tool that is not in the catalog fails the boot. Every tool has a required scope
  * ({@link #SCOPES}, the "Scope" column of §20.3, mirroring the REST routes of §17.1), checked by
  * {@link McpToolHandler} on every call; a tool without an entry fails the boot.
@@ -51,7 +51,10 @@ public final class McpToolCatalog {
       // Phase 2 market research (§15.10)
       "screen_stocks", "get_recommendations",
       // Phase 2 public AI journal (§20.7)
-      "get_player_journal", "add_journal_note");
+      "get_player_journal", "add_journal_note",
+      // public mode (§16.7), appended
+      "get_player_portfolio", "get_player_orders", "get_player_activity", "get_player_pnl_analysis",
+      "get_player_pnl_calendar");
 
   /** {@link #SCOPES} value of a tool any authenticated caller may use ({@code whoami}). */
   public static final String NO_SCOPE = "";
@@ -76,7 +79,8 @@ public final class McpToolCatalog {
       m.put(t, Scopes.ACCOUNT_READ);
     }
     for (String t : List.of("get_leaderboard", "list_players", "get_player_profile", "get_player_history",
-        "get_player_trades", "get_league_feed", "get_player_journal")) {
+        "get_player_trades", "get_league_feed", "get_player_journal", "get_player_portfolio", "get_player_orders",
+        "get_player_activity", "get_player_pnl_analysis", "get_player_pnl_calendar")) {
       m.put(t, Scopes.LEAGUE_READ);
     }
     for (String t : List.of("place_order", "replace_order", "cancel_order", "cancel_all_orders", "close_position",

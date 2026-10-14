@@ -8,6 +8,8 @@ import com.stocks.contract.portfolio.dto.FeedReactionsDto;
 import com.stocks.contract.portfolio.dto.FeedReactionsDto.FeedReactionDto;
 import com.stocks.contract.portfolio.dto.FeedReactionsDto.ReactorDto;
 import com.stocks.contract.portfolio.dto.PlayerProfileDto;
+import com.stocks.contract.portfolio.dto.PublicOrderDto;
+import com.stocks.contract.portfolio.dto.PublicPortfolioDto;
 import com.stocks.contract.portfolio.dto.PublicTradeDto;
 import java.util.List;
 
@@ -102,5 +104,31 @@ public final class Untrusted {
     return new PlayerProfileDto(player(p.player()), p.ownerHandle(), p.runNo(), p.stats(), p.equity(),
         p.netContributions(), p.deposits(), p.fills(), p.winRate(), p.moneyWeightedReturnAll(), p.holdingsAsOf(),
         p.holdings(), trades);
+  }
+
+  /** Public mode (§16.7): the player's name and every open order's rationale clipped. */
+  public static PublicPortfolioDto portfolio(PublicPortfolioDto p) {
+    if (p == null) {
+      return null;
+    }
+    List<PublicOrderDto> open = p.openOrders() == null ? null : p.openOrders().stream().map(Untrusted::order).toList();
+    return new PublicPortfolioDto(player(p.player()), p.runNo(), p.asOf(), p.marksQuality(), p.equity(),
+        p.longMarketValue(), p.dividendsReceivable(), p.cash(), p.settledCash(), p.unsettledCash(), p.buyingPower(),
+        p.openBuyHolds(), p.netContributions(), p.totalPnl(), p.totalReturn(), p.dayPnl(), p.dayReturn(),
+        p.unrealizedPnl(), p.restriction(), p.restrictionUntil(), p.gfvActive(), p.positions(), open);
+  }
+
+  /** Public mode (§16.7): an order's rationale clipped to {@value #RATIONALE_MAX} (REST shows it in full). */
+  public static PublicOrderDto order(PublicOrderDto o) {
+    if (o == null) {
+      return null;
+    }
+    PublicTradeDto.UntrustedRationaleDto u = o.untrusted();
+    return new PublicOrderDto(o.orderId(), o.runNo(), o.symbol(), o.side(), o.type(), o.qty(), o.notional(),
+        o.fractional(), o.limitPrice(), o.stopPrice(), o.trailAmount(), o.trailPercent(), o.timeInForce(),
+        o.extendedHours(), o.status(), o.waitReason(), o.statusReason(), o.filledQty(), o.avgFillPrice(), o.fees(),
+        o.receivedAt(), o.expiresAt(), o.doneAt(), o.replacesOrderId(), o.replacedByOrderId(), o.group(), o.channel(),
+        o.viaApi(), o.manualSessionId(), o.fills(),
+        u == null ? null : new PublicTradeDto.UntrustedRationaleDto(rationale(u.rationale())));
   }
 }
