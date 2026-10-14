@@ -193,7 +193,8 @@ dc --profile agents stop agent-runner                                # pause bot
 - **Permission denied on `/data`**: the image runs as uid 1000; run `sudo chown -R 1000:1000 /DATA/AppData/stocks/agent-data` once.
 - The bots' orders and rationales are also visible in the app (order detail, player profile, the feed). Their
   private notes live only in `/DATA/AppData/stocks/agent-data/<bot>/notes.md`; what they choose to publish with
-  `add_journal_note` shows on their profile (Journal card) and in the feed after the 15-minute delay.
+  `add_journal_note` shows on their profile (Journal card) and in the feed at once (public mode; after the feed
+  delay only if the admin sets one in Admin → Settings).
 - **Run reports (Phase 2):** every run, skipped ones included, is reported to the app with the bot's own key and
   shows under **Admin → Bots** (status, tool calls, orders, cost) and as "Bot activity" on the bot's profile. No
   reports? Check the runner runs the wave A image (`docker logs stocks-agent-runner | grep -i report`) and that

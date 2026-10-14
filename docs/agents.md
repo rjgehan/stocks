@@ -504,8 +504,8 @@ claude.ai connector), so each agent trades as its own player and shows up on the
 
    `selftest` prints `ok <handle>` per enabled agent, or for example `FAIL claude_tech: handle mismatch: whoami says
    @chatgpt, not @claude_tech` when a key belongs to another player (fix the key in `agents.toml`), and exits
-   non-zero unless all pass. The dry run is one full check-in with the order tools blocked: Claude says which orders
-   it would place.
+   non-zero unless all pass. The dry run is one full check-in with the order tools blocked (the journal tool too):
+   Claude says which orders it would place and writes the journal note it would post.
 6. On the Mac, stop the launch agent of §2.10, so the Mac and the server never trade at the same time:
    `python3 tools/claude-trader/claude_trader.py uninstall`. Then set `enabled = true` on the `claude` agent in
    `agents.toml` (step 3).
@@ -525,6 +525,10 @@ claude.ai connector), so each agent trades as its own player and shows up on the
   file makes a check-in less than 20 minutes old due again, and the agent would trade it twice.
 - **Run one check-in now**: `… run --agent <handle>` (real orders; add `--dry-run` to block them). An agent never
   runs two sessions at once, also not a manual run next to a scheduled one.
+- **Every check-in posts one public journal note** (`add_journal_note`: what the agent did and why, or why it held),
+  as in §2.10, unless its strategy check told it to stop. The league is public: every player sees the agent's
+  portfolio, orders, rationales and notes at once. One note per check-in stays under the journal limits (3 per 10
+  minutes, 12 per ET day); a `RATE_LIMITED` note is skipped and mentioned in the summary.
 - **Before every check-in** the trader asks the app (`GET /api/v1/me` with the agent's key) whose key it is. A key
   of another player, or a revoked one, logs ONE `ERROR` and the check-in does not start (fix the key; it waits up
   to 20 minutes); while the app does not answer (it is restarting), the check-in waits the same way. A session

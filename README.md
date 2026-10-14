@@ -2,11 +2,14 @@
 
 [![Release](https://github.com/rjgehan/stocks/actions/workflows/release.yml/badge.svg)](https://github.com/rjgehan/stocks/actions/workflows/release.yml)
 
-**A multiplayer paper-trading league where friends and AI models compete with fake money on the real stock market.**
+**A public, scientific paper-trading league where friends and AI models compete with fake money on the real stock
+market: every portfolio, order, activity and rationale is visible to everyone, live.**
 
 Everyone, human or bot, starts with **$500 of fake money** and trades real US stocks and ETFs at live market prices
 in a Webull-style app that works on phone and desktop. Claude and ChatGPT join as players too: they read the same
-market data, place orders through the same API, and follow exactly the same rules. A leaderboard shows who is
+market data, place orders through the same API, and follow exactly the same rules. Nothing is hidden: anyone can open
+a player and see their live positions, every order with its fills and reasoning, their account activity and their
+P&L, so the league doubles as an open experiment in how humans and AI models trade. A leaderboard shows who is
 actually good at this.
 
 > **Status: Phase 1 (the playable league) is running on the owner's server, and Phase 2 wave A is built.**
@@ -31,8 +34,9 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 - **Real rules.** Market hours, pre-market and after-hours sessions, the market holiday calendar, T+1 settlement,
   settled vs. unsettled cash, good-faith violations, and SEC/FINRA fees on sells, the same rules a $500 cash account
   hits at a real broker.
-- **Humans vs. AI.** Claude and ChatGPT are ordinary players with API keys. Every bot order carries its reasoning,
-  so you can see *why* it bought.
+- **Humans vs. AI, in the open.** Claude and ChatGPT are ordinary players with API keys. Every order carries its
+  reasoning, public at once, and every portfolio and order history is public and live, so you can see *what* each
+  player holds and *why* it bought.
 - **A fair leaderboard.** Ranked by time-weighted return, so money the admin hands out never counts as a gain.
 
 ## Features
@@ -50,14 +54,15 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 **League**
 - Leaderboard by time-weighted return and by dollar P&L, compared with the S&P 500 (SPY), plus max drawdown, Sharpe
   ratio, profit factor and win rate
-- A race chart of everyone's returns, rank history, player profiles with league stats, and a feed of trades with
-  emoji reactions
+- A race chart of everyone's returns, rank history, and a live feed of trades with emoji reactions
+- Public player profiles: the live portfolio (cash, positions, open orders), the full order history with fills and
+  notes, account activity, P&L analysis and league stats of every player
 - An **admin** account that can deposit or withdraw fake money for one player or everyone, with a memo; every
   movement is a ledger entry, never an edited balance
 - New players start with $500 (configurable)
 
 **AI players**
-- An **MCP server** (`/mcp`) with 55 tools for quotes, charts, the screener, account, orders, alerts and the league,
+- An **MCP server** (`/mcp`) with 60 tools for quotes, charts, the screener, account, orders, alerts and the league,
   so Claude, ChatGPT or any MCP client can trade
 - **claude.ai and ChatGPT connectors** over OAuth 2.1: sign in once and choose which bot the connector acts as
 - The same features over a **REST API** with an OpenAPI 3.1 spec, plus a Server-Sent Events stream for scripts
@@ -81,10 +86,10 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 | Group orders: bracket, OCO, OTO and OTOCO; FINRA 5330 dividend adjustments; cancel latency behind a flag (Phase 2) | Works |
 | Accounts: cash ledger, positions and lots, activity history, resets; admin deposits and withdrawals to one player or everyone; P&L Analysis (earnings vs SPY/QQQ, P&L calendar, P&L by symbol) | Works |
 | Corporate actions: splits and reverse splits (with cash in lieu), cash dividends, ticker changes; anything else waits for the admin | Works |
-| League: leaderboard by time-weighted return and by P&L vs SPY (deposits never count as gains), Arena (humans vs AI), player profiles, live feed; Sharpe, profit factor, win rate, race chart, rank history and feed reactions (Phase 2) | Works |
+| League: leaderboard by time-weighted return and by P&L vs SPY (deposits never count as gains), Arena (humans vs AI), public player profiles (live portfolio, order history, activity, P&L analysis), live feed; Sharpe, profit factor, win rate, race chart, rank history and feed reactions (Phase 2) | Works |
 | Market data: live Alpaca (IEX) and Finnhub in production; a deterministic simulator for development and tests; screener, Time & Sales, analyst ratings (Phase 2) | Works |
 | Web app: Webull-style UI on phone, tablet and desktop, live quotes and charts with indicators, watchlists with columns, notifications, admin console; offline-capable PWA, price alerts and Web Push (Phase 2) | Works (push on a real phone still to be checked by the owner) |
-| AI players: MCP server with 55 tools, REST API with OpenAPI, the agent runner that drives the Claude and ChatGPT bots on a schedule with daily cost caps; run reports and spend under Admin → Bots, a public AI journal, Server-Sent Events for API keys and hourly API call logs (Phase 2) | Works (live bot runs need the owner's LLM keys) |
+| AI players: MCP server with 60 tools, REST API with OpenAPI, the agent runner that drives the Claude and ChatGPT bots on a schedule with daily cost caps; run reports and spend under Admin → Bots, a public AI journal, Server-Sent Events for API keys and hourly API call logs (Phase 2) | Works (live bot runs need the owner's LLM keys) |
 | claude.ai and ChatGPT connectors: OAuth 2.1 authorization server with the act-as consent screen (Phase 2) | Built; the owner still has to connect both from their accounts |
 | Tests | 1,880 backend tests on H2 and on PostgreSQL, 240 frontend unit tests, Playwright end-to-end on three viewports, agent-runner tests against fake LLM APIs |
 | Delivery: CI, multi-arch image on GHCR, Watchtower on a CasaOS home server behind a Cloudflare Tunnel | Live |

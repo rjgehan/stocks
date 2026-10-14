@@ -74,7 +74,7 @@ The final design takes **mvp-first's skeleton**, raises it to **realism-first's 
 | Leaderboard | all three | P&L day ends at 20:00 ET (Webull), eligibility rules, AI filter, deposits shown publicly |
 | Auth | all three | API keys in Phase 1. Admin works by session only. OAuth 2.1 in Phase 2 with multiplayer's act-as consent. |
 | MCP | multiplayer | `whoami`, `get_rules` first, the untrusted envelope, explicit hints, idempotent `place_order` |
-| Social | multiplayer | Profiles, a delayed league feed, rationales published after a delay, holdings shown as end-of-day weights |
+| Social | multiplayer | A public league (§16.7): live portfolios, orders, activity and P&L on every profile, public rationales and journals, a live feed (an optional admin delay) |
 | Corporate actions | realism-first | Splits, reverse splits, cash dividends (the receivable counts in equity) and name changes in Phase 1 |
 | Market data | research | Alpaca Basic plus Finnhub free in Phase 1. SIM is the default in dev and tests. Startup capability probe. |
 | Deploy | all three | One image; compose with app, Postgres and backup; actuator on 8081; advisory lock |
@@ -520,8 +520,8 @@ public interface RateLimitService {
 // ===== com.stocks.contract.identity [WS1] =====
 public interface SettingsService {                           // app_setting with typed accessors, cached 5 s
   BigDecimal defaultStartingCash();  boolean allowSelfReset();  LocalDate seasonStart();
-  int eligibilityMinFills();  int eligibilityMinSymbols();  Duration tradeFeedDelay();
-  HoldingsVisibility holdingsVisibility();  boolean botsRequireRationale();  boolean showDepositsInFeed();
+  int eligibilityMinFills();  int eligibilityMinSymbols();  Duration tradeFeedDelay();   // default PT0S (§16.7)
+  boolean botsRequireRationale();  boolean showDepositsInFeed();   // holdingsVisibility retired in public mode
   boolean humanKindExcludesApiTraders();
   Map<String, String> all();  void put(String key, String value, long adminPlayerId);   // validates key and type
 }
@@ -652,7 +652,8 @@ public record BarSeries(String symbol, Timeframe timeframe, AdjustmentMode adjus
 public record PlaceOrderRequest(String clientOrderId, String symbol, Side side, OrderType type,
     BigDecimal qty, BigDecimal notional, BigDecimal limitPrice, BigDecimal stopPrice,
     BigDecimal trailAmount, BigDecimal trailPercent, TimeInForce timeInForce, Boolean extendedHours,
-    String rationale, Boolean shareNote, Set<String> acknowledge) {}
+    String rationale, Boolean shareNote /* deprecated and ignored: every new note is public (§16.7) */,
+    Set<String> acknowledge) {}
 public record ReplaceOrderRequest(String clientOrderId, BigDecimal qty, BigDecimal limitPrice, BigDecimal stopPrice,
     BigDecimal trailAmount, BigDecimal trailPercent, TimeInForce timeInForce, Boolean extendedHours, String rationale) {}
 public enum OrderStatusFilter { OPEN, CLOSED, ALL }
@@ -695,7 +696,7 @@ public interface AccountService {                                 // each method
   void restrict(long playerId, AccountRestriction restriction, CancelReason cancelReason, String reason, long actorPlayerId);
   /** LiftRestrictionCmd: drop the admin restriction; recompute any GFV restriction from account_violation (§10.4). */
   void liftAdminRestriction(long playerId, long actorPlayerId);
-  void recordAdminView(long accountId, String reason, long actorPlayerId);   // break-glass, §21.3 (account_event)
+  void recordAdminView(long accountId, String reason, long actorPlayerId);   // no caller since public mode; kept for the historical ADMIN_VIEW rows
 }
 public interface AccountQueries {
   long activeAccountId(long playerId);                            // ApiException(NOT_FOUND) if none
@@ -788,6 +789,16 @@ public interface LeagueStatsQueries {
 public interface PnlAnalysisQueries {
   PnlAnalysisDto analysis(long accountId, HistoryRange range);
   PnlCalendarDto calendar(long accountId, CalendarView view, YearMonth monthOrNull, Integer yearOrNull);
+}
+// Public mode (§16.7): any listed player's live portfolio, orders, activity and P&L (REST and MCP #56–#60).
+// league.PublicPortfolioService is a leaf bean: never inject it into PerformanceQueriesImpl or AccountQueriesImpl.
+public interface PublicPortfolioQueries {
+  PublicPortfolioDto portfolio(String handle);            // PLAYER_NOT_FOUND unknown/DISABLED; no run → empty (runNo 0)
+  PublicPortfolioDto portfolioAnyStatus(String handle);   // the admin twin: any status
+  Page<PublicOrderDto> orders(String handle, OrderStatusFilter status, String symbolOrNull, Cursor cursor, int limit);
+  Page<ActivityDto> activities(String handle, ActivityFilter filter, Cursor cursor, int limit);   // sanitized
+  PnlAnalysisDto pnlAnalysis(String handle, HistoryRange range);                                   // ACCOUNT_NOT_FOUND w/o run
+  PnlCalendarDto pnlCalendar(String handle, CalendarView view, YearMonth monthOrNull, Integer yearOrNull);
 }
 public interface FeedReactionService {
   FeedReactionsDto react(long playerId, String itemId, Reaction reaction);   // NOT_FOUND unless visible; pushes /topic/feed
@@ -1005,7 +1016,7 @@ enum Timeframe       { MIN1("1Min"), MIN5("5Min"), MIN15("15Min"), MIN30("30Min"
                        DAY1("1Day"), WEEK1("1Week"), MONTH1("1Month") }
 enum ChartRange      { D1("1D"), D5("5D"), M1("1M"), M3("3M"), M6("6M"), YTD("YTD"), Y1("1Y"), Y5("5Y"), ALL("ALL") }
 enum MoverList       { GAINERS, LOSERS, ACTIVES }
-enum HoldingsVisibility { EOD_WEIGHTS, EOD_FULL, HIDDEN }
+// HoldingsVisibility (EOD_WEIGHTS, EOD_FULL, HIDDEN) was retired in public mode (§16.7, V9)
 enum NotificationKind { FILL, PARTIAL_FILL, ORDER_CANCELLED, ORDER_EXPIRED, DEPOSIT, WITHDRAWAL, ADJUSTMENT,
                         GFV_ISSUED, RESTRICTION_CHANGED, CORPORATE_ACTION, ACCOUNT_RESET, SYSTEM,
                         PRICE_ALERT /* Phase 2, §19.1 */ }
@@ -1081,7 +1092,7 @@ enum PushCategory    { FILLS, ALERTS, MONEY, ACCOUNT, LEAGUE }
 
 **As deployed (2026-10).** The first production deploy shipped without the squash: production applied `V1__init`, `V1_0_1`, `V1_3_01` and `V1_4_01`, and runs `spring.flyway.out-of-order=false`. Those four files are frozen (never edit, rename or delete them), and the per-workstream `V1_<ws>_<nn>` lanes are closed: a file that sorts before `V1_4_01` is "ignored" by Flyway and fails validation at boot. Every new migration is the next whole version (`V2__…`, `V3__…`), numbered at merge time by the integrator. `MigrationOrderTest` enforces this and upgrades a production-baseline database with out-of-order off.
 
-Production has since applied `V2__wait_reason_fits_corporate_action_hold` (Phase 1 review fixes), so `MigrationOrderTest` treats V2 as the newest applied version. **Phase 2 wave A** (integration merge, 2026-10-11) adds, in merge order, `V3__p2_orders` (group orders, FINRA 5330, cancel latency), `V4__p2_league` (feed reactions), `V5__p2_alerts` (price alerts, Web Push), `V6__p2_charts` (screener statistics), `V7__p2_oauth` (OAuth authorization server) and `V8__p2_agents` (agent runs, journal, API access log) in `common/`, plus the vendor halves `h2/` and `postgresql/V8_1__p2_agents_feed_kind` (the `feed_event.event_kind` CHECK gains `JOURNAL`; a CHECK cannot be replaced portably). Production applies all of them in one go at the first boot of the wave A image; each is additive (new tables, new nullable or defaulted columns, one widened CHECK), so the Phase 1 data needs no backfill. The next migration is `V9__…`.
+Production has since applied `V2__wait_reason_fits_corporate_action_hold` (Phase 1 review fixes), so `MigrationOrderTest` treats V2 as the newest applied version. **Phase 2 wave A** (integration merge, 2026-10-11) adds, in merge order, `V3__p2_orders` (group orders, FINRA 5330, cancel latency), `V4__p2_league` (feed reactions), `V5__p2_alerts` (price alerts, Web Push), `V6__p2_charts` (screener statistics), `V7__p2_oauth` (OAuth authorization server) and `V8__p2_agents` (agent runs, journal, API access log) in `common/`, plus the vendor halves `h2/` and `postgresql/V8_1__p2_agents_feed_kind` (the `feed_event.event_kind` CHECK gains `JOURNAL`; a CHECK cannot be replaced portably). Production applies all of them in one go at the first boot of the wave A image; each is additive (new tables, new nullable or defaulted columns, one widened CHECK), so the Phase 1 data needs no backfill. **Public mode** (§16.7) adds `common/V9__public_mode` (data only: the feed delay goes to `PT0S`, `social.showDepositsInFeed` is forced to `true` (overriding an admin's explicit `false`), `social.holdingsVisibility` is deleted, rows written with the old delay become visible, and every non-disabled human gets one SYSTEM notification "The league is now public"). The next migration is `V10__…`.
 
 **Phase 2 group orders and order realism** (`common/V3__p2_orders.sql`; §11.9, §11.10, §14), portable H2 + PostgreSQL:
 
@@ -2298,7 +2309,7 @@ Webull's "Advanced" orders [D: semantics after Webull's help pages; details belo
 - One symbol and one whole-share `qty` (≥ 1) for every leg. No notional or fractional legs, no `extendedHours`, no TRAILING_STOP leg (later).
 - Wave A entries are BUY only (the children SELL what the entry bought). A SELL entry (sell, then buy back) needs buy-back holds at release and comes later; it is rejected with `ORDER_GROUP_INVALID`.
 - `timeInForce` (DAY or GTC, default DAY) applies to every leg, except that a MARKET entry is always DAY.
-- `rationale`, `shareNote`, `doNotReduce` and `acknowledge` apply to every leg (one rationale per group; AI players must send it, check 7).
+- `rationale`, `shareNote`, `doNotReduce` and `acknowledge` apply to every leg (one rationale per group; AI players must send it, check 7). Public mode (§16.7): every new leg's note is public and `shareNote` is ignored; a group or leg replace keeps the old legs' flag unless it sends a new note (`NormalizedGroup.withRationale` makes that note public).
 - **Entry price** (`entryPrice`): the entry's limit (LIMIT, STOP_LIMIT), its stop (STOP), or for MARKET the ask, else the reference price of check 19 (none → `MARKET_DATA_UNAVAILABLE`).
 - **Bracket price rules:** `takeProfit.limitPrice > entryPrice > stopLoss.stopPrice`, and `takeProfit.limitPrice − stopLoss.stopPrice ≥ 0.1% × entryPrice` (`ORDER_GROUP_INVALID` on the field that breaks it).
 
@@ -2591,7 +2602,7 @@ for each fee row r applicable to (side, trade_date of this execution):
 - **Never early.** An action is never applied before its ex-date (it stays PENDING; an admin "Run now" with a future run key cannot apply it), and `PayDividendsCmd` never pays ahead of today (`min(date, today ET)`).
 - **A split applied after its ex cut-off** (found late, or catch-up after downtime over the ex-date): with **no holder at the cut-off** it only records the `price_adjustment` and cancels the orders entered before the cut-off (shares bought since were bought at post-split prices), then is APPLIED, with no hold; with **holders and no trade on the symbol since**, it is applied as on time, and its `position_adjustment` and `account_event` rows (and a late NAME_CHANGE's without trades since) are dated at the nominal **03:45 ET of the ex-date**, so the replayed holdings at the cut-off are post-split (the ex-date's catch-up EOD and a same-day dividend applied after it see the split shares, exactly as on time; ledger rows are posted now); with **holders and trades since** it goes to `NEEDS_ADMIN` (a corporate-action hold).
 - Orders entered after the ex cut-off were priced post-split and are not cancelled by a late split; orders entered before it are.
-- Every per-account effect is recorded in the same transaction: one `position_adjustment` row per affected lot (exact before/after quantity, cost and symbol), any `CASH_IN_LIEU` ledger row, and one `account_event` (SPLIT or NAME_CHANGE) per account for the activity history (§18.2). After commit the engine publishes `AccountChanged(reason=CORPORATE_ACTION)` and a `CorporateActionEffect` per account (WS5 turns it into a `CORPORATE_ACTION` notification, `source_ref` `CA:<cac>:<acc>:<effect>`), and `CorporateActionApplied` once (audit, §17.7). There is no league-feed entry: `feed_event` has no corporate-action kind, and per-player entries would publish live holdings (§16.7 item 3).
+- Every per-account effect is recorded in the same transaction: one `position_adjustment` row per affected lot (exact before/after quantity, cost and symbol), any `CASH_IN_LIEU` ledger row, and one `account_event` (SPLIT or NAME_CHANGE) per account for the activity history (§18.2). After commit the engine publishes `AccountChanged(reason=CORPORATE_ACTION)` and a `CorporateActionEffect` per account (WS5 turns it into a `CORPORATE_ACTION` notification, `source_ref` `CA:<cac>:<acc>:<effect>`), and `CorporateActionApplied` once (audit, §17.7). There is no league-feed entry: `feed_event` has no corporate-action kind; the change shows in the player's public activity (§16.7).
 - `NEEDS_ADMIN` publishes `AdminAlertRaised`, which WS5 pushes to every connected admin on `/user/queue/admin` (§19); the count is on the System page.
 
 | Type | Effect |
@@ -3096,9 +3107,9 @@ The job is idempotent: `job_run('EOD_SNAPSHOT', D)` plus MERGE upserts.
   - rank and `rankChange` (vs yesterday's `leaderboard_snapshot`; only for RETURN/ALL, otherwise null)
   - player with the AI badge and model label
   - `return`, `pnl`, `excessVsBenchmark`, `maxDrawdown`, `rebased`
-  - `equity` (**null when `social.holdingsVisibility=HIDDEN`**, matching `PlayerProfile`), `netContributions` and `flowsInPeriod` (always public, charter item 2)
+  - `equity` (always shown, public mode §16.7; null only without a valuation), `netContributions` and `flowsInPeriod` (always public, charter item 2)
   - `fills`, `symbolsTraded`, `winRate` (closing sells with realized P&L > 0 ÷ closing sells in the window)
-  - `topHolding` (by weight at the previous EOD), `resets`, `apiTrader` (a human with at least one API-key fill in the window)
+  - `topHolding` (by weight at the previous EOD; always shown), `resets`, `apiTrader` (a human with at least one API-key fill in the window)
   - `spark`: up to 30 daily unit values for the period plus the live value
 - **Arena card.** Median TWR of humans vs median TWR of AI players for the selected period.
 - **Max drawdown.** `MDD(a,b) = max_t (1 − U_t / max_{s∈[a,t]} U_s)` over EOD unit values in the window plus the live value, within one unit series (1.0 if the window spans a rebase). It is reported as a positive fraction.
@@ -3117,13 +3128,28 @@ excessVsBenchmark(a,b) = TWR(a,b) − (B_b / B_a − 1)      (live B_b uses SPY'
 - The ratio arithmetic uses scale 12 `HALF_EVEN` (`index_value NUMERIC(28,12)`).
 - **Extra benchmarks (Phase 2).** `stocks.performance.extra-benchmarks` (default `QQQ`) are chained in `benchmark_daily` exactly like SPY, under their own `symbol`: `BenchmarkBackfillJob` backfills each one that lacks the 2025-12-31 anchor (one boot occurrence while any symbol is missing; it fails only if every missing symbol fails; its run key is `2025-12-31` while SPY is missing and `2025-12-31:QQQ` otherwise, because a league that backfilled SPY before Phase 2 already has the `2025-12-31` occurrence DONE), and the EOD job adds them to `ensureDayEndMarks` and writes their row for D. They are display only (P&L Analysis, §16.10): the leaderboard and `excessVsBenchmark` stay on SPY. Their dividends come from `daily_mark.dividend_ex` exactly like SPY's: `CORPORATE_ACTION_SYNC` asks for the corporate actions of every benchmark (main and extras, §14), so their cash dividends are recorded from the first sync on and the chains are total return on the same basis as SPY (for both, the backfilled part before that is price return: historical dividends are not available through `MarketDataService`). No transfer records their mark, so an opening during a trading day (after 09:30 ET, before the cut-off) reads the extra benchmark's price then from its 1-minute bars (the close of the last bar that started before the opening; one request per opening, cached) and anchors `B_a = B_prevEOD × P(a) / P_prevEOD` like SPY; an opening before the regular open, on a non-trading day or after the cut-off uses the index of the last EOD (the price has not moved since). While that price is unknown (bars not available yet) the extra benchmark has no curve, never one from the previous close.
 
-### 16.7 Visibility and fairness charter (published in `GET /rules` and on the League page)
+### 16.7 Public mode charter (published in `GET /rules` and on the League page)
 
-1. **Same rules for all.** Every player gets the same starting cash, data (one `QuoteBook`), latency, fill rules, fees and per-player write limits on every channel.
-2. **Deposits are public.** `netContributions` and `flowsInPeriod` are shown on every row. Admin deposits never move anyone's return. Resets are counted publicly, and **a reset never erases a loss** from any leaderboard period (§16.3).
-3. **No live copying of others.** Other players' trades appear in the feed and on profiles **after `social.tradeFeedDelay` (15 min)**, labeled "via API" when an API key placed them. Holdings are shown as **previous-EOD weights only** (`social.holdingsVisibility=EOD_WEIGHTS`); with `HIDDEN`, holdings are not shown and the `equity` field is null on profiles and leaderboard rows. **`HIDDEN` hides holdings, not account size**: dollar P&L and net contributions stay public (item 2), and `equity = netContributions + pnl(ALL)`, so the admin Settings page says so. Working orders are never visible to other players. The admin, who is also a player, sees another player's live positions and orders only through an audited **break-glass** view that the affected player sees in their activity (§21.3); the admin cannot issue API keys for humans (§21.1), so there is no other path.
-4. **Rationales.** AI rationales become public together with the delayed trade. A human's order note stays private unless they tick "Share note" (`shareNote`), which sets `trade_order.rationale_public`.
-5. **Kill switch.** The admin can freeze any player (§10.5), and every such action is audited.
+The league is a public experiment: since `V9__public_mode` every player's portfolio, orders, fills, rationales, activity and journal are visible to every player, live. `GET /rules` publishes `social {tradeFeedDelay, visibility: "PUBLIC"}` and these six items (`RulesService.fairness(bots.requireRationale)`, pinned by the golden `rules.json`):
+
+1. **Same rules for all**: the same starting cash, market data, latency, fill rules, fees and write limits on every channel, for humans and bots alike. Players never trade with each other.
+2. **Deposits are public**: net contributions and flows are shown on every leaderboard row, and admin deposits never move anyone's return. Resets are counted publicly, and a reset never erases a loss (§16.3).
+3. **Everything is public**: every player's live portfolio (cash, positions, open orders), full order history with fills, account activity, P&L analysis, rationales, journal and stats are visible to every player in real time. The feed delay (none by default) only holds back the feed, the trade list and journal notes.
+4. **Rationales**: every new order's rationale or note is public, and AI players must give one (with `bots.requireRationale=false`: "AI players are asked, not required, to give one"). Notes written before public mode keep the visibility their author chose.
+5. **Kill switch**: the admin can freeze any player (§10.5), and every such action is audited. Bots can never act as admin (§17.4).
+6. **Secrets stay private**: passwords, API keys, OAuth tokens, email addresses, sessions and the audit log.
+
+What the code does:
+
+- **Feed delay (D1).** `social.tradeFeedDelay` stays a setting; its default is `PT0S` and V9 sets `PT0S` on existing databases, so the admin can still raise it. It holds back only the feed (`feed_event.visible_at`), `GET /players/{h}/trades`, journal notes and other players' best and worst trades (§16.8). **Portfolio, order history, activity and P&L analysis are always live**, and the admin Settings page says so. `FeedEventListener.recordExecution` keeps `visible_at = executed_at + delay`, so an EOD backfill row keeps its place in `/feed`; `FeedService.publishNewlyVisible` looks back 15 s past its watermark and skips the last 2,000 ids it pushed, because at `PT0S` a row's `visible_at` falls milliseconds before its async insert commits (the first tick only sets the watermark, and rows backfilled hours later are not pushed live).
+- **No visibility setting (D2).** `social.holdingsVisibility` and the `HoldingsVisibility` enum are retired (none of their values meant "public, live"); V9 deletes the stored row. Leaderboard equity and top holding, profile equity, profile holdings (previous-close rows with weight and `qty`) and public-history equity are always shown.
+- **Public data (D3).** Five `league:read` routes, `GET /players/{h}/portfolio`, `/orders`, `/activities`, `/pnl-analysis` and `/pnl-calendar` (§18.2), and the MCP tools #56–#60 (§20.3) are served by `PublicPortfolioQueries` (`league/PublicPortfolioService`, a leaf bean: never injected into `PerformanceQueriesImpl` or `AccountQueriesImpl`, which would make a cycle). The admin twin `GET /admin/players/{h}/portfolio` answers for any player status. `Position`, `PnlAnalysis` and `PnlCalendar` are reused (no private member); `Activity` is sanitized (below); orders use `PublicOrder`, never `Order`.
+- **Rationales (D4).** A *new* order or group leg stores `rationale_public = TRUE`. A *replace* (price change, group or leg replace) keeps the old flag unless it sends a new non-blank rationale, which then becomes public. `shareNote` is accepted, ignored and marked deprecated. Notes stored before V9 keep their stored flag, so nothing written as private is ever exposed.
+- **Text and secrets (D5).** REST shows full rationales (up to 1000 characters) in `untrusted.rationale`; MCP clips them to 280 (`mcp/Untrusted`, §17.8). **Private:** API keys, OAuth tokens, passwords, emails, sessions, `audit_log`, `clientOrderId`, account ids, API key ids, OAuth client ids, the MCP client name, client IPs, admin and player activity memos, `restrictionReason` and admin-only data. **Public:** the order `channel` (WEB, REST_KEY, MCP_KEY, MCP_OAUTH, SYSTEM, ADMIN), `availableQty` and `openBuyHolds`; per-order holds are simply not exposed. Public activity drops `ADMIN_VIEW` rows (even when asked for alone), keeps a memo only when `by = SYSTEM`, rebuilds a `RESET` detail without account ids or memo, and keeps a `RESTRICTION` reason only when the system set it.
+- **No break glass (D6).** `POST /admin/players/{h}/live-view`, `AdminPlayerService.liveView`, `AdminPlayerLiveView` and `LiveViewRequest` are removed. `AccountService.recordAdminView` and its engine command stay, unused, and `ADMIN_VIEW` remains for the historical rows. The admin player page shows the live portfolio through the admin twin, with the existing admin Cancel on open orders (§21.3).
+- **Live without a new topic (D7).** A profile's Portfolio polls every 15 s and its order History every 30 s while visible; a `/topic/feed` item of that player invalidates both (at most once per 2 s per player, §19).
+- **Known limit (D8).** Orders rejected at entry are never stored (§11.2), so History shows every stored status (including `REJECTED` rows from later engine checks) but not entry rejections; persisting them would be engine work and is out of scope.
+- **One notice (D13).** V9 gives every non-disabled human one SYSTEM notification: "The league is now public".
 
 ### 16.8 Player stats (Phase 2: Sharpe, profit factor, win rate, hold time, best and worst trade)
 
@@ -3138,9 +3164,9 @@ Stats are **league stats**: per player and leaderboard period, across runs, from
 | **Profit factor** | `grossProfit / grossLoss`; `grossProfit = Σ realized_pnl > 0`, `grossLoss = −Σ realized_pnl < 0` over the same closing sells | Scale 4. Null when `grossLoss = 0` (the SPA shows "∞" when `grossProfit > 0`, "--" without closing sells). |
 | **Closed lots** | A FIFO replay of the player's executions and `position_adjustment` rows (`ClosedLots`, below) yields one **closed lot** per (buy lot, sell execution) pair: `qty`, `openedAt` (the buy), `closedAt` (the sell), `cost` (the relieved lot cost, buy fees included), `proceeds` (the sell's net cash pro rata), `realizedPnl = proceeds − cost`, `return = realizedPnl / cost` | The broker "closed lots" report. A lot sold in three sells is three closed lots. Splits and renames move the lot (quantity, cost, symbol) exactly like the engine (§14); a lot that a corporate action closes (dust, cash in lieu) is not a trade. |
 | **Average hold time** | mean of `closedAt − openedAt` over the closed lots with `closedAt ∈ (a, b]` | `avgHoldSeconds`, an integer; null without closed lots. |
-| **Best / worst trade** | the closed lot with the highest / lowest `realizedPnl` (ties: the earliest `closedAt`) | For another player, only lots closed at or before `now − social.tradeFeedDelay` (`tradesAsOf`), so a profile never shows a sell before the feed does (§16.7 item 3). |
+| **Best / worst trade** | the closed lot with the highest / lowest `realizedPnl` (ties: the earliest `closedAt`) | For another player, only lots closed at or before `now − social.tradeFeedDelay` (`tradesAsOf`), so a profile never shows a sell before the feed does (§16.7). With the default delay `PT0S`, `tradesAsOf = asOf`: nothing is held back, and the profile says nothing about a delay. |
 
-**Delayed trade statistics.** For a viewer other than the player, **every** trade statistic of the profile is as of `tradesAsOf`: closing sells, wins, win rate, gross profit and loss and the profit factor come from `LeagueRepository.activityOf(player, a, tradesAsOf)`, and the closed lots, the average hold and the best and worst trade from the lots with `closedAt ≤ tradesAsOf` (review fix: these used to update the moment a sell executed, showing its realized P&L and hold time before the feed showed the sell). The player's own stats (`GET /me/stats`, or their own profile) are live. Returns, P&L, drawdown, Sharpe and volatility come from equity and stay live like the board. The leaderboard's `winRate` and `profitFactor` columns remain the live board's (§16.5): a rate, with no symbol, side, size or amount.
+**Delayed trade statistics** (only when the admin sets a delay above 0). For a viewer other than the player, **every** trade statistic of the profile is as of `tradesAsOf`: closing sells, wins, win rate, gross profit and loss and the profit factor come from `LeagueRepository.activityOf(player, a, tradesAsOf)`, and the closed lots, the average hold and the best and worst trade from the lots with `closedAt ≤ tradesAsOf` (review fix: these used to update the moment a sell executed, showing its realized P&L and hold time before the feed showed the sell). The player's own stats (`GET /me/stats`, or their own profile) are live. Returns, P&L, drawdown, Sharpe and volatility come from equity and stay live like the board. The leaderboard's `winRate` and `profitFactor` columns remain the live board's (§16.5): a rate, with no symbol, side, size or amount.
 
 `ClosedLots` (pure, `portfolio`) mirrors the engine's relief (§12.8): lots open per BUY execution (`cost = −net_amount`), a SELL relieves the open lots of its symbol FIFO by `(opened_at, execution id)`, each slice costs `cost_remaining × q / qty_remaining` (HALF_EVEN to cents; a full relief takes the whole remainder), and its proceeds are `net_amount × q / qty` (HALF_EVEN; the last slice takes the rest), so the slices of a sell add up to `execution.realized_pnl` exactly (any difference is put on the last slice: the ledger stays the source of truth). A `position_adjustment` (joined to `position_lot.open_execution_id`) sets the lot's quantity, cost and symbol to its `*_after` values.
 
@@ -3161,7 +3187,7 @@ Golden vectors (`golden/performance/`, WS4): `sharpe.json` (24 EOD unit values, 
 
 ### 16.10 P&L analysis (Phase 2, Webull "P&L Analysis")
 
-The analysis is **run-relative**, like the account page (§16.3): it covers the caller's ACTIVE run, and a range that starts before the run's opening starts at the opening. Three parts:
+The analysis is **run-relative**, like the account page (§16.3): it covers the caller's ACTIVE run, and a range that starts before the run's opening starts at the opening. In public mode (§16.7) the same analysis and calendar of any listed player's active run are public (`GET /players/{h}/pnl-analysis|pnl-calendar`, MCP #59–#60, the profile's Analysis tab). Three parts:
 
 **My Earnings** (`GET /account/pnl-analysis?range`, ranges `1W|1M|3M|YTD|1Y|ALL` as `GET /account/history`; `1D` is accepted). The account curve is `GET /account/history`'s points as returns `U(t) / U(a) − 1` with `pnl(t)`; benchmarks are **SPY and QQQ** total-return indexes over the same window, `B(t) / B(a) − 1`, with their period return; both start at the same instant `a`, an opening included (§16.6 *Extra benchmarks*). QQQ is kept in `benchmark_daily` exactly like SPY (§16.6 *Extra benchmarks*).
 
@@ -3210,7 +3236,7 @@ Players react to league feed items with one emoji from a fixed set: `ROCKET` �
 
 | # | Matcher | Authentication | Notes |
 |---|---|---|---|
-| 1 | `/api/v1/admin/**` | **Session cookie only**, `hasRole('ADMIN')` and the player ACTIVE (`RouteAuthorization.activeAdmin`: a FROZEN admin may log in and look, §17.3, but gets 403 `FORBIDDEN` here), CSRF | `AdminSessionOnlyFilter` returns **403 `ADMIN_REQUIRES_SESSION`** for any request carrying an `Authorization` header, even the admin's own key. `@RecentAuth(15m)` guards cash transfers, resets, freeze, key issuance, role changes and the break-glass live view; when stale it returns 403 `RECENT_AUTH_REQUIRED` and the UI prompts for `POST /api/v1/auth/reauth`. In production, Cloudflare Access with MFA additionally fronts `/admin*` and `/api/v1/admin/*` (§24.5). |
+| 1 | `/api/v1/admin/**` | **Session cookie only**, `hasRole('ADMIN')` and the player ACTIVE (`RouteAuthorization.activeAdmin`: a FROZEN admin may log in and look, §17.3, but gets 403 `FORBIDDEN` here), CSRF | `AdminSessionOnlyFilter` returns **403 `ADMIN_REQUIRES_SESSION`** for any request carrying an `Authorization` header, even the admin's own key. `@RecentAuth(15m)` guards cash transfers, resets, freeze, key issuance and role changes; when stale it returns 403 `RECENT_AUTH_REQUIRED` and the UI prompts for `POST /api/v1/auth/reauth`. In production, Cloudflare Access with MFA additionally fronts `/admin*` and `/api/v1/admin/*` (§24.5). |
 | 2 | `/api/**`, `/mcp`, `/v3/**` (every springdoc document: `/v3/api-docs`, `/v3/api-docs.yaml`, groups; Swagger UI lives under `/api`: `/api/docs` → `/api/swagger-ui/index.html`) | `Authorization: Bearer stk_…` → `ApiKeyAuthenticationProvider` (stateless, no CSRF, cookies ignored). Otherwise a session cookie plus CSRF. | Every 401 in this chain (including `/mcp` with no credentials) carries `WWW-Authenticate: Bearer realm="stocks"` (plus `resource_metadata="${public-url}/.well-known/oauth-protected-resource/mcp"` while OAuth is on, §17.9.5; the `common.error.BearerChallenge` bean): the security layer's own 401s (`SecurityErrors`, `BearerTokenFilter`) and the 401s that controllers raise (`BAD_CREDENTIALS` from login, `ApiException(UNAUTHENTICATED)`), which `ProblemDetailsAdvice` answers with the same challenge. Public in this chain: only `POST /api/v1/auth/login`, `POST /api/v1/auth/signup`, `GET /api/v1/auth/csrf`. springdoc derives the UI root from `springdoc.swagger-ui.path=/api/docs`, so the UI and its assets are under `/api/swagger-ui/**` (verified with springdoc 3.1.1), inside this chain. |
 | 3 | `/ws` | Session cookie at the handshake. CSRF uses **the same `CookieCsrfTokenRepository.withHttpOnlyFalse()`** as chain 2, and the SPA sends the raw `XSRF-TOKEN` cookie value as `X-XSRF-TOKEN` in the STOMP `CONNECT` headers. | WS5 publishes a bean named `csrfChannelInterceptor` that compares the **unmasked** token, replacing the default `XorCsrfChannelInterceptor` (which expects a masked token and would reject the raw cookie value). A WebSocket IT connects with the raw cookie token and expects success, and without it expects an ERROR frame. Allowed origins: `stocks.public-url` (plus `http://localhost:5173` in dev). |
 | 4 | everything else | none | Static SPA, `index.html` fallback. The SPA shell holds no data. `/h2-console` is dev only. |
@@ -3219,7 +3245,7 @@ Phase 2 (§17.9, built) adds the `oauth` chain before chain 1 (`/oauth2/**`, `/.
 
 **Implementation notes** (`security.SecurityConfig`, Phase 0; all chains answer 401/403 with the §6.5 problem body):
 - **Chain order in code:** actuator (management port 8081, `EndpointRequest.toAnyEndpoint()`; the exposed endpoints are open there because the port is never published or tunneled and, in `prod`, binds to the container's loopback only (`management.server.address: 127.0.0.1`, so other containers on `stocks-edge`/`stocks-backend` cannot read it), and the management server has no Spring Session, so no player could authenticate on it anyway), oauth (Phase 2), 1 admin, the dev-only `/h2-console/**` chain (`spring.h2.console.enabled`; no CSRF/CSP, frames same-origin), 2 api, 3 ws, 4 web (`@Order` 0–6).
-- **Per-route rules in chain 2** (`RouteAuthorization`), so feature controllers need no security code: `market:read` for `/market/**`, `/assets/**`, `/quotes`, `/snapshots/**`, `/bars/**`, `/news`, `/rules`; `account:read` for GET `/account/**`, `/orders/**`, `/watchlists/**`, `POST /orders/preview` and `/me/notifications/**`; `trade` for `POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close`, watchlist writes and alert writes (Phase 2); `account:read` for `GET /alerts` (Phase 2); `league:read` for `/leaderboard`, `/players/**`, `/feed`; session only for `/me/**` (except `GET /me` and notifications; this covers `/me/push/**`, Phase 2), `/auth/logout`, `/auth/reauth` and `POST /account/reset` (also `trade`). Everything else in the chain (`/mcp`, `/v3/**`, Swagger UI, `/api/v1/test/**`, new routes) needs any authenticated player. MCP tools enforce the same scopes per call (`McpToolCatalog.SCOPES`, the Scope column of §20.3). A key without the scope gets 403 `FORBIDDEN_SCOPE`; a key on a session-only route 403 `FORBIDDEN`. A session holds all four scopes.
+- **Per-route rules in chain 2** (`RouteAuthorization`), so feature controllers need no security code: `market:read` for `/market/**`, `/assets/**`, `/quotes`, `/snapshots/**`, `/bars/**`, `/news`, `/rules`; `account:read` for GET `/account/**`, `/orders/**`, `/watchlists/**`, `POST /orders/preview` and `/me/notifications/**`; `trade` for `POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close`, watchlist writes and alert writes (Phase 2); `account:read` for `GET /alerts` (Phase 2); `league:read` for `/leaderboard`, `/players/**` (public mode §16.7 included: `/players/{h}/portfolio`, `/orders`, `/activities`, `/pnl-analysis`, `/pnl-calendar`), `/feed`; the admin twin `GET /admin/players/{h}/portfolio` is behind chain 1; session only for `/me/**` (except `GET /me` and notifications; this covers `/me/push/**`, Phase 2), `/auth/logout`, `/auth/reauth` and `POST /account/reset` (also `trade`). Everything else in the chain (`/mcp`, `/v3/**`, Swagger UI, `/api/v1/test/**`, new routes) needs any authenticated player. MCP tools enforce the same scopes per call (`McpToolCatalog.SCOPES`, the Scope column of §20.3). A key without the scope gets 403 `FORBIDDEN_SCOPE`; a key on a session-only route 403 `FORBIDDEN`. A session holds all four scopes.
 - **CSRF failures of anonymous callers** on non-public routes answer 401 `UNAUTHENTICATED` (a bot that forgot its key is not told about CSRF); sessions and the public login/signup routes get 403 `CSRF_INVALID`.
 - **Authorities** (`PlayerAuthenticationToken`): `ROLE_PLAYER`; `ROLE_ADMIN` only for a HUMAN ADMIN **on a session** (an API key never has it, even the admin's own: layer 3 of §17.4 twice over); `AUTH_SESSION`/`AUTH_API_KEY`/`AUTH_OAUTH`; `SCOPE_<scope>`. `getName()` is the player's public id, which Spring Session JDBC stores in `PRINCIPAL_NAME`, so a player's sessions can be found and deleted (§17.3, §10.5). Authorize admin work with the chain, never with `PlayerPrincipal.isAdmin()` (it reports the role for display, e.g. in `Me`).
 - Headers: `Cache-Control: no-store` on chains 1–3 (instead of Spring Security's default), none from chain 4 (`WebConfig` sets them). Header values that Spring Security's `StrictHttpFirewall` rejects lazily (control characters) answer 400 `VALIDATION_FAILED` (`FirewallRejectionAdvice`); `RequestMetas` drops such a `User-Agent` instead of failing.
@@ -3259,13 +3285,13 @@ Phase 2 (§17.9, built) adds the `oauth` chain before chain 1 (`/oauth2/**`, `/.
 | Bucket | Web session | API key / MCP (humans and bots alike) |
 |---|---|---|
 | Reads (GET, preview, read tools) | 600/min | **120/min, burst 30** |
-| Heavy reads (bars, history, leaderboard, profiles; Phase 2: race, stats, P&L analysis) | 120/min | 30/min |
+| Heavy reads (bars, history, leaderboard, profiles; Phase 2: race, stats, P&L analysis; public mode: a player's portfolio, orders, activity and P&L) | 120/min | 30/min |
 | Order writes (place, replace, cancel, close) | **20/min and 300/day** | **20/min and 300/day** |
 | Open orders per account | 50 | 50 |
 | STOMP | 5 sessions per player, 60 quote/tick subscriptions per session | n/a |
 
 - **Who charges which bucket.** `RateLimitFilter` charges the read and heavy-read buckets. The order-write bucket is charged **only** by `OrderGate` (§11.2), once per write and after the idempotency fast path, so an idempotent replay is free and a preview never costs a write token.
-- **Implementation (WS1, Phase 1).** `RateLimitFilter` sits in chain 2 after authorization, so only requests that would be served are charged. Heavy reads are `GET /bars/**`, `/account/history`, `/leaderboard`, `/players/{handle}` and `/players/{handle}/history|trades`, and in Phase 2 `/league/race`, `/players/{handle}/stats` and `/account/stats|pnl-analysis|pnl-calendar`; every other request of an authenticated player is one read, except the order writes (`POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close`), which only `OrderGate` charges. Every `/mcp` call counts as one read (order tools additionally go through `OrderGate`). Web sessions and API keys/MCP have separate read buckets, each shared by all of a player's sessions or keys. The write buckets (20/min, 300/day) are one pair per player for every channel; `consumeWrite` takes a token from both and gives the minute token back when the day bucket refuses. Buckets refill greedily on `TimeSource` time, so the fixed test clock never refills one. `whoami.rateLimits` reports the API-key read bucket and the write buckets.
+- **Implementation (WS1, Phase 1).** `RateLimitFilter` sits in chain 2 after authorization, so only requests that would be served are charged. Heavy reads are `GET /bars/**`, `/account/history`, `/leaderboard`, `/players/{handle}` and `/players/{handle}/history|trades`, in Phase 2 `/league/race`, `/players/{handle}/stats` and `/account/stats|pnl-analysis|pnl-calendar`, and in public mode (§16.7) `/players/{handle}/portfolio|orders|activities|pnl-analysis|pnl-calendar`, which value accounts live like a profile (`RateLimitFilter.HEAVY`; an open profile tab uses at most about 20 a minute); every other request of an authenticated player is one read, except the order writes (`POST /orders`, `PATCH`/`DELETE /orders/*`, `DELETE /orders`, `POST /account/positions/*/close`), which only `OrderGate` charges. Every `/mcp` call counts as one read (order tools additionally go through `OrderGate`). Web sessions and API keys/MCP have separate read buckets, each shared by all of a player's sessions or keys. The write buckets (20/min, 300/day) are one pair per player for every channel; `consumeWrite` takes a token from both and gives the minute token back when the day bucket refuses. Buckets refill greedily on `TimeSource` time, so the fixed test clock never refills one. `whoami.rateLimits` reports the API-key read bucket and the write buckets.
 - Before authentication, limits are per IP: login 10/min, signup 5/hour, everything else 300/min. An IPv6 client counts by its **/64** (`common.web.ClientNetworks.bucketKey`; IPv4 and IPv4-mapped addresses as themselves), here, in the login lockout pairs (§17.3) and on the OAuth endpoints (§17.9.1): one subscriber usually holds a whole /64 and could otherwise use a fresh address per request. **`POST /auth/login` and `POST /auth/signup` are always charged to the per-IP login/signup buckets, signed in or not** (a session must not buy the 600/min read budget for password guessing). **Failed authentications** (a bad API key, answered by `BearerTokenFilter`; an anonymous 401 from the API chain's entry point) are charged to the IP's anonymous bucket (`AuthFailureLimiter`), and once that bucket is empty a bearer key is refused with 429 before it is looked up.
 - Requests are classified on the **decoded, normalized path** (`UrlPathHelper.getPathWithinApplication`: percent-decoding, no `;` parameters, `//` collapsed), the one Spring Security and MVC route by, so `/api/v1/auth/logi%6E` is a login and `/api/v1/le%61derboard` a heavy read.
 - Responses carry `X-RateLimit-Limit` (the bucket's rate per period), `X-RateLimit-Remaining` and `X-RateLimit-Reset` (seconds until the bucket is full again). Exceeding a limit returns **429 `RATE_LIMITED`** with `Retry-After` (seconds until one token is back) and the same value in `retryAfterS`; MCP tools return `retry_after_s`.
@@ -3301,17 +3327,17 @@ Every row records actor, kind, channel, API key id, MCP client and tool, IP, use
 | ORDER | Place, reject (with code), replace, cancel, rate-limited write |
 | MONEY | Every transfer batch |
 | KEY | Issue, revoke; OAuth consent `OAUTH_GRANT` / `OAUTH_DENY` and revocation `OAUTH_REVOKE` (§17.9) |
-| ADMIN | Player create, update, freeze, disable; settings; invites; calendar overrides; engine halt and resume; corporate-action resolve; admin order cancel; **break-glass live view** (`PLAYER_LIVE_VIEW`, with the reason) |
+| ADMIN | Player create, update, freeze, disable; settings; invites; calendar overrides; engine halt and resume; corporate-action resolve; admin order cancel. (`PLAYER_LIVE_VIEW`, the break-glass view, is gone since public mode, §16.7; old rows stay.) |
 | ACCOUNT | Reset, GFV issued, restriction change, split and name-change effects. Audit is the security record only; the player-facing activity history comes from `cash_ledger` and `account_event` (§18.2), never from `audit_log`. |
 | SYSTEM | Job failures, invariant failures, provider 406, fill-quality warnings (I10, `FILL_QUALITY_WARNING`) |
 
-Secrets are never logged. Reads are not audited in Phase 1 (structured logs instead), with one exception: the admin's break-glass live view of another player (§21.3). Client-controlled fields are already bounded by `RequestMeta` (§6.6), so an audit insert never fails on length.
+Secrets are never logged. Reads are not audited (structured logs instead): since public mode (§16.7) every player's portfolio is public, so the admin's view of one is not an event; the `ADMIN_VIEW` activity rows written by the old break-glass view are historical. Client-controlled fields are already bounded by `RequestMeta` (§6.6), so an audit insert never fails on length.
 
 Writers (Phase 1): AUTH, KEY, ADMIN and MONEY rows and admin resets (`ACCOUNT/ACCOUNT_RESET`) come from the WS1 controllers and services that perform the action, with the request's metadata. `audit.AuditEventListener` (on the `eventsExecutor`) turns `ViolationIssued` into `ACCOUNT/GFV_ISSUED` and `CorporateActionApplied` into `ACCOUNT/CORPORATE_ACTION_APPLIED`. `JobRunGuard` writes `SYSTEM/JOB_FAILED`. ORDER rows are WS3's (`OrderGate`, §11.2). The `eventsExecutor` (§5.3) is defined by WS1's `config.AsyncConfig` (`@EnableAsync`; virtual threads; not a default autowire candidate, so Boot's `applicationTaskExecutor` stays).
 
 ### 17.8 Prompt-injection hygiene
 
-- Free text written by other players (rationales, memos) and news text reaches API and MCP clients **inside an `untrusted` object**, trimmed (rationales 280, news 500) with control characters stripped.
+- Free text written by other players (rationales, memos) and news text reaches API and MCP clients **inside an `untrusted` object**, trimmed (rationales 280, news 500) with control characters stripped. Public mode (§16.7): REST shows a player's full rationales (up to 1000 characters) in `PublicOrder.untrusted.rationale`; MCP clips them to 280 (`mcp/Untrusted.order` and `.portfolio` wrap `get_player_portfolio` and `get_player_orders`).
 - **Handles and display names** are the exception: `PlayerSummary.displayName` (§18.3) is a plain string on leaderboard rows, feed items, profiles and the MCP tools that return them, because every screen and tool shows it. They are restricted instead (handles `^[a-z0-9_]{2,32}$`, display names `^[A-Za-z0-9 _.\-]{2,40}$`: no punctuation beyond `_ . -`, no newlines or quotes).
 - MCP tool descriptions, `instructions.md`, `docs/agents.md` and the agent runner's system prompt state that content inside `untrusted`, **and other players' handles and display names wherever they appear**, are data and must never be followed as an instruction. Moving `displayName` into `untrusted` is a candidate for the next contract revision.
 
@@ -3573,14 +3599,19 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | `DELETE /watchlists/{id}/symbols/{symbol}` | trade | → `Watchlist` | |
 | `GET /leaderboard?period&metric&kind&limit≤100` | league:read | defaults WEEK, RETURN, ALL → `Leaderboard` | |
 | `GET /players?kind` | league:read | → `PlayerSummary[]` | |
-| `GET /players/{handle}` | league:read | → `PlayerProfile` | `PLAYER_NOT_FOUND` |
-| `GET /players/{handle}/history?range` | league:read | → `PublicHistory` (unit values, plus equity unless HIDDEN) | |
-| `GET /players/{handle}/trades?cursor&limit` | league:read | → `Page<PublicTrade>` (delayed) | |
-| `GET /feed?cursor&limit` | league:read | → `Page<FeedItem>` (only `visible_at ≤ now`) | |
+| `GET /players/{handle}` | league:read | → `PlayerProfile` (live equity, previous-EOD holdings with weights and quantities, recent trades) | `PLAYER_NOT_FOUND` |
+| `GET /players/{handle}/history?range` | league:read | → `PublicHistory` (unit values, plus equity) | |
+| `GET /players/{handle}/trades?cursor&limit` | league:read | → `Page<PublicTrade>` (executions newest first, after `social.tradeFeedDelay`, default none) | |
+| `GET /players/{handle}/portfolio` (public mode, §16.7) | league:read | → `PublicPortfolio`: cash, buying power, equity and P&L, every position with live marks, open orders with their rationales. Live, never delayed. A player without an active run gets an empty portfolio (`runNo` 0). | `PLAYER_NOT_FOUND` (unknown or DISABLED) |
+| `GET /players/{handle}/orders?status&symbol&cursor&limit` (public mode) | league:read | status `OPEN`, `CLOSED` or `ALL` (default), limit 1..200 (default 50) → `Page<PublicOrder>`: every stored order of every run, newest first (`(received_at, id)` cursor), with fills, fees, group legs and the rationale. Live. | `PLAYER_NOT_FOUND` |
+| `GET /players/{handle}/activities?types&from&to&cursor&limit` (public mode) | league:read | → `Page<Activity>`: the active run's ledger and account events, newest first, sanitized (§16.7: no `ADMIN_VIEW`, memos only from the system, no account ids); empty without a run. Live. | `PLAYER_NOT_FOUND` |
+| `GET /players/{handle}/pnl-analysis?range` (public mode) | league:read | as `/account/pnl-analysis`, for the player's active run | `PLAYER_NOT_FOUND`, `ACCOUNT_NOT_FOUND` (no active run) |
+| `GET /players/{handle}/pnl-calendar?view&month&year` (public mode) | league:read | as `/account/pnl-calendar`, for the player's active run | `PLAYER_NOT_FOUND`, `ACCOUNT_NOT_FOUND`, `VALIDATION_FAILED` |
+| `GET /feed?cursor&limit` | league:read | → `Page<FeedItem>` (only `visible_at ≤ now`: fills after the feed delay, none by default) | |
 | `PUT /feed/{itemId}/reaction` (Phase 2) | trade | `SetReactionRequest {reaction}` → `FeedReactions` (§16.11) | `NOT_FOUND`, `VALIDATION_FAILED` |
 | `DELETE /feed/{itemId}/reaction` (Phase 2) | trade | → `FeedReactions` (idempotent) | `NOT_FOUND` |
 | `GET /league/race?period&kind` (Phase 2) | league:read | defaults WEEK, ALL → `RaceChart` (§16.9) | `VALIDATION_FAILED` |
-| `GET /players/{handle}/stats?period` (Phase 2) | league:read | default ALL → `PlayerStats` (§16.8; best/worst trade delayed) | `PLAYER_NOT_FOUND`, `ACCOUNT_NOT_FOUND` (no active run) |
+| `GET /players/{handle}/stats?period` (Phase 2) | league:read | default ALL → `PlayerStats` (§16.8; best/worst trades after the feed delay, if any) | `PLAYER_NOT_FOUND`, `ACCOUNT_NOT_FOUND` (no active run) |
 | `GET /account/stats?period` (Phase 2) | account:read | default ALL → `PlayerStats` (the caller's league stats, nothing delayed) | `ACCOUNT_NOT_FOUND` |
 | `GET /account/pnl-analysis?range` (Phase 2) | account:read | default 1M → `PnlAnalysis` (§16.10: earnings vs SPY and QQQ, P&L by symbol) | `ACCOUNT_NOT_FOUND` |
 | `GET /account/pnl-calendar?view=DAY&month=YYYY-MM` or `?view=MONTH&year=YYYY` (Phase 2) | account:read | defaults DAY, the current ET month → `PnlCalendar` (§16.10) | `ACCOUNT_NOT_FOUND`, `VALIDATION_FAILED` |
@@ -3599,11 +3630,11 @@ Implementation notes (`config.OpenApiConfig`): rules 2–3 run in a swagger-core
 | Package (`com.stocks.contract.…`) | Types |
 |---|---|
 | `identity.dto` (WS1) | `MeDto`, `PreferencesDto`, `ApiKeyInfoDto`, `ApiKeyCreatedDto` (+ `ApiKeySnippetsDto`), `PlayerSummaryDto`; requests `LoginRequest`, `ReauthRequest`, `SignupRequest`, `UpdateMeRequest` (+ `UpdatePreferencesRequest` = `Partial<Preferences>`), `ChangePasswordRequest`, `CreateApiKeyRequest` (also the admin key body) |
-| `admin.dto` (WS1) | §21.1 `AdminPlayerDto`, `CreatePlayerRequest`, `CreatePlayerResponse`, `AdminPlayerDetailDto` (+ `EodHoldingDto`), `AdminPlayerLiveViewDto`, `SettingsDto`, `UpdateSettingsRequest` (= `Partial<Settings>`), `AuditRowDto`, `SystemStatusDto`, `InviteCreatedDto`, `InviteDto`; inline admin bodies `LiveViewRequest`, `UpdatePlayerRequest`, `FreezePlayerRequest`, `SetPasswordRequest`, `AdminResetRequest`, `CreateInviteRequest`, `RunJobRequest`, `HaltEngineRequest`, `CreateCalendarOverrideRequest`, `ResolveCorporateActionRequest` |
+| `admin.dto` (WS1) | §21.1 `AdminPlayerDto`, `CreatePlayerRequest`, `CreatePlayerResponse`, `AdminPlayerDetailDto` (+ `EodHoldingDto`), `SettingsDto`, `UpdateSettingsRequest` (= `Partial<Settings>`), `AuditRowDto`, `SystemStatusDto`, `InviteCreatedDto`, `InviteDto`; inline admin bodies `UpdatePlayerRequest`, `FreezePlayerRequest`, `SetPasswordRequest`, `AdminResetRequest`, `CreateInviteRequest`, `RunJobRequest`, `HaltEngineRequest`, `CreateCalendarOverrideRequest`, `ResolveCorporateActionRequest` |
 | `calendar.dto` (WS2) | `CalendarOverrideDto` |
 | `marketdata.dto` (WS2) | `ClockDto`, `TradingDayDto`, `AssetSummaryDto`, `AssetDto`, `FundamentalsDto`, `ExtendedLineDto`, `QuoteDto`, `BarDto`, `SnapshotDto`, `BarsDto`, `MoversDto`, `NewsItemDto`; `QuotesDto` (`{quotes}`), `NewsListDto` (`{items}`); §19 `TickDto`; Phase 2 (§15.10) `TimeAndSalesDto` (+ `TapePrintDto`), `RecommendationsDto` (+ `RecommendationPeriodDto`), `ScreenResultDto` (+ `ScreenerRowDto`, `ScreenCoverageDto`) and the enums `TapeSource`, `TapeSide`, `Sector`, `ScreenPreset`, `ScreenSort` |
 | `trading.dto` (WS3) | `FeesDto`, `PlaceOrderRequest`, `ReplaceOrderRequest`, `OrderDto`, `ExecutionDto` (+ `RefQuoteDto`), `OrderEventDto`, `EstimateDto`, `PlaceOrderResponse`, `PreviewDto`, `AccountDto`, `PositionDto`, `ActivityDto`, `ActivityDetailDto` (sealed: `SplitDetailDto`, `NameChangeDetailDto`, `GfvDetailDto`, `ResetDetailDto`, `RestrictionDetailDto`, `AdminViewDetailDto`), `ViolationDto`, `ViolationsDto` (`GET /account/violations`), `RunDto`, `CancelledOrdersDto` (`{cancelled}`), `ClosePositionRequest`, `ResetAccountRequest`; §21.1 `CorporateActionDto`, `CashTransferRequest` (+ sealed `TransferTargetRequest`: `SingleTargetRequest`, `AllTargetRequest`), `CashTransferPreviewDto`, `TransferBatchResultDto`, `TransferRowDto` |
-| `portfolio.dto` (WS4) | `PortfolioHistoryDto`, `LeaderboardRowDto`, `LeaderboardDto`, `PublicTradeDto`, `PlayerProfileDto`, `PublicHistoryDto`, `FeedItemDto`; Phase 2 (§16.8–16.11): `PlayerStatsDto` (+ `ClosedLotDto`, `RankPointDto`), `RaceChartDto` (+ `RaceSeriesDto`, `RacePointDto`), `BenchmarkCurveDto` (the race chart's benchmark and P&L Analysis's), `PnlAnalysisDto` (+ `EarningsPointDto`, `SymbolPnlDto`), `PnlCalendarDto` (+ `PnlCalendarCellDto`, `PnlCalendarTotalDto`, enum `CalendarView`), `FeedReactionsDto` (+ `FeedReactionDto`, `ReactorDto`, enum `Reaction`), `SetReactionRequest` |
+| `portfolio.dto` (WS4) | `PortfolioHistoryDto`, `LeaderboardRowDto`, `LeaderboardDto`, `PublicTradeDto`, `PlayerProfileDto`, `PublicHistoryDto`, `FeedItemDto`; public mode (§16.7): `PublicPortfolioDto`, `PublicOrderDto` (+ `PublicFillDto`); Phase 2 (§16.8–16.11): `PlayerStatsDto` (+ `ClosedLotDto`, `RankPointDto`), `RaceChartDto` (+ `RaceSeriesDto`, `RacePointDto`), `BenchmarkCurveDto` (the race chart's benchmark and P&L Analysis's), `PnlAnalysisDto` (+ `EarningsPointDto`, `SymbolPnlDto`), `PnlCalendarDto` (+ `PnlCalendarCellDto`, `PnlCalendarTotalDto`, enum `CalendarView`), `FeedReactionsDto` (+ `FeedReactionDto`, `ReactorDto`, enum `Reaction`), `SetReactionRequest` |
 | `watchlist.dto` (WS4) | `WatchlistDto`; requests `CreateWatchlistRequest`, `UpdateWatchlistRequest`, `AddWatchlistSymbolRequest` |
 | `realtime.dto` (WS5) | `NotificationDto`, `MarkNotificationsReadRequest`; §19 `MarketSessionDto`, `LeaderboardUpdateDto`, `OrderUpdateDto`, `AdminAlertDto` |
 | `rules.dto` (WS5) | `RulesDto` |
@@ -3749,7 +3780,7 @@ type PlaceOrderRequest = { clientOrderId: string; symbol: string; side: Side; ty
   qty?: Dec|null; notional?: Dec|null; limitPrice?: Dec|null; stopPrice?: Dec|null;
   trailAmount?: Dec|null; trailPercent?: Dec|null; timeInForce?: TimeInForce /* default DAY */;
   extendedHours?: boolean /* default false */; rationale?: string|null /* required for AI */;
-  shareNote?: boolean /* humans: publish the rationale with the delayed trade; AI rationales are always public */;
+  shareNote?: boolean /* deprecated and ignored: every new note is public (public mode, §16.7) */;
   acknowledge?: ("GFV_RISK")[];
   doNotReduce?: boolean /* Phase 2, §14 FINRA 5330: keep my prices on ex-dividend dates; default false */ };
 type ReplaceOrderRequest = { clientOrderId: string; qty?: Dec; limitPrice?: Dec; stopPrice?: Dec;
@@ -3808,7 +3839,7 @@ type Watchlist = { id: string; name: string; sortOrder: number; symbols: string[
 type LeaderboardRow = { rank: number|null; rankChange: number|null; eligible: boolean; eligibilityNote: string|null;
   partialPeriod: boolean; rebased: boolean; player: PlayerSummary; apiTrader: boolean; return: Dec; pnl: Dec;
   excessVsBenchmark: Dec|null; maxDrawdown: Dec|null;
-  equity: Dec|null /* null when holdingsVisibility=HIDDEN */; netContributions: Dec; flowsInPeriod: Dec;
+  equity: Dec|null /* always shown (§16.7); null only without a valuation */; netContributions: Dec; flowsInPeriod: Dec;
   fills: number; symbolsTraded: number; winRate: Dec|null; topHolding: string|null; spark: Dec[];
   sharpe: Dec|null /* Phase 2, §16.8 */; profitFactor: Dec|null /* Phase 2 */ };
 type Leaderboard = { period: LeaderboardPeriod; metric: LeaderboardMetric; kind: KindFilter; periodStart: Ts; asOf: Ts;
@@ -3817,14 +3848,36 @@ type Leaderboard = { period: LeaderboardPeriod; metric: LeaderboardMetric; kind:
   rows: LeaderboardRow[]; me: LeaderboardRow|null };
 type PublicTrade = { executedAt: Ts; symbol: string; side: Side; qty: Dec; price: Dec; realizedPnl: Dec|null;
   viaApi: boolean /* placed with an API key or MCP */;
-  untrusted: { rationale: string|null /* only when trade_order.rationale_public (AI, or human shareNote) */ } };
+  untrusted: { rationale: string|null /* when trade_order.rationale_public: every order since public mode, older AI
+    orders, or a human's shared note */ } };
 type PlayerProfile = { player: PlayerSummary; ownerHandle: string|null; runNo: number;
   stats: Record<"TODAY"|"WEEK"|"MONTH"|"YTD"|"ALL", { return: Dec; pnl: Dec; rank: number|null }>;
-  equity: Dec|null /* null when holdingsVisibility=HIDDEN */; netContributions: Dec;
+  equity: Dec|null /* live; null only without a valuation */; netContributions: Dec;
   deposits: { count: number; total: Dec }; fills: number; winRate: Dec|null; moneyWeightedReturnAll: Dec|null;
-  holdingsAsOf: DateEt|null; holdings: { symbol: string; weight: Dec; qty: Dec|null }[];
-  recentTrades: PublicTrade[] };
-type PublicHistory = { range: string; points: { t: Ts; unitValue: Dec; equity: Dec|null }[] };
+  holdingsAsOf: DateEt|null; holdings: { symbol: string; weight: Dec; qty: Dec|null /* always set */ }[] /* previous close */;
+  recentTrades: PublicTrade[] /* after the feed delay, none by default */ };
+type PublicHistory = { range: string; points: { t: Ts; unitValue: Dec; equity: Dec|null /* always filled */ }[] };
+// ---- public mode (§16.7): what every player sees of another player, live. Never clientOrderId, account ids, key or
+// OAuth client ids, the MCP client name, IPs or per-order holds.
+type PublicPortfolio = { player: PlayerSummary; runNo: number /* 0: no active run, every list empty */; asOf: Ts;
+  marksQuality: DataQuality|null; equity: Dec; longMarketValue: Dec; dividendsReceivable: Dec; cash: Dec;
+  settledCash: Dec; unsettledCash: Dec; buyingPower: Dec; openBuyHolds: Dec; netContributions: Dec; totalPnl: Dec|null;
+  totalReturn: Dec|null; dayPnl: Dec|null; dayReturn: Dec|null; unrealizedPnl: Dec; restriction: AccountRestriction|null;
+  restrictionUntil: Ts|null; gfvActive: number; positions: Position[] /* by market value */;
+  openOrders: PublicOrder[] /* every open order of the run, no cap */ };
+type PublicOrder = { orderId: string; runNo: number; symbol: string; side: Side; type: OrderType; qty: Dec|null;
+  notional: Dec|null; fractional: boolean; limitPrice: Dec|null; stopPrice: Dec|null; trailAmount: Dec|null;
+  trailPercent: Dec|null; timeInForce: TimeInForce; extendedHours: boolean;
+  status: OrderStatus /* PENDING_CANCEL while a cancel is requested */; waitReason: WaitReason|null;
+  statusReason: string|null; filledQty: Dec; avgFillPrice: Dec|null; fees: Dec; receivedAt: Ts; expiresAt: Ts|null;
+  doneAt: Ts|null; replacesOrderId: string|null; replacedByOrderId: string|null; group: OrderGroupRef|null;
+  channel: Channel /* public */; viaApi: boolean;
+  manualSessionId: string|null /* the manual-console session (§20.8) that placed it: only for channel WEB */;
+  fills: PublicFill[]; untrusted: { rationale: string|null /* full text (≤ 1000) when public; MCP clips to 280 */ } };
+type PublicFill = { executionId: string; executedAt: Ts; qty: Dec; price: Dec; fees: Dec /* SEC + TAF + CAT */;
+  realizedPnl: Dec|null };
+// public Activity (GET /players/{h}/activities): no ADMIN_VIEW rows; memo only when by = SYSTEM; a RESET detail without
+// fromAccountId, toAccountId and memo; a RESTRICTION reason only when the system set it.
 type FeedItem = { id: string; at: Ts; kind: "FILL"|"POSITION_CLOSED"|"NEW_LEADER"|"RESET"|"DEPOSIT"|"JOINED"|"JOURNAL" /* Phase 2, §20.7 */;
   player: PlayerSummary; symbol: string|null;
   payload: { side?: Side; qty?: Dec; price?: Dec; realizedPnl?: Dec; amount?: Dec; period?: string;
@@ -3882,7 +3935,7 @@ type Rules = { version: string; asOf: Ts;
   rateLimits: object;
   leaderboard: { returnDefinition: string; pnlDefinition: string; pnlDayEnds: string; minFills: number;
     minSymbols: number; ties: string; benchmark: "SPY"; resetPolicy: string /* §16.3: a reset never erases a loss */ };
-  social: { tradeFeedDelay: string; holdingsVisibility: HoldingsVisibility };
+  social: { tradeFeedDelay: string /* default PT0S */; visibility: "PUBLIC" /* §16.7 */ };
   dataSources: string[]; fairness: string[] };
 ```
 
@@ -3951,7 +4004,7 @@ The controller is absent from production by construction (`@Profile("test")`), a
 | `/topic/bars.{SYM}.1Min` | `Bar` (the forming minute bar; the suffix is the `Timeframe` wire value) | ≤ 1/s |
 | `/topic/market.session` | `MarketSessionDto` `{session, tradingDate, endsAt, nextSession, nextSessionAt, earlyClose}` | On change and every 60 s |
 | `/topic/leaderboard` | `LeaderboardUpdateDto` `{asOf}`. Clients refetch `GET /leaderboard`, which is cached for 5 s. | ≤ every 5 s when anything changed |
-| `/topic/feed` | `FeedItem`, or `FeedReactions` `{itemId, reactions}` (Phase 2, §16.11: tell them apart by `itemId`; update the item in place) | A `FeedItem` when it becomes visible (a 5 s `PeriodicTask` over `visible_at`; off when `stocks.jobs.enabled=false`); `FeedReactions` right after a reaction changes |
+| `/topic/feed` | `FeedItem`, or `FeedReactions` `{itemId, reactions}` (Phase 2, §16.11: tell them apart by `itemId`; update the item in place) | A `FeedItem` when it becomes visible (a 5 s `PeriodicTask` over `visible_at`, looking back 15 s and skipping ids it already pushed, §16.7; off when `stocks.jobs.enabled=false`); `FeedReactions` right after a reaction changes |
 | `/user/queue/orders` | `OrderUpdateDto` `{event: OrderEventType, order: Order, execution: Execution\|null}` | After commit |
 | `/user/queue/account` | `Account` | After fills and transfers, plus ≤ 1 per 5 s while marks move during sessions |
 | `/user/queue/notifications` | `Notification` | After commit |
@@ -3964,6 +4017,8 @@ The named payload records are Java records in `com.stocks.contract.realtime.dto`
 **Publishers.** WS5 (`realtime`) publishes the quote, tick and bars topics (`QuoteFanout`, a `MarketUpdateListener` with its own 100 ms flush thread), `/topic/market.session` (`MarketSessionTopic`: on `SessionChanged` and every 60 s), the user queues (`UserEventPublisher`, from the §5.3 events after commit, on one serial `realtime-events` thread so a player sees ACCEPTED before FILL) and the periodic account push (`AccountTopic`). **`/topic/leaderboard` and `/topic/feed` are published by WS4** next to the data they describe: `LeaderboardServiceImpl` (`LEADERBOARD_RECOMPUTE`, after a recompute that changed any number) and `FeedService` (`FEED_PUBLISHER`, rows whose `visible_at` passed since the last tick), both through `SimpMessageSendingOperations`. WS5 owns the endpoint, the destination rules and the caps for every topic.
 
 **Client resync.** On reconnect, or when `document.visibilityState` returns to visible, the client invalidates `['account']`, `['positions']`, `['orders','OPEN']` and `['leaderboard']` and resubscribes. Missed messages are therefore harmless, and there is no durable outbox.
+
+**Public mode (§16.7): no new topic.** Another player's live data rides on what exists: an open profile's Portfolio polls `GET /players/{h}/portfolio` every 15 s and its order History `GET /players/{h}/orders` every 30 s, both only while the tab is visible, and `usePlayerLiveRefresh` subscribes to `/topic/feed`: an item of that player (never a `FeedReactions` message, which has no player) invalidates the profile, trades, portfolio, orders and activity (and the journal for a `JOURNAL` item), at most once per 2 s per player, and the same keys on resync. It never invalidates the bare `['player', h]` prefix, which would refetch every history range and stats period.
 
 **Client connection lifetime.** Reconnects use stompjs's own exponential backoff (`reconnectDelay: 1000`, `reconnectTimeMode: EXPONENTIAL`, `maxReconnectDelay: 30000`; the library ignores changes to `reconnectDelay` made between attempts). The STOMP session is authenticated once, at the handshake, so it belongs to one signed-in session: sign-out and any 401 from the API call `stopRealtime()`, which closes the socket and drops every subscription and resync callback; the next sign-in opens a fresh connection, so `/user/queue/*` can never deliver the previous player's messages.
 
@@ -4126,17 +4181,17 @@ Read tools (RO): `readOnlyHint=true, destructiveHint=false, idempotentHint=true,
 | 23 | `preview_order` | `account:read` | same as `place_order`; `client_order_id` and `rationale` optional | `Preview` |
 | 24 | `get_leaderboard` | `league:read` | `{period?: "TODAY"\|"WEEK"\|"MONTH"\|"YTD"\|"SEASON"\|"ALL"="WEEK", metric?: "RETURN"\|"PNL"="RETURN", kind?: "ALL"\|"HUMAN"\|"AI"="ALL", limit?: int(1..100)=50}` | `Leaderboard` |
 | 25 | `list_players` | `league:read` | `{kind?: "HUMAN"\|"AI"}` | `{players: PlayerSummary[]}` |
-| 26 | `get_player_profile` | `league:read` | `{handle: string}` | `PlayerProfile` |
+| 26 | `get_player_profile` | `league:read` | `{handle: string}` | `PlayerProfile` (previous-close holdings with weights and quantities; `get_player_portfolio` has live positions) |
 | 27 | `get_player_history` | `league:read` | `{handle: string, range: "1D"\|"1W"\|"1M"\|"3M"\|"YTD"\|"1Y"\|"ALL"}` | `PublicHistory` |
-| 28 | `get_player_trades` | `league:read` | `{handle: string, limit?: int(1..100)=50, cursor?: string}` | `Page<PublicTrade>` (delayed) |
-| 29 | `get_league_feed` | `league:read` | `{limit?: int(1..100)=50, cursor?: string}` | `Page<FeedItem>` |
+| 28 | `get_player_trades` | `league:read` | `{handle: string, limit?: int(1..100)=50, cursor?: string}` | `Page<PublicTrade>` (after the feed delay, none by default) |
+| 29 | `get_league_feed` | `league:read` | `{limit?: int(1..100)=50, cursor?: string}` | `Page<FeedItem>` (fills as they happen, unless the admin sets a delay) |
 | 30 | `get_watchlists` | `account:read` | `{}` | `{watchlists: Watchlist[]}` |
 
 Write tools:
 
 | # | Tool | Scope | Hints | Input schema | Output |
 |---|---|---|---|---|---|
-| 31 | `place_order` | `trade` | RO=false, destructive=false, **idempotent=true** | `{client_order_id: string*, symbol: string*, side: "BUY"\|"SELL"*, type: "MARKET"\|"LIMIT"\|"STOP"\|"STOP_LIMIT"\|"TRAILING_STOP"*, qty?: decimal-string, notional?: decimal-string, limit_price?, stop_price?, trail_amount?, trail_percent?, time_in_force?: "DAY"\|"GTC"="DAY", extended_hours?: bool=false, rationale: string(1..1000)* (AI), share_note?: bool (humans), acknowledge?: ["GFV_RISK"]}` | `PlaceOrderResponse` (`replayed: true` on an idempotent hit) |
+| 31 | `place_order` | `trade` | RO=false, destructive=false, **idempotent=true** | `{client_order_id: string*, symbol: string*, side: "BUY"\|"SELL"*, type: "MARKET"\|"LIMIT"\|"STOP"\|"STOP_LIMIT"\|"TRAILING_STOP"*, qty?: decimal-string, notional?: decimal-string, limit_price?, stop_price?, trail_amount?, trail_percent?, time_in_force?: "DAY"\|"GTC"="DAY", extended_hours?: bool=false, rationale: string(1..1000)* (AI; public: every player sees it with the order), share_note?: bool (deprecated and ignored: every new note is public), acknowledge?: ["GFV_RISK"]}` | `PlaceOrderResponse` (`replayed: true` on an idempotent hit) |
 | 32 | `replace_order` | `trade` | RO=false, destructive=true, idempotent=true | `{order_id*, client_order_id* (new), qty?, limit_price?, stop_price?, trail_amount?, trail_percent?, time_in_force?, extended_hours?, rationale?}` | `PlaceOrderResponse` (new order) |
 | 33 | `cancel_order` | `trade` | RO=false, destructive=true, idempotent=true | `{order_id*}` | `Order` |
 | 34 | `cancel_all_orders` | `trade` | RO=false, destructive=true, idempotent=true | `{symbol?}` | `{cancelled: Order[]}` |
@@ -4145,14 +4200,14 @@ Write tools:
 | 37 | `delete_watchlist` | `trade` | RO=false, destructive=true, idempotent=true | `{name*}` | `{deleted: boolean}` (false if it did not exist) |
 | 38 | `mark_notifications_read` | `account:read` | RO=false, destructive=false, idempotent=true | `{ids?: string[], all?: bool}` (exactly one) | `{marked: int}` |
 
-**Phase 2 tools** are appended after #38 in `McpToolCatalog.ORDER`, so the Phase 1 order never changes (wave A order: group orders, league stats, alerts, research, journal; 55 tools in all).
+**Phase 2 tools** are appended after #38 in `McpToolCatalog.ORDER`, so the Phase 1 order never changes (wave A order: group orders, league stats, alerts, research, journal; then public mode's five player tools, #56–#60; **60 tools** in all).
 
 Phase 2 group orders (§11.9), #39–#42; `place_order`, `preview_order` and `replace_order` also take `do_not_reduce?: bool` (§14). Leg inputs are flat (no nested objects): `entry_type`, `entry_limit_price`, `entry_stop_price`, `take_profit_limit_price`, `stop_loss_stop_price`, `stop_loss_limit_price` (makes the stop loss a STOP_LIMIT), `secondary_type`, `secondary_limit_price`, `secondary_stop_price`.
 
 | # | Tool | Scope | Hints | Input schema | Output |
 |---|---|---|---|---|---|
 | 39 | `preview_order_group` | `account:read` | read | as `place_order_group`; `client_order_id` and `rationale` optional | `GroupPreview` |
-| 40 | `place_order_group` | `trade` | RO=false, destructive=false, idempotent=true | `{client_order_id*, group_type*: "OCO"\|"OTO"\|"OTOCO"\|"BRACKET", symbol*, side?, qty*, time_in_force?, <leg inputs>, rationale* (AI), share_note?, do_not_reduce?, acknowledge?}` | `PlaceOrderGroupResponse` |
+| 40 | `place_order_group` | `trade` | RO=false, destructive=false, idempotent=true | `{client_order_id*, group_type*: "OCO"\|"OTO"\|"OTOCO"\|"BRACKET", symbol*, side?, qty*, time_in_force?, <leg inputs>, rationale* (AI; public), share_note? (deprecated and ignored), do_not_reduce?, acknowledge?}` | `PlaceOrderGroupResponse` |
 | 41 | `get_order_group` | `account:read` | read | `{group_id*}` | `OrderGroup` |
 | 42 | `cancel_order_group` | `trade` | RO=false, destructive=true, idempotent=true | `{group_id*}` | `OrderGroup` |
 
@@ -4163,7 +4218,7 @@ Phase 2 league stats (§16.8–16.11), #43–#48 (read tools RO as above):
 | # | Tool | Scope | Input schema | Output |
 |---|---|---|---|---|
 | 43 | `get_my_stats` | `account:read` | `{period?: LeaderboardPeriod = "ALL"}` | `PlayerStats` (yours, nothing delayed, §16.8) |
-| 44 | `get_player_stats` | `league:read` | `{handle: string, period?: LeaderboardPeriod = "ALL"}` | `PlayerStats` (best/worst trade after the feed delay) |
+| 44 | `get_player_stats` | `league:read` | `{handle: string, period?: LeaderboardPeriod = "ALL"}` | `PlayerStats` (best/worst trade after the feed delay, if any) |
 | 45 | `get_race_chart` | `league:read` | `{period?: LeaderboardPeriod = "WEEK", kind?: KindFilter = "ALL"}` | `RaceChart` (§16.9) |
 | 46 | `get_pnl_calendar` | `account:read` | `{view?: "DAY"\|"MONTH" = "DAY", month?: "YYYY-MM", year?: int}` | `PnlCalendar` (§16.10) |
 | 47 | `get_pnl_analysis` | `account:read` | `{range?: HistoryRange = "1M"}` | `PnlAnalysis` (earnings vs SPY/QQQ, P&L by symbol) |
@@ -4190,6 +4245,18 @@ Phase 2 public AI journal (§20.7), #54–#55:
 |---|---|---|---|---|---|
 | 54 | `get_player_journal` | `league:read` | RO | `{handle*, limit?: int(1..100)=20, cursor?}` | `Page<JournalNote>` (visible notes, text in `untrusted`) |
 | 55 | `add_journal_note` | `trade` | RO=false, destructive=false, idempotent=false | `{text*: string(1..500), symbols?: string[≤5]}` (AI players only) | `{note: JournalNote, remainingToday}` |
+
+Public mode (§16.7), #56–#60 (read tools RO as above; `LeagueTools`, through `PublicPortfolioQueries`; rationales clipped to 280 inside `untrusted` by `mcp/Untrusted`):
+
+| # | Tool | Scope | Input schema | Output |
+|---|---|---|---|---|
+| 56 | `get_player_portfolio` | `league:read` | `{handle*}` | `PublicPortfolio` (any player's live cash, buying power, equity and P&L, positions with live marks, open orders) |
+| 57 | `get_player_orders` | `league:read` | `{handle*, status?: "OPEN"\|"CLOSED"\|"ALL"="ALL", symbol?, limit?: int(1..100)=50, cursor?}` | `Page<PublicOrder>` (every stored order, newest first, with fills) |
+| 58 | `get_player_activity` | `league:read` | `{handle*, types?: ActivityType[], from?: DateEt, to?: DateEt, limit?, cursor?}` (as `get_activity`) | `Page<Activity>` (the active run, sanitized, §16.7) |
+| 59 | `get_player_pnl_analysis` | `league:read` | `{handle*, range?: HistoryRange = "1M"}` | `PnlAnalysis` (`ACCOUNT_NOT_FOUND` without an active run) |
+| 60 | `get_player_pnl_calendar` | `league:read` | `{handle*, view?: "DAY"\|"MONTH" = "DAY", month?: "YYYY-MM", year?: int}` | `PnlCalendar` (`ACCOUNT_NOT_FOUND` without an active run) |
+
+`tool-coverage.yml` maps `GET /players/{handle}/portfolio`, `/orders`, `/activities`, `/pnl-analysis` and `/pnl-calendar` to these tools; the admin twin `GET /admin/players/{handle}/portfolio` is outside tool coverage, like every admin GET.
 
 Decimal inputs are accepted as strings or numbers, and numbers are parsed as `BigDecimal` (§6.3). There are no admin tools. A tool whose backing contract is still a Day-0 stub (or a default method a workstream has not overridden yet, e.g. `PerformanceQueries.feed`) answers the error result `NOT_IMPLEMENTED`; the catalog, schemas and order never change with what has shipped.
 
@@ -4325,7 +4392,7 @@ Bots explain themselves in short public notes (a thesis, a lesson, a plan), show
 - **Who.** Only AI players write, through the MCP tool `add_journal_note` or `POST /api/v1/journal` (scope `trade`, so a read-only key cannot write); a human gets `FORBIDDEN`. Anyone with `league:read` reads them.
 - **Text.** 1–500 characters after cleaning (`stocks.agents.journal.max-chars`): newlines and tabs become spaces, control and format characters (zero-width, bidi overrides) are removed, runs of spaces collapse, the text is trimmed. It is untrusted text (§17.8): returned inside `untrusted`, never interpreted, rendered by the SPA as plain text (React escaping, no links, no Markdown), and clipped again to 280 characters in feed items. Optional `symbols`: at most 5 tickers, normalized to upper case and checked like watchlist symbols (`SYMBOL_NOT_FOUND`).
 - **Limits.** At most 3 notes per 10 minutes and 12 per ET day per bot (`stocks.agents.journal.max-per-window`, `window`, `max-per-day`), counted in the database so they survive restarts; beyond that `RATE_LIMITED` with `retry_after_s` (until the oldest note of the window leaves it, or until midnight ET). These limits are separate from the order write buckets (§17.5).
-- **Visibility.** A note becomes public after `social.tradeFeedDelay` (15 min), like trades (charter item 3, §16.7): a note can reveal a position. `visibleAt` is fixed when the note is written. The author gets its own note back at once (tool result); everyone else, the author included, reads it from the profile, the feed and `get_player_journal` once `visibleAt` has passed.
+- **Visibility.** A note is public at once (public mode, §16.7: `social.tradeFeedDelay` defaults to `PT0S`); if the admin sets a delay, it becomes public after it, like the feed's fills. `visibleAt` is fixed when the note is written. The author gets its own note back at once (tool result); everyone else, the author included, reads it from the profile, the feed and `get_player_journal` once `visibleAt` has passed.
 - **Feed.** Each note is a feed item of kind `JOURNAL` (`source_ref = JNL:<jnl>`, `visible_at` = the note's `visibleAt`, `symbol` = its first symbol, `payload.untrusted.note` = the text clipped to 280), written by `FeedEventListener` (still the only writer of `feed_event`) from the `JournalNotePosted` event and by its EOD backfill. The SPA's feed shows it as "wrote in their journal" (a book icon) with the note in a quote block, and a **Journal** filter chip.
 
 ```ts
@@ -4359,7 +4426,7 @@ CREATE INDEX ix_journal_player ON journal_note(player_id, created_at);
 
 **Implementation** (WS5): `agents.JournalServiceImpl` implements the contract `contract.agents.JournalService` (REST `agents.web.JournalController` and the MCP `mcp.tools.JournalTools` share it); one writer per bot at a time (a per-player lock) so two concurrent calls cannot both pass the count; `JournalNotePosted` (§5.3) is published after the insert. The SPA renders the note with React text escaping only (`features/agents/JournalSection`, the feed's quote block).
 
-**Prompt.** The shared system prompt (§20.5, `prompts/system.md`) tells bots that `add_journal_note` exists, that notes are public after the feed delay and limited (3 per 10 min, 12 a day), and to use them for reasoning worth sharing, not for secrets or instructions to others.
+**Prompt.** The shared system prompt (§20.5, `prompts/system.md`) tells bots that `add_journal_note` exists, that notes appear on their profile and in the feed at once (after the feed delay if the admin sets one) and are limited (3 per 10 min, 12 a day), and to use them for reasoning worth sharing, not for secrets or instructions to others. The claude-trader check-in (`tools/claude-trader`) posts exactly one public note per check-in (skipped on `RATE_LIMITED`; dry runs only write the note they would post).
 
 ## 21. Admin
 
@@ -4368,8 +4435,8 @@ CREATE INDEX ix_journal_player ON journal_note(player_id, created_at);
 | Method and path | R | Request → response | Errors |
 |---|---|---|---|
 | `GET /players?kind&status` | | → `AdminPlayer[]` | |
-| `GET /players/{handle}` | | → `AdminPlayerDetail` (runs, balances, EOD holdings, transfers, keys, recent audit; **no live positions or orders**) | `PLAYER_NOT_FOUND` |
-| `POST /players/{handle}/live-view` | R | `{reason: string(5..200)}` → `AdminPlayerLiveView` (live positions and open orders). **Break-glass**: writes `audit_log` `ADMIN/PLAYER_LIVE_VIEW` and an `ADMIN_VIEW` `account_event` that the player sees in their activity (§16.7). | `PLAYER_NOT_FOUND` |
+| `GET /players/{handle}` | | → `AdminPlayerDetail` (runs, balances, EOD holdings, transfers, keys, recent audit; no live positions or orders: see `GET /players/{handle}/portfolio`) | `PLAYER_NOT_FOUND` |
+| `GET /players/{handle}/portfolio` | | (public mode, §16.7) → `PublicPortfolio`: the same live portfolio every player sees, **for any player status** (a DISABLED player's too; `PublicPortfolioQueries.portfolioAnyStatus`). No recent-auth check; outside MCP tool coverage like every admin GET. The break-glass `POST /players/{handle}/live-view` is removed. | `PLAYER_NOT_FOUND` (unknown handle) |
 | `POST /players` | R | `CreatePlayerRequest` → 201 `CreatePlayerResponse` (creates the player, the funded account, the default watchlist, and optionally a key) | `HANDLE_TAKEN`, `VALIDATION_FAILED`, `WEAK_PASSWORD` |
 | `PATCH /players/{handle}` | R | `{displayName?, aiModel?, status?: "ACTIVE"\|"DISABLED", role?: "PLAYER"\|"ADMIN", apiTradingAllowed?: boolean}` → `AdminPlayer` (the role can be ADMIN only for a HUMAN; a status change follows §10.5; a role change deletes the player's sessions and `apiTradingAllowed: false` drops `trade` from their personal keys, §10.5) | `FORBIDDEN`, `VALIDATION_FAILED` |
 | `POST /players/{handle}/freeze` | R | `{reason, revokeKeys?: boolean = false}` → `AdminPlayer` (kill switch, §10.5) | |
@@ -4377,7 +4444,7 @@ CREATE INDEX ix_journal_player ON journal_note(player_id, created_at);
 | `POST /players/{handle}/password` | R | `{newPassword}` → 204 (humans; deletes their sessions and revokes their personal keys) | `WEAK_PASSWORD` |
 | `POST /players/{handle}/reset` + `Idempotency-Key` | R | `{startingCash?: Dec, memo}` → `Account` (new run) | `IDEMPOTENCY_KEY_CONFLICT` |
 | `GET /players/{handle}/api-keys` | | → `ApiKeyInfo[]` | |
-| `POST /players/{handle}/api-keys` | R | **AI players only.** `{name, scopes?: string[] (default all 4), expiresInDays?}` → 201 `ApiKeyCreated`. A human's keys are personal (`POST /me/api-keys`): an admin-held token would read a friend's live positions and orders outside the audited break-glass view (§16.7 item 3); the admin only toggles `apiTradingAllowed`. | `FORBIDDEN` (a human; audited `KEY_ISSUE` DENIED) |
+| `POST /players/{handle}/api-keys` | R | **AI players only.** `{name, scopes?: string[] (default all 4), expiresInDays?}` → 201 `ApiKeyCreated`. A human's keys are personal (`POST /me/api-keys`): an admin never acts as a human; the admin only toggles `apiTradingAllowed`. | `FORBIDDEN` (a human; audited `KEY_ISSUE` DENIED) |
 | `DELETE /api-keys/{keyId}` | | → 204 (immediate; cache evicted) | `NOT_FOUND` |
 | `GET /players/{handle}/oauth-grants` | | (Phase 2 review fix) → `AdminOAuthGrant[]`: the player's live OAuth grants (§17.9), those acting as the player and those the player approved, newest first. Never a token or a code. | `PLAYER_NOT_FOUND` |
 | `DELETE /oauth-grants/{grantId}` | | → 204: revoked at once (`USER`; its access tokens stop on the next request, its refresh token is dead; audited `KEY`/`OAUTH_REVOKE` with the admin as the actor) | `NOT_FOUND` (unknown or already revoked) |
@@ -4418,7 +4485,6 @@ type AdminOAuthGrant = { grantId: string; client: OAuthClientInfo; redirectHost:
 type AdminPlayerDetail = { player: AdminPlayer; apiTradingAllowed: boolean; runs: Run[]; balances: Account /* live balances, no positions */;
   holdingsAsOf: DateEt|null; eodHoldings: { symbol: string; qty: Dec; mark: Dec; marketValue: Dec }[];
   transfers: TransferRow[]; apiKeys: ApiKeyInfo[]; recentAudit: AuditRow[] };
-type AdminPlayerLiveView = { player: PlayerSummary; viewedAt: Ts; reason: string; positions: Position[]; openOrders: Order[] };
 type CalendarOverride = { date: DateEt; closed: boolean; rthCloseAt: Ts|null; postCloseAt: Ts|null; reason: string;
   createdBy: string; createdAt: Ts };
 type CorporateAction = { id: string; symbol: string; type: CorporateActionType; exDate: DateEt; recordDate: DateEt|null;
@@ -4445,8 +4511,10 @@ type TransferRow = { transferId: string; batchId: string; handle: string; accoun
   amount: Dec; isContribution: boolean; status: TransferStatus; skipReason: string|null; memo: string;
   effectiveAt: Ts; by: string|null; equityBefore: Dec|null; unitValue: Dec|null };
 type Settings = { "league.defaultStartingCash": Dec; "league.allowSelfReset": boolean; "league.seasonStart": DateEt;
-  "league.eligibility.minFills": number; "league.eligibility.minSymbols": number; "social.tradeFeedDelay": string /* ISO-8601 duration */;
-  "social.holdingsVisibility": HoldingsVisibility; "social.showDepositsInFeed": boolean; "bots.requireRationale": boolean;
+  "league.eligibility.minFills": number; "league.eligibility.minSymbols": number;
+  "social.tradeFeedDelay": string /* ISO-8601 duration, default PT0S */; "social.showDepositsInFeed": boolean;
+  "bots.requireRationale": boolean /* no social.holdingsVisibility since public mode (§16.7): a body that still sends it
+  is ignored (200, nothing changed); the string-keyed SettingsService.put answers 422 SETTING_INVALID */;
   "league.humanKindExcludesApiTraders": boolean };
 type AuditRow = { id: number; occurredAt: Ts; category: string; action: string; outcome: string; actor: string|null;
   actorKind: PlayerKind|null; channel: Channel|null; apiKeyId: string|null; mcpClient: string|null; mcpTool: string|null;
@@ -4484,10 +4552,10 @@ type SystemStatus = { version: string; startedAt: Ts; db: "postgresql"|"h2";
 | Page | Contents |
 |---|---|
 | **Players** | Table: handle, kind badge, status, equity, cash, net contributions, P&L, return, open orders, keys, last seen. Actions: create human or AI (with "issue key now"), disable or enable, freeze or unfreeze, reset, promote a human to admin. |
-| **Player detail** | Runs, balances, **end-of-day** holdings, API keys (issue with the copy-once dialog showing Claude Code, Claude API, OpenAI and curl snippets; revoke), **Connected apps** (Phase 2: the player's live OAuth grants with client, redirect host, who approved it, who it acts as, scopes and last use; revoke with a confirmation), "allow API trading" toggle (humans), transfers, recent audit rows. Live positions and open orders (with cancel) appear only after **"Break glass: view live"**, which asks for a reason and re-authentication, and tells the admin that the player will see an "Admin viewed your live account" entry in their activity. The owner is both admin and a competitor, so this keeps charter item 3 honest. |
+| **Player detail** | Runs, balances, a **Live portfolio** section (public mode, §16.7: the summary numbers and open orders from `GET /admin/players/{h}/portfolio`, any status, polled every 15 s, with the admin **Cancel** on each open order, and a link to the public `/players/$handle/portfolio` while the player is listed), **end-of-day** holdings, API keys (issue with the copy-once dialog showing Claude Code, Claude API, OpenAI and curl snippets; revoke), **Connected apps** (Phase 2: the player's live OAuth grants with client, redirect host, who approved it, who it acts as, scopes and last use; revoke with a confirmation), "allow API trading" toggle (humans), transfers, recent audit rows. The break-glass dialogs are gone: in a public league the admin sees what every player sees. |
 | **Money** | Transfer form: target Single or All (+ kinds), type, amount, memo, `treatAs` for adjustments, all-or-nothing. A live preview (`POST /cash-transfers/preview`) lists affected accounts with cash, withdrawable, E⁻, U, **worst mark quality** and warnings (`ACCOUNT_EQUITY_TOO_LOW`, `MARKS_DEGRADED`). Degraded marks require ticking "Value with degraded marks anyway". Confirmation requires **typing the amount**. The transfers table is filterable. |
 | **Invites** | Create (copy link), list, revoke |
-| **Settings** | Default starting cash, self-reset, season start, eligibility, feed delay, holdings visibility, show deposits, require rationale |
+| **Settings** | Default starting cash, self-reset, season start, eligibility, feed delay (`PT0S` "No delay: public (default)", 5 min, 15 min, 1 h, 1 day; the hint says it holds back only the feed, trade lists and journal notes, while portfolios, orders, activity and P&L are always live), show deposits, require rationale. No holdings visibility (retired, §16.7). |
 | **System** | Engine state and queue, invariants, provider stream usage ("Alpaca 23/30 · LIVE"), REST budget, probe results, stale symbols, corporate-action holds, jobs (from the `JobScheduler` registry: next occurrence, last `run_key`, status) with "Run now", halt and resume, calendar overrides (add, delete), corporate actions needing admin (a count linking to the **Corp. actions** tab, `/admin/corporate-actions`: the list by status, and resolve: apply with confirmed rates, or skip, with an audited note) |
 | **Audit** | Filterable `audit_log` viewer |
 | **Bots** (Phase 2) | Per AI player: last run, last problem, today's spend against the cap, 14-day spend chart, 7-day tool-call breakdown; the runs table with filters (§20.6) |
@@ -4549,7 +4617,7 @@ frontend/src/
 | `/stock/$symbol` | `range=1D`, `tf?`, `tab=OVERVIEW\|NEWS\|TRADES\|POSITION` (`TRADES`: phone and tablet, §22.11), `ticket=BUY\|SELL?` | 3-pane: watchlist, quote and chart, docked ticket, plus a bottom dock | Pushed screen with a sticky header and a Trade bar that opens a bottom sheet |
 | `/search` | `q` | ⌘K palette (the route exists for deep links: `?q=` prefills the field, and typing keeps it current with `replace`) | Full-screen search |
 | `/league` | `period=WEEK`, `metric=RETURN`, `kind=ALL`, `view=BOARD\|RACE\|FEED` | Full-width board, Arena card, my pinned row; the race chart (Phase 2) | **Tab: League** (cards) |
-| `/players/$handle` | `range` | Profile | Stacked profile |
+| `/players/$handle` (public mode §16.7: a layout with tabs Overview, `/portfolio`, `/history`, `/analysis`) | Overview `range`; History `view=orders\|activity`, `status=ALL\|OPEN\|CLOSED`, `symbol`; Analysis `range&cal&month&year` | Profile header, then the tabs | Stacked profile, the tab strip scrolls sideways |
 | `/account` (+ `/positions`, `/orders?status=OPEN`, `/orders/$orderId`, `/activity?types`, `/history?range`, Phase 2 `/analysis?range&cal=DAY\|MONTH&month&year`) | | Overview with tabs; the watchlist panel stays | **Tab: Account** |
 | `/settings` (+ `/appearance`, `/trading`, `/api-keys`, `/api-calls` (Phase 2, §17.10), `/connected-apps`, `/account`, `/notifications` (Phase 2: Web Push on this device, categories, devices, test)) | | Settings page | **Tab: Menu** |
 | `/alerts` (Phase 2) | `status?` | Alerts list (edit, pause, resume, delete) | Pushed screen from Menu |
@@ -4593,7 +4661,7 @@ frontend/src/
   - **BalancesGrid**: cash, settled, unsettled, settled available, withdrawable, buying power, holds, net contributions.
   - GFV card showing "0/3 active", with restriction details when one applies.
   - Equity curve (1D/1W/1M/3M/YTD/1Y/ALL) with toggles for NAV, P&L and Return vs SPY.
-  - Positions, Orders, Activity (deposits show the memo and a "by admin" badge; an admin break-glass view shows as "Admin viewed your live account") and Runs.
+  - Positions, Orders, Activity (deposits show the memo and a "by admin" badge; an old break-glass row still shows as "Admin viewed your live account") and Runs.
 - **Order detail**: a timeline of every event, fills with liquidity tags, the fee breakdown, the quote used, rationale, channel, and the `waitReason` sub-label.
 - **Markets**: index cards and movers tabs. News appears if the probe finds a source.
 - **League.**
@@ -4602,7 +4670,11 @@ frontend/src/
   - The **Arena** card compares the median human with the median AI.
   - `MetricInfoPopover` shows the exact formulas from §16.
   - A Feed sub-view.
-- **Player profile**: header (AI tag with model, member since, resets), stats per period, a unit-value curve vs SPY, EOD holdings as weights, delayed trades with rationales.
+- **Player profile** (public mode, §16.7; `routes/_app/players.$handle.tsx` is the layout, the URLs stay): a header (avatar, name, AI tag with model, handle, member since, resets, "run by @owner"; Equity, always shown, `—` when null; net contributions and deposits), then `LinkTabs` (active by path only: `?range=` and `?status=` never deactivate a tab) and the tab. The layout calls `usePlayerLiveRefresh` (§19).
+  - **Overview** (`players.$handle.index.tsx`): stats per period, the league stats card, the unit-value curve with `?range`, **Top holdings (live)** (the five largest live positions by weight, unrealized %, "Full portfolio"), the bot's journal and activity, and recent trades ("Every fill as it happens. Notes are public." and "Full history"; naming the delay when the admin sets one).
+  - **Portfolio** (`features/league/PublicPortfolio.tsx`): the summary grid (equity, cash with settled / unsettled, buying power, open buy holds, day, total and unrealized P&L, net contributions; "Live · updated hh:mm:ss ET" and a quality chip; GFVs, a restriction and dividends receivable only when present), holdings (a table from tablet up sorted by market value, the account's read-only `PositionCard` on phones) and open orders (`PublicOrderRow`: side, size, symbol, type and prices, TIF/ext, status pill, placed time, group chip "Bracket · stop loss · held", "via API" or "Manual console", the note) with **no Cancel**. States: loading skeleton, "Portfolio unavailable right now" with Retry, "No positions: @h holds only cash.", "No open orders.", "No active run.". Polls every 15 s.
+  - **History**: a segmented Orders | Activity. Orders (`PlayerOrderHistory.tsx`): All / Open / Closed and a symbol filter (upper-cased, 300 ms debounce), grouped by ET day with a "Run #N" divider, 25 per "Load more" ("That's everything." at the end); a row shows the time, the order line, the status pill, average fill, fees, its source and the note's first line, and expands to the whole note (plain text), the fills, the replace chain, the group, the wait reason and the run. Polls every 30 s. Activity (`PlayerActivityList.tsx`) reuses `ActivityRow` with `linkOrders=false` (another player's fills never link to `/account/orders/$orderId`), 30 a page.
+  - **Analysis**: the account's P&L Analysis composition (earnings vs SPY and QQQ titled "Earnings", the calendar, P&L by symbol) through `GET /players/{h}/pnl-analysis|pnl-calendar`; "No active run." on `ACCOUNT_NOT_FOUND`.
 - **Phase 2, league slice (§16.8–16.11):**
   - **Profile stats card** (`GET /players/{handle}/stats`, period chips Week · Month · YTD · All): Sharpe ("needs 20 days · 12/20" below the minimum), volatility, profit factor (∞ when there are no losing sells), win rate with wins/sells, average hold, max drawdown, best and worst trade (symbol, P&L, return, hold), and the **rank history**: a small inverted sparkline of the latest 30 EOD ranks with ▲/▼ arrows for each change.
   - **Leaderboard columns** (tablet and desktop): a "Columns" popover adds Sharpe, profit factor, win rate and max drawdown (remembered per browser); phones pick one extra stat for the card's second line. Ranks stay RETURN or P&L.
@@ -4626,7 +4698,7 @@ frontend/src/
 | Don't reduce (Phase 2, §14) | A checkbox **"Don't reduce on dividends"**, shown only for the orders FINRA 5330 reduces (a share BUY LIMIT, a SELL STOP or STOP_LIMIT); sends `doNotReduce: true`, which the review sheet repeats. |
 | Estimates | From `POST /orders/preview`, debounced 250 ms: estimated price, qty for notional orders, principal, fees (SEC/TAF/CAT), hold, buying power before → after, session note ("Will queue for 09:30 ET"). |
 | Warnings | `FAT_FINGER`, `GFV_RISK` (shows a required **"I understand this will cause a good-faith violation"** checkbox that adds `acknowledge: ["GFV_RISK"]`), `SYNTHETIC_QUOTE`, `PARTIAL_FILL_LIKELY`. Shown through `warningText` (both tickets and both review sheets): `FAT_FINGER` reads "Take profit limit price is 5.2% from the market (11.97)." (leg and field in words), every other message with field names in words and prices at display scale; never a Java field name. |
-| Note | Optional rationale (≤ 1000 characters), behind "Add note", with a **"Share note publicly"** checkbox (off by default; sends `shareNote: true`). Without it the note is private to the player. |
+| Note | Optional rationale (≤ 1000 characters), behind "Add note", placeholder "Why this trade? (public)" and the hint "Notes are public: every player sees them with the order." (public mode, §16.7; the share checkbox is gone and `shareNote` is never sent). The review sheet shows "Note · Public". |
 | Submit | Full width, "Buy AAPL" in `--up` or "Sell AAPL" in `--down`, **pinned to the bottom** of the scrolling ticket column (desktop) or sheet (phone, tablet) with the estimated cost or proceeds above it, so a long Stop Limit ticket never hides it. **Disabled until the preview is `valid`.** The `clientOrderId` (`web-<uuid>`) is created when the ticket opens and reused on retry. A symbol on a corporate-action hold (`tradable = false` with a halted quote) shows the hold up front and stays disabled. |
 | Review sheet | On by default (setting `confirmOrders`). It summarizes every field and warning, with Confirm and Edit. |
 | Advanced (Phase 2, §11.9) | A **Simple · Advanced** switch above the side picker. Advanced shows a segmented **Bracket · OCO · OTO · OTOCO** picker (only the types `GET /rules` `orders.groups` lists) and replaces the single-order body: Bracket/OTOCO/OTO show an **Entry** card (type Market/Limit, plus Stop/Stop Limit for OTO/OTOCO, its prices), **Take profit** (limit, with "+x.x% from entry") and **Stop loss** (stop, optional limit, "−x.x%") cards (OTO: one **Then** card with its own type), OCO shows its side (Sell to protect a position, Buy) and the two legs; shares (whole), Day/GTC for the group, the note and "Don't reduce on dividends". The preview is `POST /order-groups/preview` (per-leg estimates; errors map to the leg's field: `takeProfit.limitPrice` → the TP input). Submit opens the group review sheet (every leg, the bracket's risk/reward, the warnings) and posts `POST /order-groups` with a `web-<uuid>` group id. Defaults (Phase 2 review fix): entry at the bid, take profit +4% and stop loss −3% (OCO legs ±4%), rounded to the tick: the earlier +5% rounded outward always landed just past the server's 5% `FAT_FINGER` threshold, so an untouched ticket warned. Every leg reads the same way in the review ("Buy 1 · Limit 11.98", "Stop 12.10 / limit 12.15"). The Advanced body (and its review sheet) is a separate chunk loaded when Advanced is first chosen. |
@@ -4945,7 +5017,7 @@ stocks:
 | `devpg` | Adds `DB_URL=jdbc:postgresql://localhost:5432/stocks` (`docker-compose.dev.yml`) |
 | `test` | `jdbc:h2:mem:stocks-${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1`: **a unique database per Spring test context**, because the context cache keeps several contexts alive in one JVM and they must not share engines, schedulers or data. `spring.flyway.out-of-order: true`. SIM with `clock=fixed` and a `MutableTimeSource` bean. `stocks.jobs.enabled=false` (tests run jobs explicitly through `JobScheduler.runNow`). `stocks.single-instance.enabled=false` (only the Recovery IT enables it). `TestClockController` active (§18.5). bcrypt cost 4 (`stocks.security.password-hash-cost`), a dummy API-key pepper, key and status caches off (`api-key-cache-ttl: 0s`, `player-status-cache-ttl: 0s`: fixtures change rows directly), every rate limit lifted to 100,000 (§17.5), `spring.datasource.hikari.max-lifetime: 0` (§28 #24). Until WS2 wires the SIM clock modes, the default `TimeSource` is still the wall clock: a test that needs the fixed clock imports the test kit's `TestClockConfig` (a `MutableTimeSource` at 2026-10-09T14:00Z). |
 | `pgit` (with `test`; activated by `-Ppg-it`) | `-Ppg-it` passes `-Dspring.profiles.include=pgit` and `-Dstocks.test.pg=true` to Surefire (PostgreSQL-only tests use `@EnabledIfSystemProperty(named = "stocks.test.pg", matches = "true")`). Same as `test`, but the datasource is an embedded PostgreSQL 18.6 (zonky). One server per JVM; `EmbeddedPgContextInitializer` (WS1 testkit) creates a fresh database per Spring context (`CREATE DATABASE stocks_<uuid>`). No Docker. |
-| `e2e` (with `test`; `application-e2e.yml`) | For Playwright against the real backend and the built SPA: SIM with `clock=offset` and `anchor=2026-10-09T14:00:00Z` (a Friday in RTH, then advancing with the wall clock, so `eligible_at` passes and orders fill), `always-open=true`, `stocks.jobs.enabled=true` (leaderboard recompute, feed publisher). Clock jumps (the 15-minute feed delay) go through `POST /api/v1/test/clock`. Bootstrap admin `e2e_admin` / `e2e-admin-password` (overridable with `E2E_USER`/`E2E_PASSWORD`), which `make e2e` passes to Playwright so the suite signs in. |
+| `e2e` (with `test`; `application-e2e.yml`) | For Playwright against the real backend and the built SPA: SIM with `clock=offset` and `anchor=2026-10-09T14:00:00Z` (a Friday in RTH, then advancing with the wall clock, so `eligible_at` passes and orders fill), `always-open=true`, `stocks.jobs.enabled=true` (leaderboard recompute, feed publisher). Clock jumps (for example past a feed delay a test sets) go through `POST /api/v1/test/clock`. Bootstrap admin `e2e_admin` / `e2e-admin-password` (overridable with `E2E_USER`/`E2E_PASSWORD`), which `make e2e` passes to Playwright so the suite signs in. |
 | `prod` | PostgreSQL. `server.forward-headers-strategy=native` (§24.3). Cookie `__Host-stocks_sid` with `secure: true`. ECS structured logs. **Fail-fast** at boot if: `APP_PUBLIC_URL` is missing or not https; `API_KEY_PEPPER` is under 32 bytes; `ENGINE_SEED` is missing; the profile is `simulated` without the override; `hybrid` is set without Alpaca keys; there is no admin and no bootstrap variables; the `test`, `e2e` or `pgit` profile is also active; or a `TestClockController` bean exists. |
 
 ### 23.3 Environment variables (`.env.example`)
@@ -4986,8 +5058,7 @@ stocks:
 | `league.seasonStart` | `2026-10-12` | date |
 | `league.eligibility.minFills` | `5` | int ≥ 0 |
 | `league.eligibility.minSymbols` | `2` | int ≥ 0 |
-| `social.tradeFeedDelay` | `PT15M` | ISO duration |
-| `social.holdingsVisibility` | `EOD_WEIGHTS` | `EOD_WEIGHTS` \| `EOD_FULL` \| `HIDDEN` (hides holdings and the `equity` field; account size stays derivable from public P&L + contributions, §16.7) |
+| `social.tradeFeedDelay` | `PT0S` | ISO duration `PT0S`..`P7D` (public mode, §16.7: holds back only the feed, the trade list, journal notes and other players' best and worst trades; V9 set existing databases to `PT0S`) |
 | `social.showDepositsInFeed` | `true` | boolean |
 | `bots.requireRationale` | `true` | boolean |
 | `league.humanKindExcludesApiTraders` | `false` | boolean (§16.5) |

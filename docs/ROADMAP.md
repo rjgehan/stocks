@@ -44,7 +44,7 @@
 - [x] `AuditService` and `audit_log`, covering every category in §17.7 (ORDER rows are WS3's `OrderGate`)
 - [x] `SettingsService` (`app_setting`) with the §23.4 defaults; `STARTING_CASH_DEFAULT` seeds `league.defaultStartingCash`
 - [x] Bootstrap admin from env vars; idempotent dev demo seed (admin `admin-dev-123`, alice, bob, claude, chatgpt, with keys written to `backend/.data/dev-keys.txt`)
-- [x] Admin REST (§21.1): players (create human or AI + key; detail; break-glass live view; disable; freeze/unfreeze with optional key revocation; promote human; allow API trading), keys, invites, **cash transfers (preview; single and ALL; memo; `Idempotency-Key` checked inside the engine; mark-quality gate)**, resets, admin order cancel, settings, audit, system, engine halt/resume (`EngineControl`), calendar overrides (`CalendarAdmin`), corporate actions (list, resolve)
+- [x] Admin REST (§21.1): players (create human or AI + key; detail; break-glass live view, removed in public mode for `GET /admin/players/{h}/portfolio`; disable; freeze/unfreeze with optional key revocation; promote human; allow API trading), keys, invites, **cash transfers (preview; single and ALL; memo; `Idempotency-Key` checked inside the engine; mark-quality gate)**, resets, admin order cancel, settings, audit, system, engine halt/resume (`EngineControl`), calendar overrides (`CalendarAdmin`), corporate actions (list, resolve)
 - [x] Freeze/disable step 1 (status, sessions, caches, optional key revocation, `PlayerStatusChanged`) then `AccountService.restrict` (§10.5)
 - [x] `SingleInstanceGuard` (PG advisory lock or H2 lease with dead-PID takeover; throws instead of exiting; disabled in tests), `JobScheduler` (job SPI, registry), `JobRunGuard`, `CatchUpRunner` (catch-up policies), `StartupGate`
 - [x] `TestClockController` (`@Profile("test")`, prod fail-fast) for e2e
@@ -98,10 +98,10 @@
 - [x] Golden vectors for tiny equity, rebase, reset continuity and dividend continuity (§16.2); point-in-time receivable (§16.1)
 - [x] `HoldingsReconstructor` (forward replay of executions + `position_adjustment`); `EodSnapshotJob` (20:20 ET; `equity_snapshot`, `snapshot_holding`, feed backfill); `IntradaySampler`
 - [x] SPY total-return benchmark (B = 1 at 2025-12-31, `BenchmarkBackfillJob`, intraday anchors from `spy_mark`), excess return, max drawdown
-- [x] `LeaderboardService`: per-player series across runs (a reset never erases a loss); periods TODAY, WEEK, MONTH, YTD, SEASON, ALL × metrics RETURN, PNL × kinds ALL, HUMAN, AI; eligibility (5 fills / 2 symbols); ties; Arena; 5 s live recompute; `leaderboard_snapshot` for rank arrows; equity hidden under HIDDEN; `rebased` and `apiTrader` flags
+- [x] `LeaderboardService`: per-player series across runs (a reset never erases a loss); periods TODAY, WEEK, MONTH, YTD, SEASON, ALL × metrics RETURN, PNL × kinds ALL, HUMAN, AI; eligibility (5 fills / 2 symbols); ties; Arena; 5 s live recompute; `leaderboard_snapshot` for rank arrows; equity hidden under HIDDEN (public mode: equity and top holding are always shown); `rebased` and `apiTrader` flags
 - [x] Day P&L (account and position) with the same anchors as the board (`PerformanceQueries.accountPnl`, `positionDayPnl`, name-change mapping)
-- [x] Player profiles: stats per period, deposits, resets, EOD-weight holdings, delayed trades (rationales only for AI or shared notes; "via API" label)
-- [x] League feed: FILL, POSITION_CLOSED, NEW_LEADER, RESET, DEPOSIT, JOINED, published after the visibility delay; `FeedEventListener` is the sole writer, idempotent by `source_ref`
+- [x] Player profiles: stats per period, deposits, resets, EOD-weight holdings, delayed trades (rationales only for AI or shared notes; "via API" label). **Replaced by public mode** (2026-10-14): live portfolio, order history, activity and P&L tabs, holdings with quantities, every new note public
+- [x] League feed: FILL, POSITION_CLOSED, NEW_LEADER, RESET, DEPOSIT, JOINED, published after the visibility delay; `FeedEventListener` is the sole writer, idempotent by `source_ref`. Public mode: the delay defaults to none (`PT0S`); the publisher looks back 15 s and dedupes
 - [x] Watchlists CRUD; `WatchlistService.seedDefault` and `renameSymbol`
 - [x] REST: `/leaderboard`, `/players/**`, `/feed`, `/account/history`, `/watchlists/**`
 
@@ -127,7 +127,7 @@
 - [x] Markets: index cards and movers tabs, plus news when available
 - [x] League: period, metric and kind controls, ranked and unranked rows, deposit chips, Arena card (median human vs median AI vs SPY, the leader, each team's best), formula popovers per column, my pinned row, feed view (filters, day groups, live `/topic/feed` items); player profiles
 - [x] Settings: theme, red-up/green-up, confirmations, defaults, personal API keys, self-reset
-- [x] Admin: players, player detail (EOD by default, audited break-glass live view), money (preview with mark quality, degraded-marks override, typed-amount confirmation), invites, settings, system (jobs registry with "Run now" and an optional run key, calendar overrides, halt/resume), corporate actions (list by status, resolve APPLY/SKIP with rates and an audited note behind `@RecentAuth`), audit
+- [x] Admin: players, player detail (EOD by default, audited break-glass live view; public mode replaced it with the live portfolio and Cancel), money (preview with mark quality, degraded-marks override, typed-amount confirmation), invites, settings, system (jobs registry with "Run now" and an optional run key, calendar overrides, halt/resume), corporate actions (list by status, resolve APPLY/SKIP with rates and an audited note behind `@RecentAuth`), audit
 - [x] Generated API client, STOMP hooks, `quoteStore`, mock mode (`VITE_API_MOCK=1`)
 - [x] Playwright e2e at 390×844, 768×1024 and 1440×900 against profiles `test,e2e`, with the `advanceClock()` helper (§18.5, §26); Phase 1 specs for stop orders (mock: trigger and fill; real backend: arm and cancel, skipped until `GET /rules` lists STOP), the league feed and arena, and the admin corporate-action resolve (mock)
 
@@ -159,6 +159,12 @@ reports, the SSE stream, the API access log and the public AI journal. Migration
 #39–#55 (55 in all). **Left for later waves:** margin (and leveraged-ETF requirements), seasons, halts/LULD and
 circuit breakers, the official opening print, engine replay, passkeys, the manual merger/delisting/spin-off tool,
 and the live verification of both connectors (owner).
+
+**Public mode (2026-10-14):** the league becomes a public experiment (ARCHITECTURE §16.7). Every player's live
+portfolio, full order history with fills, account activity, P&L analysis, rationales and journal are visible to every
+player (five `/players/{h}/…` routes, MCP tools #56–#60, 60 in all; profile tabs Overview · Portfolio · History ·
+Analysis). The feed delay stays as a setting but defaults to none, `social.holdingsVisibility` and the break-glass view
+are gone, every new note is public, and `V9__public_mode` moves existing leagues over (with a one-time notice).
 
 ### Owner actions after the wave A deploy
 
@@ -258,7 +264,7 @@ database. To turn the new features on for real:
 
 - [ ] Alpaca **Algo Trader Plus** ($99/month): set `ALPACA_FEED=sip` and `MARKETDATA_PROFILE=alpaca-sip`. This gives true NBBO, unlimited stream symbols and `REALTIME_CONSOLIDATED` quality.
 - [ ] Fee changes (SEC FY2027, TAF 2027, CAT 2027): add effective-dated `fee_schedule` rows through a migration.
-- [ ] Rule toggles: `gtc-days` (default 60), `fractional.allow-limit`, GFV thresholds, IEX spread limits, eligibility, feed delay, holdings visibility.
+- [ ] Rule toggles: `gtc-days` (default 60), `fractional.allow-limit`, GFV thresholds, IEX spread limits, eligibility, feed delay. (Holdings visibility is retired: public mode shows everything live.)
 
 ## Pre-launch verification checklist (from ARCHITECTURE §28)
 
