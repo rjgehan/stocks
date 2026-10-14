@@ -74,7 +74,8 @@ print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "nu
 class FakeApp:
     """The app's GET /api/v1/me on a local port: the handle of the key's player, 401 for an unknown key, or
     `status` for every request when it is set. POST .../requests/claim hands out the key's queued `claims` (204 when
-    none); POST .../requests/{id}/finish records the report in `finished` and answers `finish_status` (200)."""
+    none); POST .../requests/{id}/finish records the report in `finished` and answers `finish_status` (200). With
+    `broken`, every POST gets a cut-off answer (http.client's IncompleteRead, not an OSError)."""
 
     def __init__(self):
         self.players = {KEY_A: "claude", KEY_B: "claude_tech", KEY_C: "claude_aggressive"}
@@ -83,6 +84,7 @@ class FakeApp:
         self.claims = {}          # key -> [run requests], oldest first
         self.finished = []        # (request id, body, headers)
         self.finish_status = None
+        self.broken = False
         app = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -100,6 +102,13 @@ class FakeApp:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
                 app.requests.append((self.path, dict(self.headers)))
                 key = self.headers.get("Authorization", "").removeprefix("Bearer ")
+                if app.broken:  # promises 100 bytes, sends 6 and closes the connection
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", "100")
+                    self.end_headers()
+                    self.wfile.write(b'{"id":')
+                    return
                 if self.path == "/api/v1/agent-runs/requests/claim":
                     if key not in app.players:
                         code, out = 401, {"code": "INVALID_API_KEY", "detail": "Unknown API key."}
@@ -1062,6 +1071,78 @@ class RunRequestTest(Base):
                       "dropped it", log)
         self.tick(sessions)
         self.assertEqual(len(self.app.finished), 4)
+
+    def test_a_check_in_waiting_for_a_slot_keeps_it_from_run_requests(self):
+        release = threading.Event()
+        started = []
+
+        def fake_run_session(cfg, agent, why, dry_run=False, outcome=None):
+            started.append((agent.handle, why))
+            release.wait(10)
+            return 0
+
+        cfg = self.cfg()
+        agents = [a for a in self.agents(cfg) if a.enabled]
+        agents[0].schedule = ["09:30"]
+        agents[1].schedule = ["15:00"]
+        self.app.claims[KEY_B] = [run_request("arq_20", handle="claude_tech")]
+        sessions = ct.Sessions(1)
+        with mock.patch.object(ct, "run_session", fake_run_session), \
+                mock.patch.object(ct, "check_player", lambda cfg, agent: ("ok", "")), fixed(WED), capture():
+            sessions.start("someone", lambda: (release.wait(10), 0)[1])   # e.g. a `docker exec ... run`
+            ct.tick_agents(cfg, agents, sessions, WED)               # claude's 09:30 check-in waits for the slot
+            self.assertEqual(list(sessions.waiting["claude"]), ["2026-10-14 09:30"])
+            release.set()
+            self.assertTrue(sessions.wait(10))                       # the slot frees before the requests' turn
+            release.clear()
+            ct.tick_requests(cfg, agents, sessions)
+            self.assertEqual(sessions.running(), 0)
+            self.assertEqual(len(self.app.claims[KEY_B]), 1)         # not claimed: the slot is claude's
+            self.assertFalse([p for p, _ in self.app.requests if p.endswith("/claim")])
+            ct.tick_agents(cfg, agents, sessions, WED.replace(minute=31))
+            self.assertTrue(until(lambda: started == [("claude", "the 09:30 ET scheduled check-in")]))
+            release.set()
+            self.assertTrue(sessions.wait(10))
+            ct.tick_agents(cfg, agents, sessions, WED.replace(minute=32))
+            ct.tick_requests(cfg, agents, sessions)                  # now it is free for the request
+            self.assertTrue(sessions.wait(10))
+        self.assertEqual(started[1], ("claude_tech", "a check-in requested from the app by @ryan"))
+        self.assertEqual([(rid, body["status"]) for rid, body, _ in self.app.finished], [("arq_20", "DONE")])
+        # a waiting agent that is disabled since then holds no slot
+        sessions.waiting["claude_aggressive"] = {"2026-10-14 09:30": f"{ct.NO_SLOT}, STOCKS_TRADER_MAX_PARALLEL=1"}
+        self.assertEqual(sessions.slot_waiters([a.handle for a in agents]), 0)
+
+    def test_a_broken_answer_is_network_trouble_and_no_report_is_lost(self):
+        cfg = self.cfg()
+        agents = self.agents(cfg)
+        self.app.broken = True
+        verdict, why = ct.claim_request(cfg, agents[0])
+        self.assertEqual(verdict, "problem")
+        self.assertIn("does not answer (a broken answer: IncompleteRead); asking again every minute", why)
+        self.assertEqual(ct.finish_request(cfg, agents[0], "arq_01", "DONE", "ok"),
+                         ("retry", "the app does not answer (a broken answer: IncompleteRead)"))
+        # queued reports: each one that fails stays queued, and the minute's claims still go out
+        sessions = ct.Sessions(3)
+        sessions.report_later((agents[0], "arq_01", "DONE", "Check-in done in 5 s."))
+        sessions.report_later((agents[1], "arq_02", "FAILED", "Check-in failed after 3 s: boom"))
+        with fixed(WED), capture() as out:
+            ct.tick_requests(cfg, agents, sessions)
+        self.assertEqual([item[1] for item in sessions.reports], ["arq_01", "arq_02"])
+        self.assertIn("[claude] cannot report run request arq_01 to the app (the app does not answer (a broken "
+                      "answer: IncompleteRead)); trying again every minute", out.getvalue())
+        self.assertEqual(len([p for p, _ in self.app.requests if p.endswith("/claim")]), 3)  # 1 above + 2 enabled
+        # an answer nobody expected (or a bug) does not lose the report either
+        with mock.patch.object(ct, "finish_request", side_effect=RuntimeError("odd")), capture() as out:
+            ct.flush_reports(cfg, sessions)
+        self.assertEqual(len(sessions.reports), 2)
+        self.assertIn("(RuntimeError: odd)", out.getvalue())
+        self.app.broken = False
+        with fixed(WED), capture():
+            ct.tick_requests(cfg, agents, sessions)
+        self.assertEqual(sessions.reports, [])
+        self.assertEqual([(rid, body["status"]) for rid, body, _ in self.app.finished],
+                         [("arq_01", "DONE"), ("arq_02", "FAILED")])
+        self.assert_no_key(out.getvalue())
 
     def test_a_key_of_another_player_runs_nothing(self):
         self.app.claims[KEY_A] = [run_request("arq_05", handle="claude_aggressive")]

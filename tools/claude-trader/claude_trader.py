@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import http.client
 import json
 import os
 import plistlib
@@ -69,6 +70,7 @@ PROBE_TIMEOUT_S = 5       # server mode: GET /api/v1/me before a check-in starts
 REQUEST_TIMEOUT_S = 10    # server mode: claiming and reporting a "Run now" request
 REPORT_MAX_CHARS = 480    # a run request's report (the app keeps 500 characters)
 CLAIM_PATH = "/api/v1/agent-runs/requests/claim"
+NO_SLOT = "no free session slot"  # why a due check-in waits (Sessions.waiting); run requests leave it that slot
 MAX_TURNS = 60
 SELFTEST_MAX_TURNS = 5
 SUMMARIES_KEPT = 3
@@ -613,7 +615,8 @@ def check_player(cfg: Config, agent: Agent) -> tuple:
             return "wrong", (f"the app refuses @{agent.handle}'s key (HTTP {e.code}: revoked, or not a key of this "
                              "app); fix it in the agents file")
         return "down", f"the app answers {url} with HTTP {e.code}"
-    except (OSError, ValueError) as e:  # URLError, a timeout, a reset connection, a body that is not JSON
+    except (OSError, ValueError, http.client.HTTPException) as e:  # URLError, a timeout, a reset connection, a
+        # broken answer (IncompleteRead, BadStatusLine), a body that is not JSON
         return "down", f"the app does not answer {url} ({getattr(e, 'reason', None) or e})"
     handle = str(me.get("handle") or "").lower() if isinstance(me, dict) else ""
     if handle == agent.handle:
@@ -844,6 +847,10 @@ class Sessions:
     def full(self) -> bool:
         return self.running() >= self.limit
 
+    def slot_waiters(self, handles: list) -> int:
+        """How many of `handles` have a due check-in waiting for a free session slot: the next free slots are theirs."""
+        return sum(1 for h in handles if any(v.startswith(NO_SLOT) for v in self.waiting.get(h, {}).values()))
+
     def report(self, handle: str, problem: str | None, topic: str = "") -> None:
         """Logs an agent's problem once, and again only when it changes; None: the agent is fine (again). Problems
         of another `topic` (the run requests') come and go on their own."""
@@ -937,7 +944,7 @@ def tick_agent(cfg: Config, agent: Agent, sessions: Sessions, now: datetime) -> 
         if due and sessions.full():
             if keys - set(waited):
                 log(f"due, waiting for a free session slot ({sessions.running()} of {sessions.limit} running)", h)
-            waited.update({k: f"no free session slot, STOCKS_TRADER_MAX_PARALLEL={sessions.limit}" for k in keys})
+            waited.update({k: f"{NO_SLOT}, STOCKS_TRADER_MAX_PARALLEL={sessions.limit}" for k in keys})
         elif due:
             verdict, why_not = check_player(cfg, agent) if cfg.server else ("ok", "")
             if verdict == "down":
@@ -985,15 +992,19 @@ def api_url(cfg: Config, path: str) -> str:
 
 def api_post(cfg: Config, agent: Agent, path: str, body: dict | None = None) -> tuple:
     """POSTs `body` as JSON with the agent's key: (HTTP status, the JSON answer or None). Network trouble raises
-    OSError (URLError, a timeout, a reset connection)."""
+    OSError (URLError, a timeout, a reset connection, and a broken answer such as IncompleteRead or BadStatusLine,
+    which http.client raises as its own HTTPException)."""
     req = urllib.request.Request(api_url(cfg, path), data=json.dumps(body or {}).encode(), method="POST",
                                  headers={"Authorization": f"Bearer {agent.key}", "Content-Type": "application/json",
                                           "Accept": "application/json", "X-Stocks-Client": CLIENT_HEADER})
     try:
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as r:
-            status, raw = r.status, r.read()
-    except urllib.error.HTTPError as e:
-        status, raw = e.code, e.read()
+        try:
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as r:
+                status, raw = r.status, r.read()
+        except urllib.error.HTTPError as e:
+            status, raw = e.code, e.read()
+    except http.client.HTTPException as e:
+        raise OSError(f"a broken answer: {type(e).__name__}") from e
     try:
         answer = json.loads(raw.decode("utf-8", "replace")) if raw else None
     except ValueError:
@@ -1044,8 +1055,12 @@ def finish_request(cfg: Config, agent: Agent, request_id: str, status: str, mess
 
 
 def report_request(cfg: Config, sessions: Sessions, agent: Agent, request_id: str, status: str, message: str) -> None:
-    """Tells the app how a claimed request went; a report the app cannot take now goes again next minute."""
-    verdict, why = finish_request(cfg, agent, request_id, status, message)
+    """Tells the app how a claimed request went; a report the app cannot take now goes again next minute. Never
+    raises, so neither a session's end nor the other queued reports lose theirs."""
+    try:
+        verdict, why = finish_request(cfg, agent, request_id, status, message)
+    except Exception as e:  # a bug or an answer nobody expected: keep the report for the next minute
+        verdict, why = "retry", f"{type(e).__name__}: {e}"
     if verdict == "ok":
         sessions.report(agent.handle, None, "report")
         log(f"reported run request {request_id} to the app: {status}", agent.handle)
@@ -1082,12 +1097,15 @@ def tick_requests(cfg: Config, agents: list, sessions: Sessions) -> None:
     """Server mode, after tick_agents (check-ins that are due come first): reports the app did not take yet go again,
     then each enabled agent that is idle, with no check-in waiting to start, claims its oldest "Run now" request from
     the app while session slots are free, and runs it at once: the agent's normal check-in (any day; the prompt
-    handles weekends). A disabled agent claims nothing; the app expires its requests after 30 minutes."""
+    handles weekends). A slot is free for a request only after every due check-in waiting for a slot has one (a
+    session that ended since tick_agents leaves its slot to them for the next minute). A disabled agent claims
+    nothing; the app expires its requests after 30 minutes."""
     if not cfg.server or STOP.is_set():
         return
     flush_reports(cfg, sessions)
+    enabled = [a.handle for a in agents if a.enabled]
     for agent in agents:
-        if sessions.full():
+        if sessions.running() + sessions.slot_waiters(enabled) >= sessions.limit:
             return
         if not agent.enabled or sessions.busy(agent.handle) or sessions.waiting.get(agent.handle):
             continue
