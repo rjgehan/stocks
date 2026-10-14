@@ -435,10 +435,13 @@ class PublicPortfolioServiceTest {
     when(accounts.activities(eq(aliceAcc.id()), filter.capture(), any(), anyInt())).thenReturn(new Page<>(List.of(
         activity(ActivityType.FILL, ActorKind.SELF, "my memo", null),
         activity(ActivityType.DEPOSIT, ActorKind.ADMIN, "Halloween bonus", null),
-        activity(ActivityType.ADJUSTMENT, ActorKind.SYSTEM, "Dividend correction", null),
+        activity(ActivityType.DIVIDEND, ActorKind.SYSTEM, "Dividend correction", null),
         activity(ActivityType.RESET, ActorKind.SELF, "fresh start", reset),
         activity(ActivityType.RESTRICTION, ActorKind.ADMIN, null, byAdmin),
-        activity(ActivityType.RESTRICTION, ActorKind.SYSTEM, null, bySystem)), "c1"));
+        activity(ActivityType.RESTRICTION, ActorKind.SYSTEM, null, bySystem),
+        // after a reset the new run's funding row (SYSTEM) carries the resetting admin's memo
+        activity(ActivityType.INITIAL_FUNDING, ActorKind.SYSTEM, "Reset after GFV abuse, complaint from @bob", null),
+        activity(ActivityType.ADJUSTMENT, ActorKind.SYSTEM, "an unexpected system memo", null)), "c1"));
 
     Page<ActivityDto> page = service.activities("alice", new ActivityFilter(Set.of(), null, null), null, 30);
     assertThat(filter.getValue().typesOrEmpty()).isEqualTo(EnumSet.complementOf(EnumSet.of(ActivityType.ADMIN_VIEW)));
@@ -460,9 +463,12 @@ class PublicPortfolioServiceTest {
     });
     assertThat(rows.get(5).detail()).isInstanceOfSatisfying(RestrictionDetailDto.class,
         r -> assertThat(r.reason()).isEqualTo("3 good-faith violations"));
+    assertThat(rows.get(6).memo()).as("a reset memo on the funding row").isNull();
+    assertThat(rows.get(7).memo()).as("a system memo on a type the system does not write").isNull();
     String json = JSON.writeValueAsString(page);
     assertThat(json).doesNotContain("acc_OLD").doesNotContain("acc_NEW").doesNotContain("under review")
-        .doesNotContain("my memo").doesNotContain("Halloween").doesNotContain("fresh start");
+        .doesNotContain("my memo").doesNotContain("Halloween").doesNotContain("fresh start")
+        .doesNotContain("GFV abuse").doesNotContain("unexpected");
 
     // ADMIN_VIEW is never public, even asked for alone
     assertThat(service.activities("alice", new ActivityFilter(Set.of(ActivityType.ADMIN_VIEW), null, null), null,

@@ -83,6 +83,10 @@ public class PublicPortfolioService implements PublicPortfolioQueries {
   static final Set<ActivityType> PUBLIC_ACTIVITY = Collections.unmodifiableSet(
       EnumSet.complementOf(EnumSet.of(ActivityType.ADMIN_VIEW)));
 
+  /** Activity types whose memo only the system writes (D5: admin and player memos stay private). */
+  static final Set<ActivityType> SYSTEM_MEMO = Collections.unmodifiableSet(
+      EnumSet.of(ActivityType.DIVIDEND, ActivityType.CASH_IN_LIEU));
+
   private static final String ORDER_SELECT = """
       SELECT o.id, o.public_id, a.run_no, o.symbol, o.side, o.order_type, o.qty, o.notional, o.fractional,
              o.limit_price, o.stop_price, o.trail_amount, o.trail_percent, o.time_in_force, o.extended_hours,
@@ -334,11 +338,13 @@ public class PublicPortfolioService implements PublicPortfolioQueries {
   }
 
   /**
-   * The public shape of an activity row: memos only when the system wrote them; a reset without account ids or memo;
-   * a restriction reason only when the system set it.
+   * The public shape of an activity row: memos only on the types whose memo the system always writes (an
+   * INITIAL_FUNDING row is SYSTEM too, but after a reset it carries the resetting admin's or player's note); a reset
+   * without account ids or memo; a restriction reason only when the system set it.
    */
   static ActivityDto sanitize(ActivityDto a) {
     boolean system = a.by() == ActorKind.SYSTEM;
+    boolean systemMemo = system && SYSTEM_MEMO.contains(a.type());
     ActivityDetailDto detail = a.detail();
     if (detail instanceof ResetDetailDto r) {
       detail = new ResetDetailDto(r.side(), null, null, r.runNo(), r.finalEquity(), r.startingCash(), null);
@@ -346,7 +352,7 @@ public class PublicPortfolioService implements PublicPortfolioQueries {
       detail = new RestrictionDetailDto(r.from(), r.to(), r.until(), null);
     }
     return new ActivityDto(a.id(), a.at(), a.type(), a.symbol(), a.side(), a.qty(), a.price(), a.fees(), a.amount(),
-        a.balanceAfter(), a.tradeDate(), a.settleDate(), system ? a.memo() : null, a.by(), a.orderId(),
+        a.balanceAfter(), a.tradeDate(), a.settleDate(), systemMemo ? a.memo() : null, a.by(), a.orderId(),
         a.executionId(), a.transferId(), detail);
   }
 
