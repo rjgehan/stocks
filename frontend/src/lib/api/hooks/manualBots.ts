@@ -7,7 +7,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { api, unwrap } from '../client'
 import { queryKeys } from '../queryKeys'
 import type { ManualSession } from '../types'
-import { agentKeys } from './agents'
+import { refreshPlayer } from './league'
 
 export const manualKeys = {
   bot: (handle: string) => ['manualBot', handle] as const,
@@ -104,9 +104,8 @@ export function useExecuteManualSession(handle: string, sessionId: string) {
       ),
     onSuccess: (s) => {
       store(s)
-      void qc.invalidateQueries({ queryKey: queryKeys.player(handle), exact: true })
-      void qc.invalidateQueries({ queryKey: queryKeys.playerTrades(handle), exact: true })
-      void qc.invalidateQueries({ queryKey: agentKeys.journal(handle), exact: true })
+      // the profile, trades, portfolio, orders, activity and journal of the bot (as a feed item of it would)
+      refreshPlayer(qc, handle, true)
     },
   })
 }

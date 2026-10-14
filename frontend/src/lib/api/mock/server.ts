@@ -52,6 +52,7 @@ import type {
   Leaderboard,
   LeaderboardPeriod,
   LeaderboardRow,
+  ManualAction,
   Me,
   MoverList,
   Notification,
@@ -656,6 +657,11 @@ export class MockServer {
       clock: () => this.clock(),
       preview: (req) => this.preview(req),
       store: () => (this.s.manualBots ??= {}),
+      placed: (h, row, sessionId, orderId, at) => this.manualPlaced(h, row, sessionId, orderId, at),
+      cancelled: (h, orderId, at) => {
+        const o = this.other(h)?.orders.find((x) => x.orderId === orderId)
+        if (o && (o.status === 'WORKING' || o.status === 'PENDING')) Object.assign(o, { status: 'CANCELLED', statusReason: 'USER', waitReason: null, doneAt: at })
+      },
     })
     // identity
     r('POST', '/auth/logout', () => {
@@ -2395,6 +2401,80 @@ export class MockServer {
     // units so that units × U (the board's equity) matches the portfolio as seeded; U and the returns are unchanged
     const lmv = positions.reduce((acc, x) => add(acc, mul(x.qty, this.mark(x.symbol))), '0.00')
     p.units = div(add(p.cash, lmv), p.u, 18, 'HALF_EVEN')
+  }
+
+  /**
+   * Manual console (§20.8): a row placed as the bot joins its public orders with its session id (the "Manual console"
+   * pill). A market row fills at once at the mark and moves the bot's cash and position; other types rest.
+   */
+  private manualPlaced(handle: string, a: ManualAction, sessionId: string, orderId: string, at: string): 'FILLED' | 'WORKING' {
+    const p = this.other(handle)
+    const symbol = a.symbol ?? ''
+    const side = a.action === 'SELL' ? 'SELL' : 'BUY'
+    const px = tickPrice(this.mark(symbol))
+    const qty = a.qty ?? (a.notional && sign(px) > 0 ? floor5(div(a.notional, px, 10, 'DOWN')) : null)
+    const market = a.type === 'MARKET' && qty !== null && sign(qty) > 0
+    if (!p) return market ? 'FILLED' : 'WORKING'
+    const o: PublicOrder = {
+      orderId,
+      runNo: 1,
+      symbol,
+      side,
+      type: a.type,
+      qty: a.qty,
+      notional: a.notional,
+      fractional: Boolean(a.notional) || (qty?.includes('.') ?? false),
+      limitPrice: a.limitPrice,
+      stopPrice: a.stopPrice,
+      trailAmount: a.trailAmount,
+      trailPercent: a.trailPercent,
+      timeInForce: a.timeInForce ?? 'DAY',
+      extendedHours: a.extendedHours,
+      status: 'WORKING',
+      waitReason: a.type === 'LIMIT' ? 'LIMIT_NOT_REACHED' : a.type === 'MARKET' ? null : 'NOT_TRIGGERED',
+      statusReason: null,
+      filledQty: '0',
+      avgFillPrice: null,
+      fees: '0.00',
+      receivedAt: at,
+      expiresAt: null,
+      doneAt: null,
+      replacesOrderId: null,
+      replacedByOrderId: null,
+      group: null,
+      channel: 'WEB',
+      viaApi: false,
+      manualSessionId: sessionId,
+      fills: [],
+      untrusted: untrusted(a.rationale),
+    }
+    if (market && qty) {
+      const principal = money(mul(qty, px))
+      const fees = estimateFees(side, qty, principal).total ?? '0.00'
+      const pos = p.positions.find((x) => x.symbol === symbol)
+      let realized: Dec | null = null
+      if (side === 'BUY') {
+        p.cash = money(sub(p.cash, add(principal, fees)))
+        if (pos) {
+          pos.avgCost = tickPrice(div(add(mul(pos.qty, pos.avgCost), mul(qty, px)), add(pos.qty, qty), 10, 'HALF_UP'))
+          pos.qty = add(pos.qty, qty)
+        } else {
+          p.positions.push({ symbol, qty, avgCost: px, openedAt: at })
+        }
+      } else {
+        p.cash = money(add(p.cash, sub(principal, fees)))
+        if (pos) {
+          realized = money(sub(sub(principal, fees), mul(qty, pos.avgCost)))
+          pos.qty = sub(pos.qty, qty)
+          if (sign(pos.qty) <= 0) p.positions = p.positions.filter((x) => x !== pos)
+        }
+      }
+      Object.assign(o, { status: 'FILLED', waitReason: null, filledQty: qty, avgFillPrice: px, fees, doneAt: at })
+      o.fills = [{ executionId: publicId('exe'), executedAt: at, qty, price: px, fees, realizedPnl: realized }]
+      p.fills += 1
+    }
+    p.orders.push(o)
+    return o.status === 'FILLED' ? 'FILLED' : 'WORKING'
   }
 
   /** A listed player (anyone but a DISABLED one; the signed-in player too), or PLAYER_NOT_FOUND. */

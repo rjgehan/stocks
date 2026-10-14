@@ -27,6 +27,10 @@ export interface ManualMockDeps {
   clock: () => Clock
   preview: (req: PlaceOrderRequest) => Preview
   store: () => Record<string, MockManualBot>
+  /** A row placed as the bot joins its public orders (a market row fills at the mark); the order's status. */
+  placed: (handle: string, row: ManualAction, sessionId: string, orderId: string, at: string) => 'FILLED' | 'WORKING'
+  /** A CANCEL row against one of the bot's public orders. */
+  cancelled: (handle: string, orderId: string, at: string) => void
 }
 
 const LIMITS = { maxInstructionsChars: 4000, maxReplyChars: 20_000, maxOrders: 10, expireAfter: 'PT24H' }
@@ -451,11 +455,14 @@ export function registerManualBotRoutes(r: ManualRouteFn, d: ManualMockDeps): vo
         if (kind === 'CANCEL') {
           const target = openOrder(op.handle, a.orderId ?? '')
           if (target?.result) target.result.orderStatus = 'CANCELLED'
+          if (target) d.cancelled(op.handle, a.orderId ?? '', now)
           a.result = target
             ? { status: 'CANCELLED', orderId: a.orderId, orderStatus: 'CANCELLED', code: null, message: null, at: now }
             : { status: 'FAILED', orderId: a.orderId, orderStatus: null, code: 'ORDER_NOT_CANCELLABLE', message: 'The order is no longer open.', at: now }
         } else {
-          a.result = { status: 'PLACED', orderId: `ord_${ulid()}`, orderStatus: a.type === 'MARKET' ? 'FILLED' : 'WORKING', code: null, message: null, at: now }
+          const orderId = `ord_${ulid()}`
+          const orderStatus = d.placed(op.handle, a, s.sessionId ?? '', orderId, now)
+          a.result = { status: 'PLACED', orderId, orderStatus, code: null, message: null, at: now }
         }
       }
     }
