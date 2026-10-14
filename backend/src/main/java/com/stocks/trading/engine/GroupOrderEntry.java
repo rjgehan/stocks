@@ -5,7 +5,6 @@ import com.stocks.common.domain.OrderEventType;
 import com.stocks.common.domain.OrderGroupRole;
 import com.stocks.common.domain.OrderGroupType;
 import com.stocks.common.domain.OrderStatus;
-import com.stocks.common.domain.PlayerKind;
 import com.stocks.common.domain.Side;
 import com.stocks.common.domain.WaitReason;
 import com.stocks.common.error.ApiException;
@@ -160,7 +159,8 @@ class GroupOrderEntry {
     String publicId = publicIds.next(Prefix.ORDER);
     Instant eligibleAt = p.held() ? now : p.eval().acceptance().eligibleBase().plus(latency.latency(publicId, 0));
     WaitReason wait = p.held() ? WaitReason.AWAITING_PARENT : p.eval().acceptance().waitReason();
-    boolean rationalePublic = origin.kind() == PlayerKind.AI || o.shareNote();
+    // public mode (§16.7): a new leg's note is always public; a replace keeps the old flag unless it sends a new note
+    boolean rationalePublic = replacing == null || o.shareNote();
     BigDecimal limit = o.limitPrice() == null ? null : Prices.normalize(o.limitPrice());
     BigDecimal stop = o.stopPrice() == null ? null : Prices.normalize(o.stopPrice());
     long id = writer.insert(new OrderWriter.NewOrder(publicId, acc.id(), acc.playerId(), o.clientOrderId(),

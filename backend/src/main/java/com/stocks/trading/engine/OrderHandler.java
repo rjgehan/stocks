@@ -3,7 +3,6 @@ package com.stocks.trading.engine;
 import com.stocks.common.domain.CancelReason;
 import com.stocks.common.domain.OrderEventType;
 import com.stocks.common.domain.OrderStatus;
-import com.stocks.common.domain.PlayerKind;
 import com.stocks.common.domain.TimeInForce;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
@@ -119,7 +118,8 @@ class OrderHandler {
 
     String publicId = publicIds.next(Prefix.ORDER);
     Instant eligibleAt = ev.acceptance().eligibleBase().plus(latency.latency(publicId, 0));
-    boolean rationalePublic = origin.kind() == PlayerKind.AI || o.shareNote();
+    // public mode (§16.7): a new order's note is always public; a replace keeps the old flag unless it sends a new note
+    boolean rationalePublic = replacing == null || o.shareNote();
     BigDecimal qty = o.qty() == null ? null : Qty.normalize(o.qty());
     BigDecimal notional = o.notional() == null ? null : Money.require("notional", o.notional());
     BigDecimal limit = o.limitPrice() == null ? null : Prices.normalize(o.limitPrice());
@@ -238,7 +238,8 @@ class OrderHandler {
   /**
    * The new order of a replace: immutable symbol, side and type; null fields keep the old value (§11.6). A trailing
    * stop's trail is replaced as a pair (sending one of {@code trailAmount}/{@code trailPercent} drops the other), and
-   * its computed stop is never carried over: the new order starts a fresh watermark (§12.7).
+   * its computed stop is never carried over: the new order starts a fresh watermark (§12.7). A blank rationale keeps
+   * the old one.
    */
   static NormalizedOrder replacementOf(OrderRow old, ReplaceOrderRequest req, String clientOrderId) {
     TimeInForce tif = req.timeInForce() != null ? req.timeInForce() : old.timeInForce();
@@ -248,10 +249,12 @@ class OrderHandler {
     boolean newTrail = req.trailAmount() != null || req.trailPercent() != null;
     BigDecimal trailAmount = newTrail ? req.trailAmount() : old.trailAmount();
     BigDecimal trailPercent = newTrail ? req.trailPercent() : old.trailPercent();
+    // public mode (§16.7): a new note is public; without one the old note keeps the visibility its author chose
+    boolean newNote = req.rationale() != null && !req.rationale().isBlank();
     return new NormalizedOrder(clientOrderId, old.symbol(), old.side(), old.type(),
         req.qty() != null ? req.qty() : old.qty(), null,
         req.limitPrice() != null ? req.limitPrice() : old.limitPrice(), stop, trailAmount, trailPercent, tif, ext,
-        req.rationale() != null ? req.rationale().trim() : old.rationale(), old.rationalePublic(), Set.of(),
+        newNote ? req.rationale().trim() : old.rationale(), newNote || old.rationalePublic(), Set.of(),
         req.doNotReduce() != null ? req.doNotReduce() : old.doNotReduce());
   }
 

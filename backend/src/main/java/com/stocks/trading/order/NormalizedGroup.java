@@ -133,9 +133,10 @@ public record NormalizedGroup(String clientOrderId, OrderGroupType type, String 
         rationale, shareNote, doNotReduce, acknowledge);
   }
 
+  /** The group with a new note, which is public (public mode, §16.7). */
   public NormalizedGroup withRationale(String newRationale) {
     return new NormalizedGroup(clientOrderId, type, symbol, side, qty, timeInForce, entry, takeProfit, stopLoss,
-        secondary, newRationale, shareNote, doNotReduce, acknowledge);
+        secondary, newRationale, true, doNotReduce, acknowledge);
   }
 
   public NormalizedGroup withClientOrderId(String id) {
