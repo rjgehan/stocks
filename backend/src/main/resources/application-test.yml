@@ -43,6 +43,7 @@ stocks:
     dcr.max-per-hour: 100000
   engine:
     seed: test-seed
+  manual-bots.settle-wait: PT0S             # the fixed test clock: never poll between order groups
   marketdata:
     profile: simulated
     sim: { clock: fixed }                   # a MutableTimeSource bean (§23.2)

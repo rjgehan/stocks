@@ -26,6 +26,8 @@ public enum Prefix {
   AGENT_RUN("arn"),
   /** Phase 2 (§20.7): a public AI journal note. */
   JOURNAL_NOTE("jnl"),
+  /** Manual-bot session (§20.8). */
+  MANUAL_SESSION("mbs"),
   /** Server-generated {@code X-Request-Id} values (§6.6); never stored as a row id. */
   REQUEST("req");
 
