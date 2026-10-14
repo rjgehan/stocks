@@ -91,7 +91,7 @@ export function activityView(a: Activity): ActivityView {
         return {
           ...base,
           title: `Dividend · ${a.symbol ?? ''}`,
-          lines: [...lines, 'Counts in your equity until it pays'],
+          lines: [...lines, 'Counts in equity until it pays'],
           badge: { label: 'Accrued', tone: 'accent' },
           amountState: 'pending',
           icon: 'dividend',
