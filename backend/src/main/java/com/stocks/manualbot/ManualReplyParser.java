@@ -57,6 +57,10 @@ public final class ManualReplyParser {
 
   static final Pattern OPEN_FENCE = Pattern.compile("^ {0,3}(`{3,}|~{3,})[ \\t]*([A-Za-z0-9_+.-]*)[ \\t]*$");
   static final Pattern ORDERS_KEY = Pattern.compile("(?i)[\"']?(orders|actions|trades)[\"']?\\s*:");
+  /** Bounds for any number in a row: far beyond any real qty or price, far below what could exhaust memory. */
+  static final BigDecimal MAX_DECIMAL = new BigDecimal("1e12");
+  static final int MAX_DECIMAL_SCALE = 10;
+
   static final Pattern THOUSANDS = Pattern.compile("^\\d{1,3}(,\\d{3})+(\\.\\d+)?$");
   static final Pattern SYMBOL = Pattern.compile("^[A-Z][A-Z0-9.\\-]{0,11}$");
   static final Pattern ZERO_WIDTH = Pattern.compile("[\\u200B-\\u200D\\u2060\\uFEFF]");
@@ -906,10 +910,13 @@ public final class ManualReplyParser {
     return SEPARATORS.matcher(s.strip()).replaceAll("_").toUpperCase(Locale.ROOT);
   }
 
-  /** A number node's value, or a string with an optional {@code $}, {@code %} (percent only) and thousands commas. */
+  /**
+   * A number node's value, or a string with an optional {@code $}, {@code %} (percent only) and thousands commas;
+   * null when absent, malformed or absurd (see {@link #sane}).
+   */
   static BigDecimal parseDecimal(JsonNode v, boolean percent) {
     if (v.isNumber()) {
-      return v.decimalValue();
+      return sane(v.decimalValue());
     }
     if (!v.isString()) {
       return null;
@@ -928,10 +935,22 @@ public final class ManualReplyParser {
       s = s.replace(",", "");
     }
     try {
-      return new BigDecimal(s);
+      return sane(new BigDecimal(s));
     } catch (NumberFormatException e) {
       return null;
     }
+  }
+
+  /**
+   * {@code d}, or null when its magnitude or precision is absurd for an order ({@code 1e999999999},
+   * {@code 1e-999999999}): such a value would make {@code toPlainString()} build a gigabyte string in the preview, the
+   * stored {@code parsed_json} or the response.
+   */
+  private static BigDecimal sane(BigDecimal d) {
+    if (d == null || d.abs().compareTo(MAX_DECIMAL) > 0 || d.stripTrailingZeros().scale() > MAX_DECIMAL_SCALE) {
+      return null;
+    }
+    return d;
   }
 
   /** {@code true/false}, {@code "yes"/"no"}, {@code "y"/"n"}, {@code 1/0} (and those as strings); else null. */
@@ -939,8 +958,11 @@ public final class ManualReplyParser {
     if (v.isBoolean()) {
       return v.booleanValue();
     }
-    String s = v.isNumber() ? v.decimalValue().stripTrailingZeros().toPlainString()
-        : v.isString() ? v.stringValue().strip().toLowerCase(Locale.ROOT) : "";
+    if (v.isNumber()) {               // compare, never format: 1e999999999 has a billion-digit plain string
+      BigDecimal d = v.decimalValue();
+      return d.compareTo(BigDecimal.ONE) == 0 ? Boolean.TRUE : d.signum() == 0 ? Boolean.FALSE : null;
+    }
+    String s = v.isString() ? v.stringValue().strip().toLowerCase(Locale.ROOT) : "";
     return switch (s) {
       case "true", "yes", "y", "1" -> Boolean.TRUE;
       case "false", "no", "n", "0" -> Boolean.FALSE;

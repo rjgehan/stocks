@@ -317,6 +317,30 @@ class ManualReplyParserTest {
   }
 
   @Test
+  void hugeExponentsAreRejectedWithoutBeingFormatted() {
+    for (String field : List.of("extended_hours", "ext_hours", "acknowledge_gfv")) {
+      ManualActionDto a = only(parse(envelope("{\"action\": \"BUY\", \"symbol\": \"AAPL\", \"type\": \"MARKET\", "
+          + "\"qty\": \"1\", \"" + field + "\": 1e999999999, \"rationale\": \"x\"}")));
+      assertThat(errors(a.issues())).as(field).containsExactly("FIELD_INVALID");
+      assertThat(a.executable()).isFalse();
+    }
+    for (String value : List.of("1e999999999", "\"1e999999999\"", "1e-999999999", "\"0.00000000001\"", "1e13")) {
+      ManualActionDto a = only(parse(envelope("{\"action\": \"BUY\", \"symbol\": \"AAPL\", \"type\": \"LIMIT\", "
+          + "\"qty\": " + value + ", \"limit_price\": " + value + ", \"rationale\": \"x\"}")));
+      assertThat(errors(a.issues())).as(value).containsExactly("FIELD_INVALID", "FIELD_INVALID");
+      assertThat(a.qty()).isNull();
+      assertThat(a.limitPrice()).isNull();
+    }
+    ManualActionDto ok = only(parse(envelope("{\"action\": \"BUY\", \"symbol\": \"AAPL\", \"type\": \"LIMIT\", "
+        + "\"qty\": 1E+1, \"limit_price\": \"0.0001000000000\", \"ext_hours\": 1.0, \"rationale\": \"x\"}")));
+    assertThat(ok.qty()).isEqualByComparingTo("10");
+    assertThat(ok.limitPrice()).isEqualByComparingTo("0.0001");
+    assertThat(ok.extendedHours()).isTrue();
+    assertThat(only(parse(envelope("{\"action\": \"BUY\", \"symbol\": \"AAPL\", \"type\": \"MARKET\", "
+        + "\"qty\": \"1\", \"ext_hours\": 0e5, \"rationale\": \"x\"}"))).extendedHours()).isFalse();
+  }
+
+  @Test
   void qtyAndNotionalBothOrNeither() {
     ManualActionDto both = only(parse(envelope("{\"action\": \"BUY\", \"symbol\": \"AAPL\", \"type\": \"MARKET\", "
         + "\"qty\": \"1\", \"notional\": \"100\", \"rationale\": \"x\"}")));
