@@ -497,13 +497,19 @@ def prompt(agent: Agent, now: datetime, why: str, s: dict, dry_run: bool) -> str
     ]
     if dry_run:
         lines.append("4. DRY RUN: the order tools are blocked. Say which orders you would place and why, but place none.")
+        lines.append("5. DRY RUN: add_journal_note is blocked too. Write the one journal note you would post "
+                     "(1-500 characters).")
     else:
         lines += [
             "4. Adjust your portfolio accordingly (place_order, replace_order, cancel_order, close_position). Every order",
             "   needs a new unique client_order_id and a rationale (public, for the other players). Prefer LIMIT orders",
             "   when spreads are wide or outside regular hours. No trade at all is a fine outcome when nothing changed.",
+            "5. Unless step 1 told you to stop, post ONE public journal note with add_journal_note: what you did this",
+            "   check-in and why (or why you held), 1-500 characters, with up to 5 related tickers in symbols. Every",
+            "   player sees it at once, so write it for them. Post exactly one per check-in, even without a trade. If it",
+            "   answers RATE_LIMITED, skip it and say so in your summary.",
         ]
-    lines.append("5. Finish with a short summary of what you did and why; it is shown to you at your next check-in.")
+    lines.append("6. Finish with a short summary of what you did and why; it is shown to you at your next check-in.")
     if agent.strategy:
         lines += [
             "",

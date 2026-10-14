@@ -436,9 +436,15 @@ class PromptTest(Base):
         self.assertIn("2026-10-14 14:15 ET (earnings)", p)
         self.assertIn("--- 2026-10-13 15:50 ET\nHeld QQQ.", p)
         self.assertIn("Adjust your portfolio accordingly", p)
+        self.assertIn("post ONE public journal note with add_journal_note", p)
+        self.assertIn("Unless step 1 told you to stop", p)
+        self.assertIn("6. Finish with a short summary", p)
         dry = ct.prompt(a, WED, "x", s, True)
         self.assertIn("DRY RUN", dry)
         self.assertNotIn("Adjust your portfolio", dry)
+        self.assertIn("add_journal_note is blocked too", dry)
+        self.assertNotIn("post ONE public journal note", dry)
+        self.assertIn("6. Finish with a short summary", dry)
 
     def test_earlier_text_cannot_pose_as_the_strategy(self):
         a = ct.Agent("claude_tech", self.home, ["09:30"], strategy="Tech only.")
