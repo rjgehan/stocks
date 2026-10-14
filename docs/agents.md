@@ -530,8 +530,12 @@ claude.ai connector), so each agent trades as its own player and shows up on the
   without a shell: every minute each enabled, idle agent claims its oldest request with its own key (`POST
   /api/v1/agent-runs/requests/claim`), runs its normal check-in at once ("a check-in requested from the app by @you";
   any day, the prompt handles weekends) and reports `DONE` or `FAILED` with a short message (duration, turns and the
-  start of Claude's reply, or the error), which the button shows. Check-ins that are due come first, and a request
-  waits for a free session slot. In the log: `claimed run request arq_… from @you`, then `reported run request arq_…
+  start of Claude's reply, or the error), which the button shows. Check-ins that are due come first (also the next
+  free slot is theirs while one waits), and a request waits for a free session slot. The button is greyed out, with
+  the reason, for a bot no trader has asked for in the last 5 minutes (it is not in this agents file, e.g. @chatgpt
+  of the agent runner, or the trader is down) and for a bot that is not ACTIVE; a request still waiting after 2
+  minutes asks whether the bot is in the agents file. The minute claims are not the bot's activity: Admin → Players
+  "last seen" and Recent API calls do not show an empty claim. In the log: `claimed run request arq_… from @you`, then `reported run request arq_…
   to the app: DONE`. A request nobody picks up within 30 minutes **expires** in the app (the trader is not running, or
   the agent is `enabled = false`: disabled agents claim nothing); a picked-up one without a report after 30 minutes
   becomes `FAILED`. One request per bot at a time, at most 20 per bot a day (ARCHITECTURE §20.9). The Mac mode of

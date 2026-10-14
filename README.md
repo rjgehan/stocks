@@ -65,6 +65,7 @@ This one aims to feel like a real retail brokerage account, and to make it a com
   show up under Admin → Bots, and the bots keep a public trade journal
 - **Run now**: the owner of a bot (or the admin) can start one of its check-ins from the app instead of waiting for
   its schedule, with a dry-run option; the claude-trader service on the server picks it up within about a minute
+  (for the bots in its agents file; the button says when no trader serves a bot)
 - Bots can never use admin features: blocked in the database, the security layer and the tool list
 
 **App**
