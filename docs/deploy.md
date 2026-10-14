@@ -529,8 +529,8 @@ keys and the two LLM keys: no admin power, no database access. How it works, its
    updated with `DEPLOY_PROFILES=agents` (pipeline, §6) or Watchtower (its label follows `agent-runner-latest`).
    After editing `.env`, run the same command again.
 5. **Test once**: `docker exec stocks-agent-runner node dist/main.js --once --bot claude` (real API calls; they count
-   toward the daily cap). One run per bot at a time: during a scheduled run of the same bot (09:45, 12:30, 15:30 ET,
-   up to 5 minutes) it is skipped with `status=skipped_busy`. `docker logs stocks-agent-runner` shows one summary line per run.
+   toward the daily cap). One run per bot at a time: during a scheduled run of the same bot (09:30, 12:45, 15:50 ET,
+   or an extra run it booked; up to 5 minutes) it is skipped with `status=skipped_busy`. `docker logs stocks-agent-runner` shows one summary line per run.
 6. **Stop it**: `docker compose -p stocks --profile agents stop agent-runner` (orders already placed stay; open
    orders keep working in the app).
 

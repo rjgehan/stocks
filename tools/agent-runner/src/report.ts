@@ -72,7 +72,7 @@ export function buildReport(
   const message = summary.message ? summary.message.slice(0, MESSAGE_MAX) : null;
   return {
     runRef,
-    trigger: opts.trigger === 'schedule' ? 'SCHEDULE' : 'ONCE',
+    trigger: opts.trigger === 'once' ? 'ONCE' : 'SCHEDULE', // a booked run reports as SCHEDULE at its time
     slot: opts.slot,
     model: summary.model,
     status: summary.status,

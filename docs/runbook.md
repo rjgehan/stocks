@@ -170,13 +170,14 @@ After a ticker change, quotes for the new symbol start with the 03:00 asset sync
 ## Agent runner (the Claude and ChatGPT bots)
 
 Setup, keys, prices and the per-run log format: [agents.md §2.5](agents.md#25-the-leagues-agent-runner-phase-1-toolsagent-runner).
-The runner is the `agent-runner` service (profile `agents`): it trades as the two AI players at 09:45, 12:30 and
-15:30 ET on trading days, through `http://app:8080/mcp`, within `AGENT_MAX_TOOL_CALLS`, `AGENT_MAX_RUN_SECONDS`
-and the per-bot `AGENT_DAILY_USD_CAP`.
+The runner is the `agent-runner` service (profile `agents`): it trades as the two AI players at 09:30, 12:45 and
+15:50 ET on trading days, plus the extra runs each bot books for itself (`<bot>/requested-runs.json`; delete an entry
+to cancel it), through `http://app:8080/mcp`, within `AGENT_MAX_TOOL_CALLS`, `AGENT_MAX_RUN_SECONDS` and the per-bot
+`AGENT_DAILY_USD_CAP`.
 
 ```sh
 dc --profile agents up -d agent-runner                               # start, or apply .env changes
-docker logs --tail 50 stocks-agent-runner                            # "bot enabled …", "next runs: …", one line per run
+docker logs --tail 50 stocks-agent-runner                            # "bot enabled …", "next run: …", one line per run
 docker exec stocks-agent-runner node dist/main.js --check            # configuration and prices (no secrets)
 docker exec stocks-agent-runner node dist/main.js --once --bot claude    # run now (real LLM cost; counts toward the cap;
                                                                      # skipped_busy if a scheduled run of it is in progress)

@@ -1,9 +1,11 @@
 // MCP tool definitions → plain function tools for the vendors (ARCHITECTURE §20.5). The model only proposes calls;
-// the runner executes them (MCP tools through the stocks server, save_notes locally).
+// the runner executes them (MCP tools through the stocks server; save_notes, schedule_run and cancel_scheduled_run
+// locally).
 
 import type Anthropic from '@anthropic-ai/sdk';
 import type OpenAI from 'openai';
 import { NOTES_MAX_BYTES } from './config.js';
+import { MAX_AHEAD_MS, MIN_GAP_MS, MIN_LEAD_MS, REASON_MAX, WINDOW_ET } from './requested.js';
 
 export type JsonObject = { [key: string]: unknown };
 
@@ -44,6 +46,50 @@ export const SAVE_NOTES_TOOL: FunctionTool = {
   },
 };
 
+export const SCHEDULE_RUN = 'schedule_run';
+export const CANCEL_SCHEDULED_RUN = 'cancel_scheduled_run';
+
+/** The runner-local tools for booking extra runs (docs/agents.md §2.5); none when the per-day limit is 0. */
+export function scheduleRunTools(perDay: number): FunctionTool[] {
+  if (perDay <= 0) return [];
+  return [
+    {
+      name: SCHEDULE_RUN,
+      description:
+        'Book an extra run of yourself at a time you choose, on top of your scheduled runs, to act at a planned ' +
+        'moment: after an earnings release or other news, to re-check a price level, or to manage an order or ' +
+        'position later in the day. `at_et` is America/New_York time, "YYYY-MM-DD HH:MM" or "HH:MM" for today. It ' +
+        `must be on a trading day between ${WINDOW_ET.text} ET, at least ${MIN_LEAD_MS / 60_000} minutes from now, ` +
+        `at most ${MAX_AHEAD_MS / 86_400_000} days ahead, and at least ${MIN_GAP_MS / 60_000} minutes away from your ` +
+        `scheduled runs and your other extra runs; at most ${perDay} extra runs per day. Extra runs spend the same ` +
+        `daily budget as scheduled runs. \`reason\` (1-${REASON_MAX} characters) is shown to you when that run ` +
+        'starts. Returns the booked run and all your pending extra runs. This tool is provided by the agent runner, ' +
+        'not by the stocks server.',
+      parameters: {
+        type: 'object',
+        properties: {
+          at_et: { type: 'string', description: 'When to run, ET: "YYYY-MM-DD HH:MM", or "HH:MM" for today.' },
+          reason: { type: 'string', description: `What to check or do in that run (1-${REASON_MAX} characters).` },
+        },
+        required: ['at_et', 'reason'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: CANCEL_SCHEDULED_RUN,
+      description:
+        'Cancel one of your pending extra runs (booked with schedule_run) by its `id`. Returns your remaining ' +
+        'pending extra runs. This tool is provided by the agent runner, not by the stocks server.',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'string', description: 'The id schedule_run returned, e.g. "r1a2b3c".' } },
+        required: ['id'],
+        additionalProperties: false,
+      },
+    },
+  ];
+}
+
 /** Both vendors accept 1–64 characters of letters, digits, underscore and hyphen. */
 export const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -63,17 +109,17 @@ export function toParameters(schema: JsonObject | undefined): JsonObject {
 
 export interface ConvertResult {
   tools: FunctionTool[];
-  /** Names the runner could not offer (invalid for the vendors, or shadowing save_notes). */
+  /** Names the runner could not offer (invalid for the vendors, or shadowing a runner-local tool). */
   dropped: string[];
 }
 
-/** MCP tools (server order) + save_notes. */
-export function functionTools(mcpTools: McpToolInfo[]): ConvertResult {
+/** MCP tools (server order) + the runner-local tools (save_notes last). */
+export function functionTools(mcpTools: McpToolInfo[], local: FunctionTool[] = []): ConvertResult {
   const tools: FunctionTool[] = [];
   const dropped: string[] = [];
-  const seen = new Set<string>();
+  const seen = new Set<string>([SAVE_NOTES, ...local.map((t) => t.name)]);
   for (const t of mcpTools) {
-    if (!TOOL_NAME.test(t.name) || t.name === SAVE_NOTES || seen.has(t.name)) {
+    if (!TOOL_NAME.test(t.name) || seen.has(t.name)) {
       dropped.push(t.name);
       continue;
     }
@@ -81,7 +127,7 @@ export function functionTools(mcpTools: McpToolInfo[]): ConvertResult {
     const description = (t.description ?? '').trim() || (t.title ?? '').trim() || t.name;
     tools.push({ name: t.name, description, parameters: toParameters(t.inputSchema) });
   }
-  tools.push(SAVE_NOTES_TOOL);
+  tools.push(...local, SAVE_NOTES_TOOL);
   return { tools, dropped };
 }
 

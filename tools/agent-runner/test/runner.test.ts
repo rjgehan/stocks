@@ -106,13 +106,14 @@ describe('Claude run (Messages API)', () => {
     expect(mcp.calls[2]?.args).toEqual(ORDER);
     expect(mcp.closed).toBe(1);
 
-    // The requests: all 40 MCP tools + save_notes as plain custom tools, the shared system prompt, caching on.
+    // The requests: all 40 MCP tools + schedule_run, cancel_scheduled_run and save_notes as plain custom tools, the
+    // shared system prompt, caching on.
     const first = llm.calls[0];
     expect(first?.headers['x-api-key']).toBe(CLAUDE_LLM_KEY);
     expect(first?.body.model).toBe('claude-opus-5-5');
     expect(first?.body.system).toBe('SYSTEM PROMPT (test)');
     expect(first?.body.cache_control).toEqual({ type: 'ephemeral' });
-    expect(first?.body.tools).toHaveLength(FIXTURE_TOOLS.length + 1);
+    expect(first?.body.tools).toHaveLength(FIXTURE_TOOLS.length + 3);
     expect(first?.body.tools.map((t: { name: string }) => t.name)).toContain('save_notes');
     for (const t of first?.body.tools ?? []) {
       expect(t.input_schema.type).toBe('object');
@@ -145,7 +146,7 @@ describe('Claude run (Messages API)', () => {
       'llm_response',
       'run_end',
     ]);
-    expect(log[0]).toMatchObject({ bot: 'claude', model: 'claude-opus-5-5', trigger: 'schedule', slot: '09:45', tools: 41 });
+    expect(log[0]).toMatchObject({ bot: 'claude', model: 'claude-opus-5-5', trigger: 'schedule', slot: '09:45', tools: 43 });
     expect(log[0]?.promptSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(log[3]).toMatchObject({ name: 'get_quotes', isError: false, code: null, executed: true });
     expect(log[8]).toMatchObject({ status: 'completed', costUsd: '0.021000', orders: 1, summary: expect.stringContaining('Placed') });
@@ -443,7 +444,7 @@ describe('ChatGPT run (Responses API)', () => {
     expect(r1?.body).toMatchObject({ model: 'gpt-5.5', instructions: 'SYSTEM PROMPT (test)', store: true });
     expect(r1?.body.previous_response_id).toBeUndefined();
     expect(r1?.body.input[0]).toMatchObject({ role: 'user' });
-    expect(r1?.body.tools).toHaveLength(FIXTURE_TOOLS.length + 1);
+    expect(r1?.body.tools).toHaveLength(FIXTURE_TOOLS.length + 3);
     for (const t of r1?.body.tools ?? []) {
       expect(t).toMatchObject({ type: 'function', strict: false });
       expect(t.parameters.type).toBe('object');
@@ -493,6 +494,67 @@ describe('ChatGPT run (Responses API)', () => {
     expect(final.body.tool_choice).toBe('none');
     expect(final.body.input[1].output).toContain('RUN_TOOL_BUDGET_EXHAUSTED');
     expect(final.body.input[2]).toMatchObject({ role: 'user', content: expect.stringContaining('budget') });
+  });
+});
+
+describe('booking extra runs', () => {
+  it('schedule_run and cancel_scheduled_run book, list and cancel the bot\'s own extra runs', async () => {
+    const llm = await claudeFake(
+      () =>
+        claudeReply([
+          toolUse('b1', 'schedule_run', { at_et: '14:15', reason: 'NVDA reports at 14:00; re-check the position' }),
+          toolUse('b2', 'schedule_run', { at_et: '12:40', reason: 'too close to the 12:45 run' }),
+          toolUse('b3', 'cancel_scheduled_run', { id: 'rnope00' }),
+        ]),
+      () => claudeReply([text('Booked one extra run.')]),
+    );
+    const mcp = fakeMcp({});
+    const config = testConfig({ dataDir, anthropicUrl: llm.url });
+    const s = await runBot(bot(config, 'claude'), testDeps(config, mcp.connect), {
+      trigger: 'schedule',
+      slot: '09:30',
+      requireTradingDay: true,
+    });
+
+    expect(s.status).toBe('completed');
+    expect(s.toolErrors).toBe(2);
+    expect(mcp.calls.map((c) => c.name)).toEqual(['get_market_clock']); // runner-local: never sent to the server
+    const opening = llm.calls[0]?.body.messages[0].content as string;
+    expect(opening).toContain('Scheduled runs happen at 09:30, 12:45, 15:50 ET on trading days. To act at another time, book an extra run with schedule_run (at most 4 per day).');
+    expect(opening).toContain('Your pending extra runs: none.');
+    const [booked, tooClose, unknown] = lastToolResults(llm.calls[1]!);
+    expect(booked.is_error).toBe(false);
+    const result = JSON.parse(booked.content as string);
+    expect(result.scheduled).toMatchObject({ at_et: '2026-10-12 14:15', reason: 'NVDA reports at 14:00; re-check the position' });
+    expect(result.pending).toHaveLength(1);
+    expect(tooClose).toMatchObject({ is_error: true, content: expect.stringContaining('"code":"RUN_TIME_NOT_ALLOWED"') });
+    expect(unknown).toMatchObject({ is_error: true, content: expect.stringContaining('"code":"NOT_FOUND"') });
+    const file = JSON.parse(readFileSync(join(dataDir, 'claude', 'requested-runs.json'), 'utf8'));
+    expect(file.pending).toEqual([expect.objectContaining({ id: result.scheduled.id, atEt: '2026-10-12 14:15' })]);
+
+    // The next run lists it; cancelling it empties the list.
+    const llm2 = await claudeFake(
+      () => claudeReply([toolUse('c1', 'cancel_scheduled_run', { id: result.scheduled.id })]),
+      () => claudeReply([text('Cancelled.')]),
+    );
+    const config2 = testConfig({ dataDir, anthropicUrl: llm2.url });
+    await runBot(bot(config2, 'claude'), testDeps(config2, fakeMcp({}).connect), { trigger: 'once', slot: null, requireTradingDay: false });
+    expect(llm2.calls[0]?.body.messages[0].content).toContain(
+      `Your pending extra runs: ${result.scheduled.id} at 2026-10-12 14:15 ET ("NVDA reports at 14:00; re-check the position").`,
+    );
+    expect(JSON.parse(lastToolResults(llm2.calls[1]!)[0].content as string)).toMatchObject({ pending: [] });
+  });
+
+  it('AGENT_EXTRA_RUNS_PER_DAY=0 offers neither tool and treats a call as unknown', async () => {
+    const llm = await claudeFake(
+      () => claudeReply([toolUse('b1', 'schedule_run', { at_et: '14:15', reason: 'x' })]),
+      () => claudeReply([text('ok')]),
+    );
+    const config = testConfig({ dataDir, anthropicUrl: llm.url, extra: { AGENT_EXTRA_RUNS_PER_DAY: '0' } });
+    await runBot(bot(config, 'claude'), testDeps(config, fakeMcp({}).connect), { trigger: 'once', slot: null, requireTradingDay: false });
+    expect(llm.calls[0]?.body.tools).toHaveLength(FIXTURE_TOOLS.length + 1);
+    expect(llm.calls[0]?.body.messages[0].content).not.toContain('schedule_run');
+    expect(lastToolResults(llm.calls[1]!)[0]).toMatchObject({ is_error: true, content: expect.stringContaining('UNKNOWN_TOOL') });
   });
 });
 

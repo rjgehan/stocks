@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // stocks agent runner (ARCHITECTURE §20.5, docs/agents.md §2.5).
 //
-//   node dist/main.js                       run on AGENT_SCHEDULE_ET until SIGTERM (the compose service)
+//   node dist/main.js                       run on AGENT_SCHEDULE_ET, plus the runs the bots book, until SIGTERM
 //   node dist/main.js --once [--bot NAME]   one run now for claude, chatgpt or all (default), then exit
 //   node dist/main.js --check               print the configuration (no secrets) and exit
 //
@@ -20,7 +20,8 @@ import { formatUsd } from './money.js';
 import { PRICES_VERIFIED_ON } from './pricing.js';
 import { runBot, type RunnerDeps, type RunSummary } from './runner.js';
 import { runSchedule } from './scheduler.js';
-import { checkWritable } from './store.js';
+import { pendingRuns } from './requested.js';
+import { botDir, checkWritable } from './store.js';
 import { nextSlot, systemClock } from './time.js';
 
 export function runnerVersion(): string {
@@ -64,20 +65,21 @@ export function parseArgs(argv: string[]): Args {
 
 const HELP = `stocks agent runner
 
-  node dist/main.js                       run on AGENT_SCHEDULE_ET (ET) on trading days until SIGTERM
+  node dist/main.js                       run on AGENT_SCHEDULE_ET (ET) on trading days, plus the extra runs
+                                          the bots book with schedule_run, until SIGTERM
   node dist/main.js --once [--bot NAME]   run claude, chatgpt or all (default) once now, then exit
   node dist/main.js --check               print the configuration (never secrets) and exit
 
 Environment: STOCKS_MCP_URL, ANTHROPIC_API_KEY, OPENAI_API_KEY, STOCKS_CLAUDE_KEY, STOCKS_CHATGPT_KEY,
 CLAUDE_MODEL, OPENAI_MODEL, AGENT_SCHEDULE_ET, AGENT_DAILY_USD_CAP, AGENT_MAX_TOOL_CALLS, AGENT_MAX_RUN_SECONDS,
-AGENT_PRICE_CLAUDE, AGENT_PRICE_CHATGPT, AGENT_DATA_DIR (default /data). See docs/agents.md.
+AGENT_EXTRA_RUNS_PER_DAY, AGENT_PRICE_CLAUDE, AGENT_PRICE_CHATGPT, AGENT_DATA_DIR (default /data). See docs/agents.md.
 `;
 
 function describe(config: RunnerConfig, logger: Logger, version: string): void {
   logger.info(
     `stocks agent runner ${version}: mcp=${config.mcpUrl} data=${config.dataDir} schedule=${config.scheduleText} ET ` +
       `caps: ${config.maxToolCalls} tool calls, ${config.maxRunSeconds} s per run, $${config.dailyUsdCapText} per bot ` +
-      `per day (built-in prices checked ${PRICES_VERIFIED_ON})`,
+      `per day, ${config.extraRunsPerDay} booked extra runs per bot per day (built-in prices checked ${PRICES_VERIFIED_ON})`,
   );
   for (const b of config.bots) {
     const p = b.price.base;
@@ -114,6 +116,17 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv): Promise<numb
     if (config.bots.length > 0) {
       const slot = nextSlot(systemClock.now(), config.schedule);
       logger.info(`next scheduled slot: ${slot.dateEt} ${slot.label} ET`);
+    }
+    for (const b of config.bots) {
+      try {
+        const booked = pendingRuns(botDir(config.dataDir, b.id));
+        logger.info(
+          `booked extra runs: ${booked.length === 0 ? 'none' : booked.map((r) => `${r.id} at ${r.atEt} ET`).join(', ')}`,
+          b.id,
+        );
+      } catch (e) {
+        logger.warn(`cannot read the booked runs: ${errorMessage(e)}`, b.id);
+      }
     }
     return 0;
   }

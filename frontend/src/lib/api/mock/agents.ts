@@ -37,7 +37,7 @@ function page<T>(rows: T[], url: URL, dflt = 50): { items: T[]; nextCursor: stri
   return { items: rows.slice(start, start + limit), nextCursor: start + limit < rows.length ? String(start + limit) : null }
 }
 
-const SLOTS = ['09:45', '12:30', '15:30']
+const SLOTS = ['09:30', '12:45', '15:50']
 const MODELS: Record<string, string> = { claude: 'claude-opus-5-5', chatgpt: 'gpt-5.5' }
 
 /** The bots' reported runs over the last 14 days, newest first (3 slots a weekday; skips on weekends). */

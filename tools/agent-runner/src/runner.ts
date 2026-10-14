@@ -10,10 +10,11 @@ import { type ConnectMcp, type McpConnection, runnerError, type ToolOutcome } fr
 import { formatUsd } from './money.js';
 import { addUsage, costOf, type TokenUsage, ZERO_USAGE } from './pricing.js';
 import { buildReport, countTool, newRunRef, postReport, type ToolCounts } from './report.js';
+import { bookRun, cancelRun, holidaysOf, pendingRuns, publicRun, type RequestedRun } from './requested.js';
 import { RunLog } from './runlog.js';
 import { acquireRunLock, addSpend, botDir, readNotes, readSpend, saveNotes, type Spend } from './store.js';
 import { type Clock, etDate, etTime } from './time.js';
-import { functionTools, type JsonObject, SAVE_NOTES } from './tools.js';
+import { CANCEL_SCHEDULED_RUN, functionTools, type JsonObject, SAVE_NOTES, SCHEDULE_RUN, scheduleRunTools } from './tools.js';
 
 export type RunStatus =
   | 'completed'
@@ -68,11 +69,14 @@ export interface RunnerDeps {
 }
 
 export interface RunOptions {
-  trigger: 'schedule' | 'once';
-  /** The schedule slot ("09:45"), null for a manual run. */
+  /** `requested`: an extra run the bot booked for itself with schedule_run. */
+  trigger: 'schedule' | 'requested' | 'once';
+  /** The schedule slot or the booked run's ET time ("09:45"), null for a manual run. */
   slot: string | null;
-  /** Scheduled runs skip a non-trading day; a manual run always runs. */
+  /** Scheduled and booked runs skip a non-trading day; a manual run always runs. */
   requireTradingDay: boolean;
+  /** The booked runs this run serves: their reasons are shown to the model. */
+  requested?: RequestedRun[];
 }
 
 const ORDER_TOOLS = new Set(['place_order', 'replace_order', 'close_position']);
@@ -126,25 +130,55 @@ function clipResult(text: string): string {
 export function buildUserMessage(p: {
   bot: string;
   now: Date;
+  trigger: RunOptions['trigger'];
   slot: string | null;
   scheduleText: string;
   maxToolCalls: number;
   maxRunSeconds: number;
   clockJson: string;
   notes: { text: string; bytes: number; clipped: boolean };
+  /** The booked runs this run serves. */
+  requested?: RequestedRun[];
+  /** The bot's other pending booked runs. */
+  pending?: RequestedRun[];
+  /** 0 when booking is off. */
+  extraRunsPerDay?: number;
 }): string {
   const when = `${etDate(p.now)} ${etTime(p.now)} ET`;
-  const run = p.slot ? `scheduled run (the ${p.slot} ET slot), ${when}` : `manual run, ${when}`;
+  const run =
+    p.trigger === 'requested'
+      ? `extra run you booked for ${p.slot} ET, ${when}`
+      : p.slot
+        ? `scheduled run (the ${p.slot} ET slot), ${when}`
+        : `manual run, ${when}`;
+  const perDay = p.extraRunsPerDay ?? 0;
+  const booking =
+    perDay > 0
+      ? ` To act at another time, book an extra run with schedule_run (at most ${perDay} per day).`
+      : '';
   const lines = [
     `Trading session of the stocks league, driven by the agent runner.`,
     ``,
-    `- Run: ${run}. Scheduled runs happen at ${p.scheduleText.split(',').join(', ')} ET on trading days.`,
+    `- Run: ${run}. Scheduled runs happen at ${p.scheduleText.split(',').join(', ')} ET on trading days.${booking}`,
+  ];
+  for (const r of p.requested ?? []) {
+    lines.push(`- You booked this run (${r.id}, at ${r.atEt} ET) for: ${JSON.stringify(r.reason)}`);
+  }
+  if (perDay > 0) {
+    const pending = p.pending ?? [];
+    lines.push(
+      pending.length === 0
+        ? `- Your pending extra runs: none.`
+        : `- Your pending extra runs: ${pending.map((r) => `${r.id} at ${r.atEt} ET (${JSON.stringify(r.reason)})`).join('; ')}.`,
+    );
+  }
+  lines.push(
     `- Budget for this run: at most ${p.maxToolCalls} tool calls and ${p.maxRunSeconds} seconds. Unused budget does ` +
       `not carry over; save your notes before the budget runs out.`,
     `- Market clock at the start of this run (get_market_clock, already called for you):`,
     p.clockJson,
     ``,
-  ];
+  );
   if (p.notes.text.trim()) {
     lines.push(
       `Your notes from earlier runs follow (notes.md, ${p.notes.bytes} of ${NOTES_MAX_BYTES} bytes). You wrote them ` +
@@ -170,6 +204,16 @@ export function budgetNote(maxToolCalls: number): string {
     `RUN_TOOL_BUDGET_EXHAUSTED was not executed. No more tool calls are possible in this run. Finish now with a ` +
     `short summary of what you did and why.`
   );
+}
+
+/** The bot's pending booked runs for the first message; an unreadable file only costs the list. */
+function pendingOrNone(dir: string, logger: Logger, botId: string): RequestedRun[] {
+  try {
+    return pendingRuns(dir);
+  } catch (e) {
+    logger.warn(`cannot read the booked runs: ${errorMessage(e)}`, botId);
+    return [];
+  }
 }
 
 function parseArgs(json: string): JsonObject | null {
@@ -306,7 +350,7 @@ async function runLocked(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, sta
     if (clockOutcome.isError) {
       throw new Error(`get_market_clock failed (${clockOutcome.code ?? 'error'}): ${clip(clockOutcome.text, 300)}`);
     }
-    let marketClock: { session?: unknown; tradingDate?: unknown };
+    let marketClock: { session?: unknown; tradingDate?: unknown; upcomingHolidays?: unknown };
     try {
       marketClock = JSON.parse(clockOutcome.text) as typeof marketClock;
     } catch {
@@ -322,20 +366,25 @@ async function runLocked(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, sta
     log = RunLog.open(dir, started, logger, () => clock.now());
     summary.logPath = log.path;
     const runLog = log;
-    const { tools, dropped } = functionTools(mcp.tools);
+    const { tools, dropped } = functionTools(mcp.tools, scheduleRunTools(config.extraRunsPerDay));
     if (dropped.length > 0) logger.warn(`tools not offered to the model: ${dropped.join(', ')}`, bot.id);
     const mcpNames = new Set(mcp.tools.map((t) => t.name));
     const notes = readNotes(dir);
     const user = buildUserMessage({
       bot: bot.id,
       now: started,
+      trigger: opts.trigger,
       slot: opts.slot,
       scheduleText: config.scheduleText,
       maxToolCalls: config.maxToolCalls,
       maxRunSeconds: config.maxRunSeconds,
       clockJson: clockOutcome.text,
       notes,
+      requested: opts.requested,
+      pending: config.extraRunsPerDay > 0 ? pendingOrNone(dir, logger, bot.id) : [],
+      extraRunsPerDay: config.extraRunsPerDay,
     });
+    const holidays = holidaysOf(marketClock);
 
     spend = addSpend(dir, dateEt, 0n, 1, clock.now());
     runLog.write('run_start', {
@@ -346,6 +395,7 @@ async function runLocked(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, sta
       priceSource: bot.price.source,
       trigger: opts.trigger,
       slot: opts.slot,
+      requested: (opts.requested ?? []).map((r) => r.id),
       runnerVersion: deps.version,
       systemPromptSha256: sha256(config.systemPrompt),
       promptSha256: sha256(`${config.systemPrompt}\n\n${user}`),
@@ -395,6 +445,39 @@ async function runLocked(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, sta
           outcome: r.ok
             ? { isError: false, text: JSON.stringify({ saved: true, bytes: r.bytes, limit: NOTES_MAX_BYTES }), code: null, retryAfterS: null }
             : runnerError('NOTES_TOO_LARGE', r.message, 'Shorten the notes and call save_notes again.'),
+          retried: false,
+        };
+      }
+      if (config.extraRunsPerDay > 0 && call.name === SCHEDULE_RUN) {
+        const r = bookRun(dir, args, {
+          now: clock.now(),
+          schedule: config.schedule,
+          holidays,
+          perDay: config.extraRunsPerDay,
+        });
+        return {
+          outcome: r.ok
+            ? {
+                isError: false,
+                text: JSON.stringify({ scheduled: publicRun(r.run), pending: r.pending.map(publicRun) }),
+                code: null,
+                retryAfterS: null,
+              }
+            : runnerError(r.code, r.message, r.hint),
+          retried: false,
+        };
+      }
+      if (config.extraRunsPerDay > 0 && call.name === CANCEL_SCHEDULED_RUN) {
+        const r = cancelRun(dir, args.id, clock.now());
+        return {
+          outcome: r.ok
+            ? {
+                isError: false,
+                text: JSON.stringify({ cancelled: publicRun(r.cancelled), pending: r.pending.map(publicRun) }),
+                code: null,
+                retryAfterS: null,
+              }
+            : runnerError(r.code, r.message, r.hint),
           retried: false,
         };
       }

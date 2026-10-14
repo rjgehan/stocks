@@ -10,9 +10,10 @@ describe('configuration', () => {
     expect(c).toMatchObject({
       mcpUrl: 'http://app:8080/mcp',
       dataDir: '/data',
-      scheduleText: '09:45,12:30,15:30',
+      scheduleText: '09:30,12:45,15:50',
       maxToolCalls: 40,
       maxRunSeconds: 300,
+      extraRunsPerDay: 4,
       dailyUsdCap: 1_000_000_000_000n,
       dailyUsdCapText: '1.00',
       bots: [],

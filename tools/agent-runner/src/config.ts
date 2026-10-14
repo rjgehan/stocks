@@ -32,6 +32,8 @@ export interface RunnerConfig {
   scheduleText: string;
   maxToolCalls: number;
   maxRunSeconds: number;
+  /** Extra runs a bot may book for itself per ET day (schedule_run); 0 turns the booking tools off. */
+  extraRunsPerDay: number;
   /** Pico-dollars. */
   dailyUsdCap: bigint;
   dailyUsdCapText: string;
@@ -99,10 +101,13 @@ function int(env: Env, name: string, fallback: number, min: number, max: number)
   return n;
 }
 
+/** The open, the middle of the regular session and ten minutes before the close (ET). */
+export const DEFAULT_SCHEDULE_ET = '09:30,12:45,15:50';
+
 export const DEFAULT_SYSTEM_PROMPT_PATH = new URL('../prompts/system.md', import.meta.url);
 
 export function loadConfig(env: Env, systemPrompt?: string): RunnerConfig {
-  const scheduleText = str(env, 'AGENT_SCHEDULE_ET') || '09:45,12:30,15:30';
+  const scheduleText = str(env, 'AGENT_SCHEDULE_ET') || DEFAULT_SCHEDULE_ET;
   let schedule: SlotTime[];
   try {
     schedule = parseSchedule(scheduleText);
@@ -192,6 +197,7 @@ export function loadConfig(env: Env, systemPrompt?: string): RunnerConfig {
     scheduleText: schedule.map((s) => s.label).join(','),
     maxToolCalls: int(env, 'AGENT_MAX_TOOL_CALLS', 40, 1, 1000),
     maxRunSeconds: int(env, 'AGENT_MAX_RUN_SECONDS', 300, 10, 3600),
+    extraRunsPerDay: int(env, 'AGENT_EXTRA_RUNS_PER_DAY', 4, 0, 20),
     dailyUsdCap,
     dailyUsdCapText,
     systemPrompt: systemPrompt ?? readFileSync(DEFAULT_SYSTEM_PROMPT_PATH, 'utf8').trim(),
