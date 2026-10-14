@@ -18,7 +18,7 @@ function routes(isAdmin: boolean, owned: string[]) {
   }
 }
 
-describe('mock Run now (§20.8, §22.9)', () => {
+describe('mock Run now (§20.9, §22.9)', () => {
   afterEach(() => {
     vi.useRealTimers()
   })

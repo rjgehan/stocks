@@ -1,5 +1,5 @@
 /**
- * "Run now" (§20.8) as the button shows it: who may run a bot, and one timeline line per request state.
+ * "Run now" (§20.9) as the button shows it: who may run a bot, and one timeline line per request state.
  */
 import type { PillTone } from '@/components/ui/Pill'
 import type { Me, RunRequest, RunRequestStatus } from '@/lib/api/types'

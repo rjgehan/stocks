@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * §20.8 "Run now": the bot's owner or the admin asks for a check-in on a browser session ({@code /me/**}: session
+ * §20.9 "Run now": the bot's owner or the admin asks for a check-in on a browser session ({@code /me/**}: session
  * only, CSRF), and the claude-trader service claims and finishes it with the bot's own key ({@code trade} scope, AI
  * players only, like {@code POST /agent-runs}; route rules in {@code SecurityConfig}).
  */

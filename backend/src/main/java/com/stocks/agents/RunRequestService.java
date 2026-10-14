@@ -31,7 +31,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 /**
- * "Run now" (§20.8): the owner of an AI player, or the admin, asks for one of the bot's normal check-ins from the app;
+ * "Run now" (§20.9): the owner of an AI player, or the admin, asks for one of the bot's normal check-ins from the app;
  * the claude-trader service (docs/agents.md §2.11) claims the request with the bot's own key, runs the check-in and
  * reports back. The only writer of {@code agent_run_request}.
  *

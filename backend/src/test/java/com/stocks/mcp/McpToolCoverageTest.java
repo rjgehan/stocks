@@ -87,7 +87,7 @@ class McpToolCoverageTest {
     // GET /market/indices; GET /account/positions/{symbol}; GET /orders/by-client-id/{id}; Phase 2: GET /me/push;
     // GET /assets/{symbol}/trades (§15.10); the session-only OAuth (§17.9) GET /me/oauth/requests/{requestId} and
     // GET /me/connected-apps; GET /players/{handle}/agent-runs, GET /me/api-calls and GET /stream; the session-only
-    // GET /me/bots/{handle}/run-requests (§20.8)."
+    // GET /me/bots/{handle}/run-requests (§20.9)."
     assertThat(coverage().excluded().keySet()).containsExactlyInAnyOrder(
         normalize("/api/v1/auth/csrf"), normalize("/api/v1/me"), normalize("/api/v1/me/api-keys"),
         normalize("/api/v1/assets/{symbol}/logo"), normalize("/api/v1/market/indices"),

@@ -534,7 +534,7 @@ claude.ai connector), so each agent trades as its own player and shows up on the
   waits for a free session slot. In the log: `claimed run request arq_… from @you`, then `reported run request arq_…
   to the app: DONE`. A request nobody picks up within 30 minutes **expires** in the app (the trader is not running, or
   the agent is `enabled = false`: disabled agents claim nothing); a picked-up one without a report after 30 minutes
-  becomes `FAILED`. One request per bot at a time, at most 20 per bot a day (ARCHITECTURE §20.8). The Mac mode of
+  becomes `FAILED`. One request per bot at a time, at most 20 per bot a day (ARCHITECTURE §20.9). The Mac mode of
   §2.10 does not take requests.
 - **Before every check-in** the trader asks the app (`GET /api/v1/me` with the agent's key) whose key it is. A key
   of another player, or a revoked one, logs ONE `ERROR` and the check-in does not start (fix the key; it waits up

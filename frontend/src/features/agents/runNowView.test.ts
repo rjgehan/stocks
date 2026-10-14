@@ -19,7 +19,7 @@ const req = (over: Partial<RunRequest>): RunRequest => ({
   ...over,
 })
 
-describe('who sees Run now (§20.8)', () => {
+describe('who sees Run now (§20.9)', () => {
   it('shows it to the bot owner and to an active admin only', () => {
     expect(canRunBot(me(), 'ryan')).toBe(true)
     expect(canRunBot(me(), 'alice')).toBe(false)

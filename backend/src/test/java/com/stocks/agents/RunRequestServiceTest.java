@@ -36,7 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
 
 /**
- * §20.8 "Run now" on a real database (PostgreSQL under {@code -Ppg-it}): the owner or an ACTIVE admin asks, the bot's
+ * §20.9 "Run now" on a real database (PostgreSQL under {@code -Ppg-it}): the owner or an ACTIVE admin asks, the bot's
  * own key claims and finishes; one open request per bot (also against a race, by the table's constraint), 20 per bot
  * in 24 hours, and lazy expiry of unclaimed and unreported requests.
  */

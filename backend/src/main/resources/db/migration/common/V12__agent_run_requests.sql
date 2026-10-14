@@ -1,5 +1,5 @@
 -- =====================================================================================================================
--- V12: "Run now" requests for AI players (ARCHITECTURE §20.8). The bot's owner or the admin asks for a check-in from the
+-- V12: "Run now" requests for AI players (ARCHITECTURE §20.9). The bot's owner or the admin asks for a check-in from the
 -- app; the claude-trader service claims it with the bot's own key, runs the bot's normal check-in and reports back.
 -- Portable H2 2.4 + PostgreSQL 18 (§8 portability rules); com.stocks.agents is the only writer.
 -- =====================================================================================================================

@@ -14,7 +14,7 @@ const runs = (n: number) => `${n} run${n === 1 ? '' : 's'}`
 /**
  * A bot's public "Bot activity" card (§20.6): runs in the last 7 days and in total, the last run's time and status.
  * No cost and no error message (those stay with the admin, Admin → Bots). The bot's owner and the admin also get
- * Run now (§20.8); the profile query is the page's own, so it costs no request.
+ * Run now (§20.9); the profile query is the page's own, so it costs no request.
  */
 export function BotActivityCard({ handle }: { handle: string }) {
   const q = useAgentRunSummary(handle)

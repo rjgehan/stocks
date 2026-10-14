@@ -2,7 +2,7 @@ import { type Locator, type Page, expect, test } from '@playwright/test'
 import { MOCK, open } from './support/app'
 
 /**
- * "Run now" (§20.8) at all three viewports: the bot's owner or the admin asks for a check-in from the app, and the
+ * "Run now" (§20.9) at all three viewports: the bot's owner or the admin asks for a check-in from the app, and the
  * button follows the request (polled every 5 s) until the claude-trader service reports back.
  *  - mock mode: the seeded bot @claude on its profile; the mock's pretend trader claims the request after 3 s and
  *    reports DONE after 9 s;

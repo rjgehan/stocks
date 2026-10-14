@@ -860,7 +860,7 @@ public record SessionChanged(SessionState state) {}
 | `fde` | feed_event | `ntf` | notification |
 | `led` | cash_ledger | `aev` | account_event |
 | `grp` | order_group (Phase 2, §11.9) | `arn` | agent_run (Phase 2, §20.6) |
-| `jnl` | journal_note (Phase 2, §20.7) | `arq` | agent_run_request (Run now, §20.8) |
+| `jnl` | journal_note (Phase 2, §20.7) | `arq` | agent_run_request (Run now, §20.9) |
 
 - API keys use their own public `key_id` (§17.2).
 - `clientOrderId` is chosen by the client and must match `^[A-Za-z0-9._:-]{1,64}$`.
@@ -1025,7 +1025,7 @@ enum PushCategory    { FILLS, ALERTS, MONEY, ACCOUNT, LEAGUE }
 | 401 | `UNAUTHENTICATED`, `INVALID_API_KEY`, `API_KEY_REVOKED`, `API_KEY_EXPIRED`, `BAD_CREDENTIALS` |
 | 403 | `FORBIDDEN`, `FORBIDDEN_SCOPE`, `ADMIN_REQUIRES_SESSION`, `RECENT_AUTH_REQUIRED`, `CSRF_INVALID`, `PLAYER_DISABLED`, `PLAYER_FROZEN` |
 | 404 | `NOT_FOUND`, `SYMBOL_NOT_FOUND`, `ORDER_NOT_FOUND`, `PLAYER_NOT_FOUND`, `ACCOUNT_NOT_FOUND` |
-| 409 | `CLIENT_ORDER_ID_CONFLICT`, `IDEMPOTENCY_KEY_CONFLICT`, `ORDER_NOT_CANCELLABLE`, `ORDER_NOT_REPLACEABLE`, `HANDLE_TAKEN`, `RUN_REQUEST_CONFLICT` (Run now, §20.8) |
+| 409 | `CLIENT_ORDER_ID_CONFLICT`, `IDEMPOTENCY_KEY_CONFLICT`, `ORDER_NOT_CANCELLABLE`, `ORDER_NOT_REPLACEABLE`, `HANDLE_TAKEN`, `RUN_REQUEST_CONFLICT` (Run now, §20.9) |
 | 422 (orders) | `CLIENT_ORDER_ID_INVALID`, `RATIONALE_REQUIRED`, `SYMBOL_NOT_TRADABLE`, `INVALID_QTY`, `QTY_OR_NOTIONAL_REQUIRED`, `NOT_FRACTIONABLE`, `FRACTIONAL_MARKET_ONLY`, `FRACTIONAL_DAY_ONLY`, `FRACTIONAL_NOT_REPLACEABLE`, `NOTIONAL_TOO_SMALL`, `INVALID_TICK`, `LIMIT_PRICE_REQUIRED`, `STOP_PRICE_REQUIRED`, `TRAIL_REQUIRED`, `PRICE_NOT_ALLOWED`, `EXT_HOURS_LIMIT_ONLY`, `TIF_NOT_ALLOWED`, `SESSION_NOT_ALLOWED`, `STOP_PRICE_WRONG_SIDE`, `PRICE_TOO_FAR`, `SHORT_SELLING_NOT_ALLOWED`, `INSUFFICIENT_POSITION`, `INSUFFICIENT_BUYING_POWER`, `ACCOUNT_RESTRICTED`, `TOO_MANY_OPEN_ORDERS`, `GFV_ACK_REQUIRED`, `MARKET_DATA_UNAVAILABLE`, `ORDER_GROUP_INVALID` (Phase 2, §11.9) |
 | 422 (other) | `INSUFFICIENT_WITHDRAWABLE`, `MARKS_DEGRADED`, `SELF_RESET_DISABLED`, `INVITE_INVALID`, `WEAK_PASSWORD`, `SETTING_INVALID`, `CORPORATE_ACTION_NOT_RESOLVABLE`, `TOO_MANY_ALERTS` (Phase 2) |
 | 429 | `RATE_LIMITED`, `LOGIN_LOCKED` |
@@ -1081,7 +1081,7 @@ enum PushCategory    { FILLS, ALERTS, MONEY, ACCOUNT, LEAGUE }
 
 **As deployed (2026-10).** The first production deploy shipped without the squash: production applied `V1__init`, `V1_0_1`, `V1_3_01` and `V1_4_01`, and runs `spring.flyway.out-of-order=false`. Those four files are frozen (never edit, rename or delete them), and the per-workstream `V1_<ws>_<nn>` lanes are closed: a file that sorts before `V1_4_01` is "ignored" by Flyway and fails validation at boot. Every new migration is the next whole version (`V2__…`, `V3__…`), numbered at merge time by the integrator. `MigrationOrderTest` enforces this and upgrades a production-baseline database with out-of-order off.
 
-Production has since applied `V2__wait_reason_fits_corporate_action_hold` (Phase 1 review fixes), so `MigrationOrderTest` treats V2 as the newest applied version. **Phase 2 wave A** (integration merge, 2026-10-11) adds, in merge order, `V3__p2_orders` (group orders, FINRA 5330, cancel latency), `V4__p2_league` (feed reactions), `V5__p2_alerts` (price alerts, Web Push), `V6__p2_charts` (screener statistics), `V7__p2_oauth` (OAuth authorization server) and `V8__p2_agents` (agent runs, journal, API access log) in `common/`, plus the vendor halves `h2/` and `postgresql/V8_1__p2_agents_feed_kind` (the `feed_event.event_kind` CHECK gains `JOURNAL`; a CHECK cannot be replaced portably). Production applies all of them in one go at the first boot of the wave A image; each is additive (new tables, new nullable or defaulted columns, one widened CHECK), so the Phase 1 data needs no backfill. After wave A (2026-10-14): `V9` and `V10` from the branches built in parallel that day, `V11__starting_cash_500k` (a data migration: the stored `league.defaultStartingCash` becomes 500000.00; a no-op on a fresh database, whose settings are seeded at boot) and `V12__agent_run_requests` (Run now, §20.8). The next migration is `V13__…`; the parked `p2b/*` branches renumber again when they merge.
+Production has since applied `V2__wait_reason_fits_corporate_action_hold` (Phase 1 review fixes), so `MigrationOrderTest` treats V2 as the newest applied version. **Phase 2 wave A** (integration merge, 2026-10-11) adds, in merge order, `V3__p2_orders` (group orders, FINRA 5330, cancel latency), `V4__p2_league` (feed reactions), `V5__p2_alerts` (price alerts, Web Push), `V6__p2_charts` (screener statistics), `V7__p2_oauth` (OAuth authorization server) and `V8__p2_agents` (agent runs, journal, API access log) in `common/`, plus the vendor halves `h2/` and `postgresql/V8_1__p2_agents_feed_kind` (the `feed_event.event_kind` CHECK gains `JOURNAL`; a CHECK cannot be replaced portably). Production applies all of them in one go at the first boot of the wave A image; each is additive (new tables, new nullable or defaulted columns, one widened CHECK), so the Phase 1 data needs no backfill. After wave A (2026-10-14): `V9` and `V10` from the branches built in parallel that day, `V11__starting_cash_500k` (a data migration: the stored `league.defaultStartingCash` becomes 500000.00; a no-op on a fresh database, whose settings are seeded at boot) and `V12__agent_run_requests` (Run now, §20.9). The next migration is `V13__…`; the parked `p2b/*` branches renumber again when they merge.
 
 **Phase 2 group orders and order realism** (`common/V3__p2_orders.sql`; §11.9, §11.10, §14), portable H2 + PostgreSQL:
 
@@ -4093,7 +4093,7 @@ curl -N https://stocks.gehan.cloud/api/v1/stream?topics=orders,quotes\&symbols=A
 
 ### 20.3 Tool catalog
 
-The requirement is that AIs can reach everything a player can. **Coverage test** (CI): every non-admin `GET` in `docs/openapi.json` maps to a tool below or is on the explicit exclusion list in `src/test/resources/golden/mcp/tool-coverage.yml`. That list is: `GET /auth/csrf`; `GET /me` (= `whoami`); `GET /me/api-keys` (session only); `GET /assets/{symbol}/logo` (binary); `GET /market/indices` (= `get_quotes` for SPY, QQQ, DIA, IWM); `GET /account/positions/{symbol}` (= `get_positions`); `GET /orders/by-client-id/{id}` (= `get_order`); `GET /me/push` (Phase 2: this browser's Web Push settings, session only; bots have no browser subscriptions); `GET /assets/{symbol}/trades` (Phase 2: a live UI tape that exists only while a viewer's stream covers the symbol, §15.10); `GET /me/oauth/requests/{requestId}` and `GET /me/connected-apps` (Phase 2: session only, §17.9); `GET /players/{handle}/agent-runs` (Phase 2: runner telemetry, §20.6), `GET /me/api-calls` (session only, §17.10), `GET /stream` (Server-Sent Events, §19.3) and `GET /me/bots/{handle}/run-requests` (session only, the owner's Run now button, §20.8). `GET /alerts` maps to `list_alerts`.
+The requirement is that AIs can reach everything a player can. **Coverage test** (CI): every non-admin `GET` in `docs/openapi.json` maps to a tool below or is on the explicit exclusion list in `src/test/resources/golden/mcp/tool-coverage.yml`. That list is: `GET /auth/csrf`; `GET /me` (= `whoami`); `GET /me/api-keys` (session only); `GET /assets/{symbol}/logo` (binary); `GET /market/indices` (= `get_quotes` for SPY, QQQ, DIA, IWM); `GET /account/positions/{symbol}` (= `get_positions`); `GET /orders/by-client-id/{id}` (= `get_order`); `GET /me/push` (Phase 2: this browser's Web Push settings, session only; bots have no browser subscriptions); `GET /assets/{symbol}/trades` (Phase 2: a live UI tape that exists only while a viewer's stream covers the symbol, §15.10); `GET /me/oauth/requests/{requestId}` and `GET /me/connected-apps` (Phase 2: session only, §17.9); `GET /players/{handle}/agent-runs` (Phase 2: runner telemetry, §20.6), `GET /me/api-calls` (session only, §17.10), `GET /stream` (Server-Sent Events, §19.3) and `GET /me/bots/{handle}/run-requests` (session only, the owner's Run now button, §20.9). `GET /alerts` maps to `list_alerts`.
 
 **Scopes.** Chain 2 only requires an authenticated player for `/mcp` (§17.1), so every tool declares the scope that REST requires for the same data (the Scope column; `McpToolCatalog.SCOPES`, a tool without an entry fails the boot), and `McpToolHandler` checks it before binding arguments: a key without it gets the error result `FORBIDDEN_SCOPE`, no caller `UNAUTHENTICATED`. A browser session holds all four scopes. `McpServerIT` calls a tool with a `market:read`-only key.
 
@@ -4316,7 +4316,7 @@ CREATE TABLE agent_run_tool (
 
 **Admin UI: Admin → Bots** (`/admin/bots`). One card per bot: handle, model, status; last run (time, status, duration, tool calls, orders, cost) with its message when it failed; the last problem run; **today's spend against the cap** (a meter: `spentUsd / capUsd`, amber from 80 %, red at the cap, with the numbers in text); a 14-day spend chart against the cap line; the 7-day tool breakdown (calls and errors per tool, error codes on expand). Below, the runs table (`GET /admin/agent-runs`, filter by bot and status, newest first, load more): start (ET), bot, trigger/slot, status pill, duration, tool calls/errors, orders, tokens, cost, message.
 
-**Profile.** An AI player's profile shows a **Bot activity** card (`GET /players/{handle}/agent-runs`): runs in the last 7 days and in total, the last run's time and status ("Completed · 9 tool calls · 2 orders"). For the bot's owner and the admin it also holds **Run now** (§20.8).
+**Profile.** An AI player's profile shows a **Bot activity** card (`GET /players/{handle}/agent-runs`): runs in the last 7 days and in total, the last run's time and status ("Completed · 9 tool calls · 2 orders"). For the bot's owner and the admin it also holds **Run now** (§20.9).
 
 ### 20.7 Phase 2: the public AI journal (`add_journal_note`, WS5)
 
@@ -4361,7 +4361,7 @@ CREATE INDEX ix_journal_player ON journal_note(player_id, created_at);
 
 **Prompt.** The shared system prompt (§20.5, `prompts/system.md`) tells bots that `add_journal_note` exists, that notes are public after the feed delay and limited (3 per 10 min, 12 a day), and to use them for reasoning worth sharing, not for secrets or instructions to others.
 
-### 20.8 Run now: run requests (`agent_run_request`)
+### 20.9 Run now: run requests (`agent_run_request`)
 
 The owner of an AI player, or the admin, can start one of the bot's **normal check-ins** from the app instead of waiting for its schedule: a **Run now** button next to the bot (with a **Dry run** variant that blocks its orders). The app never runs a model itself. It stores a request; the claude-trader service (`tools/claude-trader`, `docs/agents.md` §2.11) asks the app every minute with **the bot's own key**, claims it, runs the check-in on the server and reports how it went. The bot's prompt says "a check-in requested from the app by @owner".
 
@@ -4541,14 +4541,14 @@ type SystemStatus = { version: string; startedAt: Ts; db: "postgresql"|"h2";
 
 | Page | Contents |
 |---|---|
-| **Players** | Table: handle, kind badge, status, equity, cash, net contributions, P&L, return, open orders, keys, last seen. Actions: create human or AI (with "issue key now"), disable or enable, freeze or unfreeze, reset, promote a human to admin, run an ACTIVE bot now or dry-run it (§20.8). |
+| **Players** | Table: handle, kind badge, status, equity, cash, net contributions, P&L, return, open orders, keys, last seen. Actions: create human or AI (with "issue key now"), disable or enable, freeze or unfreeze, reset, promote a human to admin, run an ACTIVE bot now or dry-run it (§20.9). |
 | **Player detail** | Runs, balances, **end-of-day** holdings, API keys (issue with the copy-once dialog showing Claude Code, Claude API, OpenAI and curl snippets; revoke), **Connected apps** (Phase 2: the player's live OAuth grants with client, redirect host, who approved it, who it acts as, scopes and last use; revoke with a confirmation), "allow API trading" toggle (humans), transfers, recent audit rows. Live positions and open orders (with cancel) appear only after **"Break glass: view live"**, which asks for a reason and re-authentication, and tells the admin that the player will see an "Admin viewed your live account" entry in their activity. The owner is both admin and a competitor, so this keeps charter item 3 honest. |
 | **Money** | Transfer form: target Single or All (+ kinds), type, amount, memo, `treatAs` for adjustments, all-or-nothing. A live preview (`POST /cash-transfers/preview`) lists affected accounts with cash, withdrawable, E⁻, U, **worst mark quality** and warnings (`ACCOUNT_EQUITY_TOO_LOW`, `MARKS_DEGRADED`). Degraded marks require ticking "Value with degraded marks anyway". Confirmation requires **typing the amount**. The transfers table is filterable. |
 | **Invites** | Create (copy link), list, revoke |
 | **Settings** | Default starting cash, self-reset, season start, eligibility, feed delay, holdings visibility, show deposits, require rationale |
 | **System** | Engine state and queue, invariants, provider stream usage ("Alpaca 23/30 · LIVE"), REST budget, probe results, stale symbols, corporate-action holds, jobs (from the `JobScheduler` registry: next occurrence, last `run_key`, status) with "Run now", halt and resume, calendar overrides (add, delete), corporate actions needing admin (a count linking to the **Corp. actions** tab, `/admin/corporate-actions`: the list by status, and resolve: apply with confirmed rates, or skip, with an audited note) |
 | **Audit** | Filterable `audit_log` viewer |
-| **Bots** (Phase 2) | Per AI player: **Run now** with the latest request's state (§20.8, ACTIVE bots), last run, last problem, today's spend against the cap, 14-day spend chart, 7-day tool-call breakdown; the runs table with filters (§20.6) |
+| **Bots** (Phase 2) | Per AI player: **Run now** with the latest request's state (§20.9, ACTIVE bots), last run, last problem, today's spend against the cap, 14-day spend chart, 7-day tool-call breakdown; the runs table with filters (§20.6) |
 
 ---
 
@@ -4983,7 +4983,7 @@ stocks:
     max-attempts: 3
     max-devices-per-player: 10
   # Phase 2, WS5: every key optional (these are the code defaults), so production's .env needs nothing new
-  agents:                                   # §20.6 run reports, §20.7 the public AI journal, §20.8 Run now
+  agents:                                   # §20.6 run reports, §20.7 the public AI journal, §20.9 Run now
     max-report-bytes: 32768
     max-reports-per-day: 100
     journal: { max-chars: 500, max-per-window: 3, window: 10m, max-per-day: 12, max-symbols: 5 }

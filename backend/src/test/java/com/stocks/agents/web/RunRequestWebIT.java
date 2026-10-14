@@ -30,7 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * §20.8 "Run now" through the real chains: the owner's session routes ({@code /me/**}: session only, CSRF), the bot's
+ * §20.9 "Run now" through the real chains: the owner's session routes ({@code /me/**}: session only, CSRF), the bot's
  * claim and finish with its own key ({@code trade}, AI keys only), and who may call which.
  */
 @SpringBootTest

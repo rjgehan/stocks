@@ -13,7 +13,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 /**
- * {@code agent_run_request} (§20.8). Written only by {@link RunRequestService}. {@code open_bot_id} is the bot's id
+ * {@code agent_run_request} (§20.9). Written only by {@link RunRequestService}. {@code open_bot_id} is the bot's id
  * while a request is PENDING or CLAIMED and NULL once it is final, so its unique constraint keeps one open request per
  * bot; every status change here sets it accordingly.
  */

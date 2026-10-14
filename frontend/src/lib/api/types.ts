@@ -97,7 +97,7 @@ export type ResolveCorporateActionRequest = S['ResolveCorporateActionRequest']
 // Phase 2 agents (§17.10, §20.6, §20.7)
 export type AgentRun = S['AgentRun']
 export type AgentRunSummary = S['AgentRunSummary']
-// "Run now" (§20.8)
+// "Run now" (§20.9)
 export type RunRequest = S['RunRequest']
 export type AdminBot = S['AdminBot']
 export type ApiCall = S['ApiCall']

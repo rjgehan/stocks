@@ -5,13 +5,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * WS5's Phase 2 agent settings, {@code stocks.agents} (§20.6, §20.7, §20.8). Every key has a safe default, so
+ * WS5's Phase 2 agent settings, {@code stocks.agents} (§20.6, §20.7, §20.9). Every key has a safe default, so
  * production needs no new configuration.
  *
  * @param maxReportBytes   the largest {@code POST /agent-runs} body (§20.6)
  * @param maxReportsPerDay new runs one bot may report in any 24 hours (§20.6; a repeated {@code runRef} is free)
  * @param journal          the AI journal limits (§20.7)
- * @param runRequests      the "Run now" requests (§20.8)
+ * @param runRequests      the "Run now" requests (§20.9)
  */
 @ConfigurationProperties("stocks.agents")
 public record AgentsProperties(@DefaultValue("32768") int maxReportBytes, @DefaultValue("100") int maxReportsPerDay,

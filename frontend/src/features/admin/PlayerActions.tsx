@@ -19,7 +19,7 @@ const onError = (title: string) => (e: unknown) => {
 }
 
 /**
- * Per-player admin actions (§21.3 Players): open, deposit, issue a key, run an active bot now (§20.8), freeze /
+ * Per-player admin actions (§21.3 Players): open, deposit, issue a key, run an active bot now (§20.9), freeze /
  * unfreeze (kill switch, optional key revocation), disable / enable, promote a human to admin. Every one of them is
  * audited server-side.
  */

@@ -28,7 +28,7 @@ export function useStartRun() {
 }
 
 /**
- * "Run now" (§20.8) for one AI bot, shown to its owner and the admin (the caller decides; the server checks): a
+ * "Run now" (§20.9) for one AI bot, shown to its owner and the admin (the caller decides; the server checks): a
  * split button (Run now, or a Dry run that blocks the orders) and the latest request's state, polled while it waits
  * for the claude-trader service or runs: "Requested 10:31 AM ET · picked up 10:31 AM · done 10:35 AM".
  */

@@ -1,7 +1,7 @@
 /**
  * Mock mode (§22.9) for the Phase 2 agent endpoints (§17.10, §20.6, §20.7): run reports of the two league bots, their
  * public journals, the admin Bots page and "Recent API calls". Derived deterministically from the current time and
- * the league's players, so nothing here needs persisting. Run now (§20.8) is in ./runRequests.ts.
+ * the league's players, so nothing here needs persisting. Run now (§20.9) is in ./runRequests.ts.
  */
 import type { AdminBot, AgentRun, AgentRunStatus, ApiCall, JournalNote, PlayerSummary } from '../types'
 import { mulberry32 } from './market'
@@ -276,7 +276,7 @@ export function registerAgentRoutes(r: RouteFn, d: AgentMockDeps): void {
     const scope = handle ? d.players().filter((p) => p.handle === handle) : d.players()
     return json(page(mockApiCalls(scope, Date.now()), url))
   })
-  // Run now (§20.8): the owner's routes and a pretend claude-trader
+  // Run now (§20.9): the owner's routes and a pretend claude-trader
   registerRunRequestRoutes(r, d)
 }
 

@@ -1,6 +1,6 @@
 /**
  * Phase 2 agent hooks (WS5): a bot's public run summary and AI journal (§20.6, §20.7), the admin Bots page, the
- * "Recent API calls" views (§17.10) and "Run now" (§20.8).
+ * "Recent API calls" views (§17.10) and "Run now" (§20.9).
  */
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '../client'
@@ -23,7 +23,7 @@ export const RUN_REQUEST_POLL_MS = 5_000
 const openRequest = (r: RunRequest | null | undefined) => r?.status === 'PENDING' || r?.status === 'CLAIMED'
 
 /**
- * `GET /me/bots/{handle}/run-requests` (§20.8, the bot's owner or the admin): the latest requests, newest first.
+ * `GET /me/bots/{handle}/run-requests` (§20.9, the bot's owner or the admin): the latest requests, newest first.
  * Polled every 5 s while the latest one waits for the trader or runs, so the button follows it to DONE.
  */
 export function useRunRequests(handle: string, enabled = true) {

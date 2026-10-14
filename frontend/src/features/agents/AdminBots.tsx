@@ -188,7 +188,7 @@ function RunRow({ r }: { r: AgentRun }) {
 }
 
 /**
- * Admin → Bots (§20.6, §21.3): one card per AI player (Run now, §20.8; last run, last problem, today's spend against
+ * Admin → Bots (§20.6, §21.3): one card per AI player (Run now, §20.9; last run, last problem, today's spend against
  * the cap, a 14-day spend chart, the 7-day tool-call breakdown), then the reported runs with filters.
  */
 export function AdminBots() {

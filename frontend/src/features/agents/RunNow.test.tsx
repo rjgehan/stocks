@@ -34,7 +34,7 @@ function client(me: Me | null = ME): QueryClient {
   return qc
 }
 
-describe('Run now (§20.8)', () => {
+describe('Run now (§20.9)', () => {
   let fetchMock: ReturnType<typeof vi.fn<(r: Request) => Promise<Response>>>
 
   beforeEach(() => {

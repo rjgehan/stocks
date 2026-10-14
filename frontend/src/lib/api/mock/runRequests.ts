@@ -1,5 +1,5 @@
 /**
- * Mock mode (§22.9) for "Run now" (§20.8): the owner's routes, with a pretend claude-trader that picks a request up
+ * Mock mode (§22.9) for "Run now" (§20.9): the owner's routes, with a pretend claude-trader that picks a request up
  * a few seconds after it is made and reports DONE a few seconds later, so the button's states can be seen. Requests
  * live in memory (a reload forgets them).
  */
