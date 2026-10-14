@@ -818,7 +818,7 @@ public class ManualBotService {
 
   private static ManualIssueDto rowIssue(ManualIssueSeverity severity, String code, String field, ManualActionDto a,
                                          String message, String hint) {
-    return new ManualIssueDto(severity, code, field, a.line(), null, message + " (line " + a.line() + ")", hint);
+    return new ManualIssueDto(severity, code, field, a.line(), null, message, hint);
   }
 
   /** The row with more issues, a symbol and an estimate; still executable only if it was and no ERROR came in. */

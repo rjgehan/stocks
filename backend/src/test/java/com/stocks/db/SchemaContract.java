@@ -29,7 +29,9 @@ abstract class SchemaContract {
       "trade_order", "order_event", "execution", "dividend_entitlement", "cash_ledger", "position", "position_lot",
       "position_adjustment", "account_event", "account_violation", "equity_snapshot", "snapshot_holding",
       "intraday_equity", "benchmark_daily", "leaderboard_snapshot", "feed_event", "watchlist", "watchlist_item",
-      "notification", "idempotency_record", "job_run", "audit_log", "spring_session", "spring_session_attributes");
+      "notification", "idempotency_record", "job_run", "audit_log", "spring_session", "spring_session_attributes",
+      // §20.8 manual bots (V10)
+      "manual_bot", "manual_session");
 
   private static final AtomicInteger SEQ = new AtomicInteger();
   private static final Instant T0 = Instant.parse("2026-10-09T14:00:00Z");

@@ -180,7 +180,7 @@ public class ManualPromptBuilder {
         .append(" open orders.\n");
     s.append("- Accepted right now (").append(session).append("): ").append(acceptedNow(session, o)).append('\n');
     s.append("- Extended hours (pre-market ").append(sessions.pre()).append(" ET, after-hours ").append(sessions.post())
-        .append(" ET; early-close days: ").append(sessions.earlyClose()).append(") need a LIMIT order with "
+        .append(" ET; ").append(earlyClose(sessions.earlyClose())).append(") need a LIMIT order with "
             + "\"extended_hours\": true.\n");
     s.append("- Fractional shares and dollar amounts (\"notional\"): ").append(fractionalLine(o.fractional()))
         .append('\n');
@@ -198,6 +198,19 @@ public class ManualPromptBuilder {
             : "the app waits up to " + wait + " seconds for MARKET sells to fill before it places the buys")
         .append("; outside the regular session sells only queue, so do not count on their proceeds in the same "
             + "reply.\n\n");
+  }
+
+  /**
+   * {@code early-close days: …}; the rulebook's sentence already starts with "Early-close days", so it is not said
+   * twice.
+   */
+  static String earlyClose(String text) {
+    if (text == null || text.isBlank()) {
+      return "early-close days: see the calendar";
+    }
+    String t = text.strip();
+    return t.regionMatches(true, 0, "early-close days", 0, 16) ? Character.toLowerCase(t.charAt(0)) + t.substring(1)
+        : "early-close days: " + t;
   }
 
   static String accountLine(RulesDto.RulesAccountDto acc) {

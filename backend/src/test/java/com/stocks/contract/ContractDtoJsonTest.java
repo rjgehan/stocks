@@ -120,6 +120,18 @@ class ContractDtoJsonTest {
     SPEC_TYPES.put("Settings", ad + "SettingsDto");
     SPEC_TYPES.put("AuditRow", ad + "AuditRowDto");
     SPEC_TYPES.put("SystemStatus", ad + "SystemStatusDto");
+    // §20.8 manual bots
+    String mb = "com.stocks.contract.manualbot.dto.";
+    SPEC_TYPES.put("ManualBot", mb + "ManualBotDto");
+    SPEC_TYPES.put("ManualLimits", mb + "ManualLimitsDto");
+    SPEC_TYPES.put("UpdateManualBotRequest", mb + "UpdateManualBotRequest");
+    SPEC_TYPES.put("ManualReplyRequest", mb + "ManualReplyRequest");
+    SPEC_TYPES.put("ManualExecuteRequest", mb + "ManualExecuteRequest");
+    SPEC_TYPES.put("ManualSession", mb + "ManualSessionDto");
+    SPEC_TYPES.put("UntrustedManualText", mb + "UntrustedManualTextDto");
+    SPEC_TYPES.put("ManualAction", mb + "ManualActionDto");
+    SPEC_TYPES.put("ManualActionResult", mb + "ManualActionResultDto");
+    SPEC_TYPES.put("ManualIssue", mb + "ManualIssueDto");
     // §19 STOMP payloads
     SPEC_TYPES.put("tick", md + "TickDto");
     SPEC_TYPES.put("market.session", "com.stocks.contract.realtime.dto.MarketSessionDto");

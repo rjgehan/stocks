@@ -42,8 +42,8 @@ public class ManualBotRepository {
       o.handle AS operator_handle, s.status, s.ai_model, s.market_session, s.prompt_sha256,
       CHAR_LENGTH(s.prompt_text) AS prompt_chars, CHAR_LENGTH(s.reply_text) AS reply_chars, s.reply_sha256,
       s.summary, s.parsed_json, s.journal_note_id, s.created_at, s.replied_at, s.executed_at""";
-  private static final String SESSION_FROM = """
-       FROM manual_session s JOIN player b ON b.id = s.player_id JOIN player o ON o.id = s.operator_player_id""";
+  private static final String SESSION_FROM =
+      " FROM manual_session s JOIN player b ON b.id = s.player_id JOIN player o ON o.id = s.operator_player_id";
 
   private final JdbcClient jdbc;
 
@@ -174,7 +174,7 @@ public class ManualBotRepository {
     List<ManualPromptBuilder.Summary> out = new ArrayList<>(jdbc.sql("""
             SELECT created_at, summary FROM manual_session
              WHERE player_id = ? AND status = 'EXECUTED' AND summary IS NOT NULL
-             ORDER BY created_at DESC, id DESC LIMIT """ + Math.max(1, n))
+             ORDER BY created_at DESC, id DESC""" + " LIMIT " + Math.max(1, n))
         .param(playerId)
         .query((rs, i) -> new ManualPromptBuilder.Summary(Jdbc.instant(rs, "created_at"), rs.getString("summary")))
         .list());
