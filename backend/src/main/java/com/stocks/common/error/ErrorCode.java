@@ -37,6 +37,8 @@ public enum ErrorCode {
   ORDER_NOT_CANCELLABLE(409, "Order not cancellable"),
   ORDER_NOT_REPLACEABLE(409, "Order not replaceable"),
   HANDLE_TAKEN(409, "Handle taken"),
+  /** §20.8: the bot already has an open "Run now" request, or a request is not in a state that allows the call. */
+  RUN_REQUEST_CONFLICT(409, "Run request conflict"),
 
   // 422 (orders)
   CLIENT_ORDER_ID_INVALID(422, "Invalid client order ID"),

@@ -2613,6 +2613,100 @@
         ]
       }
     },
+    "/api/v1/agent-runs/requests/claim": {
+      "post": {
+        "description": "Sent by the claude-trader service with the bot's own API key (trade scope; AI players only): 200 with the bot's oldest PENDING request, now CLAIMED, or 204 when there is none. A claimed request must be finished within 30 minutes, else it becomes FAILED.",
+        "operationId": "claimRunRequest",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRequest"
+                }
+              }
+            },
+            "description": "Claimed"
+          },
+          "204": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRequest"
+                }
+              }
+            },
+            "description": "No pending request"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Claim a run request",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/v1/agent-runs/requests/{requestId}/finish": {
+      "post": {
+        "description": "Sent by the claude-trader service with the bot's own API key when the check-in ended: status DONE or FAILED and a short message. Only a CLAIMED request of the calling bot; the same status again answers the stored request. Errors: NOT_FOUND, VALIDATION_FAILED, RUN_REQUEST_CONFLICT.",
+        "operationId": "finishRunRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinishRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRequest"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Finish a claimed run request",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/v1/alerts": {
       "get": {
         "description": "ACTIVE, PAUSED, TRIGGERED, EXPIRED in that order, newest first within each; optionally of one status and/or symbol.",
@@ -4425,6 +4519,110 @@
           }
         },
         "summary": "Revoke one of my API keys",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/bots/{handle}/run-requests": {
+      "get": {
+        "description": "Session only; the bot's owner or the admin. The latest requests, newest first (limit 1-50, default 10).",
+        "operationId": "listRunRequests",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1-50, default 10",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RunRequest"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A bot's run requests",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "description": "Session only; the bot's owner or the admin. The claude-trader service picks the request up within about a minute and runs the bot's normal check-in (dryRun: the order tools are blocked). One open request per bot (409 RUN_REQUEST_CONFLICT while one is PENDING or CLAIMED); at most 20 per bot in 24 hours (RATE_LIMITED). A request nobody picks up within 30 minutes becomes EXPIRED. Errors: PLAYER_NOT_FOUND, FORBIDDEN (not an AI player, not yours), PLAYER_FROZEN, RUN_REQUEST_CONFLICT, RATE_LIMITED.",
+        "operationId": "requestRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunNowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRequest"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Run a bot's check-in now",
         "tags": [
           "me"
         ]
@@ -10916,6 +11114,36 @@
           "total"
         ]
       },
+      "FinishRunRequest": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A short report (duration, the result or the error); at most 500 characters are kept"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "DONE or FAILED",
+            "enum": [
+              "PENDING",
+              "CLAIMED",
+              "DONE",
+              "FAILED",
+              "EXPIRED",
+              null
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
       "FreezePlayerRequest": {
         "type": "object",
         "properties": {
@@ -17198,6 +17426,96 @@
             ]
           }
         }
+      },
+      "RunNowRequest": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "true: the order tools are blocked and the bot only says which orders it would place (default false)"
+          }
+        }
+      },
+      "RunRequest": {
+        "type": "object",
+        "properties": {
+          "claimedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "finishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "requestedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PENDING",
+              "CLAIMED",
+              "DONE",
+              "FAILED",
+              "EXPIRED",
+              null
+            ]
+          }
+        },
+        "required": [
+          "claimedAt",
+          "dryRun",
+          "finishedAt",
+          "handle",
+          "id",
+          "message",
+          "requestedAt",
+          "requestedBy",
+          "status"
+        ]
       },
       "ScreenCoverage": {
         "type": "object",

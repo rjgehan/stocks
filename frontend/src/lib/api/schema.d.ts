@@ -904,6 +904,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-runs/requests/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim a run request
+         * @description Sent by the claude-trader service with the bot's own API key (trade scope; AI players only): 200 with the bot's oldest PENDING request, now CLAIMED, or 204 when there is none. A claimed request must be finished within 30 minutes, else it becomes FAILED.
+         */
+        post: operations["claimRunRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-runs/requests/{requestId}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish a claimed run request
+         * @description Sent by the claude-trader service with the bot's own API key when the check-in ended: status DONE or FAILED and a short message. Only a CLAIMED request of the calling bot; the same status again answers the stored request. Errors: NOT_FOUND, VALIDATION_FAILED, RUN_REQUEST_CONFLICT.
+         */
+        post: operations["finishRunRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/alerts": {
         parameters: {
             query?: never;
@@ -1496,6 +1536,30 @@ export interface paths {
          * @description Session only. Immediate. Errors: NOT_FOUND.
          */
         delete: operations["revoke"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/bots/{handle}/run-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A bot's run requests
+         * @description Session only; the bot's owner or the admin. The latest requests, newest first (limit 1-50, default 10).
+         */
+        get: operations["listRunRequests"];
+        put?: never;
+        /**
+         * Run a bot's check-in now
+         * @description Session only; the bot's owner or the admin. The claude-trader service picks the request up within about a minute and runs the bot's normal check-in (dryRun: the order tools are blocked). One open request per bot (409 RUN_REQUEST_CONFLICT while one is PENDING or CLAIMED); at most 20 per bot in 24 hours (RATE_LIMITED). A request nobody picks up within 30 minutes becomes EXPIRED. Errors: PLAYER_NOT_FOUND, FORBIDDEN (not an AI player, not yours), PLAYER_FROZEN, RUN_REQUEST_CONFLICT, RATE_LIMITED.
+         */
+        post: operations["requestRun"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3149,6 +3213,15 @@ export interface components {
             /** Format: decimal */
             total: string | null;
         };
+        FinishRunRequest: {
+            /** @description A short report (duration, the result or the error); at most 500 characters are kept */
+            message?: string | null;
+            /**
+             * @description DONE or FAILED
+             * @enum {string|null}
+             */
+            status: "PENDING" | "CLAIMED" | "DONE" | "FAILED" | "EXPIRED" | null;
+        };
         FreezePlayerRequest: {
             reason: string | null;
             revokeKeys?: boolean | null;
@@ -4387,6 +4460,25 @@ export interface components {
         };
         RunJobRequest: {
             runKey?: string | null;
+        };
+        RunNowRequest: {
+            /** @description true: the order tools are blocked and the bot only says which orders it would place (default false) */
+            dryRun?: boolean | null;
+        };
+        RunRequest: {
+            /** Format: date-time */
+            claimedAt: string | null;
+            dryRun: boolean;
+            /** Format: date-time */
+            finishedAt: string | null;
+            handle: string | null;
+            id: string | null;
+            message: string | null;
+            /** Format: date-time */
+            requestedAt: string | null;
+            requestedBy: string | null;
+            /** @enum {string|null} */
+            status: "PENDING" | "CLAIMED" | "DONE" | "FAILED" | "EXPIRED" | null;
         };
         ScreenCoverage: {
             /** Format: int32 */
@@ -6567,6 +6659,79 @@ export interface operations {
             };
         };
     };
+    claimRunRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Claimed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunRequest"];
+                };
+            };
+            /** @description No pending request */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunRequest"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    finishRunRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FinishRunRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunRequest"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     listAlerts: {
         parameters: {
             query?: {
@@ -7685,6 +7850,75 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listRunRequests: {
+        parameters: {
+            query?: {
+                /** @description 1-50, default 10 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunRequest"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    requestRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RunNowRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunRequest"];
+                };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
             default: {

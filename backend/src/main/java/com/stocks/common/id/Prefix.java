@@ -26,6 +26,8 @@ public enum Prefix {
   AGENT_RUN("arn"),
   /** Phase 2 (§20.7): a public AI journal note. */
   JOURNAL_NOTE("jnl"),
+  /** §20.8: a "Run now" request for an AI player. */
+  AGENT_RUN_REQUEST("arq"),
   /** Server-generated {@code X-Request-Id} values (§6.6); never stored as a row id. */
   REQUEST("req");
 
