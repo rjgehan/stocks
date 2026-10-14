@@ -139,11 +139,11 @@ export function usePlayerPnlCalendar(handle: string, view: CalendarView, month: 
   })
 }
 
-/** At most one refresh per player in this window, however many of their feed items arrive. */
+/** At most one refresh per player in this window; items inside it are coalesced into one refresh at its end. */
 export const LIVE_REFRESH_THROTTLE_MS = 2_000
 
 /** The live data of a player's profile: exact keys plus the paged lists (never the bare ['player', h] prefix). */
-function refreshPlayer(qc: QueryClient, handle: string, journal: boolean) {
+export function refreshPlayer(qc: QueryClient, handle: string, journal: boolean) {
   void qc.invalidateQueries({ queryKey: queryKeys.player(handle), exact: true })
   void qc.invalidateQueries({ queryKey: queryKeys.playerTrades(handle), exact: true })
   void qc.invalidateQueries({ queryKey: queryKeys.playerPortfolio(handle), exact: true })
@@ -154,28 +154,48 @@ function refreshPlayer(qc: QueryClient, handle: string, journal: boolean) {
 
 /**
  * Keeps an open profile live without a topic of its own (§19, D7): a `/topic/feed` item of this player (a fill, a
- * closed position, a note…) refreshes the header, trades, portfolio, orders and activity, at most once per 2 s.
- * Reaction updates carry no player and are ignored. Stats and history ranges are left alone (they change at the
- * close), and a reconnect resyncs the same keys.
+ * closed position, a note…) refreshes the header, trades, portfolio, orders and activity at once, then at most once
+ * per 2 s: items arriving inside the window (a fill and its note a few hundred ms apart) are coalesced into one
+ * trailing refresh at its end, which includes the journal if any of them was a note. Reaction updates carry no player
+ * and are ignored. Stats and history ranges are left alone (they change at the close), and a reconnect resyncs the
+ * same keys.
  */
 export function usePlayerLiveRefresh(handle: string) {
   const qc = useQueryClient()
   useEffect(() => {
     const hub = realtime()
     let last = Number.NEGATIVE_INFINITY
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let pendingJournal = false
+    const fire = (journal: boolean) => {
+      last = Date.now()
+      refreshPlayer(qc, handle, journal)
+    }
     const offs = [
       hub.subscribe('/topic/feed', (body) => {
         if (isFeedReactions(body)) return
         const item = body as FeedItem | null
         if (item?.player?.handle !== handle) return
-        const now = Date.now()
-        if (now - last < LIVE_REFRESH_THROTTLE_MS) return
-        last = now
-        refreshPlayer(qc, handle, item.kind === 'JOURNAL')
+        const journal = item.kind === 'JOURNAL'
+        const wait = last + LIVE_REFRESH_THROTTLE_MS - Date.now()
+        if (wait <= 0 && timer === null) {
+          fire(journal)
+          return
+        }
+        pendingJournal ||= journal
+        timer ??= setTimeout(() => {
+          timer = null
+          const j = pendingJournal
+          pendingJournal = false
+          fire(j)
+        }, Math.max(0, wait))
       }),
       hub.onResync(() => refreshPlayer(qc, handle, true)),
     ]
-    return () => offs.forEach((off) => off())
+    return () => {
+      if (timer !== null) clearTimeout(timer)
+      offs.forEach((off) => off())
+    }
   }, [qc, handle])
 }
 
