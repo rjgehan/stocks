@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Checkbox, TextField } from '@/components/ui/Field'
 import { MenuItem, Popover } from '@/components/ui/Popover'
 import { IconMore } from '@/components/ui/icons'
+import { RunNowMenuItems, useStartRun } from '@/features/agents/RunNow'
 import { toast } from '@/features/notifications/toastStore'
 
 type Pending = null | 'freeze' | 'unfreeze' | 'disable' | 'enable' | 'promote' | 'demote'
@@ -18,14 +19,16 @@ const onError = (title: string) => (e: unknown) => {
 }
 
 /**
- * Per-player admin actions (§21.3 Players): open, deposit, issue a key, freeze / unfreeze (kill switch, optional key
- * revocation), disable / enable, promote a human to admin. Every one of them is audited server-side.
+ * Per-player admin actions (§21.3 Players): open, deposit, issue a key, run an active bot now (§20.9), freeze /
+ * unfreeze (kill switch, optional key revocation), disable / enable, promote a human to admin. Every one of them is
+ * audited server-side.
  */
 export function PlayerActions({ p, myHandle, onIssueKey }: { p: AdminPlayer; myHandle: string | null | undefined; onIssueKey: (handle: string) => void }) {
   const navigate = useNavigate()
   const update = useUpdatePlayer()
   const freeze = useFreezePlayer()
   const unfreeze = useUnfreezePlayer()
+  const runNow = useStartRun()
   const [pending, setPending] = useState<Pending>(null)
   const [reason, setReason] = useState('')
   const [revokeKeys, setRevokeKeys] = useState(false)
@@ -61,6 +64,10 @@ export function PlayerActions({ p, myHandle, onIssueKey }: { p: AdminPlayer; myH
     promote: { title: `Make @${handle} an admin?`, body: 'Admins can move money, create players and see the audit log. Their sessions are reset.', cta: 'Promote' },
     demote: { title: `Remove admin from @${handle}?`, body: 'They keep their account and trading access.', cta: 'Remove admin', danger: true },
   }
+  const requestRun = (dryRun: boolean) =>
+    runNow.start(handle, dryRun, () =>
+      toast({ tone: 'neutral', title: `${dryRun ? 'Dry run' : 'Run'} requested for @${handle}`, body: 'The trader picks it up within about a minute; follow it under Admin → Bots.' }),
+    )
   const busy = update.isPending || freeze.isPending || unfreeze.isPending
   return (
     <>
@@ -77,6 +84,7 @@ export function PlayerActions({ p, myHandle, onIssueKey }: { p: AdminPlayer; myH
             <MenuItem onClick={() => (close(), void navigate({ to: '/admin/players/$handle', params: { handle } }))}>Open details</MenuItem>
             <MenuItem onClick={() => (close(), void navigate({ to: '/admin/money', search: { handle } }))}>Deposit / withdraw…</MenuItem>
             {p.kind === 'AI' ? <MenuItem onClick={() => (close(), onIssueKey(handle))}>Issue API key…</MenuItem> : null}
+            {p.kind === 'AI' && p.status === 'ACTIVE' ? <RunNowMenuItems handle={handle} busy={runNow.pending} close={close} onStart={requestRun} /> : null}
             {p.status === 'FROZEN' ? (
               <MenuItem onClick={() => (close(), setPending('unfreeze'))}>Unfreeze</MenuItem>
             ) : (

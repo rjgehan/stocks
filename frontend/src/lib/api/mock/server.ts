@@ -199,7 +199,7 @@ export function durationMs(value: string | null | undefined): number {
 
 function defaultSettings(): Settings {
   return {
-    'league.defaultStartingCash': '500.00',
+    'league.defaultStartingCash': '500000.00',
     'league.allowSelfReset': false,
     'league.seasonStart': '2026-10-12',
     'league.eligibility.minFills': 5,
@@ -644,6 +644,7 @@ export class MockServer {
       me: () => this.mySummary(),
       isAdmin: () => this.s.me.role === 'ADMIN',
       feedDelayMs: () => this.feedDelayMs(),
+      botStatus: (h) => this.s.others.find((p) => p.handle === h)?.status,
     })
     registerManualBotRoutes(r, {
       me: () => ({ handle: this.s.me.handle, isAdmin: this.s.me.role === 'ADMIN', active: true }),
@@ -1251,7 +1252,7 @@ export class MockServer {
       return problem(422, 'WEAK_PASSWORD', 'Weak password', 'Use at least 10 characters.', null, [{ field: 'password', code: 'WEAK_PASSWORD', message: 'Use at least 10 characters.' }])
     }
     invite.uses += 1
-    // The previous identity becomes a regular league member; the new player gets a fresh $500 account.
+    // The previous identity becomes a regular league member; the new player gets a fresh account (the default cash).
     const prevU = this.unitValue()
     this.s.others.push({
       playerId: this.s.me.playerId,

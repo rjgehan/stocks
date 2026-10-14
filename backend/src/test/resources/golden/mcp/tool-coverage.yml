@@ -62,6 +62,7 @@ excluded:
   /api/v1/me/connected-apps: session only (the human's OAuth grants, §17.9.1)
   /api/v1/players/{handle}/agent-runs: runner telemetry for profiles (Phase 2, §20.6), not trading data
   /api/v1/me/api-calls: session only (Recent API calls in Settings, §17.10)
+  /api/v1/me/bots/{handle}/run-requests: session only (the owner's Run now button for a bot, §20.9)
   /api/v1/stream: Server-Sent Events for scripts (§19.3); MCP is request/response
   /api/v1/me/bots/{handle}/manual: session only (the owner's manual-bot console, §20.8)
   /api/v1/players/{handle}/manual-sessions: pasted AI replies, kept off MCP (§20.8); their orders are in get_player_orders and summaries in get_player_journal

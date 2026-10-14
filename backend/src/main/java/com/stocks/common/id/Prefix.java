@@ -28,6 +28,8 @@ public enum Prefix {
   JOURNAL_NOTE("jnl"),
   /** Manual-bot session (§20.8). */
   MANUAL_SESSION("mbs"),
+  /** §20.9: a "Run now" request for an AI player. */
+  AGENT_RUN_REQUEST("arq"),
   /** Server-generated {@code X-Request-Id} values (§6.6); never stored as a row id. */
   REQUEST("req");
 

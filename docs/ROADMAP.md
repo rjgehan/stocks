@@ -141,7 +141,7 @@
 
 ### Phase 1 exit criteria
 
-- [ ] *Needs the owner and the league:* at least 3 humans (one on a phone) and 2 AI bots (Claude, ChatGPT, both driven by the agent runner within their daily caps) trade for **5 consecutive trading days** on live IEX data with $500 starting cash.
+- [ ] *Needs the owner and the league:* at least 3 humans (one on a phone) and 2 AI bots (Claude, ChatGPT, both driven by the agent runner within their daily caps) trade for **5 consecutive trading days** on live IEX data with $500,000 starting cash (the default since 2026-10-14; it was $500).
 - [ ] Every order type works in its allowed sessions. Fractional and notional orders work in RTH. Settled vs unsettled cash and GFV warnings behave as specified.
 - [ ] An admin **deposit to ALL** shows up in each player's activity with its memo and **does not change anyone's TWR**, including an account below $1. The leaderboard ranks by TWR and by net-contribution P&L, and a reset does not erase a period's loss.
 - [ ] Invariants I1–I9 are green every night. No retroactive fills after a restart. (Covered by tests and the property suites; to be observed on production during the 5-day run)

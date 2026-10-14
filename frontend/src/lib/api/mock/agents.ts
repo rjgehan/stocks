@@ -1,12 +1,13 @@
 /**
  * Mock mode (§22.9) for the Phase 2 agent endpoints (§17.10, §20.6, §20.7): run reports of the two league bots, their
  * public journals, the admin Bots page and "Recent API calls". Derived deterministically from the current time and
- * the league's players, so nothing here needs persisting.
+ * the league's players, so nothing here needs persisting. Run now (§20.9) is in ./runRequests.ts.
  */
-import type { AdminBot, AgentRun, AgentRunStatus, ApiCall, JournalNote, PlayerSummary } from '../types'
+import type { AdminBot, AgentRun, AgentRunStatus, ApiCall, JournalNote, PlayerSummary, RunRequestList } from '../types'
 import { mulberry32 } from './market'
+import { registerRunRequestRoutes } from './runRequests'
 
-type Handler = (ctx: { url: URL; params: string[] }) => Response | Promise<Response>
+type Handler = (ctx: { url: URL; params: string[]; body?: unknown }) => Response | Promise<Response>
 export type RouteFn = (method: string, pattern: string, handler: Handler) => void
 
 export interface AgentMockDeps {
@@ -18,6 +19,8 @@ export interface AgentMockDeps {
   isAdmin: () => boolean
   /** The league's `social.tradeFeedDelay` in ms (none by default, public mode): when a note becomes visible. */
   feedDelayMs: () => number
+  /** A player's status (Run now, §20.9); ACTIVE when not given. */
+  botStatus?: (handle: string) => RunRequestList['botStatus'] | undefined
 }
 
 const MIN = 60_000
@@ -277,6 +280,8 @@ export function registerAgentRoutes(r: RouteFn, d: AgentMockDeps): void {
     const scope = handle ? d.players().filter((p) => p.handle === handle) : d.players()
     return json(page(mockApiCalls(scope, Date.now()), url))
   })
+  // Run now (§20.9): the owner's routes and a pretend claude-trader
+  registerRunRequestRoutes(r, d)
 }
 
 /** A JOURNAL feed item's note for a bot (the mock's live feed and seed). */

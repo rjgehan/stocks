@@ -12,6 +12,7 @@ import { IconRobot } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { AiChip, Avatar } from '@/features/league/PlayerBadge'
 import { RUN_STATUSES, formatTokens, formatUsd, runCounts, spendMeter, statusLabel, statusTone } from './agentView'
+import { RunNow } from './RunNow'
 
 const METER_TONE = { ok: 'bg-accent', warn: 'bg-warn', over: 'bg-down', none: 'bg-bg-3' } as const
 
@@ -154,6 +155,7 @@ function BotCard({ bot }: { bot: AdminBot }) {
           </p>
         </div>
       </div>
+      {p?.handle && bot.status === 'ACTIVE' ? <RunNow handle={p.handle} className="mt-3" /> : null}
       <div className="mt-3 space-y-3">
         <SpendMeterBar bot={bot} />
         {bot.lastRun ? <RunLine label="Last run" run={bot.lastRun} /> : <p className="text-caption text-text-3">No runs reported yet.</p>}
@@ -191,8 +193,8 @@ function RunRow({ r }: { r: AgentRun }) {
 }
 
 /**
- * Admin → Bots (§20.6, §21.3): one card per AI player (last run, last problem, today's spend against the cap, a
- * 14-day spend chart, the 7-day tool-call breakdown), then the reported runs with filters.
+ * Admin → Bots (§20.6, §21.3): one card per AI player (Run now, §20.9; last run, last problem, today's spend against
+ * the cap, a 14-day spend chart, the 7-day tool-call breakdown), then the reported runs with filters.
  */
 export function AdminBots() {
   const bots = useAdminBots()

@@ -10,7 +10,9 @@ AI player listed in agents.toml, each with its own stk_ key, strategy, schedule 
 MCP server directly with the agent's key and logs in with CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`). `serve` is
 the container's main loop. Each agent's state and logs live in $STOCKS_TRADER_HOME/agents/<handle>/. Before a
 check-in starts, GET /api/v1/me with the agent's key must answer with the agent's handle (else it waits, see
-check_player); a check-in that a shutdown cuts short (e.g. Watchtower's update) runs again after the restart.
+check_player); a check-in that a shutdown cuts short (e.g. Watchtower's update) runs again after the restart. Every
+minute each idle agent also claims a "Run now" request from the app (the owner's button, tick_requests) and reports
+how the check-in went.
 
 A check-in starts at 09:30, 12:45 and 15:50 ET on weekdays (per agent: `schedule_et`), plus any extra check-in Claude
 asked for at the end of a session (`EXTRA_RUN: YYYY-MM-DD HH:MM | reason`).
@@ -33,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import http.client
 import json
 import os
 import plistlib
@@ -64,6 +67,10 @@ SELFTEST_TIMEOUT_S = 3 * 60
 STOP_KILL_AFTER_S = 5     # SIGTERM to a claude session, then SIGKILL after this many seconds
 EXIT_STOPPED = 143        # a check-in cut short by SIGTERM/SIGINT (128 + SIGTERM); it is due again after a restart
 PROBE_TIMEOUT_S = 5       # server mode: GET /api/v1/me before a check-in starts
+REQUEST_TIMEOUT_S = 10    # server mode: claiming and reporting a "Run now" request
+REPORT_MAX_CHARS = 480    # a run request's report (the app keeps 500 characters)
+CLAIM_PATH = "/api/v1/agent-runs/requests/claim"
+NO_SLOT = "no free session slot"  # why a due check-in waits (Sessions.waiting); run requests leave it that slot
 MAX_TURNS = 60
 SELFTEST_MAX_TURNS = 5
 SUMMARIES_KEPT = 3
@@ -614,7 +621,8 @@ def check_player(cfg: Config, agent: Agent) -> tuple:
             return "wrong", (f"the app refuses @{agent.handle}'s key (HTTP {e.code}: revoked, or not a key of this "
                              "app); fix it in the agents file")
         return "down", f"the app answers {url} with HTTP {e.code}"
-    except (OSError, ValueError) as e:  # URLError, a timeout, a reset connection, a body that is not JSON
+    except (OSError, ValueError, http.client.HTTPException) as e:  # URLError, a timeout, a reset connection, a
+        # broken answer (IncompleteRead, BadStatusLine), a body that is not JSON
         return "down", f"the app does not answer {url} ({getattr(e, 'reason', None) or e})"
     handle = str(me.get("handle") or "").lower() if isinstance(me, dict) else ""
     if handle == agent.handle:
@@ -706,12 +714,15 @@ def prune_logs(logs: Path) -> None:
             pass
 
 
-def run_session(cfg: Config, agent: Agent, why: str, dry_run: bool = False) -> int:
-    """Runs one check-in; the caller holds the agent's lock."""
+def run_session(cfg: Config, agent: Agent, why: str, dry_run: bool = False, outcome: dict | None = None) -> int:
+    """Runs one check-in; the caller holds the agent's lock. `outcome`, when given, receives the session's turns,
+    its reply and its error (a run request's report to the app)."""
     h = agent.handle
     now = now_et()
+    info = {} if outcome is None else outcome
     exe = claude_bin(cfg)
     if not exe:
+        info["error"] = "claude (Claude Code) not found in the trader"
         log("claude (Claude Code) not found; install it and log in with your Claude account first", h)
         return 1
     s = load_state(agent)
@@ -735,9 +746,11 @@ def run_session(cfg: Config, agent: Agent, why: str, dry_run: bool = False) -> i
         if not isinstance(result, dict):
             raise ValueError("not an object")
     except ValueError:
+        info["error"] = f"claude failed (exit {code}): {(err or out).strip()[-300:]}"
         log(f"check-in failed (exit {code}): {(err or out).strip()[-500:]}", h)
         return 1
     text = str(result.get("result") or "")
+    info["turns"], info["reply"] = result.get("num_turns"), EXTRA_RE.sub("", text).strip()
     s = load_state(agent)
     refused = []
     if not dry_run:
@@ -761,7 +774,10 @@ def run_session(cfg: Config, agent: Agent, why: str, dry_run: bool = False) -> i
     if text.lstrip().startswith("Wrong player"):  # the prompt's answer when whoami shows another player
         where = "the key in the agents file" if cfg.server else "the claude.ai connector (Act as)"
         log(f"ERROR: whoami did not show @{h}: {where} belongs to another player; run selftest --agent {h}", h)
+        info["error"] = text.strip().splitlines()[0][:200]
         return 1
+    if result.get("is_error"):
+        info["error"] = f"{result.get('subtype')}: {text.strip()[:300]}"
     return 0 if not result.get("is_error") else 1
 
 
@@ -823,7 +839,8 @@ class Sessions:
         self.threads = {}   # handle -> Thread
         self.failed = 0
         self.waiting = {}   # handle -> {key: why it could not start} of check-ins that were due but did not start
-        self.problems = {}  # handle -> the agent's problem last logged
+        self.problems = {}  # (handle, topic) -> the agent's problem last logged
+        self.reports = []   # [(agent, request id, status, message)] run request reports the app did not take yet
 
     def busy(self, handle: str) -> bool:
         with self.mu:
@@ -836,16 +853,31 @@ class Sessions:
     def full(self) -> bool:
         return self.running() >= self.limit
 
-    def report(self, handle: str, problem: str | None) -> None:
-        """Logs an agent's problem once, and again only when it changes; None: the agent is fine (again)."""
+    def slot_waiters(self, handles: list) -> int:
+        """How many of `handles` have a due check-in waiting for a free session slot: the next free slots are theirs."""
+        return sum(1 for h in handles if any(v.startswith(NO_SLOT) for v in self.waiting.get(h, {}).values()))
+
+    def report(self, handle: str, problem: str | None, topic: str = "") -> None:
+        """Logs an agent's problem once, and again only when it changes; None: the agent is fine (again). Problems
+        of another `topic` (the run requests') come and go on their own."""
+        key = (handle, topic)
         with self.mu:
-            if self.problems.get(handle) == problem:
+            if self.problems.get(key) == problem:
                 return
             if problem is None:
-                del self.problems[handle]
+                del self.problems[key]
                 return
-            self.problems[handle] = problem
+            self.problems[key] = problem
         log(problem, handle)
+
+    def report_later(self, item: tuple) -> None:
+        with self.mu:
+            self.reports.append(item)
+
+    def take_reports(self) -> list:
+        with self.mu:
+            out, self.reports = self.reports, []
+        return out
 
     def start(self, handle: str, fn) -> None:
         def body():
@@ -918,7 +950,7 @@ def tick_agent(cfg: Config, agent: Agent, sessions: Sessions, now: datetime) -> 
         if due and sessions.full():
             if keys - set(waited):
                 log(f"due, waiting for a free session slot ({sessions.running()} of {sessions.limit} running)", h)
-            waited.update({k: f"no free session slot, STOCKS_TRADER_MAX_PARALLEL={sessions.limit}" for k in keys})
+            waited.update({k: f"{NO_SLOT}, STOCKS_TRADER_MAX_PARALLEL={sessions.limit}" for k in keys})
         elif due:
             verdict, why_not = check_player(cfg, agent) if cfg.server else ("ok", "")
             if verdict == "down":
@@ -954,6 +986,186 @@ def tick_agent(cfg: Config, agent: Agent, sessions: Sessions, now: datetime) -> 
         if not started:
             lock.close()
     return problem
+
+
+# ------------------------------------------------------------------------------------------------ run requests
+
+def api_url(cfg: Config, path: str) -> str:
+    """The app's URL for `path`: the scheme and host of STOCKS_TRADER_MCP_URL (http://app:8080 in compose)."""
+    u = urllib.parse.urlsplit(cfg.mcp_url)
+    return urllib.parse.urlunsplit((u.scheme, u.netloc, path, "", ""))
+
+
+def api_post(cfg: Config, agent: Agent, path: str, body: dict | None = None) -> tuple:
+    """POSTs `body` as JSON with the agent's key: (HTTP status, the JSON answer or None). Network trouble raises
+    OSError (URLError, a timeout, a reset connection, and a broken answer such as IncompleteRead or BadStatusLine,
+    which http.client raises as its own HTTPException)."""
+    req = urllib.request.Request(api_url(cfg, path), data=json.dumps(body or {}).encode(), method="POST",
+                                 headers={"Authorization": f"Bearer {agent.key}", "Content-Type": "application/json",
+                                          "Accept": "application/json", "X-Stocks-Client": CLIENT_HEADER})
+    try:
+        try:
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as r:
+                status, raw = r.status, r.read()
+        except urllib.error.HTTPError as e:
+            status, raw = e.code, e.read()
+    except http.client.HTTPException as e:
+        raise OSError(f"a broken answer: {type(e).__name__}") from e
+    try:
+        answer = json.loads(raw.decode("utf-8", "replace")) if raw else None
+    except ValueError:
+        answer = None
+    return status, answer
+
+
+def http_problem(status: int, answer) -> str:
+    """"HTTP 409 RUN_REQUEST_CONFLICT: <detail>" from the app's problem body, or "HTTP <status>"."""
+    if isinstance(answer, dict) and answer.get("code"):
+        detail = str(answer.get("detail") or "")[:200]
+        return f"HTTP {status} {answer['code']}" + (f": {detail}" if detail else "")
+    return f"HTTP {status}"
+
+
+def claim_request(cfg: Config, agent: Agent) -> tuple:
+    """POST /api/v1/agent-runs/requests/claim with the agent's key: ("claimed", the request), ("none", "") or
+    ("problem", a log line) when the app does not answer, refuses the key or has no such endpoint."""
+    try:
+        status, answer = api_post(cfg, agent, CLAIM_PATH)
+    except OSError as e:
+        return "problem", (f"cannot ask the app for run requests: {api_url(cfg, CLAIM_PATH)} does not answer "
+                           f"({getattr(e, 'reason', None) or e}); asking again every minute")
+    if status == 204:
+        return "none", ""
+    if status == 200 and isinstance(answer, dict) and answer.get("id"):
+        return "claimed", answer
+    if status in (401, 403):
+        return "problem", (f"ERROR: the app refuses @{agent.handle}'s key for run requests "
+                           f"({http_problem(status, answer)}); Run now does not work for this agent until the key "
+                           "in the agents file is fixed")
+    return "problem", f"cannot ask the app for run requests: {http_problem(status, answer)}; asking again every minute"
+
+
+def finish_request(cfg: Config, agent: Agent, request_id: str, status: str, message: str) -> tuple:
+    """POST .../requests/{id}/finish: ("ok", ""), ("retry", why) on network trouble or an answer that may change
+    (5xx, a refused key), or ("drop", why) when the app will never take it (gone, expired or finished already)."""
+    path = f"/api/v1/agent-runs/requests/{urllib.parse.quote(request_id, safe='')}/finish"
+    try:
+        code, answer = api_post(cfg, agent, path, {"status": status, "message": redact(message)[:REPORT_MAX_CHARS]})
+    except OSError as e:
+        return "retry", f"the app does not answer ({getattr(e, 'reason', None) or e})"
+    if code == 200:
+        return "ok", ""
+    if code in (400, 404, 409):
+        return "drop", http_problem(code, answer)
+    return "retry", http_problem(code, answer)
+
+
+def report_request(cfg: Config, sessions: Sessions, agent: Agent, request_id: str, status: str, message: str) -> None:
+    """Tells the app how a claimed request went; a report the app cannot take now goes again next minute. Never
+    raises, so neither a session's end nor the other queued reports lose theirs."""
+    try:
+        verdict, why = finish_request(cfg, agent, request_id, status, message)
+    except Exception as e:  # a bug or an answer nobody expected: keep the report for the next minute
+        verdict, why = "retry", f"{type(e).__name__}: {e}"
+    if verdict == "ok":
+        sessions.report(agent.handle, None, "report")
+        log(f"reported run request {request_id} to the app: {status}", agent.handle)
+    elif verdict == "drop":
+        log(f"the app did not take the report of run request {request_id} ({why}); dropped it", agent.handle)
+    else:
+        sessions.report_later((agent, request_id, status, message))
+        sessions.report(agent.handle, f"cannot report run request {request_id} to the app ({why}); trying again "
+                                      "every minute", "report")
+
+
+def took(seconds: float) -> str:
+    s = max(0, int(round(seconds)))
+    return f"{s // 60} min {s % 60} s" if s >= 60 else f"{s} s"
+
+
+def request_report(code: int, outcome: dict, seconds: float, dry_run: bool) -> tuple:
+    """(status, message) of a run request's check-in for the app: DONE with the duration, turns and the start of
+    Claude's reply, or FAILED with the error."""
+    if code == 0:
+        turns = outcome.get("turns")
+        head = (f"Check-in done in {took(seconds)}" + (f", {turns} turns" if turns is not None else "")
+                + (", dry run" if dry_run else "") + ".")
+        reply = " ".join(str(outcome.get("reply") or "").split())
+        return "DONE", head + (f" {reply}" if reply else "")
+    if code == EXIT_STOPPED:
+        return "FAILED", (f"Stopped after {took(seconds)}: the trader shut down (e.g. for an update). Request the run "
+                          "again.")
+    error = " ".join(str(outcome.get("error") or f"exit code {code}").split())
+    return "FAILED", f"Check-in failed after {took(seconds)}: {error}"
+
+
+def tick_requests(cfg: Config, agents: list, sessions: Sessions) -> None:
+    """Server mode, after tick_agents (check-ins that are due come first): reports the app did not take yet go again,
+    then each enabled agent that is idle, with no check-in waiting to start, claims its oldest "Run now" request from
+    the app while session slots are free, and runs it at once: the agent's normal check-in (any day; the prompt
+    handles weekends). A slot is free for a request only after every due check-in waiting for a slot has one (a
+    session that ended since tick_agents leaves its slot to them for the next minute). A disabled agent claims
+    nothing; the app expires its requests after 30 minutes."""
+    if not cfg.server or STOP.is_set():
+        return
+    flush_reports(cfg, sessions)
+    enabled = [a.handle for a in agents if a.enabled]
+    for agent in agents:
+        if sessions.running() + sessions.slot_waiters(enabled) >= sessions.limit:
+            return
+        if not agent.enabled or sessions.busy(agent.handle) or sessions.waiting.get(agent.handle):
+            continue
+        try:
+            problem = tick_request(cfg, agent, sessions)
+        except Exception as e:
+            problem = f"ERROR: run requests: {type(e).__name__}: {e}"
+        sessions.report(agent.handle, problem, "requests")
+
+
+def flush_reports(cfg: Config, sessions: Sessions) -> None:
+    for agent, request_id, status, message in sessions.take_reports():
+        report_request(cfg, sessions, agent, request_id, status, message)
+
+
+def tick_request(cfg: Config, agent: Agent, sessions: Sessions) -> str | None:
+    """tick_requests for one agent; returns its problem (a log line), if it has one."""
+    h = agent.handle
+    lock = acquire_lock(agent)
+    if lock is None:
+        return None  # a check-in of this agent runs in another process; the request waits for the next minute
+    started = False
+    try:
+        verdict, got = claim_request(cfg, agent)
+        if verdict != "claimed":
+            return got or None
+        rid, by, dry = str(got["id"]), str(got.get("requestedBy") or "?"), bool(got.get("dryRun"))
+        owner = str(got.get("handle") or "?").lower()
+        if owner != h:  # the claim answers the key's own player: this agent has another player's key
+            why = f"the key in the agents file for @{h} belongs to @{owner}"
+            report_request(cfg, sessions, agent, rid, "FAILED", f"Not run: {why}; fix the trader's agents file.")
+            return f"ERROR: {why}: it claimed @{owner}'s run request {rid} and reported it FAILED; fix the key"
+        why = f"a check-in requested from the app by @{by}"
+        log(f"claimed run request {rid} from @{by}{' (dry run)' if dry else ''}", h)
+
+        def go(agent=agent, lock=lock):
+            outcome, start, code = {}, time.monotonic(), 1
+            try:
+                code = run_session(cfg, agent, why, dry, outcome)
+                return code
+            except Exception as e:
+                outcome["error"] = f"the trader crashed: {type(e).__name__}"
+                raise
+            finally:
+                lock.close()
+                status, message = request_report(code, outcome, time.monotonic() - start, dry)
+                report_request(cfg, sessions, agent, rid, status, message)
+
+        sessions.start(h, go)
+        started = True
+        return None
+    finally:
+        if not started:
+            lock.close()
 
 
 class AgentsWatch:
@@ -1010,7 +1222,10 @@ def tick(cfg: Config) -> int:
     install_signal_handlers()
     sessions = Sessions(cfg.max_parallel)
     tick_agents(cfg, agents.agents, sessions, now_et())
+    tick_requests(cfg, agents.agents, sessions)
     sessions.wait()
+    if cfg.server:
+        flush_reports(cfg, sessions)
     return 1 if sessions.failed else 0
 
 
@@ -1072,7 +1287,9 @@ def serve(cfg: Config) -> int:
     watch = AgentsWatch()
     while not STOP.is_set():
         try:
-            tick_agents(cfg, watch.agents(cfg), sessions, now_et())
+            agents = watch.agents(cfg)
+            tick_agents(cfg, agents, sessions, now_et())
+            tick_requests(cfg, agents, sessions)
         except Exception as e:  # keep serving; the next minute may work
             log(f"ERROR: tick failed: {type(e).__name__}: {e}")
         STOP.wait(60.5 - time.time() % 60)  # just after the next minute starts
@@ -1080,6 +1297,8 @@ def serve(cfg: Config) -> int:
     if n:
         log(f"stopping: ending {n} running check-in(s)")
     sessions.wait(timeout=STOP_KILL_AFTER_S + 10)
+    if cfg.server:
+        flush_reports(cfg, sessions)  # once more: a run request cut short by the shutdown is reported FAILED
     log("stopped")
     return 0
 

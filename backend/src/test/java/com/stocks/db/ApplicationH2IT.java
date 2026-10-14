@@ -102,7 +102,7 @@ class ApplicationH2IT extends SchemaContract {
     assertThat(properties.publicUrl()).isEqualTo("http://localhost:5173");
     assertThat(properties.jobs().enabled()).isFalse();             // test profile
     assertThat(properties.singleInstance().enabled()).isFalse();   // test profile
-    assertThat(properties.bootstrap().defaultStartingCash()).isEqualByComparingTo("500.00");
+    assertThat(properties.bootstrap().defaultStartingCash()).isEqualByComparingTo("500.00");   // test profile pin
     assertThat(properties.bootstrap().seedDemo()).isFalse();
     assertThat(properties.security().loginMaxFailures()).isEqualTo(10);
     assertThat(properties.security().loginLockout()).isEqualTo(Duration.ofMinutes(15));

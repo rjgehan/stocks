@@ -474,7 +474,7 @@ class McpToolsTest {
   @Test
   void rulesNeedOnlyMarketRead() {
     JsonNode rules = McpToolHarness.ok(h.call("get_rules", h.keyWith(Scopes.MARKET_READ), Map.of()));
-    assertThat(rules.get("account").get("startingCash").asString()).isEqualTo("500.00");
+    assertThat(rules.get("account").get("startingCash").asString()).isEqualTo("500000.00");   // the default
     assertThat(rules.get("version").asString()).startsWith("1.");
   }
 

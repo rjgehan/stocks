@@ -55,7 +55,7 @@ stocks:
   bootstrap:
     admin-handle: ${ADMIN_BOOTSTRAP_USERNAME:}
     admin-password: ${ADMIN_BOOTSTRAP_PASSWORD:}
-    default-starting-cash: ${STARTING_CASH_DEFAULT:500.00}   # seeds app_setting once; admin UI wins afterwards
+    default-starting-cash: ${STARTING_CASH_DEFAULT:500000.00}   # seeds app_setting once; admin UI wins afterwards
     seed-demo: false
   security:
     api-key-pepper: ${API_KEY_PEPPER:}
@@ -189,10 +189,11 @@ stocks:
     max-attempts: 3
     max-devices-per-player: 10
   # ---- Phase 2, WS5 (every key optional: these are the code defaults; production's .env needs nothing new) ----
-  agents:                                   # §20.6 run reports, §20.7 the public AI journal
+  agents:                                   # §20.6 run reports, §20.7 the public AI journal, §20.9 Run now
     max-report-bytes: 32768
     max-reports-per-day: 100                # new runs per bot in any 24 h (a repeated runRef is free)
     journal: { max-chars: 500, max-per-window: 3, window: 10m, max-per-day: 12, max-symbols: 5 }
+    run-requests: { max-per-day: 20, pending-ttl: 30m, claim-ttl: 30m }
   manual-bots:                              # §20.8 the manual console (copy & paste bots); code defaults
     max-instructions-chars: 4000
     max-reply-chars: 20000

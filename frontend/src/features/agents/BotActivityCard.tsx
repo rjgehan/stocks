@@ -1,19 +1,26 @@
 import { useAgentRunSummary } from '@/lib/api/hooks/agents'
+import { useMe } from '@/lib/api/hooks/identity'
+import { usePlayerProfile } from '@/lib/api/hooks/league'
 import { formatDateTimeEt } from '@/lib/format/time'
 import { Pill } from '@/components/ui/Pill'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { IconActivity } from '@/components/ui/icons'
 import { runSummaryLine, statusLabel, statusTone } from './agentView'
+import { RunNow } from './RunNow'
+import { canRunBot } from './runNowView'
 
 const runs = (n: number) => `${n} run${n === 1 ? '' : 's'}`
 
 /**
  * A bot's public "Bot activity" card (§20.6): runs in the last 7 days and in total, the last run's time and status.
- * No cost and no error message (those stay with the admin, Admin → Bots).
+ * No cost and no error message (those stay with the admin, Admin → Bots). The bot's owner and the admin also get
+ * Run now (§20.9); the profile query is the page's own, so it costs no request.
  */
 export function BotActivityCard({ handle }: { handle: string }) {
   const q = useAgentRunSummary(handle)
   const s = q.data
+  const { data: me } = useMe()
+  const owner = usePlayerProfile(handle).data?.ownerHandle
   return (
     <section aria-label="Bot activity" className="rounded-lg border border-divider bg-bg-1 p-4">
       <h2 className="flex items-center gap-2 text-section font-semibold">
@@ -51,6 +58,7 @@ export function BotActivityCard({ handle }: { handle: string }) {
           </div>
         </>
       )}
+      {canRunBot(me, owner) ? <RunNow handle={handle} className="mt-3 border-t border-divider pt-3" /> : null}
     </section>
   )
 }

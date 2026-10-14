@@ -15,6 +15,8 @@ spring:
   datasource.hikari.max-lifetime: 0
 
 stocks:
+  # The suites (and `make e2e`) are calibrated to a $500 account; the league default is 500000.00 since V11.
+  bootstrap.default-starting-cash: 500.00
   jobs.enabled: false                       # tests run jobs explicitly through JobScheduler.runNow
   single-instance.enabled: false            # only the Recovery IT enables it
   security:
