@@ -53,6 +53,10 @@
       "name": "account"
     },
     {
+      "description": "The manual console: drive an AI bot by copy and paste (§20.8)",
+      "name": "manual bots"
+    },
+    {
       "description": "The caller's price alerts",
       "name": "alerts"
     },
@@ -4430,6 +4434,260 @@
         ]
       }
     },
+    "/api/v1/me/bots/{handle}/manual": {
+      "get": {
+        "description": "The owner (or the admin) only: instructions, the bot's status, active API keys and connectors, prompts made today and the console limits. Works for frozen bots (writes do not).",
+        "operationId": "getManualBot",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualBot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A bot's manual console",
+        "tags": [
+          "manual bots"
+        ]
+      },
+      "put": {
+        "description": "null = unchanged. instructions 0-4000 characters (\"\" clears them; key-like strings are removed); public, part of every prompt. aiModel 1-24 characters, shown on the profile.",
+        "operationId": "updateManualBot",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateManualBotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualBot"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Save a bot's instructions or model label",
+        "tags": [
+          "manual bots"
+        ]
+      }
+    },
+    "/api/v1/me/bots/{handle}/manual-sessions": {
+      "post": {
+        "description": "Builds the prompt for the bot from its live account, the market and the owner's instructions (detail shape). At most 50 prompts per bot per ET day (RATE_LIMITED with retryAfterS).",
+        "operationId": "createManualSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualSession"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Make a prompt",
+        "tags": [
+          "manual bots"
+        ]
+      }
+    },
+    "/api/v1/me/bots/{handle}/manual-sessions/{sessionId}/execute": {
+      "post": {
+        "description": "Places the ticked rows as the bot: cancels, then sells, then buys; posts the summary to the journal once. Idempotent: rows already placed are skipped and a retried row replays its order. An empty list only posts the summary.",
+        "operationId": "executeManualSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualSession"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Place the ticked rows",
+        "tags": [
+          "manual bots"
+        ]
+      }
+    },
+    "/api/v1/me/bots/{handle}/manual-sessions/{sessionId}/reply": {
+      "post": {
+        "description": "Parses the AI's reply (stocks.manual.v1) and previews every row live. Can be repeated until the first execute. At most 20,000 characters.",
+        "operationId": "checkManualReply",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualReplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualSession"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Check a pasted reply",
+        "tags": [
+          "manual bots"
+        ]
+      }
+    },
     "/api/v1/me/connected-apps": {
       "get": {
         "description": "Session only. The live OAuth grants you approved (claude.ai, ChatGPT, Claude Code, ...), newest first, with the player each acts as and its scopes.",
@@ -5898,6 +6156,117 @@
         "summary": "A player's public journal",
         "tags": [
           "agents"
+        ]
+      }
+    },
+    "/api/v1/players/{handle}/manual-sessions": {
+      "get": {
+        "description": "Newest first, list shape (untrusted.prompt and untrusted.reply are null): status, summary, rows and their results. PLAYER_NOT_FOUND for an unknown or disabled player.",
+        "operationId": "getPlayerManualSessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Opaque cursor from a previous page",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1-50, default 10",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageManualSession"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "A bot's manual sessions",
+        "tags": [
+          "league"
+        ]
+      }
+    },
+    "/api/v1/players/{handle}/manual-sessions/{sessionId}": {
+      "get": {
+        "description": "Detail shape: the prompt and the pasted reply (redacted) inside untrusted. NOT_FOUND when the session is not this player's.",
+        "operationId": "getPlayerManualSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "handle",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualSession"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "One manual session",
+        "tags": [
+          "league"
         ]
       }
     },
@@ -11842,6 +12211,614 @@
           "password"
         ]
       },
+      "ManualAction": {
+        "type": "object",
+        "properties": {
+          "acknowledge": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "action": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "BUY",
+              "SELL",
+              "CANCEL",
+              null
+            ]
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Estimate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "executable": {
+            "type": "boolean"
+          },
+          "extendedHours": {
+            "type": "boolean"
+          },
+          "index": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "issues": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ManualIssue"
+            }
+          },
+          "limitPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "notional": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "orderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qty": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManualActionResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stopPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeInForce": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "DAY",
+              "GTC",
+              null
+            ]
+          },
+          "trailAmount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "trailPercent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "MARKET",
+              "LIMIT",
+              "STOP",
+              "STOP_LIMIT",
+              "TRAILING_STOP",
+              null
+            ]
+          }
+        },
+        "required": [
+          "acknowledge",
+          "action",
+          "estimate",
+          "executable",
+          "extendedHours",
+          "index",
+          "issues",
+          "limitPrice",
+          "line",
+          "notional",
+          "orderId",
+          "qty",
+          "rationale",
+          "result",
+          "stopPrice",
+          "symbol",
+          "timeInForce",
+          "trailAmount",
+          "trailPercent",
+          "type"
+        ]
+      },
+      "ManualActionResult": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orderStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PENDING",
+              "WORKING",
+              "PARTIALLY_FILLED",
+              "FILLED",
+              "CANCELLED",
+              "EXPIRED",
+              "REPLACED",
+              "REJECTED",
+              "PENDING_CANCEL",
+              null
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PLACED",
+              "REPLAYED",
+              "CANCELLED",
+              "CANCEL_REQUESTED",
+              "FAILED",
+              null
+            ]
+          }
+        },
+        "required": [
+          "at",
+          "code",
+          "message",
+          "orderId",
+          "orderStatus",
+          "status"
+        ]
+      },
+      "ManualBot": {
+        "type": "object",
+        "properties": {
+          "activeApiKeys": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "activeConnectors": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlayerSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instructions": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instructionsUpdatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "instructionsUpdatedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManualLimits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessionsPerDay": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sessionsToday": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ACTIVE",
+              "DISABLED",
+              "FROZEN",
+              null
+            ]
+          }
+        },
+        "required": [
+          "activeApiKeys",
+          "activeConnectors",
+          "bot",
+          "instructions",
+          "instructionsUpdatedAt",
+          "instructionsUpdatedBy",
+          "limits",
+          "ownerHandle",
+          "sessionsPerDay",
+          "sessionsToday",
+          "status"
+        ]
+      },
+      "ManualExecuteRequest": {
+        "type": "object",
+        "properties": {
+          "actions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        },
+        "required": [
+          "actions"
+        ]
+      },
+      "ManualIssue": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "column": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "ERROR",
+              "WARNING",
+              null
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "column",
+          "field",
+          "hint",
+          "line",
+          "message",
+          "severity"
+        ]
+      },
+      "ManualLimits": {
+        "type": "object",
+        "properties": {
+          "expireAfter": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maxInstructionsChars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxOrders": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxReplyChars": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "expireAfter",
+          "maxInstructionsChars",
+          "maxOrders",
+          "maxReplyChars"
+        ]
+      },
+      "ManualReplyRequest": {
+        "type": "object",
+        "properties": {
+          "reply": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "reply"
+        ]
+      },
+      "ManualSession": {
+        "type": "object",
+        "properties": {
+          "actions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ManualAction"
+            }
+          },
+          "aiModel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "botHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "executedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "issues": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ManualIssue"
+            }
+          },
+          "journalNoteId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "marketSession": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CLOSED",
+              "PRE",
+              "REGULAR",
+              "POST",
+              null
+            ]
+          },
+          "operatorHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "promptChars": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "promptSha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repliedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "replyChars": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "PROMPTED",
+              "REPLIED",
+              "EXECUTED",
+              null
+            ]
+          },
+          "untrusted": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UntrustedManualText"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "actions",
+          "aiModel",
+          "botHandle",
+          "createdAt",
+          "executedAt",
+          "issues",
+          "journalNoteId",
+          "marketSession",
+          "operatorHandle",
+          "promptChars",
+          "promptSha256",
+          "repliedAt",
+          "replyChars",
+          "sessionId",
+          "status",
+          "untrusted"
+        ]
+      },
       "MarkNotificationsReadRequest": {
         "type": "object",
         "properties": {
@@ -13395,6 +14372,30 @@
             ],
             "items": {
               "$ref": "#/components/schemas/JournalNote"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "PageManualSession": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ManualSession"
             }
           },
           "nextCursor": {
@@ -18960,6 +19961,34 @@
           "text"
         ]
       },
+      "UntrustedManualText": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reply": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "prompt",
+          "reply",
+          "summary"
+        ]
+      },
       "UntrustedNews": {
         "type": "object",
         "properties": {
@@ -19042,6 +20071,25 @@
           "condition",
           "threshold"
         ]
+      },
+      "UpdateManualBotRequest": {
+        "type": "object",
+        "properties": {
+          "aiModel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The bot's model label, 1-24 characters (e.g. Gemini 3)"
+          },
+          "instructions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "0-4000 characters; public (part of every prompt). Key-like strings are removed."
+          }
+        }
       },
       "UpdateMeRequest": {
         "type": "object",
