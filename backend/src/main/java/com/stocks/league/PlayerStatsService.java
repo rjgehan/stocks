@@ -126,8 +126,8 @@ public class PlayerStatsService implements LeagueStatsQueries {
     LeagueEntry.Extras x = e.extras();
     Instant start = x.curve().isEmpty() ? pb.periodStart() : x.curve().get(0).t();
 
-    // another player's trade statistics are as of the feed delay (§16.7 item 3): a profile never shows a sell, its
-    // realized P&L or its hold time before the feed does; the player's own are live
+    // another player's trade statistics are as of the feed delay, if any (§16.7; none by default): a profile never
+    // shows a sell, its realized P&L or its hold time before the feed does; the player's own are live
     Instant tradesAsOf = self ? board.asOf() : board.asOf().minus(settings.tradeFeedDelay());
     // closed lots of every run of the player closed in (a, tradesAsOf]
     List<Long> runIds = accounts.runsOfPlayer(p.id()).stream().map(AccountRow::id).toList();

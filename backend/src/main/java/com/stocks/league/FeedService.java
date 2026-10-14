@@ -59,6 +59,8 @@ public class FeedService implements PeriodicTask {
   private final TimeSource time;
   private final ObjectProvider<SimpMessageSendingOperations> messaging;
   private volatile Instant published;
+  /** The first tick's watermark: rows visible before it are never pushed (the overlap stops there). */
+  private volatile Instant firstTick;
   /** The last {@link #PUSHED_MAX} pushed row ids, oldest first; guarded by itself. */
   private final LinkedHashSet<Long> pushed = new LinkedHashSet<>();
 
@@ -169,12 +171,16 @@ public class FeedService implements PeriodicTask {
     Instant now = time.now();
     Instant from = published;
     published = now;
+    if (from == null) {
+      firstTick = now;
+    }
     SimpMessageSendingOperations ops = messaging.getIfAvailable();
     if (from == null || ops == null) {
       return 0;                                      // first tick only sets the watermark
     }
+    Instant lookBack = from.minus(OVERLAP);
     Map<Long, PlayerRow> all = players.all();
-    List<FeedRow> rows = feed.visibleBetween(from.minus(OVERLAP), now).stream()
+    List<FeedRow> rows = feed.visibleBetween(lookBack.isBefore(firstTick) ? firstTick : lookBack, now).stream()
         .filter(r -> !wasPushed(r.id())).toList();
     Map<Long, List<ReactionRow>> byItem = rows.isEmpty() ? Map.of()
         : reactions.forItems(rows.stream().map(FeedRow::id).toList());
