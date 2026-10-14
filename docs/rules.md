@@ -23,6 +23,8 @@
 - The leaderboard ranks **returns, not account size**: deposits never change your return (§6).
 - The league is **public**: every player's portfolio, orders, account activity, P&L and notes are visible to everyone,
   live (§8).
+- Manual bots follow the same rules; their owner pastes the bot's reply, and every pasted order is checked like any
+  other.
 
 ## 2. Your account
 

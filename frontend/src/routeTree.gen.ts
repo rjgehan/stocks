@@ -38,6 +38,7 @@ import { Route as AppAdminInvitesRouteImport } from './routes/_app/admin/invites
 import { Route as AppAdminMoneyRouteImport } from './routes/_app/admin/money'
 import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin/settings'
 import { Route as AppAdminSystemRouteImport } from './routes/_app/admin/system'
+import { Route as AppBotsHandleRouteImport } from './routes/_app/bots.$handle'
 import { Route as AppPlayersHandleRouteImport } from './routes/_app/players.$handle'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppSettingsAccountRouteImport } from './routes/_app/settings/account'
@@ -202,6 +203,11 @@ const AppAdminSystemRoute = AppAdminSystemRouteImport.update({
   path: '/system',
   getParentRoute: () => AppAdminRouteRoute,
 } as any)
+const AppBotsHandleRoute = AppBotsHandleRouteImport.update({
+  id: '/bots/$handle',
+  path: '/bots/$handle',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPlayersHandleRoute = AppPlayersHandleRouteImport.update({
   id: '/players/$handle',
   path: '/players/$handle',
@@ -324,6 +330,7 @@ export interface FileRoutesByFullPath {
   '/admin/money': typeof AppAdminMoneyRoute
   '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/system': typeof AppAdminSystemRoute
+  '/bots/$handle': typeof AppBotsHandleRoute
   '/players/$handle': typeof AppPlayersHandleRouteWithChildren
   '/settings/account': typeof AppSettingsAccountRoute
   '/settings/api-calls': typeof AppSettingsApiCallsRoute
@@ -369,6 +376,7 @@ export interface FileRoutesByTo {
   '/admin/money': typeof AppAdminMoneyRoute
   '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/system': typeof AppAdminSystemRoute
+  '/bots/$handle': typeof AppBotsHandleRoute
   '/settings/account': typeof AppSettingsAccountRoute
   '/settings/api-calls': typeof AppSettingsApiCallsRoute
   '/settings/api-keys': typeof AppSettingsApiKeysRoute
@@ -418,6 +426,7 @@ export interface FileRoutesById {
   '/_app/admin/money': typeof AppAdminMoneyRoute
   '/_app/admin/settings': typeof AppAdminSettingsRoute
   '/_app/admin/system': typeof AppAdminSystemRoute
+  '/_app/bots/$handle': typeof AppBotsHandleRoute
   '/_app/players/$handle': typeof AppPlayersHandleRouteWithChildren
   '/_app/settings/account': typeof AppSettingsAccountRoute
   '/_app/settings/api-calls': typeof AppSettingsApiCallsRoute
@@ -468,6 +477,7 @@ export interface FileRouteTypes {
     | '/admin/money'
     | '/admin/settings'
     | '/admin/system'
+    | '/bots/$handle'
     | '/players/$handle'
     | '/settings/account'
     | '/settings/api-calls'
@@ -513,6 +523,7 @@ export interface FileRouteTypes {
     | '/admin/money'
     | '/admin/settings'
     | '/admin/system'
+    | '/bots/$handle'
     | '/settings/account'
     | '/settings/api-calls'
     | '/settings/api-keys'
@@ -561,6 +572,7 @@ export interface FileRouteTypes {
     | '/_app/admin/money'
     | '/_app/admin/settings'
     | '/_app/admin/system'
+    | '/_app/bots/$handle'
     | '/_app/players/$handle'
     | '/_app/settings/account'
     | '/_app/settings/api-calls'
@@ -796,6 +808,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/system'
       preLoaderRoute: typeof AppAdminSystemRouteImport
       parentRoute: typeof AppAdminRouteRoute
+    }
+    '/_app/bots/$handle': {
+      id: '/_app/bots/$handle'
+      path: '/bots/$handle'
+      fullPath: '/bots/$handle'
+      preLoaderRoute: typeof AppBotsHandleRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/players/$handle': {
       id: '/_app/players/$handle'
@@ -1033,6 +1052,7 @@ interface AppRouteChildren {
   AppSearchRoute: typeof AppSearchRoute
   AppWatchlistRoute: typeof AppWatchlistRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppBotsHandleRoute: typeof AppBotsHandleRoute
   AppPlayersHandleRoute: typeof AppPlayersHandleRouteWithChildren
   AppStockSymbolRoute: typeof AppStockSymbolRoute
 }
@@ -1048,6 +1068,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSearchRoute: AppSearchRoute,
   AppWatchlistRoute: AppWatchlistRoute,
   AppIndexRoute: AppIndexRoute,
+  AppBotsHandleRoute: AppBotsHandleRoute,
   AppPlayersHandleRoute: AppPlayersHandleRouteWithChildren,
   AppStockSymbolRoute: AppStockSymbolRoute,
 }

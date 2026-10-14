@@ -3,6 +3,7 @@ package com.stocks.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 import com.jayway.jsonpath.JsonPath;
 import com.stocks.common.time.MutableTimeSource;
@@ -15,6 +16,7 @@ import com.stocks.testkit.Fixtures;
 import com.stocks.testkit.WebSession;
 import jakarta.servlet.http.Cookie;
 import java.time.Duration;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -431,6 +433,21 @@ class SecurityChainsIT {
     assertThat(code(bearer(post("/api/v1/auth/logout"), key))).isEqualTo("FORBIDDEN");
     WebSession s = WebSession.login(mvc, human.handle(), Fixtures.PASSWORD);
     assertThat(s.perform(get("/api/v1/me/__probe")).getResponse().getStatus()).isEqualTo(200);
+
+    // §20.8 the manual console of a bot (/me/bots/{h}/manual and /manual-sessions/**) is session-only as well
+    Fixtures.PlayerRef bot = fx.ai(handle("sessionbot"), human);
+    String botKey = fx.apiKey(bot, pepper);
+    String console = "/api/v1/me/bots/" + bot.handle();
+    for (String token : List.of(key, botKey)) {
+      assertThat(code(bearer(get(console + "/manual"), token))).isEqualTo("FORBIDDEN");
+      assertThat(code(bearer(put(console + "/manual").contentType(MediaType.APPLICATION_JSON).content("{}"), token)))
+          .isEqualTo("FORBIDDEN");
+      assertThat(code(bearer(post(console + "/manual-sessions"), token))).isEqualTo("FORBIDDEN");
+      assertThat(code(bearer(post(console + "/manual-sessions/mbs_x/reply"), token))).isEqualTo("FORBIDDEN");
+      assertThat(code(bearer(post(console + "/manual-sessions/mbs_x/execute"), token))).isEqualTo("FORBIDDEN");
+    }
+    assertThat(s.perform(get(console + "/manual")).getResponse().getStatus()).as("the owner's session")
+        .isEqualTo(200);
   }
 
   // ------------------------------------------------------------------------------------------- path map

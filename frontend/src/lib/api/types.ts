@@ -103,6 +103,12 @@ export type AgentRunSummary = S['AgentRunSummary']
 export type AdminBot = S['AdminBot']
 export type ApiCall = S['ApiCall']
 export type JournalNote = S['JournalNote']
+// manual bots (§20.8)
+export type ManualBot = S['ManualBot']
+export type ManualSession = S['ManualSession']
+export type ManualAction = S['ManualAction']
+export type ManualIssue = S['ManualIssue']
+export type ManualActionResult = S['ManualActionResult']
 // rules (bots and the ticket read the order matrix from here, §18.3 Rules)
 export type Rules = S['Rules']
 export type OrderMatrixRow = S['OrderMatrixRow']
@@ -144,6 +150,8 @@ export type MoverList = 'GAINERS' | 'LOSERS' | 'ACTIVES'
 export type CorporateActionType = NN<CorporateAction['type']>
 export type CorporateActionStatus = NN<CorporateAction['status']>
 export type AgentRunStatus = NN<AgentRun['status']>
+export type ManualSessionStatus = NN<ManualSession['status']>
+export type ManualResultStatus = NN<ManualActionResult['status']>
 
 /** `/topic/tick.{SYM}` payload (§19, `TickDto`). */
 export interface Tick {

@@ -161,6 +161,11 @@ function BotCard({ bot }: { bot: AdminBot }) {
       </div>
       <SpendChart bot={bot} />
       <ToolBreakdown bot={bot} />
+      {p?.handle ? (
+        <Link to="/bots/$handle" params={{ handle: p.handle }} className="mt-3 inline-flex min-h-11 items-center text-caption font-semibold text-accent hover:text-accent-hover tablet:min-h-0">
+          Open console
+        </Link>
+      ) : null}
     </li>
   )
 }

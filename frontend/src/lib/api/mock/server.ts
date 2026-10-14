@@ -79,6 +79,7 @@ import type {
 import { mockJournalNote, registerAgentRoutes } from './agents'
 import { MOCK_BOOKS, MOCK_INDEX_SYMBOLS, MOCK_INVITE_CODE, MOCK_ME_BASE, MOCK_PLAYERS, POPULAR_SYMBOLS } from './data'
 import { registerAlertsAndPush } from './alerts'
+import { registerManualBotRoutes } from './manualBots'
 import { MockMarket, hashString, mulberry32, unitsToDec } from './market'
 import { mockRules } from './rules'
 import { MockGroups } from './groups'
@@ -642,6 +643,19 @@ export class MockServer {
       me: () => this.mySummary(),
       isAdmin: () => this.s.me.role === 'ADMIN',
       feedDelayMs: () => this.feedDelayMs(),
+    })
+    registerManualBotRoutes(r, {
+      me: () => ({ handle: this.s.me.handle, isAdmin: this.s.me.role === 'ADMIN', active: true }),
+      player: (h) => {
+        if (h === this.s.me.handle) return { summary: this.mySummary(), ownerHandle: null, status: 'ACTIVE' }
+        const p = this.other(h)
+        return p ? { summary: this.summary(p), ownerHandle: p.ownerHandle, status: p.status } : null
+      },
+      setAiModel: (h, label) => this.s.others.filter((p) => p.handle === h).forEach((p) => (p.aiModel = label)),
+      activeKeys: (h) => this.s.keys.filter((k) => k.handle === h && !k.revokedAt).length,
+      clock: () => this.clock(),
+      preview: (req) => this.preview(req),
+      store: () => (this.s.manualBots ??= {}),
     })
     // identity
     r('POST', '/auth/logout', () => {

@@ -1501,6 +1501,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/bots/{handle}/manual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A bot's manual console
+         * @description The owner (or the admin) only: instructions, the bot's status, active API keys and connectors, prompts made today and the console limits. Works for frozen bots (writes do not).
+         */
+        get: operations["getManualBot"];
+        /**
+         * Save a bot's instructions or model label
+         * @description null = unchanged. instructions 0-4000 characters ("" clears them; key-like strings are removed); public, part of every prompt. aiModel 1-24 characters, shown on the profile.
+         */
+        put: operations["updateManualBot"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/bots/{handle}/manual-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make a prompt
+         * @description Builds the prompt for the bot from its live account, the market and the owner's instructions (detail shape). At most 50 prompts per bot per ET day (RATE_LIMITED with retryAfterS).
+         */
+        post: operations["createManualSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/bots/{handle}/manual-sessions/{sessionId}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Place the ticked rows
+         * @description Places the ticked rows as the bot: cancels, then sells, then buys; posts the summary to the journal once. Idempotent: rows already placed are skipped and a retried row replays its order. An empty list only posts the summary.
+         */
+        post: operations["executeManualSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/bots/{handle}/manual-sessions/{sessionId}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a pasted reply
+         * @description Parses the AI's reply (stocks.manual.v1) and previews every row live. Can be repeated until the first execute. At most 20,000 characters.
+         */
+        post: operations["checkManualReply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/connected-apps": {
         parameters: {
             query?: never;
@@ -2046,6 +2130,46 @@ export interface paths {
          * @description Visible notes, newest first (after the feed delay, if any). The text is player-authored data inside untrusted.
          */
         get: operations["getPlayerJournal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}/manual-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A bot's manual sessions
+         * @description Newest first, list shape (untrusted.prompt and untrusted.reply are null): status, summary, rows and their results. PLAYER_NOT_FOUND for an unknown or disabled player.
+         */
+        get: operations["getPlayerManualSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/{handle}/manual-sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One manual session
+         * @description Detail shape: the prompt and the pasted reply (redacted) inside untrusted. NOT_FOUND when the session is not this player's.
+         */
+        get: operations["getPlayerManualSession"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3434,6 +3558,121 @@ export interface components {
             handle: string | null;
             password: string | null;
         };
+        ManualAction: {
+            acknowledge: string[] | null;
+            /** @enum {string|null} */
+            action: "BUY" | "SELL" | "CANCEL" | null;
+            estimate: components["schemas"]["Estimate"] | null;
+            executable: boolean;
+            extendedHours: boolean;
+            /** Format: int32 */
+            index: number;
+            issues: components["schemas"]["ManualIssue"][] | null;
+            /** Format: decimal */
+            limitPrice: string | null;
+            /** Format: int32 */
+            line: number | null;
+            /** Format: decimal */
+            notional: string | null;
+            orderId: string | null;
+            /** Format: decimal */
+            qty: string | null;
+            rationale: string | null;
+            result: components["schemas"]["ManualActionResult"] | null;
+            /** Format: decimal */
+            stopPrice: string | null;
+            symbol: string | null;
+            /** @enum {string|null} */
+            timeInForce: "DAY" | "GTC" | null;
+            /** Format: decimal */
+            trailAmount: string | null;
+            /** Format: decimal */
+            trailPercent: string | null;
+            /** @enum {string|null} */
+            type: "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" | "TRAILING_STOP" | null;
+        };
+        ManualActionResult: {
+            /** Format: date-time */
+            at: string | null;
+            code: string | null;
+            message: string | null;
+            orderId: string | null;
+            /** @enum {string|null} */
+            orderStatus: "PENDING" | "WORKING" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" | "EXPIRED" | "REPLACED" | "REJECTED" | "PENDING_CANCEL" | null;
+            /** @enum {string|null} */
+            status: "PLACED" | "REPLAYED" | "CANCELLED" | "CANCEL_REQUESTED" | "FAILED" | null;
+        };
+        ManualBot: {
+            /** Format: int32 */
+            activeApiKeys: number;
+            /** Format: int32 */
+            activeConnectors: number;
+            bot: components["schemas"]["PlayerSummary"] | null;
+            instructions: string | null;
+            /** Format: date-time */
+            instructionsUpdatedAt: string | null;
+            instructionsUpdatedBy: string | null;
+            limits: components["schemas"]["ManualLimits"] | null;
+            ownerHandle: string | null;
+            /** Format: int32 */
+            sessionsPerDay: number;
+            /** Format: int32 */
+            sessionsToday: number;
+            /** @enum {string|null} */
+            status: "ACTIVE" | "DISABLED" | "FROZEN" | null;
+        };
+        ManualExecuteRequest: {
+            actions: number[] | null;
+        };
+        ManualIssue: {
+            code: string | null;
+            /** Format: int32 */
+            column: number | null;
+            field: string | null;
+            hint: string | null;
+            /** Format: int32 */
+            line: number | null;
+            message: string | null;
+            /** @enum {string|null} */
+            severity: "ERROR" | "WARNING" | null;
+        };
+        ManualLimits: {
+            expireAfter: string | null;
+            /** Format: int32 */
+            maxInstructionsChars: number;
+            /** Format: int32 */
+            maxOrders: number;
+            /** Format: int32 */
+            maxReplyChars: number;
+        };
+        ManualReplyRequest: {
+            reply: string | null;
+        };
+        ManualSession: {
+            actions: components["schemas"]["ManualAction"][] | null;
+            aiModel: string | null;
+            botHandle: string | null;
+            /** Format: date-time */
+            createdAt: string | null;
+            /** Format: date-time */
+            executedAt: string | null;
+            issues: components["schemas"]["ManualIssue"][] | null;
+            journalNoteId: string | null;
+            /** @enum {string|null} */
+            marketSession: "CLOSED" | "PRE" | "REGULAR" | "POST" | null;
+            operatorHandle: string | null;
+            /** Format: int32 */
+            promptChars: number;
+            promptSha256: string | null;
+            /** Format: date-time */
+            repliedAt: string | null;
+            /** Format: int32 */
+            replyChars: number | null;
+            sessionId: string | null;
+            /** @enum {string|null} */
+            status: "PROMPTED" | "REPLIED" | "EXECUTED" | null;
+            untrusted: components["schemas"]["UntrustedManualText"] | null;
+        };
         MarkNotificationsReadRequest: {
             all?: boolean | null;
             ids?: string[] | null;
@@ -3711,6 +3950,10 @@ export interface components {
         };
         PageJournalNote: {
             items: components["schemas"]["JournalNote"][] | null;
+            nextCursor: string | null;
+        };
+        PageManualSession: {
+            items: components["schemas"]["ManualSession"][] | null;
             nextCursor: string | null;
         };
         PageNotification: {
@@ -4965,6 +5208,11 @@ export interface components {
         UntrustedJournalText: {
             text: string | null;
         };
+        UntrustedManualText: {
+            prompt: string | null;
+            reply: string | null;
+            summary: string | null;
+        };
         UntrustedNews: {
             headline: string | null;
             summary: string | null;
@@ -4981,6 +5229,12 @@ export interface components {
             repeat?: boolean | null;
             /** Format: decimal */
             threshold: string | null;
+        };
+        UpdateManualBotRequest: {
+            /** @description The bot's model label, 1-24 characters (e.g. Gemini 3) */
+            aiModel?: string | null;
+            /** @description 0-4000 characters; public (part of every prompt). Key-like strings are removed. */
+            instructions?: string | null;
         };
         UpdateMeRequest: {
             displayName?: string | null;
@@ -7901,6 +8155,175 @@ export interface operations {
             };
         };
     };
+    getManualBot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualBot"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateManualBot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateManualBotRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualBot"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createManualSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualSession"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    executeManualSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualExecuteRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualSession"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    checkManualReply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualReplyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualSession"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     connectedApps: {
         parameters: {
             query?: never;
@@ -8991,6 +9414,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PageJournalNote"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlayerManualSessions: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from a previous page */
+                cursor?: string;
+                /** @description 1-50, default 10 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageManualSession"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlayerManualSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualSession"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

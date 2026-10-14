@@ -5,6 +5,7 @@
  */
 import type { Dec } from '../../format/decimal'
 import type { StoredGroup } from './groups'
+import type { MockManualBot } from './manualBots'
 import type {
   Activity,
   ApiKeyInfo,
@@ -127,6 +128,8 @@ export interface MockState {
   reauthAt: number
   /** Phase 2 group orders (§11.9; optional: states saved by older mock builds lack it) */
   orderGroups?: StoredGroup[]
+  /** §20.8 manual bots by handle: instructions and sessions (optional: states saved by older mock builds lack it) */
+  manualBots?: Record<string, MockManualBot>
   seq: number
 }
 

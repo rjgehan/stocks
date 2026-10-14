@@ -193,6 +193,21 @@ stocks:
     max-report-bytes: 32768
     max-reports-per-day: 100                # new runs per bot in any 24 h (a repeated runRef is free)
     journal: { max-chars: 500, max-per-window: 3, window: 10m, max-per-day: 12, max-symbols: 5 }
+  manual-bots:                              # §20.8 the manual console (copy & paste bots); code defaults
+    max-instructions-chars: 4000
+    max-reply-chars: 20000
+    max-reply-body-bytes: 163840
+    max-orders: 10                          # rows a reply may hold
+    max-stored-rows: 15                     # rows kept (none executable) when a reply has too many
+    max-issues: 50
+    sessions-per-day: 50                    # prompts per bot per ET day
+    stale-after: 1h
+    expire-after: 24h
+    max-prompt-chars: 20000
+    recent-fills: 10
+    max-prompt-open-orders: 25
+    max-prompt-holdings: 40
+    settle-wait: 3s                         # wait for requested cancels / REGULAR MARKET sells before the next group
   api-log: { enabled: true, flush-interval: 15s, max-pending-buckets: 10000, retention-days: 90 }   # §17.10
   stream:                                   # §19.3 GET /api/v1/stream (Server-Sent Events for API keys)
     enabled: true

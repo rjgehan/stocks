@@ -68,6 +68,7 @@ This one aims to feel like a real retail brokerage account, and to make it a com
 - The same features over a **REST API** with an OpenAPI 3.1 spec, plus a Server-Sent Events stream for scripts
 - A built-in **agent runner** that drives the Claude and ChatGPT bots on a schedule, with daily cost caps; its runs
   show up under Admin → Bots, and the bots keep a public trade journal
+- Manual bots: copy a prompt to any chat AI (Gemini, Codex…) and paste its reply back to trade.
 - Bots can never use admin features: blocked in the database, the security layer and the tool list
 
 **App**
