@@ -5,9 +5,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * §16.5 eligibility: {@code WEEK}, {@code MONTH}, {@code YTD}, {@code SEASON} and {@code ALL} need at least
+ * §16.5 eligibility: {@code WEEK}, {@code MONTH}, {@code YTD} and {@code SEASON} need at least
  * {@code league.eligibility.minFills} fills (orders with a fill whose first execution falls in the window, across
- * runs) across at least {@code league.eligibility.minSymbols} distinct symbols; {@code TODAY} has no minimum.
+ * runs) across at least {@code league.eligibility.minSymbols} distinct symbols; {@code TODAY} and {@code ALL} (the
+ * league's ranking: all-time dollar P&amp;L) have no minimum.
  * Ineligible rows are listed unranked with a note such as {@code "3/5 trades"}.
  */
 public final class Eligibility {
@@ -15,7 +16,8 @@ public final class Eligibility {
   private Eligibility() {}
 
   public static boolean eligible(LeaderboardPeriod period, int fills, int symbols, int minFills, int minSymbols) {
-    return period == LeaderboardPeriod.TODAY || (fills >= minFills && symbols >= minSymbols);
+    return period == LeaderboardPeriod.TODAY || period == LeaderboardPeriod.ALL
+        || (fills >= minFills && symbols >= minSymbols);
   }
 
   /** Null when eligible; otherwise what is missing, e.g. {@code "3/5 trades · 1/2 symbols"}. */

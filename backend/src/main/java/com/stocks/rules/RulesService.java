@@ -113,7 +113,8 @@ public class RulesService {
     RulesLeaderboardDto leaderboard = new RulesLeaderboardDto(
         "Time-weighted return from unit values (TWR = U(end) / U(start) − 1): deposits, withdrawals and resets never "
             + "move it.",
-        "Net-contribution P&L: change in (equity − net deposits) over the period; it sums across resets.",
+        "Net-contribution P&L: change in (equity − net deposits) over the period; it sums across resets. The league "
+            + "ranks players by all-time P&L.",
         "20:00 ET (17:00 on early-close days)", minFills(), minSymbols(),
         "Equal returns (within 1e-8) rank by P&L, then by who opened their first account earlier.", "SPY",
         "A reset never erases a loss from any leaderboard period: the new run continues the old run's unit value. "

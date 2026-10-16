@@ -286,14 +286,15 @@ public class ManualPromptBuilder {
     }
     s.append('\n');
     LeaderboardRowDto me = in.standing();
-    s.append("League standing (all time): ");
+    s.append("League standing (all-time P&L): ");
     if (me != null && me.rank() != null) {
       s.append("rank ").append(me.rank()).append(" of ").append(Math.max(in.rankedPlayers(), me.rank()));
     } else {
       s.append("unranked (").append(me == null || me.eligibilityNote() == null ? "no standing yet"
           : me.eligibilityNote()).append(')');
     }
-    s.append(", return ").append(pct(me == null ? null : me.ret())).append(", ")
+    s.append(", P&L ").append(signedMoney(me == null ? null : me.pnl())).append(", return ")
+        .append(pct(me == null ? null : me.ret())).append(", ")
         .append(pct(me == null ? null : me.excessVsBenchmark())).append(" vs SPY\n\n");
   }
 

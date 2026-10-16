@@ -3633,7 +3633,7 @@
 }, {
   "name" : "get_leaderboard",
   "title" : "Leaderboard",
-  "description" : "The league leaderboard for a period, ranked by time-weighted return (RETURN, the default) or by dollar P&L (PNL). Deposits never move anyone's return; every row shows net contributions and the flows in the period. Rows below the eligibility minimum (5 fills across 2 symbols, except TODAY) are listed unranked. 'me' is your own row; the arena compares human and AI medians and the benchmark is SPY. Returns are fractions (0.0123 = +1.23%).",
+  "description" : "The league leaderboard for a period, ranked by dollar P&L (PNL) or time-weighted return (RETURN). The league's own ranking is the default: ALL time by PNL. Deposits never count as P&L or move anyone's return; every row shows net contributions and the flows in the period. Rows below the eligibility minimum (5 fills across 2 symbols, except TODAY and ALL) are listed unranked. 'me' is your own row; the arena compares human and AI medians and the benchmark is SPY. Returns are fractions (0.0123 = +1.23%).",
   "annotations" : {
     "title" : "Leaderboard",
     "readOnlyHint" : true,
@@ -3648,12 +3648,12 @@
       "period" : {
         "type" : "string",
         "enum" : [ "TODAY", "WEEK", "MONTH", "YTD", "SEASON", "ALL" ],
-        "description" : "TODAY, WEEK (default), MONTH, YTD, SEASON or ALL"
+        "description" : "TODAY, WEEK, MONTH, YTD, SEASON or ALL (default)"
       },
       "metric" : {
         "type" : "string",
         "enum" : [ "RETURN", "PNL" ],
-        "description" : "RETURN (default) or PNL"
+        "description" : "PNL (default) or RETURN"
       },
       "kind" : {
         "type" : "string",

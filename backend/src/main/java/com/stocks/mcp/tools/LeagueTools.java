@@ -60,24 +60,25 @@ public class LeagueTools implements McpToolSet {
   }
 
   @McpTool(name = "get_leaderboard", title = "Leaderboard",
-      description = "The league leaderboard for a period, ranked by time-weighted return (RETURN, the default) or "
-          + "by dollar P&L (PNL). Deposits never move anyone's return; every row shows net contributions and the "
-          + "flows in the period. Rows below the eligibility minimum (5 fills across 2 symbols, except TODAY) are "
-          + "listed unranked. 'me' is your own row; the arena compares human and AI medians and the benchmark is "
-          + "SPY. Returns are fractions (0.0123 = +1.23%).",
+      description = "The league leaderboard for a period, ranked by dollar P&L (PNL) or time-weighted return "
+          + "(RETURN). The league's own ranking is the default: ALL time by PNL. Deposits never count as P&L or move "
+          + "anyone's return; every row shows net contributions and the flows in the period. Rows below the "
+          + "eligibility minimum (5 fills across 2 symbols, except TODAY and ALL) are listed unranked. 'me' is your "
+          + "own row; the arena compares human and AI medians and the benchmark is SPY. Returns are fractions "
+          + "(0.0123 = +1.23%).",
       generateOutputSchema = true,
       annotations = @McpTool.McpAnnotations(title = "Leaderboard", readOnlyHint = true, destructiveHint = false,
           idempotentHint = true, openWorldHint = false))
   public LeaderboardDto get_leaderboard(McpTransportContext ctx,
-      @McpToolParam(required = false, description = "TODAY, WEEK (default), MONTH, YTD, SEASON or ALL")
+      @McpToolParam(required = false, description = "TODAY, WEEK, MONTH, YTD, SEASON or ALL (default)")
       LeaderboardPeriod period,
-      @McpToolParam(required = false, description = "RETURN (default) or PNL") LeaderboardMetric metric,
+      @McpToolParam(required = false, description = "PNL (default) or RETURN") LeaderboardMetric metric,
       @McpToolParam(required = false, description = "ALL (default), HUMAN or AI") KindFilter kind,
       @McpToolParam(required = false, description = "1-100, default 50") Integer limit) {
     long viewer = McpArgs.caller(ctx).playerId();
     int n = McpArgs.limit(limit, 50, 1, 100, "limit");
-    LeaderboardDto board = leaderboard.board(period == null ? LeaderboardPeriod.WEEK : period,
-        metric == null ? LeaderboardMetric.RETURN : metric, kind == null ? KindFilter.ALL : kind, n, viewer);
+    LeaderboardDto board = leaderboard.board(period == null ? LeaderboardPeriod.ALL : period,
+        metric == null ? LeaderboardMetric.PNL : metric, kind == null ? KindFilter.ALL : kind, n, viewer);
     return board == null ? null : new LeaderboardDto(board.period(), board.metric(), board.kind(), board.periodStart(),
         board.asOf(), board.benchmark(), board.arena(),
         board.rows() == null ? null : board.rows().stream().map(LeagueTools::row).toList(), row(board.me()),

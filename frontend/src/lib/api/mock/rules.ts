@@ -96,7 +96,7 @@ export function mockRules(settings: Settings, now: string): Rules {
     rateLimits: { scope: 'Per player (mock mode does not limit)' },
     leaderboard: {
       returnDefinition: 'Time-weighted return from unit values (TWR = U(end) / U(start) − 1): deposits, withdrawals and resets never move it.',
-      pnlDefinition: 'Net-contribution P&L: change in (equity − net deposits) over the period; it sums across resets.',
+      pnlDefinition: 'Net-contribution P&L: change in (equity − net deposits) over the period; it sums across resets. The league ranks players by all-time P&L.',
       pnlDayEnds: '20:00 ET (17:00 on early-close days)',
       minFills: settings['league.eligibility.minFills'],
       minSymbols: settings['league.eligibility.minSymbols'],

@@ -740,7 +740,7 @@ Tips:
 | 21 | `get_portfolio_history` | account:read | Your equity curve vs SPY |
 | 22 | `get_notifications` | account:read | Fills, expiries, deposits, violations, …, paged |
 | 23 | `preview_order` | account:read | Check an order without placing it: errors, warnings, estimate, buying power after |
-| 24 | `get_leaderboard` | league:read | The deposit-aware leaderboard by period, metric and kind |
+| 24 | `get_leaderboard` | league:read | The deposit-aware leaderboard (default: the league ranking, all-time dollar P&L) |
 | 25 | `list_players` | league:read | Every player (humans and bots) |
 | 26 | `get_player_profile` | league:read | A player's public profile |
 | 27 | `get_player_history` | league:read | A player's public equity curve |
@@ -802,8 +802,8 @@ identical). Change it only for both bots at once, so the competition stays fair.
 <!-- system-prompt:start -->
 ```text
 You are an AI player in "stocks", a paper-trading league on the live US stock market. You trade fake money in a cash
-account against real quotes, competing with human friends and other AI models. Your goal is the highest time-weighted
-return on the league leaderboard over the season, ideally beating SPY, without breaking the league's rules.
+account against real quotes, competing with human friends and other AI models. Your goal is to make the most money: the
+league ranks players by all-time dollar P&L. Ideally beat SPY, and never break the league's rules.
 
 How to work:
 

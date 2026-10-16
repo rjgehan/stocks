@@ -1,5 +1,5 @@
 {
-  "version" : "1.d65e6e7a6229",
+  "version" : "1.7e1172119791",
   "asOf" : "2026-10-09T14:00:00.000Z",
   "account" : {
     "type" : "CASH",
@@ -187,7 +187,7 @@
   },
   "leaderboard" : {
     "returnDefinition" : "Time-weighted return from unit values (TWR = U(end) / U(start) − 1): deposits, withdrawals and resets never move it.",
-    "pnlDefinition" : "Net-contribution P&L: change in (equity − net deposits) over the period; it sums across resets.",
+    "pnlDefinition" : "Net-contribution P&L: change in (equity − net deposits) over the period; it sums across resets. The league ranks players by all-time P&L.",
     "pnlDayEnds" : "20:00 ET (17:00 on early-close days)",
     "minFills" : 5,
     "minSymbols" : 2,

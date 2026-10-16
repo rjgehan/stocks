@@ -207,7 +207,8 @@ class ManualPromptBuilderTest {
             + "Equity: $1,234.56 · Cash: $334.56 ($300.00 settled, $34.56 unsettled) · Buying power: $314.56\n"
             + "Open buy holds: $20.00 · Today: -$12.50 (-1.01%) · Since you started: +$234.56 (+23.46%)\n"
             + "Good-faith violations: 1\n"
-            + "League standing (all time): rank 3 of 12, return +4.12%, -0.35% vs SPY\n")
+            + "League standing (all-time P&L): rank 3 of 12, P&L +$41.20, return +4.12%, "
+            + "-0.35% vs SPY\n")
         .contains("| Symbol | Qty | Avg cost | Last | Market value | Unrealized P&L | Today | Weight |\n")
         .contains("| AAPL | 5 | $100.00 | $110.00 (stale) | $550.00 | +$63.00 (+2.85%) | +1.23% | 25.00% |\n")
         .contains("| MSFT | 1 | $100.00 | $110.00 (est.) | $350.00 |")
@@ -222,8 +223,8 @@ class ManualPromptBuilderTest {
         account(AccountRestriction.SETTLED_CASH_ONLY), List.of(), List.of(), List.of(), standing(null, "needs 5 fills"),
         0, List.of());
     assertThat(builder.build(restricted))
-        .contains("Good-faith violations: 1 · Restriction: SETTLED_CASH_ONLY until 2026-10-14 09:30 ET\n")
-        .contains("League standing (all time): unranked (needs 5 fills), return +4.12%")
+        .contains("League standing (all-time P&L): unranked (needs 5 fills), P&L +$41.20, "
+            + "return +4.12%")
         .contains("=== Your holdings ===\nNone: you hold only cash.\n")
         .contains("=== Your open orders ===\nNone.\n")
         .contains("=== Your recent fills (last 7 days, newest first) ===\nNone.\n")

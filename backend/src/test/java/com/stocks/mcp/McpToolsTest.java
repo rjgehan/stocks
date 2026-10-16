@@ -398,7 +398,7 @@ class McpToolsTest {
   void leaderboardDefaultsAndTheViewerRow() {
     when(h.leaderboard.board(any(), any(), any(), anyInt(), any())).thenReturn(null);
     h.call("get_leaderboard", Map.of());
-    verify(h.leaderboard).board(LeaderboardPeriod.WEEK, LeaderboardMetric.RETURN, KindFilter.ALL, 50,
+    verify(h.leaderboard).board(LeaderboardPeriod.ALL, LeaderboardMetric.PNL, KindFilter.ALL, 50,
         h.botPlayer.id());
   }
 

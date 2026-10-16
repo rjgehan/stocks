@@ -97,12 +97,14 @@ class LeaderboardRowMapperTest {
   }
 
   @Test
-  void eligibilityNeedsFillsAndSymbolsExceptToday() {
+  void eligibilityNeedsFillsAndSymbolsExceptTodayAndAllTime() {
     assertThat(Eligibility.eligible(LeaderboardPeriod.TODAY, 0, 0, 5, 2)).isTrue();
     assertThat(Eligibility.note(LeaderboardPeriod.TODAY, 0, 0, 5, 2)).isNull();
     assertThat(Eligibility.eligible(LeaderboardPeriod.WEEK, 5, 2, 5, 2)).isTrue();
     assertThat(Eligibility.note(LeaderboardPeriod.WEEK, 3, 2, 5, 2)).isEqualTo("3/5 trades");
-    assertThat(Eligibility.note(LeaderboardPeriod.ALL, 6, 1, 5, 2)).isEqualTo("1/2 symbols");
+    assertThat(Eligibility.note(LeaderboardPeriod.MONTH, 6, 1, 5, 2)).isEqualTo("1/2 symbols");
+    assertThat(Eligibility.eligible(LeaderboardPeriod.ALL, 0, 0, 5, 2)).isTrue();     // the league ranking: money only
+    assertThat(Eligibility.note(LeaderboardPeriod.ALL, 2, 1, 5, 2)).isNull();
     assertThat(Eligibility.note(LeaderboardPeriod.SEASON, 0, 0, 5, 2)).isEqualTo("0/5 trades · 0/2 symbols");
   }
 

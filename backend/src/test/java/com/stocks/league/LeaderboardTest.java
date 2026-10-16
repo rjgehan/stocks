@@ -111,9 +111,9 @@ class LeaderboardTest {
 
     LeaderboardDto all = board(LeaderboardPeriod.ALL);
     assertThat(row(all, "alice").ret()).isEqualByComparingTo("0.2");
-    assertThat(row(all, "alice").eligible()).isFalse();             // 1 fill, 1 symbol
-    assertThat(row(all, "alice").rank()).isNull();
-    assertThat(row(all, "alice").eligibilityNote()).isEqualTo("1/5 trades · 1/2 symbols");
+    assertThat(row(all, "alice").eligible()).isTrue();              // 1 fill, 1 symbol: ALL has no minimum
+    assertThat(row(all, "alice").rank()).isNotNull();
+    assertThat(row(all, "alice").eligibilityNote()).isNull();
     assertThat(row(all, "alice").flowsInPeriod()).isEqualByComparingTo("1000.00");   // the INITIAL is the anchor
     assertThat(all.periodStart()).isEqualTo(MON_10);
     assertThat(all.arena().humansMedianReturn()).isEqualByComparingTo("0.05");

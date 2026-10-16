@@ -13,6 +13,9 @@ import { FormulaPopover } from './MetricInfoPopover'
 import { AiChip, Avatar } from './PlayerBadge'
 
 const MEDAL = ['bg-gold', 'bg-silver', 'bg-bronze'] as const
+/** Room for "+$1,234,567.89" whichever unit shows, so the %/$ toggle never resizes the board. */
+const FIGURE_COL = 'w-32 min-w-32'
+const FIGURES_PHONE = 'w-[8.5rem]'
 
 export const PERIOD_LABEL: Record<LeaderboardPeriod, string> = { TODAY: 'Today', WEEK: 'Week', MONTH: 'Month', YTD: 'YTD', SEASON: 'Season', ALL: 'All time' }
 
@@ -142,6 +145,7 @@ export function LeaderboardTable({
   rows,
   me,
   metric,
+  rankBy = metric,
   period = 'WEEK',
   benchmark = null,
   myHandle,
@@ -150,8 +154,10 @@ export function LeaderboardTable({
 }: {
   rows: LeaderboardRow[]
   me: LeaderboardRow | null
-  /** RETURN shows every figure as a percentage, PNL in dollars (and ranks by it). */
+  /** RETURN shows every figure as a percentage, PNL in dollars. */
   metric: LeaderboardMetric
+  /** What the rows are ordered by (where SPY slots in); default the shown metric. */
+  rankBy?: LeaderboardMetric
   period?: LeaderboardPeriod
   /** SPY as a player, shown where it would place (never ranked). */
   benchmark?: BenchmarkPlayer | null
@@ -164,7 +170,7 @@ export function LeaderboardTable({
   const isMe = (r: LeaderboardRow) => Boolean(myHandle && r.player?.handle === myHandle)
   // My row is pinned at the bottom when the board does not already list it (§22.4).
   const pinned = me && !rows.some(isMe) ? me : null
-  const spyAt = benchmarkIndex(rows, benchmark, metric)
+  const spyAt = benchmarkIndex(rows, benchmark, rankBy)
   const cols = spans(period)
   const main = primary(period)
   const secondary = cols.filter((s) => s !== main)
@@ -177,7 +183,7 @@ export function LeaderboardTable({
       <div className="min-w-0 flex-1">
         <Name row={r} me={isMe(r)} />
       </div>
-      <div className="shrink-0 text-right">
+      <div className={cx('shrink-0 text-right tabular-nums', FIGURES_PHONE)}>
         <div className="text-body">
           <Value f={r} span={main} metric={metric} strong />
         </div>
@@ -203,7 +209,7 @@ export function LeaderboardTable({
       <div className="min-w-0 flex-1">
         <SpyName b={b} />
       </div>
-      <div className="shrink-0 text-right">
+      <div className={cx('shrink-0 text-right tabular-nums', FIGURES_PHONE)}>
         <div className="text-body">
           <Value f={b} span={main} metric={metric} strong />
         </div>
@@ -227,11 +233,11 @@ export function LeaderboardTable({
         <Name row={r} me={isMe(r)} />
       </td>
       {cols.map((s) => (
-        <td key={s} className={cx('px-2 text-right', s === main && 'text-body')}>
+        <td key={s} className={cx('px-2 text-right whitespace-nowrap tabular-nums', FIGURE_COL, s === main && 'text-body')}>
           <Value f={r} span={s} metric={metric} strong={s === main} />
         </td>
       ))}
-      <td className="hidden px-2 text-right wide:table-cell">{r.equity ? formatMoney(r.equity) : <span className="text-text-3">—</span>}</td>
+      <td className="hidden w-36 px-2 text-right whitespace-nowrap tabular-nums wide:table-cell">{r.equity ? formatMoney(r.equity) : <span className="text-text-3">—</span>}</td>
       <td className="hidden px-2 text-right tablet:table-cell">{r.fills}</td>
       {extraColumns.map((c) => (
         <td key={c} className="hidden px-2 text-right tablet:table-cell">
@@ -251,11 +257,11 @@ export function LeaderboardTable({
         <SpyName b={b} />
       </td>
       {cols.map((s) => (
-        <td key={s} className={cx('px-2 text-right', s === main && 'text-body')}>
+        <td key={s} className={cx('px-2 text-right whitespace-nowrap tabular-nums', FIGURE_COL, s === main && 'text-body')}>
           <Value f={b} span={s} metric={metric} strong={s === main} />
         </td>
       ))}
-      <td className="hidden px-2 text-right wide:table-cell">{b.equity ? formatMoney(b.equity) : <span className="text-text-3">—</span>}</td>
+      <td className="hidden w-36 px-2 text-right whitespace-nowrap tabular-nums wide:table-cell">{b.equity ? formatMoney(b.equity) : <span className="text-text-3">—</span>}</td>
       <td className="hidden px-2 text-right text-text-3 tablet:table-cell">—</td>
       {extraColumns.map((c) => (
         <td key={c} className="hidden px-2 text-right text-text-3 tablet:table-cell">
@@ -294,14 +300,14 @@ export function LeaderboardTable({
                 </span>
               </th>
               {cols.map((s) => (
-                <th key={s} className={cx('px-2 text-right font-medium', s === main && 'text-text-1')}>
+                <th key={s} className={cx('px-2 text-right font-medium', FIGURE_COL, s === main && 'text-text-1')}>
                   <span className="inline-flex items-center gap-0.5">
                     {spanLabel(s, period)}
                     {s === main ? <FormulaPopover topic={metric === 'RETURN' ? 'RETURN' : 'PNL'} /> : null}
                   </span>
                 </th>
               ))}
-              <th className="hidden px-2 text-right font-medium wide:table-cell">Equity</th>
+              <th className="hidden w-36 px-2 text-right font-medium wide:table-cell">Equity</th>
               <th className="hidden px-2 text-right font-medium tablet:table-cell">Fills</th>
               {extraColumns.map((c) => (
                 <th key={c} className="hidden px-2 text-right font-medium tablet:table-cell">

@@ -36,7 +36,7 @@ interface LeagueSearch {
   view?: 'BOARD' | 'RACE' | 'FEED'
 }
 
-/** The %/$ choice, remembered on this device when the URL does not say. */
+/** How the board shows its figures (% or $; it always ranks by all-time $ P&L), remembered on this device. */
 const UNITS_KEY = 'stocks.league.units'
 const savedMetric = (): LeaderboardMetric => (readLocal(UNITS_KEY, 'RETURN') === 'PNL' ? 'PNL' : 'RETURN')
 
@@ -58,8 +58,9 @@ export const Route = createFileRoute('/_app/league')({
 })
 
 /**
- * League (§22.4): period tabs, a %/$ toggle (every figure, and the ranking), kind filter, Arena card (humans vs AI vs SPY), the board (with the
- * Phase 2 optional stat columns), the race chart (Phase 2, §16.9) and the feed.
+ * League (§22.4): the board ranks everyone by all-time dollar P&L (a %/$ toggle only changes how figures show), with
+ * the kind filter, Arena card (humans vs AI vs SPY) and the Phase 2 optional stat columns; the race chart (Phase 2,
+ * §16.9, with its period tabs) and the feed.
  */
 function LeaguePage() {
   const search = Route.useSearch()
@@ -70,7 +71,8 @@ function LeaguePage() {
     if (patch.metric) writeLocal(UNITS_KEY, patch.metric)
     void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
   }
-  const board = useLeaderboard(period, metric, kind)
+  // the league's ranking: all time, by dollar P&L
+  const board = useLeaderboard('ALL', 'PNL', kind)
   const { data: me } = useMe()
   const feedDelay = useFeedDelay()
   const cols = useBoardColumns()
@@ -101,10 +103,10 @@ function LeaguePage() {
           <FeedList />
         ) : (
           <>
-            <Tabs label="Period" value={period} onChange={(p) => set({ period: p })} items={PERIODS} />
+            {view === 'RACE' ? <Tabs label="Period" value={period} onChange={(p) => set({ period: p })} items={PERIODS} /> : null}
             <div className="flex flex-wrap items-center gap-2">
               {view === 'BOARD' ? (
-                <Segmented label="Show as" size="sm" value={metric} onChange={(m) => set({ metric: m })} options={[{ value: 'RETURN', label: '%', title: 'Percent return (ranks by return)' }, { value: 'PNL', label: '$', title: 'Dollar P&L (ranks by P&L)' }]} />
+                <Segmented label="Show as" size="sm" value={metric} onChange={(m) => set({ metric: m })} options={[{ value: 'RETURN', label: '%', title: 'Show returns' }, { value: 'PNL', label: '$', title: 'Show dollars' }]} />
               ) : null}
               <Segmented
                 label="Players"
@@ -138,12 +140,12 @@ function LeaguePage() {
             ) : rows.length === 0 ? (
               <EmptyState title="No players yet" body="Invite friends from the admin console, or create an AI player." />
             ) : (
-              <LeaderboardTable rows={rows} me={board.data?.me ?? null} metric={metric} period={period} benchmark={board.data?.benchmarkPlayer} myHandle={me?.handle} extraColumns={cols.columns} phoneStat={cols.phoneStat} />
+              <LeaderboardTable rows={rows} me={board.data?.me ?? null} metric={metric} rankBy="PNL" period="ALL" benchmark={board.data?.benchmarkPlayer} myHandle={me?.handle} extraColumns={cols.columns} phoneStat={cols.phoneStat} />
             )}
               </>
             )}
             <p className="text-micro text-text-3">
-              Return is time-weighted: deposits and withdrawals never move it. Every player&apos;s portfolio and orders are visible live.
+              Ranked by all-time dollar P&amp;L: deposits never count as profit. Every player&apos;s portfolio and orders are visible live.
               {feedDelay ? ` Trades show in the feed after ${feedDelay}.` : ''}
             </p>
           </>

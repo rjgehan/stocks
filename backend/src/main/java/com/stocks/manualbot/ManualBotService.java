@@ -369,7 +369,7 @@ public class ManualBotService {
     LeaderboardRowDto standing = null;
     int ranked = 0;
     try {
-      LeaderboardDto board = leaderboard.board(LeaderboardPeriod.ALL, LeaderboardMetric.RETURN, KindFilter.ALL,
+      LeaderboardDto board = leaderboard.board(LeaderboardPeriod.ALL, LeaderboardMetric.PNL, KindFilter.ALL,
           LEADERBOARD_ROWS, bot.id());
       standing = board.me();
       ranked = (int) board.rows().stream().filter(r -> r.rank() != null).count();

@@ -2724,7 +2724,7 @@ export class MockServer {
         const { ret, pnl } = perf(r, period)
         const day = perf(r, 'TODAY')
         const total = perf(r, 'ALL')
-        const eligible = period === 'TODAY' || (r.fills >= minFills && r.symbols >= minSymbols)
+        const eligible = period === 'TODAY' || period === 'ALL' || (r.fills >= minFills && r.symbols >= minSymbols)
         const spark = this.walk(`${r.summary.handle}:spark:${period}`, r.u, '1M', 0.5).slice(-12).map((p) => p.v)
         const row: LeaderboardRow = {
           rank: null,

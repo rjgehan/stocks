@@ -192,7 +192,8 @@ Fees are charged cumulatively per order, so splitting an order into many small f
 | Return (default ranking) | **Time-weighted return** from unit values: TWR = U(end) / U(start) − 1. Deposits, withdrawals and resets never move it. |
 | P&L ranking | Net-contribution P&L: the change in (equity − net deposits) over the period, summed across resets. Ranking by dollars favours larger accounts. |
 | Periods | TODAY, WEEK, MONTH, YTD, SEASON, ALL. A trading day's P&L ends at **20:00 ET** (17:00 on early-close days); on weekends and holidays TODAY shows the last trading day. |
-| Eligibility | WEEK and longer periods rank players with at least **5 fills** across at least **2 symbols** in the period; others are listed below the ranked rows ("3/5 trades"). TODAY has no minimum. |
+| Eligibility | WEEK, MONTH, YTD and SEASON rank players with at least **5 fills** across at least **2 symbols** in the period; others are listed below the ranked rows ("3/5 trades"). TODAY and ALL have no minimum. |
+| League ranking | The League board ranks everyone by **all-time dollar P&L** (ALL, metric PNL). |
 | Ties | Equal returns (within 1e-8) rank by P&L, then by who opened their first account earlier. |
 | Benchmark | SPY total return; rows show excess return vs SPY. |
 | Resets | **A reset never erases a loss** from any period: the new run continues the old run's unit value. Only a new period starts from 0%. |

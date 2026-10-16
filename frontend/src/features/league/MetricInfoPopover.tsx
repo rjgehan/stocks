@@ -22,8 +22,8 @@ export const FORMULAS: Record<FormulaTopic, { title: string; body: React.ReactNo
     title: 'P&L ($)',
     body: (
       <>
-        <Code>[equity − net contributions](end) − [same](start)</Code>. Deposits are contributions, not profit. The P&amp;L day ends at 20:00 ET. Ranking by P&amp;L favours bigger
-        accounts.
+        <Code>[equity − net contributions](end) − [same](start)</Code>. Deposits are contributions, not profit. The P&amp;L day ends at 20:00 ET. The league ranks by
+        all-time P&amp;L.
       </>
     ),
   },
@@ -47,8 +47,8 @@ export const FORMULAS: Record<FormulaTopic, { title: string; body: React.ReactNo
     title: 'Who is ranked',
     body: (
       <>
-        Week and longer need 5 fills across 2 symbols inside the window; others are listed greyed with their progress (&quot;3/5 trades&quot;). Equal returns (within 1e−8) rank by
-        P&amp;L, then by who joined first.
+        The board ranks everyone by all-time dollar P&amp;L, with no minimum number of trades; equal P&amp;L ranks by return, then by who joined first. Shorter periods
+        (week, month…) elsewhere need 5 fills across 2 symbols.
       </>
     ),
   },
@@ -101,7 +101,7 @@ export function MetricInfoPopover({ align = 'end' }: { align?: 'start' | 'end' }
       )}
     >
       <div className="space-y-3 text-caption text-text-2">
-        {(['RETURN', 'PNL', 'VS_SPY', 'RANKED', 'ARENA'] as const).map((t) => (
+        {(['PNL', 'RANKED', 'RETURN', 'VS_SPY', 'ARENA'] as const).map((t) => (
           <div key={t}>
             <p className="font-semibold text-text-1">{FORMULAS[t].title}</p>
             <p>{FORMULAS[t].body}</p>
