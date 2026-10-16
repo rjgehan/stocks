@@ -18,6 +18,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.server.ServletServerHttpRequest;
@@ -53,6 +54,13 @@ public class ManualBotController {
     this.json = json;
   }
 
+  @GetMapping
+  @Operation(summary = "My bots' manual consoles", description = "The console state of every AI bot the signed-in "
+      + "person owns, by handle (the shape of GET /me/bots/{handle}/manual).")
+  public List<ManualBotDto> getMyManualBots() {
+    return manual.mine(CurrentPlayer.require());
+  }
+
   @GetMapping("/{handle}/manual")
   @Operation(summary = "A bot's manual console", description = "The owner (or the admin) only: instructions, the "
       + "bot's status, active API keys and connectors, prompts made today and the console limits. Works for frozen "
@@ -62,9 +70,9 @@ public class ManualBotController {
   }
 
   @PutMapping("/{handle}/manual")
-  @Operation(summary = "Save a bot's instructions or model label", description = "null = unchanged. instructions "
-      + "0-4000 characters (\"\" clears them; key-like strings are removed); public, part of every prompt. aiModel "
-      + "1-24 characters, shown on the profile.")
+  @Operation(summary = "Save a bot's instructions, model label or name", description = "null = unchanged. "
+      + "instructions 0-4000 characters (\"\" clears them; key-like strings are removed); public, part of every "
+      + "prompt. aiModel 1-24 characters, shown on the profile. displayName 2-40 characters.")
   public ManualBotDto updateManualBot(@PathVariable("handle") String handle,
                                       @RequestBody UpdateManualBotRequest request, HttpServletRequest servlet) {
     PlayerPrincipal human = CurrentPlayer.require();

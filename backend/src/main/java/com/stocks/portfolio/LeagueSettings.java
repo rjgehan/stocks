@@ -3,6 +3,7 @@ package com.stocks.portfolio;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.contract.identity.SettingsService;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.function.Supplier;
@@ -18,6 +19,7 @@ public class LeagueSettings {
 
   /** §23.4 defaults. */
   public static final LocalDate DEFAULT_SEASON_START = LocalDate.of(2026, 10, 12);
+  public static final BigDecimal DEFAULT_STARTING_CASH = new BigDecimal("500000.00");
   public static final int DEFAULT_MIN_FILLS = 5;
   public static final int DEFAULT_MIN_SYMBOLS = 2;
   public static final Duration DEFAULT_TRADE_FEED_DELAY = Duration.ZERO;
@@ -46,6 +48,11 @@ public class LeagueSettings {
 
   public boolean showDepositsInFeed() {
     return orDefault(settings::showDepositsInFeed, true);
+  }
+
+  /** The league default starting cash (SPY as a player starts with it). */
+  public BigDecimal defaultStartingCash() {
+    return orDefault(settings::defaultStartingCash, DEFAULT_STARTING_CASH);
   }
 
   public boolean humanKindExcludesApiTraders() {

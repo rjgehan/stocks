@@ -314,7 +314,8 @@ class AccountPerformanceTest {
         new ArenaDto(null, null), List.of(new com.stocks.contract.portfolio.dto.LeaderboardRowDto(1, null, true, null,
             false, false, new com.stocks.contract.identity.dto.PlayerSummaryDto(aliceId, "alice", "alice", null, null,
                 null, null, 0), false, new BigDecimal("0.25"), new BigDecimal("10.00"), null, null, null,
-            new BigDecimal("500.00"), BigDecimal.ZERO, 0, 0, null, null, List.of(), null, null)), null);
+            new BigDecimal("500.00"), BigDecimal.ZERO, 0, 0, null, null, List.of(), null, null, null, null, null,
+            null)), null, null);
   }
 
   static String aliceId;

@@ -88,7 +88,8 @@ class McpToolCoverageTest {
     // GET /assets/{symbol}/trades (§15.10); the session-only OAuth (§17.9) GET /me/oauth/requests/{requestId} and
     // GET /me/connected-apps; GET /players/{handle}/agent-runs, GET /me/api-calls and GET /stream; the session-only
     // GET /me/bots/{handle}/run-requests (§20.9)."
-    // §20.8: the manual console (session only) and the public manual sessions (pasted AI replies, kept off MCP).
+    // §20.8: the manual console and the owner's bot list (session only) and the public manual sessions (pasted AI
+    // replies, kept off MCP).
     assertThat(coverage().excluded().keySet()).containsExactlyInAnyOrder(
         normalize("/api/v1/auth/csrf"), normalize("/api/v1/me"), normalize("/api/v1/me/api-keys"),
         normalize("/api/v1/assets/{symbol}/logo"), normalize("/api/v1/market/indices"),
@@ -96,7 +97,7 @@ class McpToolCoverageTest {
         normalize("/api/v1/me/push"), normalize("/api/v1/assets/{symbol}/trades"),
         normalize("/api/v1/me/oauth/requests/{requestId}"), normalize("/api/v1/me/connected-apps"),
         normalize("/api/v1/players/{handle}/agent-runs"), normalize("/api/v1/me/api-calls"),
-        normalize("/api/v1/stream"), normalize("/api/v1/me/bots/{handle}/manual"),
+        normalize("/api/v1/stream"), normalize("/api/v1/me/bots/{handle}/manual"), normalize("/api/v1/me/bots"),
         normalize("/api/v1/players/{handle}/manual-sessions"),
         normalize("/api/v1/players/{handle}/manual-sessions/{sessionId}"),
         normalize("/api/v1/me/bots/{handle}/run-requests"));

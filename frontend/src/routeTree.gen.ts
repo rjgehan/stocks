@@ -18,6 +18,7 @@ import { Route as AppAdminRouteRouteImport } from './routes/_app/admin/route'
 import { Route as AppAlertsRouteImport } from './routes/_app/alerts'
 import { Route as AppLeagueRouteImport } from './routes/_app/league'
 import { Route as AppMarketsRouteImport } from './routes/_app/markets'
+import { Route as AppPromptsRouteImport } from './routes/_app/prompts'
 import { Route as AppScreenerRouteImport } from './routes/_app/screener'
 import { Route as AppSearchRouteImport } from './routes/_app/search'
 import { Route as AppSettingsRouteRouteImport } from './routes/_app/settings/route'
@@ -100,6 +101,11 @@ const AppLeagueRoute = AppLeagueRouteImport.update({
 const AppMarketsRoute = AppMarketsRouteImport.update({
   id: '/markets',
   path: '/markets',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPromptsRoute = AppPromptsRouteImport.update({
+  id: '/prompts',
+  path: '/prompts',
   getParentRoute: () => AppRoute,
 } as any)
 const AppScreenerRoute = AppScreenerRouteImport.update({
@@ -313,6 +319,7 @@ export interface FileRoutesByFullPath {
   '/alerts': typeof AppAlertsRoute
   '/league': typeof AppLeagueRoute
   '/markets': typeof AppMarketsRoute
+  '/prompts': typeof AppPromptsRoute
   '/screener': typeof AppScreenerRoute
   '/search': typeof AppSearchRoute
   '/watchlist': typeof AppWatchlistRoute
@@ -358,6 +365,7 @@ export interface FileRoutesByTo {
   '/alerts': typeof AppAlertsRoute
   '/league': typeof AppLeagueRoute
   '/markets': typeof AppMarketsRoute
+  '/prompts': typeof AppPromptsRoute
   '/screener': typeof AppScreenerRoute
   '/search': typeof AppSearchRoute
   '/watchlist': typeof AppWatchlistRoute
@@ -408,6 +416,7 @@ export interface FileRoutesById {
   '/_app/alerts': typeof AppAlertsRoute
   '/_app/league': typeof AppLeagueRoute
   '/_app/markets': typeof AppMarketsRoute
+  '/_app/prompts': typeof AppPromptsRoute
   '/_app/screener': typeof AppScreenerRoute
   '/_app/search': typeof AppSearchRoute
   '/_app/watchlist': typeof AppWatchlistRoute
@@ -460,6 +469,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/league'
     | '/markets'
+    | '/prompts'
     | '/screener'
     | '/search'
     | '/watchlist'
@@ -505,6 +515,7 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/league'
     | '/markets'
+    | '/prompts'
     | '/screener'
     | '/search'
     | '/watchlist'
@@ -554,6 +565,7 @@ export interface FileRouteTypes {
     | '/_app/alerts'
     | '/_app/league'
     | '/_app/markets'
+    | '/_app/prompts'
     | '/_app/screener'
     | '/_app/search'
     | '/_app/watchlist'
@@ -667,6 +679,13 @@ declare module '@tanstack/react-router' {
       path: '/markets'
       fullPath: '/markets'
       preLoaderRoute: typeof AppMarketsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/prompts': {
+      id: '/_app/prompts'
+      path: '/prompts'
+      fullPath: '/prompts'
+      preLoaderRoute: typeof AppPromptsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/screener': {
@@ -1048,6 +1067,7 @@ interface AppRouteChildren {
   AppAlertsRoute: typeof AppAlertsRoute
   AppLeagueRoute: typeof AppLeagueRoute
   AppMarketsRoute: typeof AppMarketsRoute
+  AppPromptsRoute: typeof AppPromptsRoute
   AppScreenerRoute: typeof AppScreenerRoute
   AppSearchRoute: typeof AppSearchRoute
   AppWatchlistRoute: typeof AppWatchlistRoute
@@ -1064,6 +1084,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAlertsRoute: AppAlertsRoute,
   AppLeagueRoute: AppLeagueRoute,
   AppMarketsRoute: AppMarketsRoute,
+  AppPromptsRoute: AppPromptsRoute,
   AppScreenerRoute: AppScreenerRoute,
   AppSearchRoute: AppSearchRoute,
   AppWatchlistRoute: AppWatchlistRoute,

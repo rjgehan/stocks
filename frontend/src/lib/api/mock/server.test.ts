@@ -39,6 +39,8 @@ const LEADERBOARD_ROW_KEYS = [
   'excessVsBenchmark', 'maxDrawdown', 'equity', 'netContributions', 'flowsInPeriod', 'fills', 'symbolsTraded', 'winRate', 'topHolding', 'spark',
   // Phase 2 (§16.8)
   'sharpe', 'profitFactor',
+  // today and all-time, whatever the period
+  'dayReturn', 'dayPnl', 'totalReturn', 'totalPnl',
 ]
 
 // public mode (§16.7): exactly the generated schema's members (the type checks below fail when the backend adds one)

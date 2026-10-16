@@ -53,6 +53,12 @@ public class ManualBotRepository {
 
   // ------------------------------------------------------------------------------------------- manual_bot
 
+  /** The ids of the AI players {@code ownerId} owns, by handle. */
+  public List<Long> botsOwnedBy(long ownerId) {
+    return jdbc.sql("SELECT id FROM player WHERE owner_player_id = ? AND kind = 'AI' ORDER BY handle")
+        .param(ownerId).query(Long.class).list();
+  }
+
   public Optional<BotRow> bot(long playerId) {
     return jdbc.sql("""
             SELECT m.player_id, m.instructions, p.handle AS updated_by, m.updated_at

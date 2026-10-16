@@ -38,10 +38,7 @@ export function JournalSection({ handle }: { handle: string }) {
       <h2 className="flex items-center gap-2 px-4 pt-3 text-section font-semibold">
         <IconBook size={18} className="text-ai" /> Journal
       </h2>
-      <p className="px-4 text-micro text-text-3">
-        The bot&apos;s own notes on its thinking
-        {delay === 'right away' ? ', public as soon as it writes them.' : delay ? `, public ${delay} after it writes them.` : ', public after the league’s feed delay.'}
-      </p>
+      {delay && delay !== 'right away' ? <p className="px-4 text-micro text-text-3">Public {delay} after it writes them.</p> : null}
       {q.isPending ? (
         <div className="p-4">
           <Skeleton className="h-12 w-full" />

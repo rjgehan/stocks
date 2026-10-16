@@ -41,10 +41,10 @@ test('a manual bot: prompt out, reply in, one order placed as the bot', async ({
   await dialog.getByRole('button', { name: 'Create bot' }).click()
   await expect(page).toHaveURL(new RegExp(`/bots/${handle}$`))
   await expect(page.getByRole('dialog', { name: 'Copy this key now' })).toHaveCount(0)
-  await expect(page.getByText('Manual console', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Bot settings' })).toBeVisible()
 
   // 3. Instructions (public, part of every prompt).
-  await page.getByLabel('Instructions for the bot').fill('Large caps only; keep at least 20% in cash.')
+  await page.getByLabel('Instructions (public, part of every prompt)').fill('Large caps only; keep at least 20% in cash.')
   await page.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(toastWith(page, 'Saved')).toBeVisible()
 
@@ -72,7 +72,7 @@ test('a manual bot: prompt out, reply in, one order placed as the bot', async ({
     '}',
     '```',
   ].join('\n')
-  await page.getByLabel('Paste the whole reply here').fill(reply)
+  await page.getByLabel("Paste the AI's reply").fill(reply)
 
   // 6. Check: both rows pass and are ticked; untick the limit row and place the market buy.
   await page.getByRole('button', { name: 'Check reply' }).click()
@@ -88,7 +88,7 @@ test('a manual bot: prompt out, reply in, one order placed as the bot', async ({
   await expect(review.getByText('Summary posted to the journal')).toBeVisible()
   await expect(row1).toBeDisabled()
   await expect(row2).toBeEnabled()
-  await expect(page.getByLabel('Paste the whole reply here')).not.toBeEditable()
+  await expect(page.getByLabel("Paste the AI's reply")).not.toBeEditable()
 
   // 7. The session is public: the console lists it, and so does GET /players/{handle}/manual-sessions (prompt and
   //    reply only in the detail). The profile shows the model label from the create dialog.
@@ -103,7 +103,7 @@ test('a manual bot: prompt out, reply in, one order placed as the bot', async ({
     expect(body.items[0]!.actions[0]!.result?.status).toBe('PLACED')
     expect(body.items[0]!.actions[1]!.result).toBeNull()
   }
-  await page.getByRole('link', { name: 'Public profile' }).click()
+  await page.getByRole('link', { name: 'Profile', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/players/${handle}$`))
   await expect(page.getByText('AI · Gemini 3').first()).toBeVisible()
 

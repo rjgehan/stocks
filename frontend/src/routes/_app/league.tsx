@@ -1,17 +1,21 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMe } from '@/lib/api/hooks/identity'
 import { useLeaderboard } from '@/lib/api/hooks/league'
+import { useMyManualBots } from '@/lib/api/hooks/manualBots'
 import type { KindFilter, LeaderboardMetric, LeaderboardPeriod } from '@/lib/api/types'
 import { formatTimeEt } from '@/lib/format/time'
+import { readLocal, writeLocal } from '@/lib/prefs/local'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Segmented } from '@/components/ui/Segmented'
 import { SkeletonRows } from '@/components/ui/Skeleton'
 import { Tabs } from '@/components/ui/Tabs'
+import { IconRobot } from '@/components/ui/icons'
 import { ArenaCard } from '@/features/league/ArenaCard'
 import { FeedList } from '@/features/league/FeedList'
 import { LeaderboardTable } from '@/features/league/LeaderboardTable'
 import { MetricInfoPopover } from '@/features/league/MetricInfoPopover'
 import { useFeedDelay } from '@/features/league/useFeedDelay'
+import { linked } from '@/features/manualbot/PromptsScreen'
 import { useBoardColumns } from '@/features/stats/columns'
 import { ColumnsPicker } from '@/features/stats/ExtraStat'
 import { RaceView } from '@/features/stats/RaceView'
@@ -32,6 +36,10 @@ interface LeagueSearch {
   view?: 'BOARD' | 'RACE' | 'FEED'
 }
 
+/** The %/$ choice, remembered on this device when the URL does not say. */
+const UNITS_KEY = 'stocks.league.units'
+const savedMetric = (): LeaderboardMetric => (readLocal(UNITS_KEY, 'RETURN') === 'PNL' ? 'PNL' : 'RETURN')
+
 const VIEWS: ReadonlyArray<{ value: NonNullable<LeagueSearch['view']>; label: string }> = [
   { value: 'BOARD', label: 'Board' },
   { value: 'RACE', label: 'Race' },
@@ -50,18 +58,30 @@ export const Route = createFileRoute('/_app/league')({
 })
 
 /**
- * League (§22.4): period tabs, Return/P&L toggle, kind filter, Arena card (humans vs AI vs SPY), the board (with the
+ * League (§22.4): period tabs, a %/$ toggle (every figure, and the ranking), kind filter, Arena card (humans vs AI vs SPY), the board (with the
  * Phase 2 optional stat columns), the race chart (Phase 2, §16.9) and the feed.
  */
 function LeaguePage() {
-  const { period = 'WEEK', metric = 'RETURN', kind = 'ALL', view = 'BOARD' } = Route.useSearch()
+  const search = Route.useSearch()
+  const { period = 'WEEK', kind = 'ALL', view = 'BOARD' } = search
+  const metric = search.metric ?? savedMetric()
   const navigate = Route.useNavigate()
-  const set = (patch: Partial<LeagueSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
+  const set = (patch: Partial<LeagueSearch>) => {
+    if (patch.metric) writeLocal(UNITS_KEY, patch.metric)
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
+  }
   const board = useLeaderboard(period, metric, kind)
   const { data: me } = useMe()
   const feedDelay = useFeedDelay()
   const cols = useBoardColumns()
   const rows = board.data?.rows ?? []
+  // the owner of a manual bot gets one place to prompt them all
+  const myBots = useMyManualBots(me?.kind === 'HUMAN' && me.authMethod === 'SESSION')
+  const prompts = myBots.data?.some((b) => !linked(b)) ? (
+    <Link to="/prompts" className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md bg-accent px-3 text-caption font-semibold text-white hover:bg-accent-hover tablet:h-8">
+      <IconRobot size={16} /> Create prompts
+    </Link>
+  ) : null
   return (
     <div className="scrollbar-thin h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-4 desktop:px-6">
@@ -69,12 +89,14 @@ function LeaguePage() {
           <h1 className="text-[20px] leading-7 font-bold tracking-tight">League</h1>
           <MetricInfoPopover align="start" />
           <div className="flex-1" />
+          {prompts}
           <Segmented label="View" size="sm" value={view} onChange={(v) => set({ view: v })} options={VIEWS} />
         </div>
         <div className="flex items-center gap-2 tablet:hidden">
           <Segmented label="View" block value={view} onChange={(v) => set({ view: v })} options={VIEWS} />
           <MetricInfoPopover />
         </div>
+        {prompts ? <div className="tablet:hidden">{prompts}</div> : null}
         {view === 'FEED' ? (
           <FeedList />
         ) : (
@@ -82,7 +104,7 @@ function LeaguePage() {
             <Tabs label="Period" value={period} onChange={(p) => set({ period: p })} items={PERIODS} />
             <div className="flex flex-wrap items-center gap-2">
               {view === 'BOARD' ? (
-                <Segmented label="Rank by" size="sm" value={metric} onChange={(m) => set({ metric: m })} options={[{ value: 'RETURN', label: 'Return' }, { value: 'PNL', label: 'P&L ($)' }]} />
+                <Segmented label="Show as" size="sm" value={metric} onChange={(m) => set({ metric: m })} options={[{ value: 'RETURN', label: '%', title: 'Percent return (ranks by return)' }, { value: 'PNL', label: '$', title: 'Dollar P&L (ranks by P&L)' }]} />
               ) : null}
               <Segmented
                 label="Players"
@@ -104,7 +126,6 @@ function LeaguePage() {
               <RaceView period={period} kind={kind} myHandle={me?.handle} />
             ) : (
               <>
-            {metric === 'PNL' ? <p className="text-caption text-text-3">Ranking by dollar P&amp;L favours bigger accounts; deposits never count as profit.</p> : null}
             {/* the arena compares both teams: under a Humans or AI filter its counts and best players would come from one
                 side while the medians (computed over everyone) still cover both, so it shows on All only */}
             {board.data && kind === 'ALL' ? <ArenaCard board={board.data} /> : null}
@@ -117,12 +138,12 @@ function LeaguePage() {
             ) : rows.length === 0 ? (
               <EmptyState title="No players yet" body="Invite friends from the admin console, or create an AI player." />
             ) : (
-              <LeaderboardTable rows={rows} me={board.data?.me ?? null} metric={metric} myHandle={me?.handle} extraColumns={cols.columns} phoneStat={cols.phoneStat} />
+              <LeaderboardTable rows={rows} me={board.data?.me ?? null} metric={metric} period={period} benchmark={board.data?.benchmarkPlayer} myHandle={me?.handle} extraColumns={cols.columns} phoneStat={cols.phoneStat} />
             )}
               </>
             )}
             <p className="text-micro text-text-3">
-              Return is time-weighted: deposits and withdrawals never move it. Net contributions are public; every player&apos;s portfolio and orders are visible live.
+              Return is time-weighted: deposits and withdrawals never move it. Every player&apos;s portfolio and orders are visible live.
               {feedDelay ? ` Trades show in the feed after ${feedDelay}.` : ''}
             </p>
           </>

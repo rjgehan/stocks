@@ -180,7 +180,7 @@ function PlayerOverview() {
             Full history
           </Link>
         </div>
-        <p className="px-4 text-micro text-text-3">{feedDelay ? `Fills show after ${feedDelay}. Notes are public.` : 'Every fill as it happens. Notes are public.'}</p>
+        {feedDelay ? <p className="px-4 text-micro text-text-3">Fills show after {feedDelay}.</p> : null}
         {allTrades.length ? (
           <ul className="divide-y divide-divider">
             {shownTrades.map((t, i) => (

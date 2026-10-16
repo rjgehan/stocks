@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
-import type { LeaderboardMetric, LeaderboardRow } from '@/lib/api/types'
-import { abs, isDecimal, isZero, sign } from '@/lib/format/decimal'
+import type { BenchmarkPlayer, LeaderboardMetric, LeaderboardPeriod, LeaderboardRow } from '@/lib/api/types'
+import { type Dec, compare, isDecimal } from '@/lib/format/decimal'
 import { formatMoney, formatMoneyCompact } from '@/lib/format/money'
 import { formatPct, moneyDirection, pctDirection } from '@/lib/format/number'
 import { Pill } from '@/components/ui/Pill'
@@ -13,6 +13,58 @@ import { FormulaPopover } from './MetricInfoPopover'
 import { AiChip, Avatar } from './PlayerBadge'
 
 const MEDAL = ['bg-gold', 'bg-silver', 'bg-bronze'] as const
+
+export const PERIOD_LABEL: Record<LeaderboardPeriod, string> = { TODAY: 'Today', WEEK: 'Week', MONTH: 'Month', YTD: 'YTD', SEASON: 'Season', ALL: 'All time' }
+
+/** One figure of a row: the period's (what the board ranks by), today's or the all-time one. */
+type Span = 'period' | 'day' | 'total'
+
+/** What a board line needs: a player's row or SPY as a player. */
+type Figures = Pick<LeaderboardRow, 'return' | 'pnl' | 'dayReturn' | 'dayPnl' | 'totalReturn' | 'totalPnl'>
+
+function figure(f: Figures, span: Span, metric: LeaderboardMetric): Dec | null | undefined {
+  if (metric === 'RETURN') return span === 'day' ? f.dayReturn : span === 'total' ? f.totalReturn : f.return
+  return span === 'day' ? f.dayPnl : span === 'total' ? f.totalPnl : f.pnl
+}
+
+/** "+1.23%" or "+$6.15", coloured; the other unit in the tooltip. */
+function Value({ f, span, metric, strong }: { f: Figures; span: Span; metric: LeaderboardMetric; strong?: boolean }) {
+  const v = figure(f, span, metric)
+  const other = figure(f, span, metric === 'RETURN' ? 'PNL' : 'RETURN')
+  const pct = metric === 'RETURN'
+  return (
+    <span title={other != null ? (pct ? formatMoney(other, { signed: true }) : formatPct(other)) : undefined} className={cx(strong && 'font-semibold', DIRECTION_TEXT[pct ? pctDirection(v) : moneyDirection(v)])}>
+      {pct ? formatPct(v) : formatMoney(v, { signed: true })}
+    </span>
+  )
+}
+
+/** The columns after the player: the period's (unless Day or Total already is it), Day, Total. */
+function spans(period: LeaderboardPeriod): Span[] {
+  return period === 'TODAY' || period === 'ALL' ? ['day', 'total'] : ['period', 'day', 'total']
+}
+
+/** The column the board ranks by (bold). */
+const primary = (period: LeaderboardPeriod): Span => (period === 'TODAY' ? 'day' : period === 'ALL' ? 'total' : 'period')
+
+function spanLabel(span: Span, period: LeaderboardPeriod): string {
+  return span === 'day' ? 'Day' : span === 'total' ? 'Total' : PERIOD_LABEL[period]
+}
+
+/**
+ * Where SPY goes among the rows: after the last ranked row that beats or ties it on the board's metric (never among
+ * the unranked rows below). -1 when SPY's figure is unknown.
+ */
+export function benchmarkIndex(rows: LeaderboardRow[], b: BenchmarkPlayer | null | undefined, metric: LeaderboardMetric): number {
+  const v = b ? (metric === 'RETURN' ? b.return : b.pnl) : null
+  if (!v || !isDecimal(v)) return -1
+  let at = 0
+  rows.forEach((r, i) => {
+    const rv = metric === 'RETURN' ? r.return : r.pnl
+    if (r.rank != null && rv && isDecimal(rv) && compare(rv, v) >= 0) at = i + 1
+  })
+  return at
+}
 
 function RankCell({ row }: { row: LeaderboardRow }) {
   if (row.rank === null) return <span className="text-text-3">–</span>
@@ -38,25 +90,6 @@ function RankCell({ row }: { row: LeaderboardRow }) {
   )
 }
 
-/** "+$500 deposited" when money moved in or out during the period (§16.7 charter item 2: deposits are public). */
-export function FlowChip({ flows }: { flows: string | null | undefined }) {
-  if (!flows || !isDecimal(flows) || isZero(flows)) return null
-  const dep = sign(flows) > 0
-  return (
-    <Pill tone={dep ? 'accent' : 'neutral'} title="Net deposits and withdrawals in this period. They never change the return.">
-      {dep ? '+' : '−'}
-      {formatMoneyCompact(abs(flows))} {dep ? 'deposited' : 'withdrawn'}
-    </Pill>
-  )
-}
-
-function Metric({ row, metric }: { row: LeaderboardRow; metric: LeaderboardMetric }) {
-  const value = metric === 'RETURN' ? row.return : row.pnl
-  return (
-    <span className={cx('font-semibold', DIRECTION_TEXT[metric === 'RETURN' ? pctDirection(value) : moneyDirection(value)])}>{metric === 'RETURN' ? formatPct(value) : formatMoney(value, { signed: true })}</span>
-  )
-}
-
 function Name({ row, me }: { row: LeaderboardRow; me: boolean }) {
   const p = row.player
   return (
@@ -79,21 +112,49 @@ function Name({ row, me }: { row: LeaderboardRow; me: boolean }) {
   )
 }
 
+function SpyName({ b }: { b: BenchmarkPlayer }) {
+  return (
+    <Link to="/stock/$symbol" params={{ symbol: b.symbol ?? 'SPY' }} className="flex min-h-11 min-w-0 items-center gap-2.5 hover:text-accent">
+      <span aria-hidden="true" className="inline-flex size-[30px] shrink-0 items-center justify-center rounded-full bg-bg-3 text-[10px] font-bold text-text-1">
+        {b.symbol ?? 'SPY'}
+      </span>
+      <span className="min-w-0">
+        <span className="flex flex-wrap items-center gap-1.5">
+          <span className="truncate font-semibold">S&amp;P 500</span>
+          <Pill tone="neutral" title="Not a player: the index, bought and held. It takes no rank.">
+            Benchmark
+          </Pill>
+        </span>
+        <span className="block truncate text-caption text-text-3">
+          {b.symbol ?? 'SPY'} · {b.startingCash ? `${formatMoneyCompact(b.startingCash)} bought and held` : 'bought and held'}
+        </span>
+      </span>
+    </Link>
+  )
+}
+
 /**
- * Leaderboard (§22.4): medals for 1–3, rank arrows, AI chip, return, P&L, vs SPY, net contributions with a deposit chip,
- * fills, sparkline; unranked rows greyed with their eligibility note; my row pinned at the bottom. Cards on phones.
+ * Leaderboard (§22.4): medals for 1–3, rank arrows, AI chip, the period's figure plus Day and Total (as % or $ by
+ * the board's metric), equity, fills, sparkline; unranked rows greyed with their eligibility note; SPY as an
+ * unranked benchmark line among the ranked rows; my row pinned at the bottom. Cards on phones.
  */
 export function LeaderboardTable({
   rows,
   me,
   metric,
+  period = 'WEEK',
+  benchmark = null,
   myHandle,
   extraColumns = [],
   phoneStat = null,
 }: {
   rows: LeaderboardRow[]
   me: LeaderboardRow | null
+  /** RETURN shows every figure as a percentage, PNL in dollars (and ranks by it). */
   metric: LeaderboardMetric
+  period?: LeaderboardPeriod
+  /** SPY as a player, shown where it would place (never ranked). */
+  benchmark?: BenchmarkPlayer | null
   myHandle?: string | null
   /** Phase 2 (§16.8): optional stat columns on tablet and desktop. */
   extraColumns?: readonly ExtraColumn[]
@@ -103,7 +164,10 @@ export function LeaderboardTable({
   const isMe = (r: LeaderboardRow) => Boolean(myHandle && r.player?.handle === myHandle)
   // My row is pinned at the bottom when the board does not already list it (§22.4).
   const pinned = me && !rows.some(isMe) ? me : null
-  const shown = rows
+  const spyAt = benchmarkIndex(rows, benchmark, metric)
+  const cols = spans(period)
+  const main = primary(period)
+  const secondary = cols.filter((s) => s !== main)
 
   const card = (r: LeaderboardRow, pin = false) => (
     <li key={`${pin ? 'pin-' : ''}${r.player?.handle}`} className={cx('flex items-center gap-3 px-3 py-3', !r.eligible && 'opacity-55', (pin || isMe(r)) && 'bg-accent-bg')}>
@@ -112,20 +176,44 @@ export function LeaderboardTable({
       </span>
       <div className="min-w-0 flex-1">
         <Name row={r} me={isMe(r)} />
-        <div className="mt-1 flex flex-wrap items-center gap-1.5 pl-[40px]">
-          <FlowChip flows={r.flowsInPeriod} />
-        </div>
       </div>
       <div className="shrink-0 text-right">
         <div className="text-body">
-          <Metric row={r} metric={metric} />
+          <Value f={r} span={main} metric={metric} strong />
         </div>
-        <div className="text-caption text-text-3">{metric === 'RETURN' ? formatMoney(r.pnl, { signed: true }) : formatPct(r.return)}</div>
+        <div className="text-caption text-text-3">
+          {secondary.map((s) => (
+            <span key={s} className="block whitespace-nowrap">
+              {spanLabel(s, period)} <Value f={r} span={s} metric={metric} />
+            </span>
+          ))}
+        </div>
         {phoneStat ? (
           <div className="text-micro text-text-3">
             {columnLabel(phoneStat)} <ExtraStatValue row={r} column={phoneStat} />
           </div>
         ) : null}
+      </div>
+    </li>
+  )
+
+  const spyCard = (b: BenchmarkPlayer) => (
+    <li key="benchmark" aria-label="Benchmark" className="flex items-center gap-3 bg-bg-2/60 px-3 py-3">
+      <span className="w-9 shrink-0 text-text-3">–</span>
+      <div className="min-w-0 flex-1">
+        <SpyName b={b} />
+      </div>
+      <div className="shrink-0 text-right">
+        <div className="text-body">
+          <Value f={b} span={main} metric={metric} strong />
+        </div>
+        <div className="text-caption text-text-3">
+          {secondary.map((s) => (
+            <span key={s} className="block whitespace-nowrap">
+              {spanLabel(s, period)} <Value f={b} span={s} metric={metric} />
+            </span>
+          ))}
+        </div>
       </div>
     </li>
   )
@@ -138,19 +226,11 @@ export function LeaderboardTable({
       <td className="max-w-0 py-2 pr-2">
         <Name row={r} me={isMe(r)} />
       </td>
-      <td className={cx('px-2 text-right font-semibold', metric === 'RETURN' && 'text-body', DIRECTION_TEXT[pctDirection(r.return)])}>{formatPct(r.return)}</td>
-      <td className="px-2 text-right">
-        <span className={cx('font-semibold', DIRECTION_TEXT[moneyDirection(r.pnl)])}>{formatMoney(r.pnl, { signed: true })}</span>
-      </td>
-      <td className="hidden px-2 text-right desktop:table-cell">
-        <span className={DIRECTION_TEXT[pctDirection(r.excessVsBenchmark)]}>{formatPct(r.excessVsBenchmark)}</span>
-      </td>
-      <td className="px-2 text-right">
-        <div className="flex flex-col items-end gap-0.5">
-          <span>{formatMoney(r.netContributions)}</span>
-          <FlowChip flows={r.flowsInPeriod} />
-        </div>
-      </td>
+      {cols.map((s) => (
+        <td key={s} className={cx('px-2 text-right', s === main && 'text-body')}>
+          <Value f={r} span={s} metric={metric} strong={s === main} />
+        </td>
+      ))}
       <td className="hidden px-2 text-right wide:table-cell">{r.equity ? formatMoney(r.equity) : <span className="text-text-3">—</span>}</td>
       <td className="hidden px-2 text-right tablet:table-cell">{r.fills}</td>
       {extraColumns.map((c) => (
@@ -164,10 +244,39 @@ export function LeaderboardTable({
     </tr>
   )
 
+  const spyTr = (b: BenchmarkPlayer) => (
+    <tr key="benchmark" aria-label="Benchmark" className="h-14 bg-bg-2/60">
+      <td className="w-16 pl-4 text-text-3">–</td>
+      <td className="max-w-0 py-2 pr-2">
+        <SpyName b={b} />
+      </td>
+      {cols.map((s) => (
+        <td key={s} className={cx('px-2 text-right', s === main && 'text-body')}>
+          <Value f={b} span={s} metric={metric} strong={s === main} />
+        </td>
+      ))}
+      <td className="hidden px-2 text-right wide:table-cell">{b.equity ? formatMoney(b.equity) : <span className="text-text-3">—</span>}</td>
+      <td className="hidden px-2 text-right text-text-3 tablet:table-cell">—</td>
+      {extraColumns.map((c) => (
+        <td key={c} className="hidden px-2 text-right text-text-3 tablet:table-cell">
+          —
+        </td>
+      ))}
+      <td className="hidden pr-4 pl-2 text-text-3 desktop:table-cell">—</td>
+    </tr>
+  )
+
+  /** The rows with SPY slotted in. */
+  function lines<T>(row: (r: LeaderboardRow) => T, spy: (b: BenchmarkPlayer) => T): T[] {
+    const out = rows.map((r) => row(r))
+    if (benchmark && spyAt >= 0) out.splice(spyAt, 0, spy(benchmark))
+    return out
+  }
+
   return (
     <>
       <ul className="divide-y divide-divider rounded-lg border border-divider bg-bg-1 tablet:hidden" aria-label="Leaderboard">
-        {shown.map((r) => card(r))}
+        {lines(card, spyCard)}
         {pinned ? card(pinned, true) : null}
       </ul>
       <div className="hidden overflow-x-auto rounded-lg border border-divider bg-bg-1 tablet:block">
@@ -184,26 +293,14 @@ export function LeaderboardTable({
                   Player <FormulaPopover topic="RANKED" align="start" />
                 </span>
               </th>
-              <th className={cx('px-2 text-right font-medium', metric === 'RETURN' && 'text-text-1')}>
-                <span className="inline-flex items-center gap-0.5">
-                  Return <FormulaPopover topic="RETURN" />
-                </span>
-              </th>
-              <th className={cx('px-2 text-right font-medium', metric === 'PNL' && 'text-text-1')}>
-                <span className="inline-flex items-center gap-0.5">
-                  P&amp;L <FormulaPopover topic="PNL" />
-                </span>
-              </th>
-              <th className="hidden px-2 text-right font-medium desktop:table-cell">
-                <span className="inline-flex items-center gap-0.5">
-                  vs SPY <FormulaPopover topic="VS_SPY" />
-                </span>
-              </th>
-              <th className="px-2 text-right font-medium">
-                <span className="inline-flex items-center gap-0.5">
-                  Net contrib. <FormulaPopover topic="NET_CONTRIB" />
-                </span>
-              </th>
+              {cols.map((s) => (
+                <th key={s} className={cx('px-2 text-right font-medium', s === main && 'text-text-1')}>
+                  <span className="inline-flex items-center gap-0.5">
+                    {spanLabel(s, period)}
+                    {s === main ? <FormulaPopover topic={metric === 'RETURN' ? 'RETURN' : 'PNL'} /> : null}
+                  </span>
+                </th>
+              ))}
               <th className="hidden px-2 text-right font-medium wide:table-cell">Equity</th>
               <th className="hidden px-2 text-right font-medium tablet:table-cell">Fills</th>
               {extraColumns.map((c) => (
@@ -215,7 +312,7 @@ export function LeaderboardTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-divider">
-            {shown.map((r) => tr(r))}
+            {lines(tr, spyTr)}
             {pinned ? tr(pinned, true) : null}
           </tbody>
         </table>

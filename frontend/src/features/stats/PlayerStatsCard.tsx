@@ -119,10 +119,12 @@ export function PlayerStatsCard({
             <Trade label="Best trade" lot={s.bestTrade} />
             <Trade label="Worst trade" lot={s.worstTrade} />
           </dl>
-          <p className="px-4 py-2 text-micro text-text-3">
-            Same numbers as the leaderboard for this period{s.partialPeriod ? ' (joined during it)' : ''}.{' '}
-            {delayed && feedDelay ? (feedDelay.startsWith('the ') ? `Best and worst trades appear after ${feedDelay}.` : `Best and worst trades appear ${feedDelay} after the sell.`) : ''}
-          </p>
+          {s.partialPeriod || (delayed && feedDelay) ? (
+            <p className="px-4 py-2 text-micro text-text-3">
+              {s.partialPeriod ? 'Joined during this period. ' : ''}
+              {delayed && feedDelay ? (feedDelay.startsWith('the ') ? `Best and worst trades appear after ${feedDelay}.` : `Best and worst trades appear ${feedDelay} after the sell.`) : ''}
+            </p>
+          ) : null}
         </>
       )}
     </section>

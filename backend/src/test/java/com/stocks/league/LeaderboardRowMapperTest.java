@@ -105,4 +105,22 @@ class LeaderboardRowMapperTest {
     assertThat(Eligibility.note(LeaderboardPeriod.ALL, 6, 1, 5, 2)).isEqualTo("1/2 symbols");
     assertThat(Eligibility.note(LeaderboardPeriod.SEASON, 0, 0, 5, 2)).isEqualTo("0/5 trades · 0/2 symbols");
   }
+
+  @Test
+  void everyRowCarriesTheDayAndTotalWhateverThePeriod() {
+    LeagueEntry week = entry(1, PlayerKind.HUMAN, "0.05", "25.00", 0, true, false, null);
+    LeagueEntry today = entry(1, PlayerKind.HUMAN, "0.01", "5.00", 0, true, false, null);
+    LeagueEntry total = entry(1, PlayerKind.HUMAN, "0.20", "100.00", 0, true, false, null);
+    LeagueEntry newcomer = entry(2, PlayerKind.AI, "0.02", "10.00", 0, true, false, null);
+    List<LeaderboardRowDto> rows = LeaderboardRowMapper.rows(List.of(week, newcomer), LeaderboardMetric.RETURN,
+        KindFilter.ALL, false, LeaderboardRowMapper.byPlayer(List.of(today)),
+        LeaderboardRowMapper.byPlayer(List.of(total)));
+    assertThat(rows.get(0).ret()).isEqualByComparingTo("0.05");
+    assertThat(rows.get(0).dayReturn()).isEqualByComparingTo("0.01");
+    assertThat(rows.get(0).dayPnl()).isEqualByComparingTo("5.00");
+    assertThat(rows.get(0).totalReturn()).isEqualByComparingTo("0.20");
+    assertThat(rows.get(0).totalPnl()).isEqualByComparingTo("100.00");
+    assertThat(rows.get(1).dayReturn()).isNull();                       // not on the TODAY board: unknown
+    assertThat(rows.get(1).totalPnl()).isNull();
+  }
 }

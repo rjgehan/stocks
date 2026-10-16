@@ -6,6 +6,7 @@ import { MockServer } from '@/lib/api/mock/server'
 import type { ManualAction, ManualBot, ManualSession } from '@/lib/api/types'
 import { renderWithRouter } from '@/test/router'
 import { ManualConsole } from './ManualConsole'
+import { PromptsScreen, pickUp } from './PromptsScreen'
 import { issueLine, placeButton, resultLabel } from './manualView'
 
 const SID = 'mbs_01JA0000000000000000000000'
@@ -82,7 +83,7 @@ const open = (sessionId?: string) => renderWithRouter(<ManualConsole handle="gem
 // ------------------------------------------------------------------------------------------- the console
 
 describe('the manual console (§20.8)', { timeout: 20_000 }, () => {
-  it('shows a loading state, then the bot with the public caption on its instructions', async () => {
+  it('shows a loading state, then the bot with its settings', async () => {
     const gate: { open?: () => void } = {}
     const opened = new Promise<void>((r) => (gate.open = r))
     routes['GET /me/bots/gem/manual'] = async () => {
@@ -94,9 +95,8 @@ describe('the manual console (§20.8)', { timeout: 20_000 }, () => {
     expect(await screen.findByLabelText('Loading the console', {}, SLOW)).toBeTruthy()
     gate.open?.()
     expect(await screen.findByRole('heading', { name: 'Gem' }, SLOW)).toBeTruthy()
-    expect(screen.getByText('Manual console')).toBeTruthy()
-    expect(screen.getByText("Public: part of every prompt, which every player can read under @gem's History. Key-like strings are removed.")).toBeTruthy()
-    expect((screen.getByLabelText('Instructions for the bot') as HTMLTextAreaElement).value).toBe('Buy quality on dips.')
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Gem')
+    expect((screen.getByLabelText('Instructions (public, part of every prompt)') as HTMLTextAreaElement).value).toBe('Buy quality on dips.')
     expect(screen.getByText('20 / 4,000')).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByRole('button', { name: 'New prompt' })).toBeTruthy()
@@ -107,7 +107,7 @@ describe('the manual console (§20.8)', { timeout: 20_000 }, () => {
     serve(bot())
     routes['PUT /me/bots/gem/manual'] = (body) => ({ body: bot({ instructions: (body as { instructions: string }).instructions }) })
     open()
-    const text = await screen.findByLabelText('Instructions for the bot', {}, SLOW)
+    const text = await screen.findByLabelText('Instructions (public, part of every prompt)', {}, SLOW)
     await userEvent.clear(text)
     await userEvent.type(text, 'Only ETFs.')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -131,16 +131,28 @@ describe('the manual console (§20.8)', { timeout: 20_000 }, () => {
   it('disables every write for a frozen bot', async () => {
     serve(bot({ status: 'FROZEN' }), session())
     open(SID)
-    expect(await screen.findByText(/@gem is frozen: you can look/, {}, SLOW)).toBeTruthy()
+    expect(await screen.findByText(/@gem is frozen: read only/, {}, SLOW)).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: 'New prompt' }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByLabelText('Instructions for the bot') as HTMLTextAreaElement).disabled).toBe(true)
+    expect((screen.getByLabelText('Instructions (public, part of every prompt)') as HTMLTextAreaElement).disabled).toBe(true)
   })
 
-  it('warns when the bot also trades with a key or connector', async () => {
+  it('marks a bot that also trades with a key or connector', async () => {
     serve(bot({ activeConnectors: 1 }))
     open()
-    expect(await screen.findByText('This bot also trades with an API key or connector; orders from both show on its profile.', {}, SLOW)).toBeTruthy()
+    expect(await screen.findByTitle('Also trades with an API key or connector', {}, SLOW)).toBeTruthy()
+  })
+
+  it('renames the bot', async () => {
+    serve(bot())
+    routes['PUT /me/bots/gem/manual'] = () => ({ body: bot() })
+    open()
+    const name = await screen.findByLabelText('Name', {}, SLOW)
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Gem Two')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
+    expect(calls.find((c) => c.method === 'PUT')!.body).toEqual({ displayName: 'Gem Two' })
   })
 
   it('copies the prompt to the clipboard', async () => {
@@ -175,7 +187,7 @@ describe('the manual console (§20.8)', { timeout: 20_000 }, () => {
       }),
     })
     open(SID)
-    const reply = await screen.findByLabelText('Paste the whole reply here', {}, SLOW)
+    const reply = await screen.findByLabelText("Paste the AI's reply", {}, SLOW)
     expect((screen.getByRole('button', { name: 'Check reply' }) as HTMLButtonElement).disabled).toBe(true)
     await userEvent.click(reply)
     await userEvent.paste('Here you go:\n```json\n{"orders": [}\n```')
@@ -219,7 +231,7 @@ describe('the manual console (§20.8)', { timeout: 20_000 }, () => {
     expect(calls.find((c) => c.path.endsWith('/execute'))!.body).toEqual({ actions: [1] })
     expect(await screen.findByText('PLACED · Working')).toBeTruthy()
     expect(screen.getByText('Summary posted to the journal')).toBeTruthy()
-    expect((screen.getByLabelText('Paste the whole reply here') as HTMLTextAreaElement).readOnly).toBe(true)
+    expect((screen.getByLabelText("Paste the AI's reply") as HTMLTextAreaElement).readOnly).toBe(true)
     expect((screen.getByRole('checkbox', { name: 'Place row 1' }) as HTMLInputElement).disabled).toBe(true)
     expect((screen.getByRole('checkbox', { name: 'Place row 2' }) as HTMLInputElement).disabled).toBe(false)
     await userEvent.click(screen.getByRole('checkbox', { name: 'Place row 2' }))
@@ -348,5 +360,66 @@ describe('mock mode (§22.9)', () => {
     expect(list.body.items[0].untrusted.prompt).toBeNull()
     expect((await call('GET', `/players/claude/manual-sessions/${id}`)).body.untrusted.reply).toContain('One share.')
     expect((await call('GET', `/players/chatgpt/manual-sessions/${id}`)).status).toBe(404)
+  })
+})
+
+// ------------------------------------------------------------------------------------------- the prompts screen
+
+describe('pickUp: what a bot\'s latest session means when the prompts screen opens', () => {
+  const now = Date.parse('2026-10-13T15:00:00Z')
+  it('is done when the latest session was placed today (ET)', () => {
+    expect(pickUp(session({ status: 'EXECUTED', executedAt: '2026-10-13T14:30:00Z' }), now)).toEqual({ done: true, reuse: null })
+    expect(pickUp(session({ status: 'EXECUTED', executedAt: '2026-10-12T19:00:00Z' }), now)).toEqual({ done: false, reuse: null })
+  })
+  it('keeps working on a recent prompt, never a stale one', () => {
+    expect(pickUp(session({ createdAt: '2026-10-13T14:45:00Z' }), now)).toEqual({ done: false, reuse: SID })
+    expect(pickUp(session({ status: 'REPLIED', createdAt: '2026-10-13T14:45:00Z' }), now)).toEqual({ done: false, reuse: SID })
+    expect(pickUp(session({ createdAt: '2026-10-13T13:00:00Z' }), now)).toEqual({ done: false, reuse: null })
+    expect(pickUp(undefined, now)).toEqual({ done: false, reuse: null })
+  })
+})
+
+describe('the prompts screen', { timeout: 20_000 }, () => {
+  const api = bot({ bot: { ...bot().bot!, handle: 'claude', displayName: 'Claude', playerId: 'ply_2' }, activeApiKeys: 1 })
+
+  it('lists the manual bots, the API ones on request', async () => {
+    routes['GET /me/bots'] = () => ({ body: [api, bot()] })
+    routes['GET /players/gem/manual-sessions'] = () => ({ body: { items: [], nextCursor: null } })
+    routes['GET /players/claude/manual-sessions'] = () => ({ body: { items: [], nextCursor: null } })
+    renderWithRouter(<PromptsScreen />)
+    expect(await screen.findByRole('listitem', { name: '@gem' }, SLOW)).toBeTruthy()
+    expect(screen.queryByRole('listitem', { name: '@claude' })).toBeNull()
+    expect(screen.getByText('0 of 1 done')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Show 1 API bot' }))
+    expect(screen.getByRole('listitem', { name: '@claude' })).toBeTruthy()
+  })
+
+  it('copies a fresh prompt, reads the pasted trades, executes them and marks the bot done', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const prompted = session({ createdAt: new Date().toISOString() })
+    const replied = session({ ...prompted, status: 'REPLIED', repliedAt: new Date().toISOString(), actions: [row(1), row(2, { executable: false, issues: [{ severity: 'ERROR', code: 'FIELD_INVALID', message: 'bad qty', hint: null, line: 12, column: null, field: 'qty' }] })] })
+    const executed = session({ ...replied, status: 'EXECUTED', executedAt: new Date().toISOString(), actions: [row(1, { result: { status: 'PLACED', orderId: 'ord_1', orderStatus: 'FILLED', code: null, message: null, at: null } }), replied.actions![1]!] })
+    routes['GET /me/bots'] = () => ({ body: [bot()] })
+    routes['GET /players/gem/manual-sessions'] = () => ({ body: { items: [], nextCursor: null } })
+    routes['POST /me/bots/gem/manual-sessions'] = () => ({ status: 201, body: prompted })
+    routes[`GET /players/gem/manual-sessions/${SID}`] = () => ({ body: prompted })
+    routes[`POST /me/bots/gem/manual-sessions/${SID}/reply`] = () => ({ body: replied })
+    routes[`POST /me/bots/gem/manual-sessions/${SID}/execute`] = () => ({ body: executed })
+    renderWithRouter(<PromptsScreen />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy prompt' }, SLOW))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(prompted.untrusted!.prompt))
+    const reply = await screen.findByLabelText('Reply for @gem', {}, SLOW)
+    fireEvent.change(reply, { target: { value: 'my reply ```json {} ```' } })
+    const trades = await screen.findByRole('list', { name: 'Trades for @gem' }, SLOW)
+    expect(within(trades).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(trades).getByText(/bad qty/)).toBeTruthy()
+    expect(calls.find((c) => c.path.endsWith('/reply'))!.body).toEqual({ reply: 'my reply ```json {} ```' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Execute 1 trade' }))
+    expect(await screen.findByLabelText('Done', {}, SLOW)).toBeTruthy()
+    expect(calls.find((c) => c.path.endsWith('/execute'))!.body).toEqual({ actions: [1] })
+    expect(screen.getByText('1 of 1 done')).toBeTruthy()
   })
 })

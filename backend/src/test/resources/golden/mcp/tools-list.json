@@ -3677,6 +3677,14 @@
           "apiTrader" : {
             "type" : "boolean"
           },
+          "dayPnl" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "dayReturn" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
           "eligibilityNote" : {
             "type" : [ "string", "null" ]
           },
@@ -3784,12 +3792,20 @@
           "topHolding" : {
             "type" : [ "string", "null" ]
           },
+          "totalPnl" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "totalReturn" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
           "winRate" : {
             "type" : [ "string", "null" ],
             "format" : "decimal"
           }
         },
-        "required" : [ "rank", "rankChange", "eligible", "eligibilityNote", "partialPeriod", "rebased", "player", "apiTrader", "return", "pnl", "excessVsBenchmark", "maxDrawdown", "equity", "netContributions", "flowsInPeriod", "fills", "symbolsTraded", "winRate", "topHolding", "spark", "sharpe", "profitFactor" ]
+        "required" : [ "rank", "rankChange", "eligible", "eligibilityNote", "partialPeriod", "rebased", "player", "apiTrader", "return", "pnl", "excessVsBenchmark", "maxDrawdown", "equity", "netContributions", "flowsInPeriod", "fills", "symbolsTraded", "winRate", "topHolding", "spark", "sharpe", "profitFactor", "dayReturn", "dayPnl", "totalReturn", "totalPnl" ]
       }
     },
     "type" : "object",
@@ -3825,6 +3841,47 @@
         },
         "required" : [ "symbol", "return" ]
       },
+      "benchmarkPlayer" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "dayPnl" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "dayReturn" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "equity" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "pnl" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "return" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "startingCash" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "symbol" : {
+            "type" : [ "string", "null" ]
+          },
+          "totalPnl" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "totalReturn" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          }
+        },
+        "required" : [ "symbol", "startingCash", "equity", "return", "pnl", "dayReturn", "dayPnl", "totalReturn", "totalPnl" ]
+      },
       "kind" : {
         "type" : [ "string", "null" ],
         "enum" : [ "ALL", "HUMAN", "AI", null ]
@@ -3855,7 +3912,7 @@
         }
       }
     },
-    "required" : [ "period", "metric", "kind", "periodStart", "asOf", "benchmark", "arena", "rows", "me" ]
+    "required" : [ "period", "metric", "kind", "periodStart", "asOf", "benchmark", "arena", "rows", "me", "benchmarkPlayer" ]
   }
 }, {
   "name" : "list_players",

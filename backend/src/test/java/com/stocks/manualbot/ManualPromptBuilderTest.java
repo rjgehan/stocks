@@ -111,7 +111,7 @@ class ManualPromptBuilderTest {
 
   static LeaderboardRowDto standing(Integer rank, String note) {
     return new LeaderboardRowDto(rank, null, rank != null, note, false, false, null, false, d("0.0412"), d("41.20"),
-        d("-0.0035"), null, null, null, null, 4, 2, null, null, List.of(), null, null);
+        d("-0.0035"), null, null, null, null, 4, 2, null, null, List.of(), null, null, null, null, null, null);
   }
 
   static ManualPromptBuilder.Input input(String instructions, ClockDto clock, List<PositionDto> positions,

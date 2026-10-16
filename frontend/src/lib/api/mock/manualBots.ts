@@ -23,6 +23,9 @@ export interface ManualMockDeps {
   /** Any player, DISABLED ones included; null when unknown. */
   player: (handle: string) => { summary: PlayerSummary; ownerHandle: string | null; status: 'ACTIVE' | 'FROZEN' | 'DISABLED' } | null
   setAiModel: (handle: string, label: string) => void
+  setDisplayName: (handle: string, name: string) => void
+  /** The handles of the AI bots I own, any status. */
+  owned: () => string[]
   activeKeys: (handle: string) => number
   clock: () => Clock
   preview: (req: PlaceOrderRequest) => Preview
@@ -341,6 +344,7 @@ export function registerManualBotRoutes(r: ManualRouteFn, d: ManualMockDeps): vo
       .sessions.flatMap((s) => s.actions ?? [])
       .find((a) => a.result?.orderId === orderId && (a.result.orderStatus === 'WORKING' || a.result.orderStatus === 'PENDING'))
 
+  r('GET', '/me/bots', () => json([...d.owned()].sort().filter((h) => d.player(h)).map(view)))
   r('GET', '/me/bots/{handle}/manual', ({ params }) => {
     const op = operate(params[0]!, false)
     return op instanceof Response ? op : json(view(op.handle))
@@ -348,7 +352,8 @@ export function registerManualBotRoutes(r: ManualRouteFn, d: ManualMockDeps): vo
   r('PUT', '/me/bots/{handle}/manual', ({ params, body }) => {
     const op = operate(params[0]!, true)
     if (op instanceof Response) return op
-    const b = (body ?? {}) as { instructions?: string | null; aiModel?: string | null }
+    const b = (body ?? {}) as { instructions?: string | null; aiModel?: string | null; displayName?: string | null }
+    if (b.displayName != null && !/^[A-Za-z0-9 _.-]{2,40}$/.test(b.displayName.trim())) return invalid('2-40 characters: letters, digits, space, _ . -', 'displayName')
     if (b.instructions != null) {
       const text = b.instructions.replace(/\r\n?/g, '\n').trim().replace(KEY_SHAPED_INLINE, '[redacted]')
       if (text.length > LIMITS.maxInstructionsChars) return invalid(`At most ${LIMITS.maxInstructionsChars} characters.`, 'instructions')
@@ -359,6 +364,7 @@ export function registerManualBotRoutes(r: ManualRouteFn, d: ManualMockDeps): vo
       if (label.length < 1 || label.length > 24) return invalid('The model label is 1-24 characters.', 'aiModel')
       d.setAiModel(op.handle, label)
     }
+    if (b.displayName != null) d.setDisplayName(op.handle, b.displayName.trim())
     return json(view(op.handle))
   })
   r('POST', '/me/bots/{handle}/manual-sessions', ({ params }) => {

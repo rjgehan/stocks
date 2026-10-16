@@ -4543,6 +4543,41 @@
         ]
       }
     },
+    "/api/v1/me/bots": {
+      "get": {
+        "description": "The console state of every AI bot the signed-in person owns, by handle (the shape of GET /me/bots/{handle}/manual).",
+        "operationId": "getMyManualBots",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManualBot"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "My bots' manual consoles",
+        "tags": [
+          "manual bots"
+        ]
+      }
+    },
     "/api/v1/me/bots/run-requests": {
       "post": {
         "description": "Session only. \"Run all\": a run request for every bot the caller may run (the AI players they own; every listed AI player for an ACTIVE admin), by the rules of POST /me/bots/{handle}/run-requests, each with its own audit row and daily limit. Never fails for one bot: each result says REQUESTED (the new request), ALREADY_OPEN (the request waiting or running) or SKIPPED with a reason: NOT_ACTIVE (frozen), NO_TRADER (no claude-trader service asked for the bot's requests in the last 5 minutes, so nothing would pick one up) or RATE_LIMITED (20 per bot in 24 hours). dryRun: the order tools are blocked for every one of them. The caller must be ACTIVE: PLAYER_FROZEN or PLAYER_DISABLED refuse the whole call.",
@@ -4626,7 +4661,7 @@
         ]
       },
       "put": {
-        "description": "null = unchanged. instructions 0-4000 characters (\"\" clears them; key-like strings are removed); public, part of every prompt. aiModel 1-24 characters, shown on the profile.",
+        "description": "null = unchanged. instructions 0-4000 characters (\"\" clears them; key-like strings are removed); public, part of every prompt. aiModel 1-24 characters, shown on the profile. displayName 2-40 characters.",
         "operationId": "updateManualBot",
         "parameters": [
           {
@@ -4670,7 +4705,7 @@
             "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
           }
         },
-        "summary": "Save a bot's instructions or model label",
+        "summary": "Save a bot's instructions, model label or name",
         "tags": [
           "manual bots"
         ]
@@ -10095,6 +10130,84 @@
           "symbol"
         ]
       },
+      "BenchmarkPlayer": {
+        "type": "object",
+        "properties": {
+          "dayPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "equity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "pnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "return": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "startingCash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "totalPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "totalReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "dayPnl",
+          "dayReturn",
+          "equity",
+          "pnl",
+          "return",
+          "startingCash",
+          "symbol",
+          "totalPnl",
+          "totalReturn"
+        ]
+      },
       "BenchmarkReturn": {
         "type": "object",
         "properties": {
@@ -12525,6 +12638,16 @@
               }
             ]
           },
+          "benchmarkPlayer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BenchmarkPlayer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kind": {
             "type": [
               "string",
@@ -12594,6 +12717,7 @@
           "arena",
           "asOf",
           "benchmark",
+          "benchmarkPlayer",
           "kind",
           "me",
           "metric",
@@ -12607,6 +12731,20 @@
         "properties": {
           "apiTrader": {
             "type": "boolean"
+          },
+          "dayPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "dayReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
           },
           "eligibilityNote": {
             "type": [
@@ -12734,6 +12872,20 @@
               "null"
             ]
           },
+          "totalPnl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "totalReturn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
           "winRate": {
             "type": [
               "string",
@@ -12744,6 +12896,8 @@
         },
         "required": [
           "apiTrader",
+          "dayPnl",
+          "dayReturn",
           "eligibilityNote",
           "eligible",
           "equity",
@@ -12764,6 +12918,8 @@
           "spark",
           "symbolsTraded",
           "topHolding",
+          "totalPnl",
+          "totalReturn",
           "winRate"
         ]
       },
@@ -21458,6 +21614,13 @@
               "null"
             ],
             "description": "The bot's model label, 1-24 characters (e.g. Gemini 3)"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The bot's display name, 2-40 characters: letters, digits, space, _ . -"
           },
           "instructions": {
             "type": [

@@ -22,9 +22,9 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { FieldShell, TextField } from '@/components/ui/Field'
 import { Pill, type PillTone } from '@/components/ui/Pill'
 import { Skeleton, SkeletonRows } from '@/components/ui/Skeleton'
-import { IconCheck, IconCopy, IconInfo, IconRobot } from '@/components/ui/icons'
+import { IconCheck, IconCopy, IconRobot } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
-import { AI_MODEL_MAX } from '@/features/auth/rules'
+import { AI_MODEL_MAX, displayNameError } from '@/features/auth/rules'
 import { AiChip, Avatar } from '@/features/league/PlayerBadge'
 import { toast } from '@/features/notifications/toastStore'
 import {
@@ -94,26 +94,26 @@ function ConsoleHeader({ m, handle }: { m: ManualBot; handle: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-[20px] leading-7 font-bold tracking-tight">{bot?.displayName ?? `@${handle}`}</h1>
             <AiChip model={bot?.aiModel} />
-            <Pill tone="accent">Manual console</Pill>
+            {linked ? (
+              <Pill tone="neutral" title="Also trades with an API key or connector">
+                API
+              </Pill>
+            ) : null}
           </div>
           <p className="text-caption text-text-2">
-            @{handle}
-            {m.ownerHandle ? ` · run by @${m.ownerHandle}` : ''} · {m.sessionsToday} of {m.sessionsPerDay} prompts today
+            @{handle} · {m.sessionsToday}/{m.sessionsPerDay} prompts today
           </p>
         </div>
+        <Link to="/prompts" className="inline-flex min-h-11 items-center text-caption font-semibold text-accent hover:text-accent-hover tablet:min-h-0">
+          All prompts
+        </Link>
         <Link to="/players/$handle" params={{ handle }} className="inline-flex min-h-11 items-center text-caption font-semibold text-accent hover:text-accent-hover tablet:min-h-0">
-          Public profile
+          Profile
         </Link>
       </div>
       {m.status && m.status !== 'ACTIVE' ? (
         <p role="alert" className="rounded-sm bg-warn/15 p-2 text-caption text-warn">
-          @{handle} is {m.status === 'FROZEN' ? 'frozen' : 'disabled'}: you can look, but not save, prompt or place orders.
-        </p>
-      ) : null}
-      {linked ? (
-        <p className="flex items-start gap-2 rounded-sm bg-accent-bg p-2 text-caption text-text-1">
-          <IconInfo size={16} className="mt-0.5 shrink-0 text-accent" />
-          This bot also trades with an API key or connector; orders from both show on its profile.
+          @{handle} is {m.status === 'FROZEN' ? 'frozen' : 'disabled'}: read only.
         </p>
       ) : null}
     </section>
@@ -126,34 +126,50 @@ function InstructionsCard({ m, handle, canWrite }: { m: ManualBot; handle: strin
   const update = useUpdateManualBot(handle)
   const [instructions, setInstructions] = useState<string | null>(null)
   const [model, setModel] = useState<string | null>(null)
+  const [name, setName] = useState<string | null>(null)
   const max = m.limits?.maxInstructionsChars ?? 4000
   const textValue = instructions ?? m.instructions ?? ''
   const modelValue = model ?? m.bot?.aiModel ?? ''
-  const changed = { instructions: instructions !== null && instructions !== (m.instructions ?? ''), model: model !== null && model.trim() !== (m.bot?.aiModel ?? '') }
-  const dirty = changed.instructions || changed.model
+  const nameValue = name ?? m.bot?.displayName ?? ''
+  const changed = {
+    instructions: instructions !== null && instructions !== (m.instructions ?? ''),
+    model: model !== null && model.trim() !== (m.bot?.aiModel ?? ''),
+    name: name !== null && name.trim() !== (m.bot?.displayName ?? ''),
+  }
+  const dirty = changed.instructions || changed.model || changed.name
   const server = update.error && isApiError(update.error) ? update.error : null
+  const nameError = changed.name ? (displayNameError(nameValue) ?? server?.fieldErrors.displayName ?? null) : null
   const modelError = changed.model && !model?.trim() ? 'Enter a model label (1-24 characters).' : (server?.fieldErrors.aiModel ?? null)
   const textError = textValue.length > max ? `At most ${formatInteger(max)} characters.` : (server?.fieldErrors.instructions ?? null)
   const banner = update.error && !(server && server.problem.fields.length) ? describeError(update.error) : null
   const save = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!dirty || modelError || textValue.length > max) return
+    if (!dirty || nameError || modelError || textValue.length > max) return
     update.mutate(
-      { ...(changed.instructions ? { instructions: textValue } : {}), ...(changed.model ? { aiModel: modelValue.trim() } : {}) },
+      {
+        ...(changed.instructions ? { instructions: textValue } : {}),
+        ...(changed.model ? { aiModel: modelValue.trim() } : {}),
+        ...(changed.name ? { displayName: nameValue.trim() } : {}),
+      },
       {
         onSuccess: () => {
           setInstructions(null)
           setModel(null)
+          setName(null)
           toast({ tone: 'neutral', title: 'Saved' })
         },
       },
     )
   }
   return (
-    <section aria-label="Instructions" className={CARD}>
-      <CardTitle>Instructions</CardTitle>
+    <section aria-label="Bot settings" className={CARD}>
+      <CardTitle>Settings</CardTitle>
       <form onSubmit={save} className="space-y-3" noValidate>
-        <FieldShell label="Instructions for the bot" error={textError} labelAside={<Counter n={textValue.length} max={max} />}>
+        <div className="grid grid-cols-1 gap-3 tablet:grid-cols-2">
+          <TextField label="Name" value={nameValue} onChange={(e) => setName(e.target.value)} maxLength={40} disabled={!canWrite} error={nameError} />
+          <TextField label="Model label" value={modelValue} onChange={(e) => setModel(e.target.value)} maxLength={AI_MODEL_MAX} placeholder="Gemini 3" disabled={!canWrite} error={modelError} />
+        </div>
+        <FieldShell label="Instructions (public, part of every prompt)" error={textError} labelAside={<Counter n={textValue.length} max={max} />}>
           {(id, describedBy) => (
             <textarea
               id={id}
@@ -172,9 +188,6 @@ function InstructionsCard({ m, handle, canWrite }: { m: ManualBot; handle: strin
             />
           )}
         </FieldShell>
-        {!textValue ? <p className="text-caption text-text-3">Tell the bot what you want: style, risk, symbols to focus on or avoid.</p> : null}
-        <TextField label="Model label" value={modelValue} onChange={(e) => setModel(e.target.value)} maxLength={AI_MODEL_MAX} placeholder="Gemini 3" disabled={!canWrite} error={modelError} hint={`Shown on the profile as “AI · ${modelValue.trim() || 'Gemini 3'}”.`} />
-        <p className="text-caption text-text-2">Public: part of every prompt, which every player can read under @{handle}&apos;s History. Key-like strings are removed.</p>
         {banner ? (
           <p role="alert" className="rounded-sm bg-down-bg p-2 text-caption text-down">
             {banner.title}
@@ -288,8 +301,7 @@ function PromptCard({
           {missing ? <p className="text-caption text-text-3">That session was not found; make a new prompt.</p> : null}
           {session ? (
             <p className="flex flex-wrap items-center gap-2 text-caption text-text-2">
-              <span className="font-mono text-text-1">{session.sessionId}</span>
-              <span>made {formatTimeEt(session.createdAt)}</span>
+              <span>Made {formatTimeEt(session.createdAt)}</span>
               {session.marketSession ? <Pill tone="neutral">{session.marketSession}</Pill> : null}
               {session.status === 'EXECUTED' ? <Pill tone="up">Placed</Pill> : null}
             </p>
@@ -324,7 +336,6 @@ function PromptCard({
               </pre>
             </details>
           ) : null}
-          <p className="text-caption text-text-3">Paste it into Gemini, Codex, ChatGPT or any chat. The prompt explains the reply format.</p>
         </div>
       )}
       <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} onConfirm={newPrompt} title="Discard this reply?" confirmLabel="New prompt" pending={create.isPending}>
@@ -350,7 +361,7 @@ function ReplyCard({ handle, session, maxChars, canWrite }: { handle: string; se
     <section aria-label="Reply" className={CARD}>
       <CardTitle>2 · Reply</CardTitle>
       {!session ? (
-        <p className="text-caption text-text-3">Make a prompt first, then paste the AI&apos;s answer here.</p>
+        <p className="text-caption text-text-3">Make a prompt first.</p>
       ) : (
         <form
           className="space-y-3"
@@ -359,7 +370,7 @@ function ReplyCard({ handle, session, maxChars, canWrite }: { handle: string; se
             if (value.trim() && !tooLong && !executed) check.mutate(value)
           }}
         >
-          <FieldShell label="Paste the whole reply here" error={tooLong ? `The reply is longer than ${formatInteger(maxChars)} characters; paste only the part with the JSON block.` : null} labelAside={<Counter n={value.length} max={maxChars} />}>
+          <FieldShell label="Paste the AI's reply" error={tooLong ? `Longer than ${formatInteger(maxChars)} characters; paste only the part with the JSON block.` : null} labelAside={<Counter n={value.length} max={maxChars} />}>
             {(id, describedBy) => (
               <textarea
                 id={id}
@@ -375,7 +386,7 @@ function ReplyCard({ handle, session, maxChars, canWrite }: { handle: string; se
               />
             )}
           </FieldShell>
-          {executed ? <p className="text-caption text-text-3">This session placed orders, so its reply is locked. Make a new prompt to trade again.</p> : null}
+          {executed ? <p className="text-caption text-text-3">Placed: make a new prompt to trade again.</p> : null}
           {failure ? (
             <p role="alert" className="rounded-sm bg-down-bg p-2 text-caption text-down">
               {failure.detail ?? failure.title}
@@ -654,8 +665,7 @@ function ReviewCard({ handle, session, canWrite }: { handle: string; session: Ma
             {failure.detail ?? failure.title}
           </p>
         ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-caption text-text-3">Orders run in this order: cancels, sells, buys.</p>
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button variant="primary" onClick={place} disabled={disabled || !button.enabled}>
             {execute.isPending ? 'Placing…' : button.label}
           </Button>

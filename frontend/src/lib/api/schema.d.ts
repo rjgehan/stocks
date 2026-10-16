@@ -1561,6 +1561,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/bots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My bots' manual consoles
+         * @description The console state of every AI bot the signed-in person owns, by handle (the shape of GET /me/bots/{handle}/manual).
+         */
+        get: operations["getMyManualBots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/bots/run-requests": {
         parameters: {
             query?: never;
@@ -1594,8 +1614,8 @@ export interface paths {
          */
         get: operations["getManualBot"];
         /**
-         * Save a bot's instructions or model label
-         * @description null = unchanged. instructions 0-4000 characters ("" clears them; key-like strings are removed); public, part of every prompt. aiModel 1-24 characters, shown on the profile.
+         * Save a bot's instructions, model label or name
+         * @description null = unchanged. instructions 0-4000 characters ("" clears them; key-like strings are removed); public, part of every prompt. aiModel 1-24 characters, shown on the profile. displayName 2-40 characters.
          */
         put: operations["updateManualBot"];
         post?: never;
@@ -3116,6 +3136,25 @@ export interface components {
             return: string | null;
             symbol: string | null;
         };
+        BenchmarkPlayer: {
+            /** Format: decimal */
+            dayPnl: string | null;
+            /** Format: decimal */
+            dayReturn: string | null;
+            /** Format: decimal */
+            equity: string | null;
+            /** Format: decimal */
+            pnl: string | null;
+            /** Format: decimal */
+            return: string | null;
+            /** Format: decimal */
+            startingCash: string | null;
+            symbol: string | null;
+            /** Format: decimal */
+            totalPnl: string | null;
+            /** Format: decimal */
+            totalReturn: string | null;
+        };
         BenchmarkReturn: {
             /** Format: decimal */
             return: string | null;
@@ -3618,6 +3657,7 @@ export interface components {
             /** Format: date-time */
             asOf: string | null;
             benchmark: components["schemas"]["BenchmarkReturn"] | null;
+            benchmarkPlayer: components["schemas"]["BenchmarkPlayer"] | null;
             /** @enum {string|null} */
             kind: "ALL" | "HUMAN" | "AI" | null;
             me: components["schemas"]["LeaderboardRow"] | null;
@@ -3631,6 +3671,10 @@ export interface components {
         };
         LeaderboardRow: {
             apiTrader: boolean;
+            /** Format: decimal */
+            dayPnl: string | null;
+            /** Format: decimal */
+            dayReturn: string | null;
             eligibilityNote: string | null;
             eligible: boolean;
             /** Format: decimal */
@@ -3664,6 +3708,10 @@ export interface components {
             /** Format: int32 */
             symbolsTraded: number;
             topHolding: string | null;
+            /** Format: decimal */
+            totalPnl: string | null;
+            /** Format: decimal */
+            totalReturn: string | null;
             /** Format: decimal */
             winRate: string | null;
         };
@@ -5411,6 +5459,8 @@ export interface components {
         UpdateManualBotRequest: {
             /** @description The bot's model label, 1-24 characters (e.g. Gemini 3) */
             aiModel?: string | null;
+            /** @description The bot's display name, 2-40 characters: letters, digits, space, _ . - */
+            displayName?: string | null;
             /** @description 0-4000 characters; public (part of every prompt). Key-like strings are removed. */
             instructions?: string | null;
         };
@@ -8421,6 +8471,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getMyManualBots: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ManualBot"][];
+                };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
             default: {

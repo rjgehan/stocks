@@ -3,9 +3,11 @@ package com.stocks.league;
 import com.stocks.common.domain.KindFilter;
 import com.stocks.common.domain.LeaderboardMetric;
 import com.stocks.common.domain.LeaderboardPeriod;
+import com.stocks.common.money.Money;
 import com.stocks.contract.jobs.PeriodicTask;
 import com.stocks.contract.portfolio.LeaderboardService;
 import com.stocks.contract.portfolio.dto.LeaderboardDto;
+import com.stocks.contract.portfolio.dto.LeaderboardDto.BenchmarkPlayerDto;
 import com.stocks.contract.portfolio.dto.LeaderboardDto.BenchmarkReturnDto;
 import com.stocks.contract.portfolio.dto.LeaderboardRowDto;
 import com.stocks.contract.realtime.dto.LeaderboardUpdateDto;
@@ -14,6 +16,8 @@ import com.stocks.league.LeaderboardComputer.PeriodBoard;
 import com.stocks.portfolio.BenchmarkService;
 import com.stocks.portfolio.LeagueSettings;
 import com.stocks.portfolio.config.PerformanceProperties;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -140,7 +144,10 @@ public class LeaderboardServiceImpl implements LeaderboardService, PeriodicTask 
     int n = limit <= 0 ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
     Board board = current();
     PeriodBoard pb = board.periods().get(p);
-    List<LeaderboardRowDto> all = LeaderboardRowMapper.rows(pb.entries(), m, k, settings.humanKindExcludesApiTraders());
+    PeriodBoard today = board.periods().get(LeaderboardPeriod.TODAY);
+    PeriodBoard since = board.periods().get(LeaderboardPeriod.ALL);
+    List<LeaderboardRowDto> all = LeaderboardRowMapper.rows(pb.entries(), m, k, settings.humanKindExcludesApiTraders(),
+        LeaderboardRowMapper.byPlayer(today.entries()), LeaderboardRowMapper.byPlayer(since.entries()));
     LeaderboardRowDto me = null;
     if (viewerPlayerId != null) {
       String viewer = pb.entries().stream().filter(e -> e.player().id() == viewerPlayerId)
@@ -151,6 +158,34 @@ public class LeaderboardServiceImpl implements LeaderboardService, PeriodicTask 
     }
     return new LeaderboardDto(p, m, k, pb.periodStart(), board.asOf(),
         new BenchmarkReturnDto(benchmark.symbol(), pb.benchmarkReturn()), LeaderboardRowMapper.arena(pb.entries()),
-        all.subList(0, Math.min(n, all.size())), me);
+        all.subList(0, Math.min(n, all.size())), me,
+        benchmarkPlayer(benchmark.symbol(), settings.defaultStartingCash(), pb, today, since));
+  }
+
+  /**
+   * SPY as a player: {@code cash} put into SPY at the league's first opening (B0 = the ALL period's start) and held,
+   * so its equity is {@code cash * B_end / B0} and its P&amp;L over a period starting at B_a is
+   * {@code cash * (B_end - B_a) / B0}. Null where a benchmark value is unknown.
+   */
+  static BenchmarkPlayerDto benchmarkPlayer(String symbol, BigDecimal cash, PeriodBoard period, PeriodBoard today,
+                                            PeriodBoard since) {
+    BigDecimal origin = since.benchmarkStart();
+    BigDecimal end = period.benchmarkEnd();
+    return new BenchmarkPlayerDto(symbol, cash, scaled(cash, end, origin), period.benchmarkReturn(),
+        benchmarkPnl(cash, origin, period.benchmarkStart(), end), today.benchmarkReturn(),
+        benchmarkPnl(cash, origin, today.benchmarkStart(), end), since.benchmarkReturn(),
+        benchmarkPnl(cash, origin, origin, end));
+  }
+
+  private static BigDecimal benchmarkPnl(BigDecimal cash, BigDecimal origin, BigDecimal start, BigDecimal end) {
+    return start == null || end == null ? null : scaled(cash, end.subtract(start), origin);
+  }
+
+  /** {@code cash * x / origin} in cents; null when anything is unknown or the origin is not positive. */
+  private static BigDecimal scaled(BigDecimal cash, BigDecimal x, BigDecimal origin) {
+    if (cash == null || x == null || origin == null || origin.signum() <= 0) {
+      return null;
+    }
+    return cash.multiply(x).divide(origin, Money.SCALE, RoundingMode.HALF_EVEN);
   }
 }

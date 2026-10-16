@@ -80,7 +80,8 @@ public class LeagueTools implements McpToolSet {
         metric == null ? LeaderboardMetric.RETURN : metric, kind == null ? KindFilter.ALL : kind, n, viewer);
     return board == null ? null : new LeaderboardDto(board.period(), board.metric(), board.kind(), board.periodStart(),
         board.asOf(), board.benchmark(), board.arena(),
-        board.rows() == null ? null : board.rows().stream().map(LeagueTools::row).toList(), row(board.me()));
+        board.rows() == null ? null : board.rows().stream().map(LeagueTools::row).toList(), row(board.me()),
+        board.benchmarkPlayer());
   }
 
   @McpTool(name = "list_players", title = "Players",
@@ -252,6 +253,7 @@ public class LeagueTools implements McpToolSet {
     return new LeaderboardRowDto(r.rank(), r.rankChange(), r.eligible(), r.eligibilityNote(), r.partialPeriod(),
         r.rebased(), Untrusted.player(r.player()), r.apiTrader(), r.ret(), r.pnl(), r.excessVsBenchmark(),
         r.maxDrawdown(), r.equity(), r.netContributions(), r.flowsInPeriod(), r.fills(), r.symbolsTraded(),
-        r.winRate(), r.topHolding(), r.spark(), r.sharpe(), r.profitFactor());
+        r.winRate(), r.topHolding(), r.spark(), r.sharpe(), r.profitFactor(), r.dayReturn(), r.dayPnl(),
+        r.totalReturn(), r.totalPnl());
   }
 }

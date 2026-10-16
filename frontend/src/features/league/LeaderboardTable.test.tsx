@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import type { LeaderboardRow } from '@/lib/api/types'
 import { renderWithRouter } from '@/test/router'
-import { FlowChip, LeaderboardTable } from './LeaderboardTable'
+import type { BenchmarkPlayer } from '@/lib/api/types'
+import { LeaderboardTable, benchmarkIndex } from './LeaderboardTable'
+
+const spy: BenchmarkPlayer = { symbol: 'SPY', startingCash: '500000.00', equity: '510750.00', return: '0.0080', pnl: '4053.57', dayReturn: '0.0021', dayPnl: '1070.50', totalReturn: '0.0215', totalPnl: '10750.00' }
 
 function row(over: Partial<LeaderboardRow> & { handle: string; kind?: 'HUMAN' | 'AI' }): LeaderboardRow {
   const { handle, kind = 'HUMAN', ...rest } = over
@@ -38,6 +41,10 @@ function row(over: Partial<LeaderboardRow> & { handle: string; kind?: 'HUMAN' | 
     spark: ['1', '1.01', '1.0123'],
     sharpe: null,
     profitFactor: null,
+    dayReturn: '0.0020',
+    dayPnl: '1.00',
+    totalReturn: '0.0300',
+    totalPnl: '15.00',
     ...rest,
   }
 }
@@ -47,18 +54,15 @@ const table = () => screen.getByRole('table', { name: 'Leaderboard' })
 const rowOf = (name: string) => within(table()).getByText(name).closest('tr')!
 
 describe('LeaderboardTable (§22.4, §26 leaderboard row rendering)', () => {
-  it('renders ranked rows with return, P&L, vs SPY and the AI chip', async () => {
+  it('renders ranked rows with their return and the AI chip', async () => {
     renderWithRouter(<LeaderboardTable rows={[row({ handle: 'alice' }), row({ handle: 'claude', kind: 'AI', rank: 2, return: '-0.0050', pnl: '-2.50' })]} me={null} metric="RETURN" />)
     await screen.findByRole('table', { name: 'Leaderboard' })
     const alice = rowOf('Alice')
     expect(within(alice).getByLabelText('Rank 1')).toBeTruthy()
     expect(alice.textContent).toContain('+1.23%')
-    expect(alice.textContent).toContain('+$6.15')
-    expect(alice.textContent).toContain('+0.40%')
     const claude = rowOf('Claude')
     expect(within(claude).getByText('AI · Claude')).toBeTruthy()
     expect(claude.textContent).toContain('−0.50%')
-    expect(claude.textContent).toContain('−$2.50')
   })
 
   it('greys out unranked rows and shows their eligibility note', async () => {
@@ -70,21 +74,52 @@ describe('LeaderboardTable (§22.4, §26 leaderboard row rendering)', () => {
     expect(within(carol).queryByLabelText(/^Rank /)).toBeNull()
   })
 
-  it('shows deposits as a chip, a missing equity as a dash (never "hidden": equity is public), and the rebased marker', async () => {
-    renderWithRouter(
-      <LeaderboardTable
-        rows={[row({ handle: 'bob', netContributions: '600.00', flowsInPeriod: '100.00', equity: null, rebased: true })]}
-        me={null}
-        metric="PNL"
-      />,
-    )
+  it('shows a missing equity as a dash (never "hidden": equity is public) and the rebased marker, with no deposit columns', async () => {
+    renderWithRouter(<LeaderboardTable rows={[row({ handle: 'bob', netContributions: '600.00', flowsInPeriod: '100.00', equity: null, rebased: true })]} me={null} metric="PNL" />)
     await screen.findByRole('table', { name: 'Leaderboard' })
     const bob = rowOf('Bob')
-    expect(bob.textContent).toContain('$600.00')
-    expect(within(bob).getByText(/\+\$100(\.00)? deposited/)).toBeTruthy()
     expect(within(bob).getByText('—')).toBeTruthy()
     expect(within(bob).queryByText(/hidden/i)).toBeNull()
     expect(within(bob).getByText('Rebased')).toBeTruthy()
+    expect(bob.textContent).not.toContain('deposited')
+    expect(within(table()).queryByText(/Net contrib/i)).toBeNull()
+    expect(within(table()).queryByText(/vs SPY/i)).toBeNull()
+  })
+
+  it('shows the period, Day and Total as % or $ by the metric', async () => {
+    const { unmount } = renderWithRouter(<LeaderboardTable rows={[row({ handle: 'alice' })]} me={null} metric="RETURN" period="WEEK" />)
+    await screen.findByRole('table', { name: 'Leaderboard' })
+    const heads = within(table()).getAllByRole('columnheader').map((h) => h.textContent)
+    expect(heads.slice(2, 5)).toEqual(['Week', 'Day', 'Total'])
+    const pct = rowOf('Alice').textContent
+    expect(pct).toContain('+1.23%')
+    expect(pct).toContain('+0.20%')
+    expect(pct).toContain('+3.00%')
+    expect(pct).not.toContain('$6.15')
+    unmount()
+
+    renderWithRouter(<LeaderboardTable rows={[row({ handle: 'alice' })]} me={null} metric="PNL" period="TODAY" />)
+    await screen.findByRole('table', { name: 'Leaderboard' })
+    expect(within(table()).getAllByRole('columnheader').map((h) => h.textContent).slice(2, 4)).toEqual(['Day', 'Total'])
+    const usd = rowOf('Alice').textContent
+    expect(usd).toContain('+$1.00')
+    expect(usd).toContain('+$15.00')
+    expect(usd).not.toContain('%')
+  })
+
+  it('slots SPY in unranked, after the ranked rows that beat it', async () => {
+    const rows = [row({ handle: 'alice', return: '0.0300' }), row({ handle: 'bob', rank: 2, return: '0.0010' }), row({ handle: 'carol', rank: null, eligible: false, return: '0.0500' })]
+    expect(benchmarkIndex(rows, spy, 'RETURN')).toBe(1)
+    expect(benchmarkIndex(rows, { ...spy, return: '0.0900' }, 'RETURN')).toBe(0)
+    expect(benchmarkIndex(rows, { ...spy, return: '-0.0100' }, 'RETURN')).toBe(2)
+    expect(benchmarkIndex(rows, { ...spy, return: null }, 'RETURN')).toBe(-1)
+    renderWithRouter(<LeaderboardTable rows={rows} me={null} metric="RETURN" benchmark={spy} />)
+    await screen.findByRole('table', { name: 'Leaderboard' })
+    const lines = within(table()).getAllByRole('row').slice(1)
+    expect(lines[1]!.getAttribute('aria-label')).toBe('Benchmark')
+    expect(lines[1]!.textContent).toContain('S&P 500')
+    expect(lines[1]!.textContent).toContain('+0.80%')
+    expect(within(lines[1]!).queryByLabelText(/^Rank /)).toBeNull()
   })
 
   it('pins my row at the bottom only when the board does not list it', async () => {
@@ -99,18 +134,5 @@ describe('LeaderboardTable (§22.4, §26 leaderboard row rendering)', () => {
     renderWithRouter(<LeaderboardTable rows={[row({ handle: 'alice' }), me]} me={me} metric="RETURN" myHandle="demo" />)
     await screen.findByRole('table', { name: 'Leaderboard' })
     expect(within(table()).getAllByText('Demo')).toHaveLength(1)
-  })
-})
-
-describe('FlowChip', () => {
-  it('says deposited or withdrawn, and hides for no flows', () => {
-    const { rerender, container } = render(<FlowChip flows="250.00" />)
-    expect(container.textContent).toBe('+$250 deposited')
-    rerender(<FlowChip flows="-40.00" />)
-    expect(container.textContent).toBe('−$40 withdrawn')
-    rerender(<FlowChip flows="0.00" />)
-    expect(container.textContent).toBe('')
-    rerender(<FlowChip flows={null} />)
-    expect(container.textContent).toBe('')
   })
 })

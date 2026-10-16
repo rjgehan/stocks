@@ -48,12 +48,6 @@ test('deposit to all players with a memo', async ({ page }) => {
   await expect(row).toBeVisible()
   await expect(row).toContainText('Deposit')
   await expect(row).toContainText('By admin')
-
-  // Deposits are public in the league (net contributions, "+$100 deposited"), but never move the return.
-  if (MOCK) {
-    await page.goto('/league?period=WEEK')
-    await expect(page.getByText(/\+\$100(\.00)? deposited/).filter({ visible: true }).first()).toBeVisible()
-  }
 })
 
 test('create an invite; a friend signs up with its link', async ({ page }, testInfo) => {

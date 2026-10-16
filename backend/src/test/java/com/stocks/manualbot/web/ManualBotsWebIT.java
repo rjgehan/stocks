@@ -136,6 +136,35 @@ class ManualBotsWebIT extends ManualBotsTestBase {
   // ------------------------------------------------------------------------------------------- console state
 
   @Test
+  void theOwnerRenamesABotAndListsTheirBots() throws Exception {
+    MockHttpServletResponse bad = as(ownerP, put(console(bot) + "/manual").contentType(MediaType.APPLICATION_JSON)
+        .content("{\"displayName\": \"x\"}"));
+    assertThat(bad.getStatus()).isEqualTo(400);
+    assertThat((String) json(bad, "$.fields[0].field")).isEqualTo("displayName");
+
+    MockHttpServletResponse renamed = as(ownerP, put(console(bot) + "/manual")
+        .contentType(MediaType.APPLICATION_JSON).content("{\"displayName\": \"  Gem Two  \"}"));
+    assertThat(renamed.getStatus()).as(renamed.getContentAsString()).isEqualTo(200);
+    assertThat((String) json(renamed, "$.bot.displayName")).isEqualTo("Gem Two");
+    assertThat((String) json(as(strangerP, get("/api/v1/players/" + bot.handle())), "$.player.displayName"))
+        .isEqualTo("Gem Two");
+    String detail = jdbc.sql("SELECT detail FROM audit_log WHERE action = 'MANUAL_BOT_UPDATE' "
+            + "AND actor_player_id = ? AND target_id = ?")
+        .params(owner.id(), bot.publicId()).query(String.class).list().get(0);
+    assertThat(detail).contains("Gem Two");
+    assertThat(as(strangerP, put(console(bot) + "/manual").contentType(MediaType.APPLICATION_JSON)
+        .content("{\"displayName\": \"Mine Now\"}")).getStatus()).isEqualTo(403);
+
+    Fixtures.PlayerRef second = fx.ai("mc" + next(), owner);
+    MockHttpServletResponse mine = as(ownerP, get("/api/v1/me/bots"));
+    assertThat(mine.getStatus()).as(mine.getContentAsString()).isEqualTo(200);
+    List<String> handles = json(mine, "$[*].bot.handle");
+    assertThat(handles).containsExactlyInAnyOrder(bot.handle(), second.handle());
+    List<String> none = json(as(strangerP, get("/api/v1/me/bots")), "$[*].bot.handle");
+    assertThat(none).isEmpty();
+  }
+
+  @Test
   void instructionsAreValidatedRedactedAndTheModelLabelIsPublic() throws Exception {
     MockHttpServletResponse tooLong = as(ownerP, put(console(bot) + "/manual").contentType(MediaType.APPLICATION_JSON)
         .content("{\"instructions\": \"" + "x".repeat(4001) + "\"}"));

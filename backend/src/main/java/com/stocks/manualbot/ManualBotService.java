@@ -250,7 +250,22 @@ public class ManualBotService {
     return dto(operator(human, handle, false).bot());
   }
 
-  /** {@code PUT /me/bots/{handle}/manual}: instructions and/or the model label (null = unchanged). */
+  /**
+   * {@code GET /me/bots}: the console state of every AI bot the signed-in person owns, by handle (the admin too gets
+   * only the bots it owns: the list feeds the owner's prompts screen).
+   */
+  public List<ManualBotDto> mine(PlayerPrincipal human) {
+    if (human == null || human.authMethod() != AuthMethod.SESSION || human.kind() != PlayerKind.HUMAN) {
+      throw ApiException.of(ErrorCode.FORBIDDEN, "The manual console needs a person signed in on a browser.");
+    }
+    List<ManualBotDto> out = new ArrayList<>();
+    for (long id : repo.botsOwnedBy(human.playerId())) {
+      players.byId(id).ifPresent(bot -> out.add(dto(bot)));
+    }
+    return out;
+  }
+
+  /** {@code PUT /me/bots/{handle}/manual}: instructions, the model label and/or the name (null = unchanged). */
   public ManualBotDto update(PlayerPrincipal human, String handle, UpdateManualBotRequest request, RequestMeta meta) {
     PlayerRecord bot = operator(human, handle, true).bot();
     String instructions = request == null || request.instructions() == null ? null
@@ -261,7 +276,14 @@ public class ManualBotService {
     }
     String model = request == null || request.aiModel() == null ? null : PlayerService.validateAiModel(
         request.aiModel());
-    if (instructions == null && model == null) {
+    String name = request == null || request.displayName() == null ? null : request.displayName().trim();
+    if (name != null) {
+      PlayerService.validateDisplayName(name);
+      if (name.equals(bot.displayName())) {
+        name = null;
+      }
+    }
+    if (instructions == null && model == null && name == null) {
       return dto(bot);
     }
     if (instructions != null) {
@@ -270,6 +292,9 @@ public class ManualBotService {
     if (model != null) {
       players.setAiModel(bot.id(), model);
     }
+    if (name != null) {
+      players.updateDisplayName(bot.id(), name);
+    }
     AuditEntry entry = AuditEntry.of(AuditCategory.ACCOUNT, "MANUAL_BOT_UPDATE", AuditOutcome.OK).withActor(human)
         .withMeta(meta).withTarget("player", bot.publicId());
     if (instructions != null) {
@@ -277,6 +302,9 @@ public class ManualBotService {
     }
     if (model != null) {
       entry = entry.withDetail("aiModel", model);
+    }
+    if (name != null) {
+      entry = entry.withDetail("displayName", name);
     }
     audit.record(entry);
     return dto(players.byId(bot.id()).orElse(bot));

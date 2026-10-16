@@ -10,7 +10,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Turns {@link LeagueEntry} values into §18.3 {@code LeaderboardRow}s for one view (§16.5): kind filter, sort by
@@ -51,9 +53,19 @@ public final class LeaderboardRowMapper {
         : byReturn.thenComparing(byPnl).thenComparing(rest);
   }
 
-  /** Every row of the view in order: ranked (eligible) rows first, then the unranked ones. */
+  /** Every row of the view in order: ranked (eligible) rows first, then the unranked ones (no day or total). */
   public static List<LeaderboardRowDto> rows(List<LeagueEntry> entries, LeaderboardMetric metric, KindFilter kind,
                                              boolean humanExcludesApiTraders) {
+    return rows(entries, metric, kind, humanExcludesApiTraders, Map.of(), Map.of());
+  }
+
+  /**
+   * Every row of the view in order, with each player's TODAY and ALL return and P&amp;L from {@code day} and
+   * {@code total} (entries by player id; a missing player leaves them null).
+   */
+  public static List<LeaderboardRowDto> rows(List<LeagueEntry> entries, LeaderboardMetric metric, KindFilter kind,
+                                             boolean humanExcludesApiTraders, Map<Long, LeagueEntry> day,
+                                             Map<Long, LeagueEntry> total) {
     List<LeagueEntry> filtered = new ArrayList<>(entries.stream()
         .filter(e -> inKind(e, kind, humanExcludesApiTraders)).toList());
     filtered.sort(Comparator.comparing((LeagueEntry e) -> !e.eligible()).thenComparing(order(metric)));
@@ -63,11 +75,23 @@ public final class LeaderboardRowMapper {
     for (LeagueEntry e : filtered) {
       Integer r = e.eligible() ? ++rank : null;
       Integer change = showRankChange && r != null && e.previousRank() != null ? e.previousRank() - r : null;
+      LeagueEntry d = day.get(e.player().id());
+      LeagueEntry t = total.get(e.player().id());
       out.add(new LeaderboardRowDto(r, change, e.eligible(), e.eligibilityNote(), e.partialPeriod(), e.rebased(),
           e.player().summary(), e.apiTrader(), e.twr(), e.pnl(), e.excess(), e.maxDrawdown(),
           e.equity(), e.netContributions(), e.flowsInPeriod(), e.fills(), e.symbolsTraded(),
           e.winRate(), e.topHolding(), e.spark(), e.extras().risk().sharpe(),
-          e.extras().profitFactor()));
+          e.extras().profitFactor(), d == null ? null : d.twr(), d == null ? null : d.pnl(),
+          t == null ? null : t.twr(), t == null ? null : t.pnl()));
+    }
+    return out;
+  }
+
+  /** {@code entries} by player id. */
+  public static Map<Long, LeagueEntry> byPlayer(List<LeagueEntry> entries) {
+    Map<Long, LeagueEntry> out = new HashMap<>();
+    for (LeagueEntry e : entries) {
+      out.put(e.player().id(), e);
     }
     return out;
   }

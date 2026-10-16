@@ -37,6 +37,7 @@ import type {
   Account,
   Activity,
   AdminPlayer,
+  BenchmarkPlayer,
   ApiKeyCreated,
   Asset,
   AuditRow,
@@ -159,6 +160,19 @@ function median(xs: Dec[]): Dec | null {
   const sorted = [...xs].sort(compare)
   const mid = Math.floor(sorted.length / 2)
   return sorted.length % 2 ? sorted[mid]! : div(add(sorted[mid - 1]!, sorted[mid]!), '2', 10, 'HALF_EVEN')
+}
+
+/**
+ * SPY as a player (LeaderboardServiceImpl.benchmarkPlayer): the starting cash put into SPY at the league's opening;
+ * equity = cash × (1 + R_all), P&L over a period with return R = equity × R / (1 + R).
+ */
+/** The mock SPY total return over a leaderboard period. */
+const spyFor = (period: string): Dec => (period === 'TODAY' ? '0.0021' : period === 'WEEK' ? '0.0080' : '0.0215')
+
+function mockBenchmarkPlayer(period: Dec, today: Dec, all: Dec, cash: Dec): BenchmarkPlayer {
+  const equity = money(mul(cash, add('1', all)))
+  const pnl = (r: Dec): Dec => money(div(mul(equity, r), add('1', r), 10, 'HALF_EVEN'))
+  return { symbol: 'SPY', startingCash: cash, equity, return: period, pnl: pnl(period), dayReturn: today, dayPnl: pnl(today), totalReturn: all, totalPnl: money(sub(equity, cash)) }
 }
 
 const DAY_MS = 24 * 60 * MIN
@@ -654,6 +668,8 @@ export class MockServer {
         return p ? { summary: this.summary(p), ownerHandle: p.ownerHandle, status: p.status } : null
       },
       setAiModel: (h, label) => this.s.others.filter((p) => p.handle === h).forEach((p) => (p.aiModel = label)),
+      setDisplayName: (h, name) => this.s.others.filter((p) => p.handle === h).forEach((p) => (p.displayName = name)),
+      owned: () => this.s.others.filter((p) => p.kind === 'AI' && p.ownerHandle === this.s.me.handle).map((p) => p.handle),
       activeKeys: (h) => this.s.keys.filter((k) => k.handle === h && !k.revokedAt).length,
       clock: () => this.clock(),
       preview: (req) => this.preview(req),
@@ -2676,7 +2692,7 @@ export class MockServer {
     const period = (params.get('period') ?? 'WEEK').toUpperCase() as NonNullable<Leaderboard['period']>
     const minFills = this.s.settings['league.eligibility.minFills']
     const minSymbols = this.s.settings['league.eligibility.minSymbols']
-    const spyRet = period === 'TODAY' ? '0.0021' : period === 'WEEK' ? '0.0080' : '0.0215'
+    const spyRet = spyFor(period)
 
     type Raw = { summary: PlayerSummary; u: Dec; equity: Dec; nc: Dec; fills: number; symbols: number; top: string | null; apiTrader: boolean }
     const raw: Raw[] = [
@@ -2694,16 +2710,20 @@ export class MockServer {
         .filter((p) => p.status !== 'DISABLED')
         .map((p) => ({ summary: this.summary(p), u: p.u, equity: this.otherEquity(p), nc: p.nc, fills: p.fills, symbols: p.symbols, top: p.top, apiTrader: p.kind === 'AI' })),
     ]
+    const perf = (r: Raw, p: string): { ret: Dec; pnl: Dec } => {
+      const a = this.anchor(r.summary.handle!, p, r.u)
+      // P&L = [E − NC](b) − [E − NC](a); at the anchor E = units × a (units only change with flows, valued at U)
+      const pnlNow = sub(r.equity, r.nc)
+      const units = isZero(r.u) ? '0' : div(r.equity, r.u, 10, 'HALF_EVEN')
+      const pnlAnchor = sub(money(mul(units, a)), r.nc)
+      return { ret: sub(div(r.u, a, 10, 'HALF_EVEN'), '1'), pnl: money(p === 'ALL' || p === 'SEASON' ? pnlNow : sub(pnlNow, pnlAnchor)) }
+    }
     const rows = raw
       .filter((r) => kind === 'ALL' || r.summary.kind === kind)
       .map((r) => {
-        const a = this.anchor(r.summary.handle!, period, r.u)
-        const ret = sub(div(r.u, a, 10, 'HALF_EVEN'), '1')
-        // P&L = [E − NC](b) − [E − NC](a); at the anchor E = units × a (units only change with flows, valued at U)
-        const pnlNow = sub(r.equity, r.nc)
-        const units = isZero(r.u) ? '0' : div(r.equity, r.u, 10, 'HALF_EVEN')
-        const pnlAnchor = sub(money(mul(units, a)), r.nc)
-        const pnl = money(period === 'ALL' || period === 'SEASON' ? pnlNow : sub(pnlNow, pnlAnchor))
+        const { ret, pnl } = perf(r, period)
+        const day = perf(r, 'TODAY')
+        const total = perf(r, 'ALL')
         const eligible = period === 'TODAY' || (r.fills >= minFills && r.symbols >= minSymbols)
         const spark = this.walk(`${r.summary.handle}:spark:${period}`, r.u, '1M', 0.5).slice(-12).map((p) => p.v)
         const row: LeaderboardRow = {
@@ -2728,6 +2748,10 @@ export class MockServer {
           topHolding: r.top,
           spark,
           ...mockRowStats(r.summary.handle!, period, r.fills),
+          dayReturn: day.ret,
+          dayPnl: day.pnl,
+          totalReturn: total.ret,
+          totalPnl: total.pnl,
         }
         return row
       })
@@ -2752,6 +2776,7 @@ export class MockServer {
       arena: { humansMedianReturn: median(humans), aiMedianReturn: median(ais) },
       rows,
       me: rows.find((r) => r.player?.handle === this.s.me.handle) ?? null,
+      benchmarkPlayer: mockBenchmarkPlayer(spyRet, spyFor('TODAY'), spyFor('ALL'), this.s.settings['league.defaultStartingCash'] ?? '500000.00'),
     }
   }
 
