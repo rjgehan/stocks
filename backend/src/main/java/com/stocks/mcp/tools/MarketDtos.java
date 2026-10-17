@@ -93,6 +93,11 @@ final class MarketDtos {
   // ------------------------------------------------------------------------------------------- clock
 
   static ClockDto clock(Instant now, MarketCalendar calendar, MarketDataStatus status) {
+    return clock(now, calendar, status, true);
+  }
+
+  /** The clock; {@code cryptoEnabled} fills its §29 {@code crypto} member. */
+  static ClockDto clock(Instant now, MarketCalendar calendar, MarketDataStatus status, boolean cryptoEnabled) {
     SessionState state = calendar.stateAt(now);
     LocalDate todayEt = LocalDate.ofInstant(now, TimeSource.ET);
     boolean earlyClose = state.tradingDate() != null
@@ -113,7 +118,8 @@ final class MarketDtos {
     }
     String nowEt = ZonedDateTime.ofInstant(now.truncatedTo(ChronoUnit.SECONDS), TimeSource.ET).format(NOW_ET);
     return new ClockDto(now, nowEt, state.type(), state.tradingDate(), state.endsAt(), state.nextType(),
-        state.nextStartsAt(), nextOpen, nextClose, earlyClose, holidays, earlyCloses, feed(status));
+        state.nextStartsAt(), nextOpen, nextClose, earlyClose, holidays, earlyCloses, feed(status),
+        ClockDto.ClockCryptoDto.of(cryptoEnabled));
   }
 
   /** The first {@code pick(day)} strictly after {@code now}, looking at today and the following trading days. */

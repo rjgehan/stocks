@@ -1,5 +1,5 @@
 {
-  "version" : "1.7e1172119791",
+  "version" : "1.53ca2f2964ac",
   "asOf" : "2026-10-09T14:00:00.000Z",
   "account" : {
     "type" : "CASH",
@@ -200,5 +200,16 @@
     "visibility" : "PUBLIC"
   },
   "dataSources" : [ "SIM: simulated prices (deterministic, not real quotes). The app shows a SIM badge." ],
-  "fairness" : [ "Same rules for all: the same starting cash, market data, latency, fill rules, fees and write limits on every channel, for humans and bots alike. Players never trade with each other.", "Deposits are public: net contributions and flows are shown on every leaderboard row, and admin deposits never move anyone's return. Resets are counted publicly, and a reset never erases a loss.", "Everything is public: every player's live portfolio (cash, positions, open orders), full order history with fills, account activity, P&L analysis, rationales, journal and stats are visible to every player in real time. The feed delay (none by default) only holds back the feed, the trade list and journal notes.", "Rationales: every new order's rationale or note is public, and AI players must give one. Notes written before public mode keep the visibility their author chose.", "Kill switch: the admin can freeze any player, and every such action is audited. Bots can never act as admin.", "Secrets stay private: passwords, API keys, OAuth tokens, email addresses, sessions and the audit log." ]
+  "fairness" : [ "Same rules for all: the same starting cash, market data, latency, fill rules, fees and write limits on every channel, for humans and bots alike. Players never trade with each other.", "Deposits are public: net contributions and flows are shown on every leaderboard row, and admin deposits never move anyone's return. Resets are counted publicly, and a reset never erases a loss.", "Everything is public: every player's live portfolio (cash, positions, open orders), full order history with fills, account activity, P&L analysis, rationales, journal and stats are visible to every player in real time. The feed delay (none by default) only holds back the feed, the trade list and journal notes.", "Rationales: every new order's rationale or note is public, and AI players must give one. Notes written before public mode keep the visibility their author chose.", "Kill switch: the admin can freeze any player, and every such action is audited. Bots can never act as admin.", "Secrets stay private: passwords, API keys, OAuth tokens, email addresses, sessions and the audit log." ],
+  "crypto" : {
+    "enabled" : true,
+    "pairs" : [ "BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD", "DOGE/USD", "LTC/USD", "BCH/USD", "LINK/USD", "AVAX/USD", "DOT/USD", "UNI/USD", "AAVE/USD" ],
+    "hours" : "24/7: every hour of every day, weekends and US market holidays included, while the admin keeps crypto on. There are no sessions, queues for the open or extended-hours flags; DAY orders last until 24:00 ET, GTC orders 60 days.",
+    "symbols" : "USD pairs written with a slash, e.g. \"BTC/USD\" (\"BTC-USD\" is accepted too and in URL paths).",
+    "quantities" : "Fractional quantities up to 5 decimals on every order type (stops and group legs included); notional (dollar) amounts on MARKET orders; at most 100000000 units per order. Prices use the stock tick ($0.01 at or above $1.00, $0.0001 below).",
+    "orders" : "MARKET, LIMIT, STOP, STOP_LIMIT and TRAILING_STOP, as for stocks; every fill is one piece at the touch.",
+    "settlement" : "Immediate: a crypto fill settles on its trade date, so its proceeds are settled cash at once and crypto never causes a good-faith violation.",
+    "fees" : "None: SEC, FINRA TAF and CAT fees apply to stocks only.",
+    "pnlDays" : "Every calendar day is a P&L day: weekend and holiday days end at 20:00 ET and get their own EOD snapshot, so crypto moves show in Day P&L, the P&L calendar, charts and the leaderboard."
+  }
 }

@@ -2,6 +2,7 @@ package com.stocks.marketdata.core;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.stocks.common.domain.Crypto;
 import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.marketdata.spi.MarketDataProvider;
 import com.stocks.marketdata.spi.ProviderException;
@@ -27,7 +28,7 @@ public class FundamentalsService {
   }
 
   public Optional<Fundamentals> fundamentals(String symbol) {
-    if (provider == null || failures.getIfPresent(symbol) != null) {
+    if (provider == null || Crypto.isCrypto(symbol) || failures.getIfPresent(symbol) != null) {   // none for coins
       return Optional.empty();
     }
     Optional<Fundamentals> cached = cache.getIfPresent(symbol);

@@ -1,12 +1,14 @@
 package com.stocks.marketdata.sim;
 
 import com.stocks.common.domain.AssetType;
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.LiquidityTier;
 import com.stocks.common.domain.MoverList;
 import com.stocks.common.domain.Timeframe;
 import com.stocks.common.money.Rounding;
 import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
+import com.stocks.contract.calendar.CryptoCalendar;
 import com.stocks.contract.calendar.MarketCalendar;
 import com.stocks.contract.calendar.TradingDay;
 import com.stocks.contract.marketdata.model.AdjustmentMode;
@@ -56,10 +58,14 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
 
   public static final String ID = "simulated";
 
+  private static final Map<String, Universe.Entry> CRYPTO = cryptoSymbols();
+
   static final Capabilities CAPABILITIES = new Capabilities(true, true, true, Integer.MAX_VALUE, Integer.MAX_VALUE,
       Duration.ZERO, null, null, true, true, true, true, true, true, false, true);
 
   private final SimModel model;
+  /** Crypto pairs run on the 24/7 calendar (§29), so their prices move every hour of every day. */
+  private final SimModel cryptoModel;
   private final TimeSource time;
   private final Universe universe;
   private final Map<String, Universe.Entry> simSymbols;
@@ -70,6 +76,22 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
     this.time = time;
     this.simSymbols = simSymbols();
     this.model = new SimModel(seed, calendar, this::entry, scenarios);
+    this.cryptoModel = new SimModel(seed, CryptoCalendar.INSTANCE, this::entry, scenarios);
+  }
+
+  /** The SIM crypto pairs (§29): the seeded list, at its reference prices. */
+  static Map<String, Universe.Entry> cryptoSymbols() {
+    Map<String, Universe.Entry> out = new LinkedHashMap<>();
+    for (Crypto.Pair p : Crypto.PAIRS) {
+      out.put(p.symbol(), new Universe.Entry(p.symbol(), p.name(), Crypto.EXCHANGE, AssetType.CRYPTO, p.tier(),
+          p.refPrice(), true));
+    }
+    return out;
+  }
+
+  /** The model that prices {@code symbol}: 24/7 for a crypto pair, the NYSE sessions otherwise. */
+  private SimModel modelOf(String symbol) {
+    return Crypto.isCrypto(symbol) ? cryptoModel : model;
   }
 
   /** {@code SIMA}–{@code SIMZ}: always fractionable, MEGA tier (§15.7 item 8). */
@@ -88,6 +110,9 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
       return Optional.empty();
     }
     Universe.Entry sim = simSymbols.get(symbol);
+    if (sim == null && Crypto.isCrypto(symbol)) {
+      sim = CRYPTO.get(symbol);
+    }
     return sim != null ? Optional.of(sim) : universe.get(symbol);
   }
 
@@ -110,6 +135,7 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
     List<Asset> out = new ArrayList<>();
     universe.entries().forEach(e -> out.add(e.asset()));
     simSymbols.values().forEach(e -> out.add(e.asset()));
+    CRYPTO.values().forEach(e -> out.add(e.asset()));
     return out;
   }
 
@@ -127,37 +153,38 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
 
   @Override
   public Optional<Quote> quoteAt(String symbol, Instant t) {
-    return model.params(symbol).flatMap(p -> model.quoteAt(p, t));
+    return modelOf(symbol).params(symbol).flatMap(p -> modelOf(p.symbol()).quoteAt(p, t));
   }
 
   @Override
   public Optional<Trade> lastTradeAt(String symbol, Instant t) {
-    return model.params(symbol).flatMap(p -> model.lastTradeAt(p, t));
+    return modelOf(symbol).params(symbol).flatMap(p -> modelOf(p.symbol()).lastTradeAt(p, t));
   }
 
   @Override
   public List<Trade> tradesBetween(String symbol, Instant fromExclusive, Instant toInclusive, int max) {
-    return model.params(symbol).map(p -> model.tradesBetween(p, fromExclusive, toInclusive, max)).orElse(List.of());
+    return modelOf(symbol).params(symbol).map(p -> modelOf(p.symbol()).tradesBetween(p, fromExclusive, toInclusive,
+        max)).orElse(List.of());
   }
 
   @Override
   public Optional<BigDecimal> officialClose(String symbol, LocalDate tradeDate) {
-    return model.params(symbol).flatMap(p -> model.officialClose(p, tradeDate));
+    return modelOf(symbol).params(symbol).flatMap(p -> modelOf(p.symbol()).officialClose(p, tradeDate));
   }
 
   @Override
   public Optional<BigDecimal> priceAt(String symbol, Instant t) {
-    return model.params(symbol).flatMap(p -> model.priceAt(p, t));
+    return modelOf(symbol).params(symbol).flatMap(p -> modelOf(p.symbol()).priceAt(p, t));
   }
 
   @Override
   public Optional<DayStats> dayStats(String symbol, LocalDate tradeDate, Instant upTo) {
-    return model.params(symbol).flatMap(p -> model.dayStats(p, tradeDate, upTo));
+    return modelOf(symbol).params(symbol).flatMap(p -> modelOf(p.symbol()).dayStats(p, tradeDate, upTo));
   }
 
   @Override
   public Optional<Bar> minuteBar(String symbol, Instant minuteStart, Instant upTo) {
-    return model.params(symbol).flatMap(p -> model.minuteBar(p, minuteStart, upTo));
+    return modelOf(symbol).params(symbol).flatMap(p -> modelOf(p.symbol()).minuteBar(p, minuteStart, upTo));
   }
 
   @Override
@@ -177,22 +204,23 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
     Instant now = time.now();
     Map<String, Snapshot> out = new LinkedHashMap<>();
     for (String s : symbols) {
-      model.params(s).ifPresent(p -> out.put(s, snapshot(p, now)));
+      modelOf(s).params(s).ifPresent(p -> out.put(s, snapshot(p, now)));
     }
     return out;
   }
 
   private Snapshot snapshot(SimModel.Params p, Instant now) {
-    MarketCalendar cal = model.calendar();
+    MarketCalendar cal = modelOf(p.symbol()).calendar();
     LocalDate day = cal.currentPnlDay(now);
     LocalDate prev = cal.previousTradingDay(day);
-    Bar daily = model.dailyBar(p, day, now).orElseGet(() -> model.dailyBar(p, prev, now).orElse(null));
+    SimModel m = modelOf(p.symbol());
+    Bar daily = m.dailyBar(p, day, now).orElseGet(() -> m.dailyBar(p, prev, now).orElse(null));
     Bar prevDaily = daily != null && Et.date(daily.start()).equals(day)
-        ? model.dailyBar(p, prev, now).orElse(null)
-        : model.dailyBar(p, cal.previousTradingDay(prev), now).orElse(null);
+        ? m.dailyBar(p, prev, now).orElse(null)
+        : m.dailyBar(p, cal.previousTradingDay(prev), now).orElse(null);
     Instant minute = now.truncatedTo(ChronoUnit.MINUTES);
-    return new Snapshot(p.symbol(), model.lastTradeAt(p, now).orElse(null), model.quoteAt(p, now).orElse(null),
-        model.minuteBar(p, minute, now).orElse(null), daily, prevDaily, now);
+    return new Snapshot(p.symbol(), m.lastTradeAt(p, now).orElse(null), m.quoteAt(p, now).orElse(null),
+        m.minuteBar(p, minute, now).orElse(null), daily, prevDaily, now);
   }
 
   @Override
@@ -217,7 +245,7 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
     Instant to = q.to() == null || q.to().isAfter(now) ? now : q.to();
     Map<String, List<Bar>> out = new LinkedHashMap<>();
     for (String s : new TreeSet<>(q.symbols())) {
-      Optional<SimModel.Params> p = model.params(s);
+      Optional<SimModel.Params> p = modelOf(s).params(s);
       if (p.isEmpty()) {
         continue;
       }
@@ -242,7 +270,7 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
 
   private List<Bar> intradayBars(SimModel.Params p, BarQuery q, Instant to) {
     List<Bar> minutes = new ArrayList<>();
-    MarketCalendar cal = model.calendar();
+    MarketCalendar cal = modelOf(p.symbol()).calendar();
     LocalDate first = Et.date(q.from());
     LocalDate last = Et.date(to);
     for (LocalDate d = first; !d.isAfter(last); d = d.plusDays(1)) {
@@ -262,7 +290,7 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
         continue;
       }
       // One pass over the prints of the window, bucketed by minute.
-      List<Trade> trades = model.tradesBetween(p, start.minusNanos(1), end, Integer.MAX_VALUE);
+      List<Trade> trades = modelOf(p.symbol()).tradesBetween(p, start.minusNanos(1), end, Integer.MAX_VALUE);
       Map<Instant, List<Trade>> byMinute = new LinkedHashMap<>();
       for (Trade t : trades) {
         byMinute.computeIfAbsent(t.ts().truncatedTo(ChronoUnit.MINUTES), k -> new ArrayList<>()).add(t);
@@ -275,8 +303,8 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
   private List<Bar> dailyBars(SimModel.Params p, BarQuery q, Instant to) {
     List<Bar> days = new ArrayList<>();
     LocalDate from = Et.date(q.from());
-    for (LocalDate d : model.tradingDays(from, Et.date(to))) {
-      model.dailyBar(p, d, to).ifPresent(days::add);
+    for (LocalDate d : modelOf(p.symbol()).tradingDays(from, Et.date(to))) {
+      modelOf(p.symbol()).dailyBar(p, d, to).ifPresent(days::add);
     }
     return q.tf() == Timeframe.DAY1 ? days : BarMath.aggregate(days, q.tf());
   }
@@ -314,18 +342,21 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
 
   @Override
   public Optional<Fundamentals> fundamentals(String symbol) {
-    Optional<SimModel.Params> po = model.params(symbol);
+    if (Crypto.isCrypto(symbol)) {
+      return Optional.empty();                      // no market cap, P/E or 52-week fundamentals for a coin
+    }
+    Optional<SimModel.Params> po = modelOf(symbol).params(symbol);
     if (po.isEmpty()) {
       return Optional.empty();
     }
     SimModel.Params p = po.get();
     Instant now = time.now();
-    LocalDate today = model.calendar().currentPnlDay(now);
-    BigDecimal price = model.priceAt(p, now).orElse(BigDecimal.ONE);
+    LocalDate today = modelOf(p.symbol()).calendar().currentPnlDay(now);
+    BigDecimal price = modelOf(p.symbol()).priceAt(p, now).orElse(BigDecimal.ONE);
     BigDecimal hi = price;
     BigDecimal lo = price;
-    for (LocalDate d : model.tradingDays(today.minusDays(365), today)) {
-      Optional<BigDecimal> c = model.officialClose(p, d);
+    for (LocalDate d : modelOf(p.symbol()).tradingDays(today.minusDays(365), today)) {
+      Optional<BigDecimal> c = modelOf(p.symbol()).officialClose(p, d);
       if (c.isPresent()) {
         hi = hi.max(c.get());
         lo = lo.min(c.get());
@@ -350,8 +381,11 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
    */
   @Override
   public List<RecommendationTrend> recommendations(String symbol) {
-    Optional<SimModel.Params> po = model.params(symbol);
-    if (po.isEmpty() || po.get().type() == AssetType.ETF) {
+    if (Crypto.isCrypto(symbol)) {
+      return List.of();
+    }
+    Optional<SimModel.Params> po = modelOf(symbol).params(symbol);
+    if (po.isEmpty() || po.get().type() == AssetType.ETF || po.get().type() == AssetType.CRYPTO) {
       return List.of();
     }
     SimModel.Params p = po.get();
@@ -381,13 +415,13 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
    */
   @Override
   public Optional<CompanyProfile> profile(String symbol, RefreshPriority priority) {
-    Optional<SimModel.Params> po = model.params(symbol);
-    if (po.isEmpty() || po.get().type() == AssetType.ETF) {
+    Optional<SimModel.Params> po = modelOf(symbol).params(symbol);
+    if (po.isEmpty() || po.get().type() == AssetType.ETF || po.get().type() == AssetType.CRYPTO) {
       return Optional.empty();
     }
     SimModel.Params p = po.get();
     BigDecimal shares = shares(p);
-    BigDecimal price = model.priceAt(p, time.now()).orElse(null);
+    BigDecimal price = modelOf(p.symbol()).priceAt(p, time.now()).orElse(null);
     return Optional.of(new CompanyProfile(symbol, shares,
         price == null ? null : price.multiply(shares).setScale(0, RoundingMode.HALF_EVEN), null, ID));
   }
@@ -408,18 +442,18 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
       if (e.type() == AssetType.ETF) {
         continue;
       }
-      Optional<SimModel.Params> p = model.params(e.symbol());
+      Optional<SimModel.Params> p = modelOf(e.symbol()).params(e.symbol());
       if (p.isEmpty()) {
         continue;
       }
-      Optional<BigDecimal> last = model.priceAt(p.get(), now);
-      Optional<BigDecimal> prevClose = model.officialClose(p.get(), prev);
+      Optional<BigDecimal> last = modelOf(p.get().symbol()).priceAt(p.get(), now);
+      Optional<BigDecimal> prevClose = modelOf(p.get().symbol()).officialClose(p.get(), prev);
       if (last.isEmpty() || prevClose.isEmpty() || prevClose.get().signum() == 0) {
         continue;
       }
       BigDecimal change = last.get().subtract(prevClose.get());
       BigDecimal pct = change.divide(prevClose.get(), 10, RoundingMode.HALF_EVEN);
-      long volume = model.dayStats(p.get(), day, now).map(DayStats::volume).orElse(0L);
+      long volume = modelOf(p.get().symbol()).dayStats(p.get(), day, now).map(DayStats::volume).orElse(0L);
       all.add(new Mover(e.symbol(), last.get(), change, pct, volume));
     }
     Comparator<Mover> order = switch (list) {
@@ -449,9 +483,10 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
         continue;
       }
       for (String s : syms) {
-        Optional<SimModel.Params> p = model.params(s);
-        Optional<BigDecimal> close = p.flatMap(x -> model.officialClose(x, day.get().tradeDate()));
-        Optional<BigDecimal> prev = p.flatMap(x -> model.officialClose(x, cal.previousTradingDay(day.get().tradeDate())));
+        Optional<SimModel.Params> p = modelOf(s).params(s);
+        Optional<BigDecimal> close = p.flatMap(x -> modelOf(x.symbol()).officialClose(x, day.get().tradeDate()));
+        Optional<BigDecimal> prev = p.flatMap(x -> modelOf(x.symbol()).officialClose(x,
+            cal.previousTradingDay(day.get().tradeDate())));
         if (close.isEmpty() || prev.isEmpty() || prev.get().signum() == 0) {
           continue;
         }

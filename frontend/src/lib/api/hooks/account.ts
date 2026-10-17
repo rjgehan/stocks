@@ -3,6 +3,7 @@ import { api, unwrap } from '../client'
 import { type OrdersFilter, queryKeys } from '../queryKeys'
 import type { ActivityType, HistoryRange, Order, PlaceOrderRequest } from '../types'
 import { usePollWhenOffline } from '../../realtime/status'
+import { toPath } from '../../symbols'
 
 /** `GET /account`. Pushed on `/user/queue/account` (§19); polls every 10 s while the socket is down. */
 export function useAccount() {
@@ -126,7 +127,7 @@ export function useClosePosition() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ symbol, clientOrderId }: { symbol: string; clientOrderId: string }) =>
-      unwrap(api.POST('/api/v1/account/positions/{symbol}/close', { params: { path: { symbol } }, body: { clientOrderId } })),
+      unwrap(api.POST('/api/v1/account/positions/{symbol}/close', { params: { path: { symbol: toPath(symbol) } }, body: { clientOrderId } })),
     onSuccess: () => afterOrderChange(qc),
   })
 }

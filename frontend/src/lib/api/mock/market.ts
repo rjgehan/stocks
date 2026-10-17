@@ -65,6 +65,13 @@ const RANGE_SPEC: Record<ChartRange, { timeframe: Timeframe; count: number; step
   ALL: { timeframe: '1Month', count: 120, stepMs: 30 * 86_400_000 },
 }
 
+/** Crypto trades around the clock: a day is 1,440 minutes. */
+const CRYPTO_RANGE_SPEC: Partial<Record<ChartRange, { timeframe: Timeframe; count: number; stepMs: number }>> = {
+  '1D': { timeframe: '1Min', count: 1440, stepMs: 60_000 },
+  '5D': { timeframe: '5Min', count: 1440, stepMs: 5 * 60_000 },
+  '1M': { timeframe: '30Min', count: 1440, stepMs: 30 * 60_000 },
+}
+
 const TIMEFRAME_MS: Record<Timeframe, number> = {
   '1Min': 60_000,
   '5Min': 5 * 60_000,
@@ -206,10 +213,10 @@ export class MockMarket {
     }
   }
 
-  /** Gainers / losers / most active among the stocks (ETFs excluded), from the live random walks. */
+  /** Gainers / losers / most active among the stocks (ETFs and crypto excluded), from the live random walks. */
   movers(list: MoverList, limit: number): MoverItem[] {
     const rows = [...this.states.values()]
-      .filter((s) => s.meta.type !== 'ETF')
+      .filter((s) => s.meta.type !== 'ETF' && s.meta.type !== 'CRYPTO')
       .map((s) => {
         const q = this.quote(s.meta.symbol)
         return { symbol: s.meta.symbol, name: s.meta.name, price: q.last, change: q.change, changePct: q.changePct, volume: q.volume, move: s.last / s.meta.prevClose }
@@ -223,7 +230,8 @@ export class MockMarket {
   /** Bars for a range, at its default interval or at `timeframe` (the same span, ≤ 1000 bars). */
   bars(symbol: string, range: ChartRange, timeframe?: Timeframe | null): Bars {
     const s = this.states.get(symbol)
-    const base = RANGE_SPEC[range]
+    // a crypto pair trades 24/7: 1D is the last 24 hours of minutes, 5D the last 5 days, with no session gaps
+    const base = s?.meta.type === 'CRYPTO' ? (CRYPTO_RANGE_SPEC[range] ?? RANGE_SPEC[range]) : RANGE_SPEC[range]
     const spec =
       timeframe && timeframe !== base.timeframe
         ? { timeframe, stepMs: TIMEFRAME_MS[timeframe], count: Math.min(1000, Math.max(2, Math.round((base.count * base.stepMs) / TIMEFRAME_MS[timeframe]))) }
@@ -249,7 +257,7 @@ export class MockMarket {
         h: unitsToDec(h),
         l: unitsToDec(l),
         c: unitsToDec(c),
-        v: Math.round((s.meta.adv / (spec.stepMs < 86_400_000 ? 390 * (60_000 / spec.stepMs) : 1)) * (0.4 + rng() * 1.2)),
+        v: Math.round((s.meta.adv / (spec.stepMs < 86_400_000 ? (s.meta.type === 'CRYPTO' ? 1440 : 390) * (60_000 / spec.stepMs) : 1)) * (0.4 + rng() * 1.2)),
         vw: null,
       }
     })

@@ -1,8 +1,10 @@
 package com.stocks.portfolio;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.DataQuality;
 import com.stocks.common.money.Prices;
 import com.stocks.common.time.TimeSource;
+import com.stocks.contract.calendar.MarketCalendar;
 import com.stocks.contract.marketdata.Mark;
 import com.stocks.contract.marketdata.MarkBasis;
 import com.stocks.contract.marketdata.MarketDataService;
@@ -15,6 +17,7 @@ import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -39,11 +42,20 @@ public class MarkResolver {
   private final MarketDataService marketData;
   private final PortfolioRepository repository;
   private final TimeSource time;
+  /** The NYSE calendar (null in kits without one): a stock's last trading day before a weekend P&amp;L day. */
+  private final MarketCalendar calendar;
 
   public MarkResolver(MarketDataService marketData, PortfolioRepository repository, TimeSource time) {
+    this(marketData, repository, time, null);
+  }
+
+  @Autowired
+  public MarkResolver(MarketDataService marketData, PortfolioRepository repository, TimeSource time,
+                      MarketCalendar calendar) {
     this.marketData = marketData;
     this.repository = repository;
     this.time = time;
+    this.calendar = calendar;
   }
 
   /**
@@ -82,7 +94,7 @@ public class MarkResolver {
    */
   public Mark endOfDay(String symbol, LocalDate date, Instant cutoff, BigDecimal qty, BigDecimal costBasis) {
     try {
-      Optional<BigDecimal> dayEnd = marketData.dayEndMark(symbol, date);
+      Optional<BigDecimal> dayEnd = marketData.dayEndMark(symbol, lastTradingDay(symbol, date));
       if (dayEnd.isPresent() && dayEnd.get().signum() > 0) {
         return new Mark(dayEnd.get(), DataQuality.REALTIME_CONSOLIDATED, cutoff, MarkBasis.DAY_END);
       }
@@ -98,6 +110,21 @@ public class MarkResolver {
       }
     }
     return fallback(symbol, cutoff, qty, costBasis);
+  }
+
+  /**
+   * The day whose day-end mark values {@code symbol} on P&amp;L day {@code date}: the day itself, except a stock on a
+   * weekend or holiday P&amp;L day (§29: they exist while crypto trades), which keeps its last trading day's mark.
+   */
+  LocalDate lastTradingDay(String symbol, LocalDate date) {
+    if (calendar == null || Crypto.isCrypto(symbol)) {
+      return date;
+    }
+    try {
+      return calendar.tradingDayOnOrBefore(date);
+    } catch (RuntimeException e) {
+      return date;                                    // a Day-0 stub calendar: no weekend P&L days either
+    }
   }
 
   /**

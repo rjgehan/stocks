@@ -38,4 +38,12 @@ public interface MarketCalendar {
 
   /** §16.3: the latest trading day whose {@code pre_open_at <= t}. */
   LocalDate currentPnlDay(Instant t);
+
+  /**
+   * The calendar {@code symbol} trades on (§29): the 24/7 {@link CryptoCalendar} for a crypto pair
+   * ({@code BTC/USD}), this calendar for everything else.
+   */
+  default MarketCalendar forSymbol(String symbol) {
+    return com.stocks.common.domain.Crypto.isCrypto(symbol) ? CryptoCalendar.INSTANCE : this;
+  }
 }

@@ -3,8 +3,8 @@
     python3 -m unittest discover -s tools/claude-trader -v
 
 Sessions run a fake claude (STOCKS_TRADER_CLAUDE_BIN) that records what it received and prints a JSON result like
-`claude -p --output-format json`, against a fake app that answers GET /api/v1/me and the run requests' claim and
-finish. Every test works in its own STOCKS_TRADER_HOME; ~/.stocks-trader is never touched.
+`claude -p --output-format json`, against a fake app that answers GET /api/v1/me, GET /api/v1/market/clock and the
+run requests' claim and finish. Every test works in its own STOCKS_TRADER_HOME; ~/.stocks-trader is never touched.
 """
 
 from __future__ import annotations
@@ -73,10 +73,11 @@ print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "nu
 
 class FakeApp:
     """The app's GET /api/v1/me on a local port: the handle of the key's player, 401 for an unknown key, or
-    `status` for every request when it is set. POST .../requests/claim hands out the key's queued `claims` (204 when
-    none); POST .../requests/heartbeat records the key's player in `heartbeats` (204); POST .../requests/{id}/finish
-    records the report in `finished` and answers `finish_status` (200). With `broken`, every POST gets a cut-off
-    answer (http.client's IncompleteRead, not an OSError)."""
+    `status` for every request when it is set; GET /api/v1/market/clock answers `clock` to a known key. POST
+    .../requests/claim hands out the key's queued `claims` (204 when none); POST .../requests/heartbeat records the
+    key's player in `heartbeats` (204); POST .../requests/{id}/finish records the report in `finished` and answers
+    `finish_status` (200). With `broken`, every POST gets a cut-off answer (http.client's IncompleteRead, not an
+    OSError)."""
 
     def __init__(self):
         self.players = {KEY_A: "claude", KEY_B: "claude_tech", KEY_C: "claude_aggressive"}
@@ -87,14 +88,18 @@ class FakeApp:
         self.heartbeats = []      # the handle of each heartbeat's key
         self.finish_status = None
         self.broken = False
+        self.clock = {"session": "CLOSED", "tradingDate": None,
+                      "crypto": {"enabled": True, "pairs": ["BTC/USD", "ETH/USD"]}}
         app = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
                 app.requests.append((self.path, dict(self.headers)))
                 handle = app.players.get(self.headers.get("Authorization", "").removeprefix("Bearer "))
-                code = app.status or (200 if self.path == "/api/v1/me" and handle else 401)
-                body = json.dumps({"handle": handle, "kind": "AI"} if code == 200 else {"code": "UNAUTHORIZED"})
+                known = self.path in ("/api/v1/me", "/api/v1/market/clock") and handle
+                code = app.status or (200 if known else 401)
+                answer = app.clock if self.path == "/api/v1/market/clock" else {"handle": handle, "kind": "AI"}
+                body = json.dumps(answer if code == 200 else {"code": "UNAUTHORIZED"})
                 self.send_response(code)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -386,6 +391,14 @@ class AgentsFileTest(Base):
         with self.assertRaises(ct.ConfigError):
             self.cfg(STOCKS_TRADER_MCP_URL="app:8080/mcp")
         self.assertEqual(self.cfg(STOCKS_TRADER_MAX_PARALLEL="5").max_parallel, 5)
+        with self.assertRaises(ct.ConfigError):
+            self.cfg(STOCKS_TRADER_WEEKENDS="yes")
+        # weekend check-ins: on by default in server mode, off with STOCKS_TRADER_WEEKENDS=0, never in Mac mode
+        self.assertTrue(self.cfg().weekend_check_ins)
+        self.assertFalse(self.cfg(STOCKS_TRADER_WEEKENDS="0").weekend_check_ins)
+        self.assertFalse(self.cfg(server=False).weekend_check_ins)
+        self.assertFalse(self.cfg(server=False, STOCKS_TRADER_WEEKENDS="1").weekend_check_ins)
+        self.assertEqual(self.cfg(server=False).days, "on weekdays")
 
     def test_pick_agent(self):
         a, b = ct.Agent("claude", self.home, ["09:30"]), ct.Agent("claude_tech", self.home, ["09:30"])
@@ -408,8 +421,8 @@ class BookingTest(Base):
         self.s = {"done": [], "extra": [], "extra_ran": [], "summaries": []}
         self.now = WED.replace(hour=10, minute=0)
 
-    def book(self, date, hh, mm, s=None, agent=None):
-        return ct.book_extra(s or self.s, agent or self.agent, date, hh, mm, "why", self.now)
+    def book(self, date, hh, mm, s=None, agent=None, any_day=False):
+        return ct.book_extra(s or self.s, agent or self.agent, date, hh, mm, "why", self.now, any_day)
 
     def test_rules(self):
         self.assertIsNone(self.book(None, "14", "15"))
@@ -422,6 +435,20 @@ class BookingTest(Base):
         self.assertEqual(self.book(None, "14", "20"), "within 10 minutes of another check-in")  # the booked 14:15
         self.assertEqual(self.book(None, "25", "00"), "not a valid date and time")
         self.assertIsNone(self.book("2026-10-15", "4", "00"))  # tomorrow, hour without a leading zero
+
+    def test_any_day_and_time_with_weekend_check_ins(self):
+        self.assertIsNone(self.book("2026-10-17", "10", "00", any_day=True))  # Saturday
+        self.assertIsNone(self.book("2026-10-18", "23", "59", any_day=True))  # Sunday night
+        self.assertIsNone(self.book("2026-10-15", "02", "30", any_day=True))  # a weekday night
+        self.assertIsNone(self.book(None, "20", "30", any_day=True))
+        self.assertEqual([e["at"] for e in self.s["extra"]],
+                         ["2026-10-14 20:30", "2026-10-15 02:30", "2026-10-17 10:00", "2026-10-18 23:59"])
+        # the other rules still hold, the schedule's times included on a weekend
+        self.assertEqual(self.book("2026-10-17", "09", "25", any_day=True), "within 10 minutes of another check-in")
+        self.assertEqual(self.book("2026-10-17", "10", "05", any_day=True), "within 10 minutes of another check-in")
+        self.assertEqual(self.book("2026-10-22", "10", "00", any_day=True), "more than 7 days ahead")
+        self.assertEqual(self.book(None, "10", "01", any_day=True), "less than 2 minutes from now")
+        self.assertEqual(self.book("2026-10-17", "10", "30"), "a weekend")  # weekend check-ins off
 
     def test_per_day_limit_is_per_agent(self):
         two = ct.Agent("claude_tech", self.home, ["09:30"], extra_per_day=2)
@@ -485,12 +512,30 @@ class PromptTest(Base):
         self.assertIn("post ONE public journal note with add_journal_note", p)
         self.assertIn("Unless step 1 told you to stop", p)
         self.assertIn("6. Finish with a short summary", p)
+        # weekends and holidays: crypto pairs only, or stop when crypto trading is off
+        self.assertIn("Scheduled check-ins: 09:35, 15:00 ET on weekdays.", p)
+        self.assertIn("On a weekend or market\n   holiday the stock market is closed: if get_market_clock shows "
+                      "crypto.enabled, trade crypto pairs only", p)
+        self.assertIn("otherwise reply \"No trading today\" and stop", p)
+        self.assertIn("Crypto pairs (BTC/USD, ETH/USD, SOL/USD, ...: get_market_clock's crypto.pairs) trade 24/7", p)
+        self.assertIn("Spell them with a slash (\"BTC/USD\")", p)
+        self.assertIn("fractional (up to 5 decimals)", p)
+        self.assertIn("dollar notional", p)
+        self.assertIn("settle at once (no T+1, no good-faith violations) and pay no\nSEC/TAF/CAT fees.", p)
+        self.assertIn("(ET, a weekday 04:00-20:00, at least 10 minutes from other check-ins", p)
+        weekend = ct.prompt(a, WED, "x", s, False, weekends=True)
+        self.assertIn("Scheduled check-ins: 09:35, 15:00 ET on weekdays, and on weekends while crypto trading is on.",
+                      weekend)
+        self.assertIn("(ET, any day and any time 00:00-24:00; on a weekend it runs only while crypto trading is on; at "
+                      "least 10 minutes from other check-ins, at most 4 a day).", weekend)
+        self.assertNotIn("04:00-20:00", weekend)
         dry = ct.prompt(a, WED, "x", s, True)
         self.assertIn("DRY RUN", dry)
         self.assertNotIn("Adjust your portfolio", dry)
         self.assertIn("add_journal_note is blocked too", dry)
         self.assertNotIn("post ONE public journal note", dry)
         self.assertIn("6. Finish with a short summary", dry)
+        self.assertIn("Crypto pairs (BTC/USD", dry)
 
     def test_earlier_text_cannot_pose_as_the_strategy(self):
         a = ct.Agent("claude_tech", self.home, ["09:30"], strategy="Tech only.")
@@ -590,6 +635,12 @@ class TickTest(Base):
         self.release.set()
         self.code = 0
         self.verdict = ("ok", "")
+        self.crypto = ("ok", "")
+        self.crypto_calls = []
+
+        def fake_check_crypto(cfg, agent):
+            self.crypto_calls.append(agent.handle)
+            return self.crypto
 
         def fake_run_session(cfg, agent, why, dry_run=False):
             self.started.append((agent.handle, why))
@@ -597,7 +648,8 @@ class TickTest(Base):
             return self.code
 
         self.patches = [mock.patch.object(ct, "run_session", fake_run_session),
-                        mock.patch.object(ct, "check_player", lambda cfg, agent: self.verdict)]
+                        mock.patch.object(ct, "check_player", lambda cfg, agent: self.verdict),
+                        mock.patch.object(ct, "check_crypto", fake_check_crypto)]
         for p in self.patches:
             p.start()
 
@@ -610,10 +662,10 @@ class TickTest(Base):
     def agents(self, *specs):
         return [ct.Agent(h, self.home / "agents" / h, sched, enabled=en) for h, sched, en in specs]
 
-    def tick(self, agents, now, sessions=None):
+    def tick(self, agents, now, sessions=None, cfg=None):
         sessions = sessions or ct.Sessions(3)
         with fixed(now), capture() as out:
-            ct.tick_agents(self.cfg(), agents, sessions, now)
+            ct.tick_agents(cfg or self.cfg(), agents, sessions, now)
             self.assertTrue(sessions.wait(10))
         return out.getvalue()
 
@@ -648,10 +700,45 @@ class TickTest(Base):
 
     def test_weekend_and_disabled(self):
         agents = self.agents(("claude", ["09:30"], True), ("claude_off", ["09:30"], False))
-        self.tick(agents, WED.replace(day=17, minute=31))  # Saturday
-        self.assertEqual(self.started, [])
+        sat = WED.replace(day=17, minute=31)
+        # weekend check-ins off (STOCKS_TRADER_WEEKENDS=0, or Mac mode): nothing runs, the app is not asked
+        self.tick(agents, sat, cfg=self.cfg(STOCKS_TRADER_WEEKENDS="0"))
+        self.tick(agents, sat, cfg=self.cfg(server=False))
+        self.assertEqual((self.started, self.crypto_calls), ([], []))
+        self.assertEqual(ct.load_state(agents[0])["done"], [])
+        # on (the default in server mode) while the app's clock says crypto trades: the check-in runs
+        self.tick(agents, sat)
+        self.assertEqual(self.started, [("claude", "the 09:30 ET scheduled check-in")])
+        self.assertEqual(self.crypto_calls, ["claude"])  # only enabled agents, and only on a weekend
         self.tick(agents, WED.replace(minute=31))
-        self.assertEqual([h for h, _ in self.started], ["claude"])
+        self.assertEqual([h for h, _ in self.started], ["claude", "claude"])
+        self.assertEqual(self.crypto_calls, ["claude"])
+
+    def test_weekend_check_in_needs_crypto_trading(self):
+        agents = self.agents(("claude", ["09:30", "12:45"], True))
+        sun = WED.replace(day=18, minute=31)
+        s = ct.load_state(agents[0])
+        s["extra"] = [{"at": "2026-10-18 09:30", "reason": "BTC/USD breakout"}]
+        ct.save_state(agents[0], s, sun)
+        sessions = ct.Sessions(3)
+        self.crypto = ("down", "the app does not answer http://app:8080/api/v1/market/clock (Connection refused)")
+        log = self.tick(agents, sun, sessions) + self.tick(agents, sun.replace(minute=32), sessions)
+        self.assertEqual(self.started, [])
+        self.assertEqual(log.count("[claude] due, waiting for the app: the app does not answer"), 1, log)
+        self.assertEqual(ct.load_state(agents[0])["done"], [])  # still due
+        self.crypto = ("closed", "the stock market is closed on weekends and crypto trading is off")
+        log = self.tick(agents, sun.replace(minute=33), sessions)
+        self.assertEqual(self.started, [])
+        self.assertIn("[claude] skipped the 2026-10-18 09:30 ET check-in: the stock market is closed on weekends and "
+                      "crypto trading is off", log)
+        self.assertEqual(log.count("skipped the 2026-10-18 09:30 ET check-in"), 2, log)  # scheduled and extra
+        s = ct.load_state(agents[0])
+        self.assertEqual((s["done"], s["extra"]), (["2026-10-18 09:30"], []))
+        log = self.tick(agents, sun.replace(minute=34), sessions)  # skipped for good: not asked again
+        self.assertEqual((log.count("skipped"), len(self.crypto_calls)), (0, 3))
+        self.crypto = ("ok", "")
+        self.tick(agents, sun.replace(hour=12, minute=46), sessions)
+        self.assertEqual(self.started, [("claude", "the 12:45 ET scheduled check-in")])
 
     def test_locked_agent_stays_due(self):
         agents = self.agents(("claude", ["09:30"], True))
@@ -774,6 +861,26 @@ class CheckPlayerTest(Base):
             for k in (KEY_A, KEY_B, KEY_C):
                 self.assertNotIn(k, text)
 
+    def test_check_crypto(self):
+        cfg = self.cfg()
+        tech = ct.Agent("claude_tech", self.home, ["09:30"], key=KEY_B)
+        self.assertEqual(ct.check_crypto(cfg, tech), ("ok", ""))
+        path, headers = self.app.requests[-1]
+        self.assertEqual(path, "/api/v1/market/clock")
+        self.assertEqual(headers["Authorization"], f"Bearer {KEY_B}")
+        self.assertEqual(headers["X-Stocks-Client"], "claude-code/trader")
+        self.app.clock = {"session": "CLOSED", "tradingDate": None, "crypto": {"enabled": False, "pairs": []}}
+        self.assertEqual(ct.check_crypto(cfg, tech),
+                         ("closed", "the stock market is closed on weekends and crypto trading is off"))
+        self.app.clock = {"session": "CLOSED", "tradingDate": None}  # an app from before crypto
+        self.assertEqual(ct.check_crypto(cfg, tech)[0], "closed")
+        self.app.status = 503
+        self.assertEqual(ct.check_crypto(cfg, tech)[0], "down")
+        verdict, why = ct.check_crypto(self.cfg(STOCKS_TRADER_MCP_URL="http://127.0.0.1:9/mcp"), tech)
+        self.assertEqual(verdict, "down")
+        self.assertIn("/api/v1/market/clock", why)
+        self.assertNotIn(KEY_B, why)
+
     def test_run_once_refuses_a_wrong_key(self):
         self.write_agents(agent_toml("claude", KEY_A))
         self.app.players[KEY_A] = "chatgpt"
@@ -840,6 +947,22 @@ class RunSessionTest(Base):
                       s["summaries"][-1]["text"])
         self.assertIn("refused EXTRA_RUN: 2026-10-17 10:00 | weekend (a weekend)", out.getvalue())
         self.assertTrue((self.home / "logs" / "20261014-0930.json").exists())
+
+    def test_server_session_books_a_weekend_check_in(self):
+        os.environ["FAKE_RESULT"] = "Bought 0.01 BTC/USD.\nEXTRA_RUN: 2026-10-17 22:00 | BTC/USD Saturday night"
+        self.write_agents(agent_toml("claude", KEY_A))
+        cfg = self.cfg()
+        agent = ct.load_agents(cfg).agents[0]
+        with fixed(WED), capture():
+            self.assertEqual(ct.run_session(cfg, agent, "x"), 0)
+        self.assertIn("and on weekends while crypto trading is on", self.records()[-1]["prompt"])
+        self.assertEqual(ct.load_state(agent)["extra"],
+                         [{"at": "2026-10-17 22:00", "reason": "BTC/USD Saturday night"}])
+        weekdays = self.cfg(STOCKS_TRADER_WEEKENDS="0")
+        with fixed(WED), capture() as out:
+            self.assertEqual(ct.run_session(weekdays, agent, "x"), 0)
+        self.assertIn("refused EXTRA_RUN: 2026-10-17 22:00 | BTC/USD Saturday night (a weekend)", out.getvalue())
+        self.assertNotIn("on weekends", self.records()[-1]["prompt"])
 
     def test_dry_run_books_nothing(self):
         cfg = self.cfg(server=False)

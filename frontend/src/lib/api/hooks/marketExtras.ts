@@ -6,6 +6,7 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { api, unwrap } from '../client'
 import type { Schemas } from '../contract'
+import { toPath } from '../../symbols'
 
 export type TimeAndSales = Schemas['TimeAndSales']
 export type TapePrint = Schemas['TapePrint']
@@ -35,7 +36,7 @@ export function useCalendarDays(from: string | null, to: string | null) {
 export function useTimeAndSales(symbol: string, limit = 60, refetchInterval: number | false = false) {
   return useQuery({
     queryKey: ['trades', symbol, limit] as const,
-    queryFn: () => unwrap(api.GET('/api/v1/assets/{symbol}/trades', { params: { path: { symbol }, query: { limit } } })),
+    queryFn: () => unwrap(api.GET('/api/v1/assets/{symbol}/trades', { params: { path: { symbol: toPath(symbol) }, query: { limit } } })),
     enabled: symbol.length > 0,
     staleTime: 30_000,
     refetchInterval,
@@ -46,7 +47,7 @@ export function useTimeAndSales(symbol: string, limit = 60, refetchInterval: num
 export function useRecommendations(symbol: string) {
   return useQuery({
     queryKey: ['recommendations', symbol] as const,
-    queryFn: () => unwrap(api.GET('/api/v1/assets/{symbol}/recommendations', { params: { path: { symbol } } })),
+    queryFn: () => unwrap(api.GET('/api/v1/assets/{symbol}/recommendations', { params: { path: { symbol: toPath(symbol) } } })),
     enabled: symbol.length > 0,
     staleTime: 60 * 60_000,
     gcTime: 2 * 60 * 60_000,

@@ -88,7 +88,7 @@ export class Phase2Mock {
 
   recommendations(symbol: string): Recommendations {
     const meta = this.market.meta(symbol)
-    if (!meta || meta.type === 'ETF') return { symbol, source: 'none', asOf: null, periods: [] }
+    if (!meta || meta.type === 'ETF' || meta.type === 'CRYPTO') return { symbol, source: 'none', asOf: null, periods: [] }
     const rng = mulberry32(hashString(`rec:${symbol}`))
     const analysts = 8 + Math.floor(rng() * 36)
     const tilt = rng()
@@ -132,7 +132,8 @@ export class Phase2Mock {
   // ------------------------------------------------------------------------------------------- screener
 
   private rows(): ScreenerRow[] {
-    return MOCK_UNIVERSE.filter((m) => m.exchange !== 'SIM').map((m) => {
+    // stocks and ETFs only: crypto pairs are not screened
+    return MOCK_UNIVERSE.filter((m) => m.exchange !== 'SIM' && m.type !== 'CRYPTO').map((m) => {
       const q = this.market.quote(m.symbol)
       const avg = Math.round(m.adv)
       const shares = m.marketCap && m.prevClose ? div(m.marketCap, String(m.prevClose / 10_000), 0, 'HALF_EVEN') : null

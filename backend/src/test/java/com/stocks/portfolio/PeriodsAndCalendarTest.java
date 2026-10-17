@@ -45,6 +45,26 @@ class PeriodsAndCalendarTest {
     assertThat(fallback.usingFallback()).isTrue();
   }
 
+  /** §29: while crypto is on, every calendar day is a P&amp;L day (weekends and holidays end at 20:00 ET). */
+  @Test
+  void withCryptoEveryCalendarDayIsAPnlDay() {
+    PnlCalendar c = new PnlCalendar(new FakeCalendar(), () -> true);
+    LocalDate sat = LocalDate.of(2026, 10, 10);
+    LocalDate sun = LocalDate.of(2026, 10, 11);
+    assertThat(c.everyDay()).isTrue();
+    assertThat(c.currentPnlDay(Instant.parse("2026-10-10T15:00:00Z"))).isEqualTo(sat);           // Sat 11:00 ET
+    assertThat(c.currentPnlDay(Instant.parse("2026-10-10T07:59:59Z"))).isEqualTo(FRI);           // Sat 03:59 ET
+    assertThat(c.cutoff(sat)).isEqualTo(Instant.parse("2026-10-11T00:00:00Z"));                   // 20:00 ET
+    assertThat(c.previousTradingDay(MON_COLUMBUS)).isEqualTo(sun);
+    assertThat(c.tradingDaysBetween(FRI, MON_COLUMBUS)).containsExactly(sat, sun, MON_COLUMBUS);
+    assertThat(c.isTradingDay(LocalDate.of(2026, 11, 26))).isTrue();                             // Thanksgiving
+    assertThat(c.cutoff(LocalDate.of(2026, 11, 27))).isEqualTo(Instant.parse("2026-11-27T22:00:00Z"));  // 17:00
+    PeriodResolver p = new PeriodResolver(c, defaults);
+    assertThat(p.anchorDate(LeaderboardPeriod.TODAY, MON_COLUMBUS)).isEqualTo(sun);
+    assertThat(p.anchorDate(LeaderboardPeriod.WEEK, MON_COLUMBUS)).isEqualTo(sun);
+    assertThat(new PnlCalendar(new FakeCalendar(), () -> false).isTradingDay(sat)).isFalse();
+  }
+
   @Test
   void theRealCalendarKnowsHolidaysAndEarlyCloses() {
     assertThat(real.isTradingDay(LocalDate.of(2026, 11, 26))).isFalse();                       // Thanksgiving

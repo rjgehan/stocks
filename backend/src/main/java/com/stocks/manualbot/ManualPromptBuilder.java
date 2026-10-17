@@ -137,7 +137,7 @@ public class ManualPromptBuilder {
     s.append("Session: ").append(in.sessionId()).append('\n');
     s.append("Prompt made: ").append(et(in.now())).append(" ET (")
         .append(Et.date(in.now()).getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.US)).append(")\n");
-    s.append("Market now: ").append(sessionLine(in.clock())).append("\n\n");
+    s.append("Market now: ").append(sessionLine(in.clock())).append(cryptoNow(in.clock())).append("\n\n");
 
     s.append("=== Instructions from your owner @").append(in.ownerHandle()).append(" ===\n");
     s.append(in.instructions() == null || in.instructions().isBlank() ? NO_INSTRUCTIONS : in.instructions())
@@ -190,6 +190,7 @@ public class ManualPromptBuilder {
         .append(plain(o.collarPct())).append("% through the reference price.\n");
     s.append("- Fees: no commission; regulatory fees (").append(feeCodes(r.fees(), Et.date(in.now())))
         .append(") are charged per fill, as in the US market.\n");
+    s.append(cryptoLine(r.crypto()));
     s.append("- Every order needs a rationale (1-1000 characters). It is public.\n");
     long wait = properties.settleWait() == null ? 0 : properties.settleWait().toSeconds();
     s.append("- The app runs your actions in this order: all CANCELs, then SELLs, then BUYs. Cash from a SELL can pay "
@@ -198,6 +199,25 @@ public class ManualPromptBuilder {
             : "the app waits up to " + wait + " seconds for MARKET sells to fill before it places the buys")
         .append("; outside the regular session sells only queue, so do not count on their proceeds in the same "
             + "reply.\n\n");
+  }
+
+  /** §29: "; crypto pairs trade 24/7" when crypto is on, else nothing. */
+  static String cryptoNow(ClockDto c) {
+    return c.crypto() != null && c.crypto().enabled() ? "; crypto pairs trade 24/7 (open now)" : "";
+  }
+
+  /** §29: the crypto rule line, or nothing when the rulebook has no crypto section. */
+  static String cryptoLine(RulesDto.RulesCryptoDto c) {
+    if (c == null) {
+      return "";
+    }
+    if (!c.enabled()) {
+      return "- Crypto pairs are turned off: crypto buys are refused; you may still sell crypto you hold.\n";
+    }
+    return "- Crypto pairs (" + String.join(", ", c.pairs()) + ") trade 24/7, weekends and holidays included. Write "
+        + "the symbol with a slash (\"BTC/USD\"). Every order type works at any hour with fractional quantities (up "
+        + "to 5 decimals) or a notional amount on MARKET orders; no \"extended_hours\". Crypto fills settle at once "
+        + "(no good-faith violations), pay no fees and sell at any hour.\n";
   }
 
   /**

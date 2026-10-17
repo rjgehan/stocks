@@ -1,6 +1,7 @@
 package com.stocks.trading.order;
 
 import com.stocks.common.domain.AccountRestriction;
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.DataQuality;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.PlayerKind;
@@ -159,12 +160,13 @@ public class OrderValidator {
           .withField(o.qty() == null ? "qty" : "notional", ErrorCode.QTY_OR_NOTIONAL_REQUIRED, "Exactly one");
     }
 
-    // 10: quantity
-    if (o.qty() != null && (o.qty().signum() <= 0 || o.qty().compareTo(rules.maxOrderQty()) > 0
+    // 10: quantity (a crypto pair allows more units: $500,000 of DOGE is about 2,000,000 coins, §29)
+    BigDecimal maxQty = Crypto.isCrypto(o.symbol()) ? Crypto.MAX_ORDER_QTY : rules.maxOrderQty();
+    if (o.qty() != null && (o.qty().signum() <= 0 || o.qty().compareTo(maxQty) > 0
         || !Money.hasAtMostDecimals(o.qty(), Qty.SCALE))) {
-      throw ApiException.of(ErrorCode.INVALID_QTY, "qty must be > 0, at most " + rules.maxOrderQty().toPlainString()
+      throw ApiException.of(ErrorCode.INVALID_QTY, "qty must be > 0, at most " + maxQty.toPlainString()
               + " and have at most 5 decimal places.")
-          .withField("qty", ErrorCode.INVALID_QTY, "0 < qty ≤ 200000, ≤ 5 dp");
+          .withField("qty", ErrorCode.INVALID_QTY, "0 < qty ≤ " + maxQty.toPlainString() + ", ≤ 5 dp");
     }
 
     boolean fractional = o.fractional();
@@ -382,12 +384,13 @@ public class OrderValidator {
     } else if (q != null && (q.quality() == DataQuality.STALE || q.quality() == DataQuality.NONE)) {
       warnings.add(Warning.of(WarningCode.STALE_QUOTE, "The estimate uses a stale or missing quote."));
     }
-    if (o.extendedHours() && inIexDarkWindow(in.now())) {
+    boolean crypto = Crypto.isCrypto(o.symbol());
+    if (o.extendedHours() && !crypto && inIexDarkWindow(in.now())) {
       warnings.add(Warning.of(WarningCode.EXT_HOURS_DATA_GAP,
           "No live IEX quotes 04:00–08:00 and 17:00–20:00 ET; extended-hours fills need consolidated prints."));
     }
     Long shown = q == null ? null : (buy ? q.askSize() : q.bidSize());
-    if (!fractional && o.qty() != null && shown != null && shown > 0
+    if (!fractional && !crypto && o.qty() != null && shown != null && shown > 0
         && o.qty().compareTo(BigDecimal.valueOf(shown)) > 0) {
       warnings.add(Warning.of(WarningCode.PARTIAL_FILL_LIKELY, "Quantity exceeds the displayed size of " + shown
           + "; the order may fill in parts."));
@@ -471,9 +474,11 @@ public class OrderValidator {
     if (o.notional() != null) {
       hint = bp.signum() > 0 ? "Try a notional amount of \"" + bp.toPlainString() + "\" or less." : null;
     } else {
+      boolean crypto = Crypto.isCrypto(o.symbol());
       BigDecimal max = perShare == null || perShare.signum() <= 0 ? BigDecimal.ZERO
-          : bp.max(BigDecimal.ZERO).divide(perShare, 0, RoundingMode.FLOOR);
-      hint = "Max " + max.toPlainString() + " whole shares at $" + (perShare == null ? "?"
+          : bp.max(BigDecimal.ZERO).divide(perShare, crypto ? Qty.SCALE : 0, RoundingMode.FLOOR);
+      hint = "Max " + qtyOut(max).toPlainString()
+          + (crypto ? " " + o.symbol() + " at $" : " whole shares at $") + (perShare == null ? "?"
           : perShare.setScale(2, RoundingMode.HALF_UP).toPlainString()) + "."
           + (cushionNote == null ? "" : " That per-share hold includes a cushion: " + cushionNote
               + "; the unused part is released when it fills.")
@@ -501,14 +506,14 @@ public class OrderValidator {
     };
     BigDecimal qty = o.qty();
     if (qty == null && price != null && price.signum() > 0) {
-      qty = buy ? notionalBuyQty(o.notional(), price, tradeDate)
+      qty = buy ? notionalBuyQty(o.symbol(), o.notional(), price, tradeDate)
           : Rounding.NOTIONAL_QTY.divide(o.notional(), price).min(available);
     }
     BigDecimal principal = null;
     Fees f = Fees.ZERO;
     if (qty != null && price != null) {
       principal = Rounding.principal(o.side(), qty, price);
-      f = fees.estimate(o.side(), qty, principal, tradeDate);
+      f = fees.estimate(o.symbol(), o.side(), qty, principal, tradeDate);
     }
     return new EstimateDto(price == null ? null : Prices.normalize(price.setScale(Prices.SCALE, RoundingMode.HALF_UP)),
         qty == null ? null : qtyOut(qty), principal, f.toDto(), hold, q == null ? null : q.asOf(),
@@ -530,8 +535,14 @@ public class OrderValidator {
    * {@code qty = floor5((notional − estFees(q0)) / price)}, so principal + fees ≤ notional.
    */
   public BigDecimal notionalBuyQty(BigDecimal notional, BigDecimal price, LocalDate tradeDate) {
+    return notionalBuyQty(null, notional, price, tradeDate);
+  }
+
+  /** As {@link #notionalBuyQty(BigDecimal, BigDecimal, LocalDate)}; a crypto pair has no fees (§29). */
+  public BigDecimal notionalBuyQty(String symbol, BigDecimal notional, BigDecimal price, LocalDate tradeDate) {
     BigDecimal q0 = Rounding.NOTIONAL_QTY.divide(notional, price);
-    BigDecimal est = fees.estimate(Side.BUY, q0, Rounding.PRINCIPAL_BUY.multiply(q0, price), tradeDate).total();
+    BigDecimal est = fees.estimate(symbol, Side.BUY, q0, Rounding.PRINCIPAL_BUY.multiply(q0, price), tradeDate)
+        .total();
     return Rounding.NOTIONAL_QTY.divide(notional.subtract(est), price).max(Qty.ZERO);
   }
 

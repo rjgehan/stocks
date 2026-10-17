@@ -32,6 +32,7 @@ import { DIRECTION_TEXT } from '@/features/market/Change'
 import { LinkedOrdersCard } from '@/features/groups/LinkedOrdersCard'
 import { GroupChip } from '@/features/groups/GroupChip'
 import { QualityBadge } from '@/features/market/QualityBadge'
+import { toPath } from '@/lib/symbols'
 
 export const Route = createFileRoute('/_app/account/orders/$orderId')({
   staticData: { phone: 'pushed' },
@@ -241,7 +242,7 @@ function OrderDetail() {
           <div>
             <h1 className="text-[20px] leading-7 font-bold tracking-tight">
               <span className={o.side === 'BUY' ? 'text-up' : 'text-down'}>{o.side === 'BUY' ? 'Buy' : 'Sell'}</span> {orderSizeLabel(o)}{' '}
-              <Link to="/stock/$symbol" params={{ symbol: o.symbol ?? '' }} className="hover:text-accent">
+              <Link to="/stock/$symbol" params={{ symbol: toPath(o.symbol ?? '') }} className="hover:text-accent">
                 {o.symbol}
               </Link>
             </h1>

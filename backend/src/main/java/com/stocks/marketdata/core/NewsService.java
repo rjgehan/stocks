@@ -2,6 +2,7 @@ package com.stocks.marketdata.core;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.stocks.common.domain.Crypto;
 import com.stocks.contract.marketdata.model.NewsItem;
 import com.stocks.marketdata.spi.MarketDataProvider;
 import com.stocks.marketdata.spi.ProviderException;
@@ -62,8 +63,8 @@ public class NewsService {
       if (i == 0 && !primaryAllowed.get() || !p.capabilities().news()) {
         continue;
       }
-      if (syms.isEmpty() && p.id().equals("finnhub")) {
-        continue;                                    // company-news needs a symbol
+      if ((syms.isEmpty() || syms.stream().anyMatch(Crypto::isCrypto)) && p.id().equals("finnhub")) {
+        continue;                                    // company-news needs a stock symbol (no crypto, §29)
       }
       boolean secondarySource = i > 0;
       // a secondary source fills in for a failed or empty primary, and is merged into symbol news

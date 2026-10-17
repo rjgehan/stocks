@@ -830,7 +830,7 @@ export interface paths {
         get: operations["get"];
         /**
          * Change league settings
-         * @description Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live). Errors: SETTING_INVALID.
+         * @description Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live); crypto.enabled turns 24/7 crypto trading and weekend P&L days on or off (off: crypto buys are refused, sells still work). Errors: SETTING_INVALID.
          */
         put: operations["put"];
         post?: never;
@@ -3040,7 +3040,7 @@ export interface components {
             symbol: string | null;
             tradable: boolean;
             /** @enum {string|null} */
-            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | null;
+            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO" | null;
             /** Format: decimal */
             week52High: string | null;
             /** Format: decimal */
@@ -3053,7 +3053,7 @@ export interface components {
             symbol: string | null;
             tradable: boolean;
             /** @enum {string|null} */
-            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | null;
+            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO" | null;
         };
         AuditRow: {
             action: string | null;
@@ -3234,6 +3234,7 @@ export interface components {
             newPassword: string | null;
         };
         Clock: {
+            crypto: components["schemas"]["ClockCrypto"] | null;
             earlyClose: boolean;
             feed: components["schemas"]["ClockFeed"] | null;
             /** Format: date-time */
@@ -3255,6 +3256,10 @@ export interface components {
             tradingDate: string | null;
             upcomingEarlyCloses: string[] | null;
             upcomingHolidays: components["schemas"]["ClockHoliday"][] | null;
+        };
+        ClockCrypto: {
+            enabled: boolean;
+            pairs: string[] | null;
         };
         ClockFeed: {
             liveIexWindowEt: string | null;
@@ -4855,6 +4860,7 @@ export interface components {
             account: components["schemas"]["RulesAccount"] | null;
             /** Format: date-time */
             asOf: string | null;
+            crypto: components["schemas"]["RulesCrypto"] | null;
             dataSources: string[] | null;
             execution: components["schemas"]["RulesExecution"] | null;
             fairness: string[] | null;
@@ -4879,6 +4885,17 @@ export interface components {
             startingCash: string | null;
             /** @enum {string|null} */
             type: "CASH" | "MARGIN" | null;
+        };
+        RulesCrypto: {
+            enabled: boolean;
+            fees: string | null;
+            hours: string | null;
+            orders: string | null;
+            pairs: string[] | null;
+            pnlDays: string | null;
+            quantities: string | null;
+            settlement: string | null;
+            symbols: string | null;
         };
         RulesExecution: {
             freshness: {
@@ -5118,7 +5135,7 @@ export interface components {
             sector: "COMMUNICATION_SERVICES" | "CONSUMER_DISCRETIONARY" | "CONSUMER_STAPLES" | "ENERGY" | "FINANCIALS" | "HEALTH_CARE" | "INDUSTRIALS" | "INFORMATION_TECHNOLOGY" | "MATERIALS" | "REAL_ESTATE" | "UTILITIES" | null;
             symbol: string | null;
             /** @enum {string|null} */
-            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | null;
+            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO" | null;
             /** Format: int64 */
             volume: number | null;
             volumeIsPartial: boolean;
@@ -5132,6 +5149,7 @@ export interface components {
         };
         Settings: {
             "bots.requireRationale": boolean;
+            "crypto.enabled": boolean;
             "league.allowSelfReset": boolean;
             /** Format: decimal */
             "league.defaultStartingCash": string | null;
@@ -5499,6 +5517,7 @@ export interface components {
         };
         UpdateSettingsRequest: {
             "bots.requireRationale"?: boolean | null;
+            "crypto.enabled"?: boolean | null;
             "league.allowSelfReset"?: boolean | null;
             /** Format: decimal */
             "league.defaultStartingCash"?: string | null;
@@ -8258,7 +8277,7 @@ export interface operations {
                 /** @description GICS sectors, comma-separated */
                 sectors?: ("COMMUNICATION_SERVICES" | "CONSUMER_DISCRETIONARY" | "CONSUMER_STAPLES" | "ENERGY" | "FINANCIALS" | "HEALTH_CARE" | "INDUSTRIALS" | "INFORMATION_TECHNOLOGY" | "MATERIALS" | "REAL_ESTATE" | "UTILITIES")[];
                 /** @description COMMON_STOCK, ETF and/or ADR, comma-separated */
-                types?: ("COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN")[];
+                types?: ("COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO")[];
                 /** @description Sort column (default: the preset's, else MARKET_CAP) */
                 sort?: "SYMBOL" | "PRICE" | "CHANGE_PCT" | "VOLUME" | "AVG_VOLUME" | "REL_VOLUME" | "MARKET_CAP";
                 /** @description ASC or DESC (default: the preset's, else DESC; SYMBOL defaults to ASC) */

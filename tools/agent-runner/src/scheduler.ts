@@ -1,7 +1,7 @@
-// AGENT_SCHEDULE_ET on trading days (ARCHITECTURE §20.5), plus the extra runs each bot books for itself with
-// schedule_run (<bot>/requested-runs.json). Every bot has its own loop, so at each slot all configured bots start in
-// the same minute (concurrently) and one bot's booked run never waits for another bot. Each run first asks the market
-// clock and skips a non-trading day itself.
+// AGENT_SCHEDULE_ET on trading days, and every day while crypto trades (ARCHITECTURE §20.5), plus the extra runs each
+// bot books for itself with schedule_run (<bot>/requested-runs.json). Every bot has its own loop, so at each slot all
+// configured bots start in the same minute (concurrently) and one bot's booked run never waits for another bot. Each
+// run first asks the market clock and skips a non-trading day itself (unless the clock says crypto trades).
 
 import type { BotConfig } from './config.js';
 import { errorMessage } from './log.js';

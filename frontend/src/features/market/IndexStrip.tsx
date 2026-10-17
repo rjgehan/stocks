@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { useQuote, useQuotesSeed } from '@/lib/realtime/useQuote'
 import { formatPrice } from '@/lib/format/number'
 import { Change } from './Change'
+import { toPath } from '@/lib/symbols'
 
 export const INDEX_SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM'] as const
 
@@ -10,7 +11,7 @@ function IndexCell({ symbol }: { symbol: string }) {
   return (
     <Link
       to="/stock/$symbol"
-      params={{ symbol }}
+      params={{ symbol: toPath(symbol) }}
       className="min-w-0 flex-1 rounded-md px-1 py-1.5 hover:bg-bg-2"
       aria-label={`${symbol} ${formatPrice(q?.last)}`}
     >

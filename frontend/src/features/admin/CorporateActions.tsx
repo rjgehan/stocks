@@ -16,6 +16,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { IconInfo, IconShield } from '@/components/ui/icons'
 import { toast } from '@/features/notifications/toastStore'
 import { CA_ORIGIN_LABEL, CA_STATUS_LABEL, CA_STATUS_TONE, CA_TYPE_LABEL, caSummary, isSplit, splitEffect, splitKind, validRate } from './corporateActionLabels'
+import { toPath } from '@/lib/symbols'
 
 const FILTERS: ReadonlyArray<{ value: CorporateActionFilter; label: string }> = [
   { value: 'NEEDS_ADMIN', label: 'Needs you' },
@@ -38,7 +39,7 @@ function ActionRow({ c, onResolve }: { c: CorporateAction; onResolve: (c: Corpor
     <li className="flex flex-col gap-2 px-4 py-3 tablet:flex-row tablet:items-start tablet:gap-4">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <Link to="/stock/$symbol" params={{ symbol: c.newSymbol && c.status === 'APPLIED' ? c.newSymbol : (c.symbol ?? '') }} className="text-body font-bold hover:text-accent">
+          <Link to="/stock/$symbol" params={{ symbol: toPath(c.newSymbol && c.status === 'APPLIED' ? c.newSymbol : (c.symbol ?? '')) }} className="text-body font-bold hover:text-accent">
             {c.symbol}
           </Link>
           <span className="text-body font-semibold text-text-1">{caSummary(c)}</span>

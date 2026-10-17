@@ -25,7 +25,7 @@ import { Stepper } from '@/components/ui/Stepper'
 import { ORDER_TYPE_LABEL } from '@/features/account/orderLabels'
 import { GROUP_TYPE_HELP, GROUP_TYPE_LABEL, ROLE_LABEL } from '@/features/groups/groupLabels'
 import { toast } from '@/features/notifications/toastStore'
-import { newClientOrderId } from '../ticketState'
+import { newClientOrderId, qtyUnit } from '../ticketState'
 import { GroupReviewSheet } from './GroupReviewSheet'
 import { groupErrorText } from './groupErrors'
 import {
@@ -49,6 +49,7 @@ import {
   secondaryUsesStop,
   submitLabel,
 } from './groupTicketState'
+import { isCrypto } from '@/lib/symbols'
 
 function step(value: string, dir: 1 | -1, reference: Dec | null | undefined): string {
   const current = parseUserDecimal(value) ?? reference ?? null
@@ -82,6 +83,9 @@ export function AdvancedTicket({ symbol, groups, confirmOrders, onDone }: { symb
   const place = usePlaceGroup()
   const t = state.groupType
   const entryTypes = entryTypesFor(t, groups)
+  // a crypto pair's legs take up to 5 decimals and have no dividends
+  const cryptoPair = isCrypto(symbol)
+  const unit = qtyUnit(symbol, cryptoPair)
 
   // prices default around the market once per group type and side (never re-filled after the user edits them)
   const defaulted = useRef('')
@@ -268,9 +272,9 @@ export function AdvancedTicket({ symbol, groups, confirmOrders, onDone }: { symb
 
         <div>
           <Stepper
-            label="Shares (every leg)"
+            label={cryptoPair ? `Quantity (${unit}, every leg)` : 'Shares (every leg)'}
             value={state.qty}
-            inputMode="numeric"
+            inputMode={cryptoPair ? 'decimal' : 'numeric'}
             onChange={(v) => dispatch({ type: 'field', field: 'qty', value: v })}
             onStep={(d) => {
               const current = parseUserDecimal(state.qty) ?? '0'
@@ -281,10 +285,10 @@ export function AdvancedTicket({ symbol, groups, confirmOrders, onDone }: { symb
             placeholder="0"
           />
           <p className="mt-1 flex justify-between text-caption text-text-3">
-            <span>Whole shares only</span>
+            <span>{cryptoPair ? 'Up to 5 decimals' : 'Whole shares only'}</span>
             {t === 'OCO' && state.ocoSide === 'SELL' ? (
               <span>
-                Available <span className="font-semibold text-text-1">{formatQty(position?.availableQty)}</span> sh
+                Available <span className="font-semibold text-text-1">{formatQty(position?.availableQty)}</span> {unit}
               </span>
             ) : null}
           </p>
@@ -303,9 +307,11 @@ export function AdvancedTicket({ symbol, groups, confirmOrders, onDone }: { symb
             ]}
           />
         </div>
-        <Checkbox checked={state.doNotReduce} onChange={(value) => dispatch({ type: 'doNotReduce', value })} className="text-caption text-text-2">
-          Don't reduce on dividends (keep my prices on ex-dividend dates)
-        </Checkbox>
+        {cryptoPair ? null : (
+          <Checkbox checked={state.doNotReduce} onChange={(value) => dispatch({ type: 'doNotReduce', value })} className="text-caption text-text-2">
+            Don't reduce on dividends (keep my prices on ex-dividend dates)
+          </Checkbox>
+        )}
 
         <div className="rounded-md bg-bg-2/60 px-3 py-2 text-table" aria-live="polite" data-testid="group-preview">
           {!request ? (

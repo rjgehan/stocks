@@ -142,7 +142,11 @@ final class SimModel {
     if (e.type() == AssetType.ETF) {
       annual *= 0.6;
     }
-    double sigmaD = annual / StrictMath.sqrt(252);
+    // a crypto pair (§29) is more volatile (45-90% a year) and trades every calendar day
+    if (e.type() == AssetType.CRYPTO) {
+      annual = 0.45 + 0.45 * u;
+    }
+    double sigmaD = annual / StrictMath.sqrt(e.type() == AssetType.CRYPTO ? 365 : 252);
     double beta = 0.6 + 0.9 * SimMath.uniform(SimMath.mix(key, 103));
     double idio2 = sigmaD * sigmaD - beta * beta * MARKET_SIGMA * MARKET_SIGMA;
     double sigmaIdio = StrictMath.sqrt(StrictMath.max(idio2, 0.0625 * sigmaD * sigmaD));

@@ -1,5 +1,6 @@
 package com.stocks.marketdata.alpaca;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.MoverList;
 import com.stocks.common.time.TimeSource;
 import com.stocks.contract.marketdata.RefreshPriority;
@@ -110,11 +111,15 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
     return snapshots(symbols, RefreshPriority.UI);
   }
 
-  /** Batched by {@code snapshot-batch} (100 by default; the probe may raise it). */
+  /** Batched by {@code snapshot-batch} (100 by default; the probe may raise it); crypto pairs from the crypto API. */
   @Override
   public Map<String, Snapshot> snapshots(Set<String> symbols, RefreshPriority priority) {
     Map<String, Snapshot> out = new LinkedHashMap<>();
-    List<String> all = new ArrayList<>(new TreeSet<>(symbols));
+    Set<String> crypto = crypto(symbols);
+    if (!crypto.isEmpty()) {
+      out.putAll(rest.cryptoSnapshots(crypto, priority));
+    }
+    List<String> all = new ArrayList<>(new TreeSet<>(stocks(symbols)));
     for (int i = 0; i < all.size(); i += snapshotBatch) {
       Set<String> batch = new TreeSet<>(all.subList(i, Math.min(all.size(), i + snapshotBatch)));
       out.putAll(rest.snapshots(batch, feed(), priority));
@@ -124,12 +129,48 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
 
   @Override
   public Map<String, Quote> latestQuotes(Set<String> symbols) {
-    return rest.latestQuotes(symbols, feed(), RefreshPriority.ORDER_CRITICAL);
+    Map<String, Quote> out = new LinkedHashMap<>();
+    if (!crypto(symbols).isEmpty()) {
+      out.putAll(rest.cryptoLatestQuotes(crypto(symbols), RefreshPriority.ORDER_CRITICAL));
+    }
+    if (!stocks(symbols).isEmpty()) {
+      out.putAll(rest.latestQuotes(stocks(symbols), feed(), RefreshPriority.ORDER_CRITICAL));
+    }
+    return out;
   }
 
   @Override
   public Map<String, Trade> latestTrades(Set<String> symbols) {
-    return rest.latestTrades(symbols, feed(), RefreshPriority.ORDER_CRITICAL);
+    Map<String, Trade> out = new LinkedHashMap<>();
+    if (!crypto(symbols).isEmpty()) {
+      out.putAll(rest.cryptoLatestTrades(crypto(symbols), RefreshPriority.ORDER_CRITICAL));
+    }
+    if (!stocks(symbols).isEmpty()) {
+      out.putAll(rest.latestTrades(stocks(symbols), feed(), RefreshPriority.ORDER_CRITICAL));
+    }
+    return out;
+  }
+
+  /** The crypto pairs of {@code symbols} (§29). */
+  static Set<String> crypto(Set<String> symbols) {
+    Set<String> out = new TreeSet<>();
+    symbols.forEach(s -> {
+      if (Crypto.isCrypto(s)) {
+        out.add(s);
+      }
+    });
+    return out;
+  }
+
+  /** Everything in {@code symbols} that is not a crypto pair. */
+  static Set<String> stocks(Set<String> symbols) {
+    Set<String> out = new TreeSet<>();
+    symbols.forEach(s -> {
+      if (!Crypto.isCrypto(s)) {
+        out.add(s);
+      }
+    });
+    return out;
   }
 
   @Override
@@ -145,6 +186,18 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
    */
   @Override
   public Map<String, List<Bar>> bars(BarQuery q, RefreshPriority priority) {
+    Set<String> crypto = crypto(q.symbols());
+    if (!crypto.isEmpty()) {
+      // crypto pairs: the crypto bars endpoint, no feed and no embargo (§29); stocks of a mixed query as below
+      Map<String, List<Bar>> out = new LinkedHashMap<>(rest.cryptoBars(new BarQuery(crypto, q.tf(), q.from(), q.to(),
+          q.adj(), q.extendedHours(), q.limit(), null), priority));
+      Set<String> stocks = stocks(q.symbols());
+      if (!stocks.isEmpty()) {
+        out.putAll(bars(new BarQuery(stocks, q.tf(), q.from(), q.to(), q.adj(), q.extendedHours(), q.limit(),
+            q.feed()), priority));
+      }
+      return out;
+    }
     String feed = q.feed() != null ? q.feed() : "sip";
     Instant to = q.to();
     if ("sip".equalsIgnoreCase(feed) && !"sip".equals(feed())) {
@@ -160,13 +213,21 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
 
   @Override
   public List<NewsItem> news(Set<String> symbols, int limit, Instant before) {
-    // user-triggered extras ask below the quote poll, which keeps the last 20% of the shared budget (§15.5)
-    return rest.news(symbols, limit, before, RefreshPriority.BACKGROUND);
+    // user-triggered extras ask below the quote poll, which keeps the last 20% of the shared budget (§15.5);
+    // Alpaca's news tags crypto as BTCUSD, not BTC/USD
+    Set<String> asked = new TreeSet<>();
+    symbols.forEach(s -> asked.add(s.replace("/", "")));
+    return rest.news(asked, limit, before, RefreshPriority.BACKGROUND);
   }
 
   @Override
   public List<CorporateActionData> corporateActions(Set<String> symbols, LocalDate from, LocalDate to) {
-    return rest.corporateActions(symbols, from, to, RefreshPriority.BACKGROUND);
+    // an empty set asks for every symbol; a set of crypto pairs only has nothing to ask (coins have no actions)
+    Set<String> stocks = stocks(symbols);
+    if (!symbols.isEmpty() && stocks.isEmpty()) {
+      return List.of();
+    }
+    return rest.corporateActions(stocks, from, to, RefreshPriority.BACKGROUND);
   }
 
   @Override
@@ -182,6 +243,18 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
   @Override
   public AlpacaStreamClient openStream(Consumer<MarketEvent> sink) {
     return openStream(sink, () -> true);
+  }
+
+  /**
+   * The crypto stream (§29, {@code wss://stream.data.alpaca.markets/v1beta3/crypto/us}): the same protocol as the
+   * stock stream with pairs as symbols, open around the clock (its watchdog never sleeps).
+   */
+  public AlpacaStreamClient openCryptoStream(Consumer<MarketEvent> sink) {
+    AlpacaStreamClient stream = new AlpacaStreamClient(URI.create(props.alpaca().cryptoStreamUrl()),
+        props.alpaca().keyId(), props.alpaca().secretKey(), AlpacaJson.CRYPTO_FEED, time, timings, () -> true, sink);
+    stream.setQuoteSizeMultiplier(1);
+    stream.start();
+    return stream;
   }
 
   public AlpacaStreamClient openStream(Consumer<MarketEvent> sink, BooleanSupplier venueHours) {

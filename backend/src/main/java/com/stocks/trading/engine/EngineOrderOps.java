@@ -105,7 +105,7 @@ public class EngineOrderOps {
       }
       BigDecimal reserved = r.reservedCash();
       if (buyLimit && reserved.signum() > 0 && !GroupHandler.inPair(r) && r.remainingQty() != null) {
-        reserved = reserved.min(holds.holdFor(r.remainingQty(), limitAfter, clock.tradeDate(now)));
+        reserved = reserved.min(holds.holdFor(r.symbol(), r.remainingQty(), limitAfter, clock.tradeDate(now)));
       }
       writer.adjustPrices(r.id(), limitAfter, stopAfter, reserved);
       Map<String, Object> detail = new LinkedHashMap<>();

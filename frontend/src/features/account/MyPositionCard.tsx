@@ -11,6 +11,7 @@ import { DIRECTION_TEXT } from '@/features/market/Change'
 import { toast } from '@/features/notifications/toastStore'
 import { newClientOrderId } from '@/features/trade/ticketState'
 import { OrdersTable } from './OrdersTable'
+import { isCrypto } from '@/lib/symbols'
 
 /** "My position" and "my open orders" on the quote page (§22.4), with Close position (§11.8). */
 export function MyPositionCard({ symbol }: { symbol: string }) {
@@ -51,7 +52,7 @@ export function MyPositionCard({ symbol }: { symbol: string }) {
         <dl className="grid grid-cols-2 gap-x-6 px-4 py-2 text-table tablet:grid-cols-3">
           {(
             [
-              ['Shares', formatQty(p.qty)],
+              [isCrypto(symbol) ? 'Quantity' : 'Shares', formatQty(p.qty)],
               ['Avg cost', formatPrice(p.avgCost)],
               ['Market value', formatMoney(p.marketValue)],
               [

@@ -73,9 +73,10 @@ public class IntradaySampler implements ScheduledJob {
   public List<JobOccurrence> occurrencesBetween(Instant fromExclusive, Instant toInclusive, MarketCalendar cal) {
     List<JobOccurrence> out = new ArrayList<>();
     long step = interval.toMillis();
+    boolean allDay = calendar.everyDay();              // crypto trades around the clock (§29): sample 24 h a day
     for (LocalDate d : calendar.tradingDaysBetween(Et.date(fromExclusive).minusDays(2), Et.date(toInclusive))) {
-      Instant start = calendar.preOpen(d);
-      Instant end = calendar.cutoff(d);
+      Instant start = allDay ? Et.startOfDay(d) : calendar.preOpen(d);
+      Instant end = allDay ? Et.startOfDay(d.plusDays(1)).minusMillis(1) : calendar.cutoff(d);
       long first = Math.floorDiv(Math.max(start.toEpochMilli(), fromExclusive.toEpochMilli()), step) * step;
       for (long ms = first; ms <= end.toEpochMilli(); ms += step) {
         Instant at = Instant.ofEpochMilli(ms);

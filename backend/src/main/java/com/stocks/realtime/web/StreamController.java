@@ -1,6 +1,7 @@
 package com.stocks.realtime.web;
 
 import com.stocks.common.domain.AuthMethod;
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.contract.realtime.dto.StreamByeDto;
@@ -46,7 +47,7 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter
 public class StreamController {
 
   public static final MediaType EVENT_STREAM = new MediaType("text", "event-stream", StandardCharsets.UTF_8);
-  static final Pattern SYMBOL = Pattern.compile("^[A-Z][A-Z0-9.\\-]{0,11}$");
+  static final Pattern SYMBOL = Pattern.compile(Crypto.SYMBOL_REGEX);
   static final long ASYNC_SLACK_MS = 60_000;
 
   private final StreamHub hub;
@@ -156,7 +157,7 @@ public class StreamController {
       if (part.isBlank()) {
         continue;
       }
-      String s = part.strip().toUpperCase(Locale.ROOT);
+      String s = Crypto.fromPath(part.strip().toUpperCase(Locale.ROOT));
       if (!SYMBOL.matcher(s).matches()) {
         throw ApiException.validation("symbols", "'" + clip(part.strip()) + "' is not a symbol.");
       }

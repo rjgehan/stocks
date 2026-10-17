@@ -4,6 +4,7 @@ import { useBreakpoint } from '@/app/useBreakpoint'
 import { parseTimeframe } from '@/features/market/IntervalPicker'
 import { CHART_RANGES } from '@/features/market/RangeChips'
 import { StockScreen, type QuoteTab } from '@/features/market/StockScreen'
+import { fromPath, toPath } from '@/lib/symbols'
 
 interface StockSearch {
   range?: ChartRange
@@ -22,16 +23,17 @@ export const Route = createFileRoute('/_app/stock/$symbol')({
     tab: TABS.find((t) => t === String(search.tab ?? '').toUpperCase()),
     ticket: search.ticket === 'BUY' || search.ticket === 'SELL' ? search.ticket : undefined,
   }),
+  // The URL carries the upper-case path spelling: `BTC-USD` for the pair `BTC/USD` (a `/` cannot sit in a segment).
   beforeLoad: ({ params, search }) => {
-    const upper = params.symbol.toUpperCase()
-    if (upper !== params.symbol) throw redirect({ to: '/stock/$symbol', params: { symbol: upper }, search, replace: true })
+    const canonical = toPath(fromPath(params.symbol))
+    if (canonical !== params.symbol) throw redirect({ to: '/stock/$symbol', params: { symbol: canonical }, search, replace: true })
   },
   staticData: { chrome: 'watchlist', phone: 'pushed' },
   component: StockRoute,
 })
 
 function StockRoute() {
-  const { symbol } = Route.useParams()
+  const symbol = fromPath(Route.useParams().symbol)
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
   const bp = useBreakpoint()

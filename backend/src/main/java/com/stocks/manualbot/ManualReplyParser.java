@@ -1,5 +1,6 @@
 package com.stocks.manualbot;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.TimeInForce;
 import com.stocks.common.web.Text;
@@ -62,7 +63,7 @@ public final class ManualReplyParser {
   static final int MAX_DECIMAL_SCALE = 10;
 
   static final Pattern THOUSANDS = Pattern.compile("^\\d{1,3}(,\\d{3})+(\\.\\d+)?$");
-  static final Pattern SYMBOL = Pattern.compile("^[A-Z][A-Z0-9.\\-]{0,11}$");
+  static final Pattern SYMBOL = Pattern.compile(Crypto.SYMBOL_REGEX);
   static final Pattern ZERO_WIDTH = Pattern.compile("[\\u200B-\\u200D\\u2060\\uFEFF]");
   static final Pattern GTC_LONG = Pattern.compile("^GOOD_TILL?_CANCELL?ED$");
   private static final Pattern SEPARATORS = Pattern.compile("[-\\s]+");
@@ -769,9 +770,10 @@ public final class ManualReplyParser {
       if (v.startsWith("$")) {
         v = v.substring(1).strip();
       }
-      v = v.toUpperCase(Locale.ROOT);
+      v = Crypto.fromPath(v.toUpperCase(Locale.ROOT));
       if (!SYMBOL.matcher(v).matches()) {
-        error("FIELD_INVALID", e.getKey(), e.getKey() + " must be a ticker like \"AAPL\"", null);
+        error("FIELD_INVALID", e.getKey(),
+            e.getKey() + " must be a ticker like \"AAPL\" or a crypto pair like \"BTC/USD\"", null);
         return null;
       }
       return v;

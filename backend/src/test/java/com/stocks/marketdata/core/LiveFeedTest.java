@@ -174,4 +174,31 @@ class LiveFeedTest {
     assertThat(feed.providers().getFirst().probe()).containsKey("restLastError");
     assertThat(feed.executableQuote("AAPL", NOW, SessionType.REGULAR)).isEmpty();
   }
+
+  /** §29: on a Saturday a crypto pair is live, consolidated and executable while the stock market is closed. */
+  @Test
+  void aCryptoPairTradesOnASaturday() {
+    time.set(Instant.parse("2026-10-10T15:00:05Z"));                          // Sat 11:00 ET: stocks CLOSED
+    http = new FakeHttpServer().json("/v1beta3/crypto/us/snapshots", """
+        {"snapshots": {"BTC/USD": {
+          "latestTrade": {"t": "2026-10-10T15:00:01Z", "p": 112005.12, "s": 0.01, "i": 1},
+          "latestQuote": {"t": "2026-10-10T15:00:02Z", "bp": 112000.004, "bs": 0.5, "ap": 112010.996, "as": 0.7},
+          "dailyBar": {"t": "2026-10-10T00:00:00Z", "o": 111500, "h": 112500, "l": 111000, "c": 112005.12, "v": 10},
+          "prevDailyBar": {"t": "2026-10-09T00:00:00Z", "o": 110000, "h": 111600, "l": 109000, "c": 111000, "v": 12}
+        }}}""");
+    LiveFeed feed = feed(http.url());
+    QuoteView btc = feed.quotes(List.of("BTC/USD")).get("BTC/USD");
+    assertThat(btc.quality()).isEqualTo(DataQuality.REALTIME_CONSOLIDATED);
+    assertThat(btc.bid()).isEqualByComparingTo("112000.00");
+    assertThat(btc.ask()).isEqualByComparingTo("112011.00");
+    assertThat(btc.last()).isEqualByComparingTo("112005.12");
+    assertThat(btc.prevClose()).isEqualByComparingTo("111000.00");             // yesterday (ET), 24:00
+    assertThat(btc.extended()).isNull();
+    assertThat(http.requests("/v2/stocks/snapshots")).isEmpty();
+    assertThat(feed.executableQuote("BTC/USD", time.now().minusSeconds(10), com.stocks.common.domain.SessionType.REGULAR))
+        .isPresent();
+    // 90 s later (no fresh quote nor print) a pair is STALE even on a weekend: crypto has no dark hours
+    time.advance(Duration.ofSeconds(90));
+    assertThat(feed.peek(List.of("BTC/USD")).get("BTC/USD").quality()).isEqualTo(DataQuality.STALE);
+  }
 }

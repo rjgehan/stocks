@@ -16,7 +16,10 @@ how the check-in went; an agent that cannot claim now (busy, or no free session 
 the app knows the trader still serves it.
 
 A check-in starts at 09:30, 12:45 and 15:50 ET on weekdays (per agent: `schedule_et`), plus any extra check-in Claude
-asked for at the end of a session (`EXTRA_RUN: YYYY-MM-DD HH:MM | reason`).
+asked for at the end of a session (`EXTRA_RUN: YYYY-MM-DD HH:MM | reason`). In server mode the same times also run on
+Saturdays and Sundays while the app trades crypto (24/7): before a weekend check-in, GET /api/v1/market/clock with the
+agent's key must show crypto.enabled, else it is skipped (STOCKS_TRADER_WEEKENDS=0 turns weekend check-ins off). Mac
+mode cannot ask the app, so it keeps to weekdays.
 
     python3 claude_trader.py install                      # Mac: start the launch agent (every minute)
     python3 claude_trader.py uninstall                    # Mac: stop it
@@ -71,6 +74,7 @@ PROBE_TIMEOUT_S = 5       # server mode: GET /api/v1/me before a check-in starts
 REQUEST_TIMEOUT_S = 10    # server mode: claiming and reporting a "Run now" request
 REPORT_MAX_CHARS = 480    # a run request's report (the app keeps 500 characters)
 CLAIM_PATH = "/api/v1/agent-runs/requests/claim"
+CLOCK_PATH = "/api/v1/market/clock"  # server mode: before a weekend check-in (is crypto trading on?)
 HEARTBEAT_PATH = "/api/v1/agent-runs/requests/heartbeat"
 NO_SLOT = "no free session slot"  # why a due check-in waits (Sessions.waiting); run requests leave it that slot
 MAX_TURNS = 60
@@ -188,11 +192,23 @@ class Config:
     max_parallel: int
     claude: str             # STOCKS_TRADER_CLAUDE_BIN, or empty: find claude on PATH
     oauth_token_set: bool
+    weekends: bool = True   # STOCKS_TRADER_WEEKENDS: weekend check-ins while crypto trades (server mode only)
     fallback_key: str = field(default="", repr=False)
 
     @property
     def server(self) -> bool:
         return bool(self.mcp_url)
+
+    @property
+    def weekend_check_ins(self) -> bool:
+        """Check-ins also on Saturdays and Sundays (each one only while the app's clock says crypto trades), and
+        extra check-ins bookable on any day at any time. Mac mode cannot ask the app, so it keeps to weekdays."""
+        return self.server and self.weekends
+
+    @property
+    def days(self) -> str:
+        """When the scheduled check-ins run, for the log and the status."""
+        return "every day (Saturday and Sunday only while crypto trades)" if self.weekend_check_ins else "on weekdays"
 
 
 def load_config(env=None) -> Config:
@@ -204,6 +220,10 @@ def load_config(env=None) -> Config:
     raw_parallel = env.get("STOCKS_TRADER_MAX_PARALLEL", "").strip() or str(MAX_PARALLEL_DEFAULT)
     if not raw_parallel.isdigit() or not 1 <= int(raw_parallel) <= MAX_PARALLEL_MAX:
         raise ConfigError(f"STOCKS_TRADER_MAX_PARALLEL must be a whole number from 1 to {MAX_PARALLEL_MAX}")
+    raw_weekends = env.get("STOCKS_TRADER_WEEKENDS", "").strip() or "1"
+    if raw_weekends not in ("0", "1"):
+        raise ConfigError("STOCKS_TRADER_WEEKENDS must be 1 (weekend check-ins while crypto trades) or 0 (weekdays "
+                          "only)")
     fallback_key = env.get("STOCKS_CLAUDE_KEY", "").strip()
     add_secret(fallback_key)
     agents_env = env.get("STOCKS_TRADER_AGENTS", "").strip()
@@ -219,6 +239,7 @@ def load_config(env=None) -> Config:
         max_parallel=int(raw_parallel),
         claude=env.get("STOCKS_TRADER_CLAUDE_BIN", "").strip(),
         oauth_token_set=bool(env.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip()),
+        weekends=raw_weekends == "1",
         fallback_key=fallback_key,
     )
 
@@ -448,8 +469,11 @@ def parse_stamp(text: str) -> datetime:
 
 # ------------------------------------------------------------------------------------------------ extra check-ins
 
-def book_extra(s: dict, agent: Agent, date: str | None, hh: str, mm: str, reason: str, now: datetime) -> str | None:
-    """Adds an extra check-in Claude asked for; returns why it was refused, or None."""
+def book_extra(s: dict, agent: Agent, date: str | None, hh: str, mm: str, reason: str, now: datetime,
+               any_day: bool = False) -> str | None:
+    """Adds an extra check-in Claude asked for; returns why it was refused, or None. `any_day` (weekend check-ins
+    on, Config.weekend_check_ins): any day at any time 00:00-24:00 ET, as crypto trades 24/7; else a weekday
+    04:00-20:00 ET."""
     if agent.extra_per_day <= 0:
         return "extra check-ins are off for this agent"
     try:
@@ -460,9 +484,9 @@ def book_extra(s: dict, agent: Agent, date: str | None, hh: str, mm: str, reason
         return "less than 2 minutes from now"
     if at > now + timedelta(days=7):
         return "more than 7 days ahead"
-    if at.weekday() >= 5:
+    if not any_day and at.weekday() >= 5:
         return "a weekend"
-    if not (4 * 60 <= at.hour * 60 + at.minute <= 20 * 60):
+    if not any_day and not (4 * 60 <= at.hour * 60 + at.minute <= 20 * 60):
         return "outside 04:00-20:00 ET"
     others = [parse_stamp(f"{at:%Y-%m-%d} {t}") for t in agent.schedule] + [parse_stamp(e["at"]) for e in s["extra"]]
     if any(abs((o - at).total_seconds()) < MIN_GAP_MIN * 60 for o in others):
@@ -486,7 +510,7 @@ def as_notes(text: str) -> str:
     return re.sub(r"={3,}", "=", NOTES_DROP_RE.sub("(line removed)", text))
 
 
-def prompt(agent: Agent, now: datetime, why: str, s: dict, dry_run: bool) -> str:
+def prompt(agent: Agent, now: datetime, why: str, s: dict, dry_run: bool, weekends: bool = False) -> str:
     pending = "; ".join(f"{e['at']} ET ({as_notes(e['reason'])})" for e in s["extra"]) or "none"
     h = agent.handle
     lines = [
@@ -494,12 +518,14 @@ def prompt(agent: Agent, now: datetime, why: str, s: dict, dry_run: bool) -> str
         f"@{h} in",
         "a paper-trading league (fake money, live US market), and you trade through the Stocks tools.",
         "",
-        f"This check-in: {why}, {stamp(now)} ET. Scheduled check-ins: {', '.join(agent.schedule)} ET on weekdays.",
+        f"This check-in: {why}, {stamp(now)} ET. Scheduled check-ins: {', '.join(agent.schedule)} ET on weekdays"
+        + (", and on weekends while crypto trading is on." if weekends else "."),
         "",
         "1. Call get_rules, whoami and get_market_clock. whoami must show you as @" + h + "; if it shows another",
         "   player, reply \"Wrong player: whoami shows @<handle>\" and stop without trading. On a weekend or market",
-        "   holiday, reply \"No trading today\" and stop. Outside regular hours, orders wait for the next session",
-        "   (MARKET and DAY LIMIT orders fill at the open).",
+        "   holiday the stock market is closed: if get_market_clock shows crypto.enabled, trade crypto pairs only",
+        "   (stock orders would wait for the next session); otherwise reply \"No trading today\" and stop. Outside",
+        "   regular hours, stock orders wait for the next session (MARKET and DAY LIMIT orders fill at the open).",
         "2. Here is your portfolio: read it with get_account, get_positions, get_orders and get_notifications.",
         "3. Review the current market and the news (get_news, get_quotes, get_bars, get_movers, screen_stocks; web",
         "   search for market news if useful).",
@@ -519,6 +545,14 @@ def prompt(agent: Agent, now: datetime, why: str, s: dict, dry_run: bool) -> str
             "   answers RATE_LIMITED, skip it and say so in your summary.",
         ]
     lines.append("6. Finish with a short summary of what you did and why; it is shown to you at your next check-in.")
+    lines += [
+        "",
+        "Crypto pairs (BTC/USD, ETH/USD, SOL/USD, ...: get_market_clock's crypto.pairs) trade 24/7, weekends and",
+        "holidays included, while crypto.enabled is true. Spell them with a slash (\"BTC/USD\"). Quantities may be",
+        "fractional (up to 5 decimals) on every order type, MARKET orders may use a dollar notional, and no",
+        "extended_hours flag is needed. Crypto fills settle at once (no T+1, no good-faith violations) and pay no",
+        "SEC/TAF/CAT fees.",
+    ]
     if agent.strategy:
         lines += [
             "",
@@ -538,8 +572,9 @@ def prompt(agent: Agent, now: datetime, why: str, s: dict, dry_run: bool) -> str
             "",
             "To look again at a specific time (an earnings release, a level to re-check, an order to manage later), end",
             "your reply with one line per extra check-in: EXTRA_RUN: YYYY-MM-DD HH:MM | reason",
-            f"(ET, a weekday 04:00-20:00, at least {MIN_GAP_MIN} minutes from other check-ins, at most "
-            f"{agent.extra_per_day} a day).",
+            ("(ET, any day and any time 00:00-24:00; on a weekend it runs only while crypto trading is on; "
+             if weekends else "(ET, a weekday 04:00-20:00, ")
+            + f"at least {MIN_GAP_MIN} minutes from other check-ins, at most {agent.extra_per_day} a day).",
             f"Extra check-ins already booked: {pending}.",
         ]
     if s["summaries"]:
@@ -631,6 +666,26 @@ def check_player(cfg: Config, agent: Agent) -> tuple:
         return "ok", ""
     return "wrong", (f"the key in the agents file for @{agent.handle} belongs to @{handle or '?'}; fix it (Admin -> "
                      f"Players -> {agent.handle} -> API keys issues @{agent.handle}'s key)")
+
+
+def check_crypto(cfg: Config, agent: Agent) -> tuple:
+    """Server mode, before a weekend check-in starts: GET /api/v1/market/clock with the agent's key. Returns ("ok",
+    "") when its crypto.enabled is true, ("closed", why) when the app answers without it (crypto trading is off, or
+    an app from before crypto), or ("down", why)."""
+    url = api_url(cfg, CLOCK_PATH)
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {agent.key}", "Accept": "application/json",
+                                               "X-Stocks-Client": CLIENT_HEADER})
+    try:
+        with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT_S) as r:
+            clock = json.loads(r.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        return "down", f"the app answers {url} with HTTP {e.code}"
+    except (OSError, ValueError, http.client.HTTPException) as e:
+        return "down", f"the app does not answer {url} ({getattr(e, 'reason', None) or e})"
+    crypto = clock.get("crypto") if isinstance(clock, dict) else None
+    if isinstance(crypto, dict) and crypto.get("enabled") is True:
+        return "ok", ""
+    return "closed", "the stock market is closed on weekends and crypto trading is off"
 
 
 def claude_command(cfg: Config, agent: Agent, exe: str, text: str, allowed: list, disallowed: list,
@@ -728,7 +783,7 @@ def run_session(cfg: Config, agent: Agent, why: str, dry_run: bool = False, outc
         log("claude (Claude Code) not found; install it and log in with your Claude account first", h)
         return 1
     s = load_state(agent)
-    cmd = session_command(cfg, agent, exe, prompt(agent, now, why, s, dry_run), dry_run)
+    cmd = session_command(cfg, agent, exe, prompt(agent, now, why, s, dry_run, cfg.weekend_check_ins), dry_run)
     workdir = agent.dir / "workdir"  # an empty directory: no project files, CLAUDE.md or memory leak into the session
     workdir.mkdir(parents=True, exist_ok=True)
     logs = agent.dir / "logs"
@@ -757,7 +812,8 @@ def run_session(cfg: Config, agent: Agent, why: str, dry_run: bool = False, outc
     refused = []
     if not dry_run:
         for m in EXTRA_RE.finditer(text):
-            why_not = book_extra(s, agent, m.group(1), m.group(2), m.group(3), m.group(4), now_et())
+            why_not = book_extra(s, agent, m.group(1), m.group(2), m.group(3), m.group(4), now_et(),
+                                 cfg.weekend_check_ins)
             if why_not:
                 refused.append(f"{m.group(0).strip()} ({why_not})")
         summary = EXTRA_RE.sub("", text).strip()
@@ -914,8 +970,9 @@ class Sessions:
 def tick_agents(cfg: Config, agents: list, sessions: Sessions, now: datetime) -> None:
     """Starts a check-in for every enabled agent that is due, while session slots are free. A check-in that cannot
     start yet (no free slot, its lock is taken, the app does not answer) stays due until its grace period ends. A
-    problem of one agent (its directory, its state, its key) is logged once and does not hold up the others."""
-    if now.weekday() >= 5:
+    problem of one agent (its directory, its state, its key) is logged once and does not hold up the others. On a
+    Saturday or Sunday nothing runs unless weekend check-ins are on (then tick_agent asks the app about crypto)."""
+    if now.weekday() >= 5 and not cfg.weekend_check_ins:
         return
     for agent in agents:
         if not agent.enabled or sessions.busy(agent.handle):
@@ -955,9 +1012,17 @@ def tick_agent(cfg: Config, agent: Agent, sessions: Sessions, now: datetime) -> 
             waited.update({k: f"{NO_SLOT}, STOCKS_TRADER_MAX_PARALLEL={sessions.limit}" for k in keys})
         elif due:
             verdict, why_not = check_player(cfg, agent) if cfg.server else ("ok", "")
+            if verdict == "ok" and now.weekday() >= 5:  # only weekend_check_ins get here on a weekend
+                verdict, why_not = check_crypto(cfg, agent)
             if verdict == "down":
                 problem = f"due, waiting for the app: {why_not}"
                 waited.update({k: "the app did not answer" for k in keys})
+            elif verdict == "closed":  # a weekend while crypto trading is off: nothing to trade, skip for good
+                mark_started(s, due)
+                save_state(agent, s, now)
+                waited = {}
+                for _, key, _ in due:
+                    log(f"skipped the {key} ET check-in: {why_not}", h)
             elif verdict != "ok":
                 problem = f"ERROR: {why_not}. The check-in waits until its grace period ends."
                 waited.update({k: f"its key is not @{h}'s" for k in keys})
@@ -1281,7 +1346,8 @@ def serve(cfg: Config) -> int:
         f"claude-trader serve: mode={'server' if cfg.server else 'mac'} "
         f"mcp_url={cfg.mcp_url or '(claude.ai connector ' + cfg.prefix + ')'} agents_file={cfg.agents_file} "
         f"({file_state(cfg.agents_file)}) agents={agents_desc} "
-        f"schedule_et={','.join(cfg.schedule)} model={cfg.model or 'default'} "
+        f"schedule_et={','.join(cfg.schedule)} weekends={'on' if cfg.weekend_check_ins else 'off'} "
+        f"model={cfg.model or 'default'} "
         f"extra_runs_per_day={EXTRA_PER_DAY} max_parallel={cfg.max_parallel} data_dir={cfg.home} "
         f"claude={claude_version(cfg) if exe else 'not found'} "
         f"claude_code_oauth_token_set={str(cfg.oauth_token_set).lower()}"
@@ -1417,8 +1483,8 @@ def check(cfg: Config) -> int:
             say(f"agents file: {cfg.agents_file} ({found}; {CHOWN_HINT})")
     else:
         say(f"launch agent: {'installed' if plist_path().exists() else 'NOT installed'}")
-    say(f"defaults: schedule {','.join(cfg.schedule)} ET, model {cfg.model or 'default'}, extra check-ins "
-        f"{EXTRA_PER_DAY}/day, max parallel {cfg.max_parallel}")
+    say(f"defaults: schedule {','.join(cfg.schedule)} ET {cfg.days}, model {cfg.model or 'default'}, extra "
+        f"check-ins {EXTRA_PER_DAY}/day, max parallel {cfg.max_parallel}")
     try:
         got = load_agents(cfg)
     except ConfigError as e:
@@ -1475,7 +1541,7 @@ def install(cfg: Config) -> int:
     if r.returncode != 0:
         print(f"launchctl bootstrap failed: {r.stderr.strip()}")
         return 1
-    print(f"installed {plist_path()}: checks every minute; check-ins at {', '.join(cfg.schedule)} ET on weekdays.")
+    print(f"installed {plist_path()}: checks every minute; check-ins at {', '.join(cfg.schedule)} ET {cfg.days}.")
     print(f"log: {cfg.home / 'trader.log'}  (the Mac must be awake and you logged in at those times)")
     return 0
 
@@ -1500,13 +1566,13 @@ def status(cfg: Config, handle: str | None) -> int:
     if cfg.server:
         say(f"now {stamp(now)} ET; server mode, {len(agents)} agent(s)")
     else:
-        say(f"now {stamp(now)} ET; scheduled {', '.join(cfg.schedule)} ET on weekdays; launch agent "
+        say(f"now {stamp(now)} ET; scheduled {', '.join(cfg.schedule)} ET {cfg.days}; launch agent "
             f"{'installed' if plist_path().exists() else 'NOT installed'}")
     for a in chosen:
         s = load_state(a)
         if cfg.server:
             say(f"\n@{a.handle} ({'enabled' if a.enabled else 'disabled'}): scheduled {', '.join(a.schedule)} ET "
-                f"on weekdays; model {a.model or 'default'}")
+                f"{cfg.days}; model {a.model or 'default'}")
         say("extra check-ins booked: " + ("; ".join(f"{e['at']} ({e['reason']})" for e in s["extra"]) or "none"))
         for x in s["summaries"]:
             say(f"--- {x['at']} ET\n{x['text'][:400]}")

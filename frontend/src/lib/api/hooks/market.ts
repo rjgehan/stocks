@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api, unwrap } from '../client'
 import { queryKeys } from '../queryKeys'
 import type { ChartRange, MoverList, Timeframe } from '../types'
+import { toPath } from '../../symbols'
 
 /**
  * `GET /rules` (§18.3 `Rules`): the rulebook the bots read, and the ticket's source for which order types this
@@ -28,7 +29,7 @@ export function useClock() {
 export function useAsset(symbol: string) {
   return useQuery({
     queryKey: queryKeys.asset(symbol),
-    queryFn: () => unwrap(api.GET('/api/v1/assets/{symbol}', { params: { path: { symbol } } })),
+    queryFn: () => unwrap(api.GET('/api/v1/assets/{symbol}', { params: { path: { symbol: toPath(symbol) } } })),
     staleTime: 10 * 60_000,
     gcTime: 30 * 60_000,
     enabled: symbol.length > 0,
@@ -40,7 +41,7 @@ export function useBars(symbol: string, range: ChartRange, tf?: Timeframe) {
   return useQuery({
     queryKey: queryKeys.bars(symbol, range, tf),
     queryFn: () =>
-      unwrap(api.GET('/api/v1/bars/{symbol}', { params: { path: { symbol }, query: tf ? { range, timeframe: tf } : { range } } })),
+      unwrap(api.GET('/api/v1/bars/{symbol}', { params: { path: { symbol: toPath(symbol) }, query: tf ? { range, timeframe: tf } : { range } } })),
     // intraday ranges move every minute; longer ranges are stable for the session
     staleTime: range === '1D' || range === '5D' ? 30_000 : 5 * 60_000,
     refetchInterval: range === '1D' ? 60_000 : false,

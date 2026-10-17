@@ -8,6 +8,7 @@
 import { type Dec, add, compare, gte, isDecimal, lte, mul, shift, sign, stripTrailingZeros, sub } from '../../format/decimal'
 import { formatPct, formatPrice } from '../../format/number'
 import type { Alert, AlertCondition, AlertStatus, Notification, PushDevice, PushPreferences, Quote } from '../types'
+import { fromPath } from '../../symbols'
 
 type Handler = (ctx: { body: unknown; params: string[]; url: URL }) => Response | Promise<Response>
 type Route = (method: string, pattern: string, handler: Handler) => void
@@ -112,7 +113,8 @@ export function registerAlertsAndPush(route: Route, host: AlertsHost) {
   // ---------------------------------------------------------------- alerts
   route('GET', '/alerts', ({ url }) => {
     const status = url.searchParams.get('status')?.toUpperCase()
-    const symbol = url.searchParams.get('symbol')?.toUpperCase()
+    const raw = url.searchParams.get('symbol')
+    const symbol = raw ? fromPath(raw) : undefined
     const order = { ACTIVE: 0, PAUSED: 1, TRIGGERED: 2, EXPIRED: 3 } as Record<string, number>
     return json(
       s.alerts
@@ -122,7 +124,7 @@ export function registerAlertsAndPush(route: Route, host: AlertsHost) {
   })
   route('POST', '/alerts', ({ body }) => {
     const b = (body ?? {}) as { symbol?: string; condition?: AlertCondition; threshold?: string; repeat?: boolean | null; expiresAt?: string | null; note?: string | null }
-    const symbol = b.symbol?.trim().toUpperCase() ?? ''
+    const symbol = b.symbol?.trim() ? fromPath(b.symbol.trim()) : ''
     if (!symbol) return problem(400, 'VALIDATION_FAILED', 'Validation failed', 'symbol is required.', 'symbol')
     if (!host.known(symbol)) return problem(404, 'SYMBOL_NOT_FOUND', 'Symbol not found', `Unknown symbol ${symbol}.`, 'symbol')
     if (!b.condition || !CONDITIONS.includes(b.condition)) return problem(400, 'VALIDATION_FAILED', 'Validation failed', 'condition is required.', 'condition')

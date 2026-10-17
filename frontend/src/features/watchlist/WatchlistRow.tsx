@@ -6,6 +6,7 @@ import { changeDirection, formatChange, formatPct, formatPrice, pctDirection } f
 import { IconArrowDown, IconArrowUp, IconClose, IconGrip } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { usePriceFlash } from '@/features/market/usePriceFlash'
+import { toPath } from '@/lib/symbols'
 
 export type PillMode = 'pct' | 'change'
 
@@ -96,7 +97,7 @@ export const WatchlistRow = memo(function WatchlistRow({
     >
       <Link
         to="/stock/$symbol"
-        params={{ symbol }}
+        params={{ symbol: toPath(symbol) }}
         className="flex min-w-0 flex-1 items-center gap-2 self-stretch py-2 pl-3"
         aria-current={active ? 'page' : undefined}
         aria-label={`${symbol} ${asset?.name ?? ''} ${formatPrice(quote?.last)}`.trim()}

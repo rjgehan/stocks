@@ -4,9 +4,10 @@
  * `AWAITING_PARENT`) until their entry fills, then activate; the first fill of an OCO leg cancels the other; an entry
  * that ends without a fill cancels its held children. Mock fills are always whole, so there is no partial-fill sync.
  */
-import { type Dec, compare, isDecimal, mul, setScale, sign, sub } from '../../format/decimal'
+import { type Dec, compare, decimals, isDecimal, mul, setScale, sign, sub } from '../../format/decimal'
 import type { GroupPreview, OrderGroup, OrderGroupRef, OrderGroupRole, OrderGroupStatus, PlaceOrderGroupRequest } from '../groupTypes'
 import type { Order, OrderEvent, PlaceOrderRequest, Preview } from '../types'
+import { isCrypto } from '../../symbols'
 
 /** The bits of the mock server the group engine drives (kept narrow so `server.ts` only gains a few lines). */
 export interface MockGroupHost {
@@ -69,7 +70,10 @@ export class MockGroups {
     const type = r.type
     const qty = r.qty ?? ''
     if (!type) return { field: 'type', message: 'Choose OCO, OTO, OTOCO or BRACKET.' }
-    if (!isDecimal(qty) || sign(qty) <= 0 || compare(setScale(qty, 0, 'DOWN'), qty) !== 0) return { field: 'qty', message: 'Group orders take a whole number of shares.' }
+    if (isCrypto(r.symbol)) {
+      // §29: a crypto pair's legs take up to 5 decimals
+      if (!isDecimal(qty) || sign(qty) <= 0 || decimals(qty) > 5) return { field: 'qty', message: 'Crypto group orders take a quantity above 0 with at most 5 decimals.' }
+    } else if (!isDecimal(qty) || sign(qty) <= 0 || compare(setScale(qty, 0, 'DOWN'), qty) !== 0) return { field: 'qty', message: 'Group orders take a whole number of shares.' }
     const base = { symbol: r.symbol ?? '', qty, timeInForce: r.timeInForce ?? 'DAY', rationale: r.rationale ?? null, doNotReduce: r.doNotReduce ?? false }
     const sideOf = (role: OrderGroupRole): 'BUY' | 'SELL' => (type === 'OCO' ? (r.side ?? 'SELL') : role === 'ENTRY' ? 'BUY' : 'SELL')
     const out: LegPlan[] = []

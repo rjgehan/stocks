@@ -307,4 +307,16 @@ class ManualPromptBuilderTest {
     assertThat(ManualPromptBuilder.qty(d("10.500000"))).isEqualTo("10.5");
     assertThat(ManualPromptBuilder.age(Duration.ofMinutes(130))).isEqualTo("2 h 10 min");
   }
+
+  /** §29: the crypto line follows the rulebook's crypto section and the clock. */
+  @Test
+  void cryptoPairsAreExplainedWhileCryptoIsOn() {
+    RulesDto.RulesCryptoDto on = new RulesDto.RulesCryptoDto(true, List.of("BTC/USD", "ETH/USD"), "24/7", "", "",
+        "", "", "", "");
+    assertThat(ManualPromptBuilder.cryptoLine(on)).contains("Crypto pairs (BTC/USD, ETH/USD) trade 24/7")
+        .contains("\"BTC/USD\"").contains("pay no fees");
+    assertThat(ManualPromptBuilder.cryptoLine(new RulesDto.RulesCryptoDto(false, List.of(), "", "", "", "", "", "",
+        ""))).contains("turned off");
+    assertThat(ManualPromptBuilder.cryptoLine(null)).isEmpty();
+  }
 }

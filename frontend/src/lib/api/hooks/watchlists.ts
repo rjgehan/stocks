@@ -6,6 +6,7 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tansta
 import { api, unwrap } from '../client'
 import { queryKeys } from '../queryKeys'
 import type { Watchlist } from '../types'
+import { toPath } from '../../symbols'
 
 export function useWatchlists() {
   return useQuery({ queryKey: queryKeys.watchlists, queryFn: () => unwrap(api.GET('/api/v1/watchlists')), staleTime: 60_000 })
@@ -46,7 +47,7 @@ export function useRemoveFromWatchlist() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, symbol }: { id: string; symbol: string }) =>
-      unwrap(api.DELETE('/api/v1/watchlists/{id}/symbols/{symbol}', { params: { path: { id, symbol } } })),
+      unwrap(api.DELETE('/api/v1/watchlists/{id}/symbols/{symbol}', { params: { path: { id, symbol: toPath(symbol) } } })),
     onMutate: ({ id, symbol }) =>
       optimistic(qc, (lists) => lists.map((w) => (w.id === id ? { ...w, symbols: (w.symbols ?? []).filter((s) => s !== symbol) } : w))),
     onError: (_e, _v, ctx) => rollback(qc, ctx),

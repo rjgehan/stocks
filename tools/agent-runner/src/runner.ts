@@ -10,7 +10,7 @@ import { type ConnectMcp, type McpConnection, runnerError, type ToolOutcome } fr
 import { formatUsd } from './money.js';
 import { addUsage, costOf, type TokenUsage, ZERO_USAGE } from './pricing.js';
 import { buildReport, countTool, newRunRef, postReport, type ToolCounts } from './report.js';
-import { bookRun, cancelRun, holidaysOf, pendingRuns, publicRun, type RequestedRun } from './requested.js';
+import { bookRun, cancelRun, cryptoEnabled, holidaysOf, pendingRuns, publicRun, type RequestedRun } from './requested.js';
 import { RunLog } from './runlog.js';
 import { acquireRunLock, addSpend, botDir, readNotes, readSpend, saveNotes, type Spend } from './store.js';
 import { type Clock, etDate, etTime } from './time.js';
@@ -73,7 +73,7 @@ export interface RunOptions {
   trigger: 'schedule' | 'requested' | 'once';
   /** The schedule slot or the booked run's ET time ("09:45"), null for a manual run. */
   slot: string | null;
-  /** Scheduled and booked runs skip a non-trading day; a manual run always runs. */
+  /** Scheduled and booked runs skip a non-trading day unless crypto trades; a manual run always runs. */
   requireTradingDay: boolean;
   /** The booked runs this run serves: their reasons are shown to the model. */
   requested?: RequestedRun[];
@@ -143,6 +143,8 @@ export function buildUserMessage(p: {
   pending?: RequestedRun[];
   /** 0 when booking is off. */
   extraRunsPerDay?: number;
+  /** The market clock says crypto trades (24/7): scheduled runs also happen on weekends and market holidays. */
+  crypto?: boolean;
 }): string {
   const when = `${etDate(p.now)} ${etTime(p.now)} ET`;
   const run =
@@ -159,7 +161,8 @@ export function buildUserMessage(p: {
   const lines = [
     `Trading session of the stocks league, driven by the agent runner.`,
     ``,
-    `- Run: ${run}. Scheduled runs happen at ${p.scheduleText.split(',').join(', ')} ET on trading days.${booking}`,
+    `- Run: ${run}. Scheduled runs happen at ${p.scheduleText.split(',').join(', ')} ET on trading days` +
+      `${p.crypto ? ', and on weekends and market holidays while crypto trading is on (crypto pairs trade 24/7)' : ''}.${booking}`,
   ];
   for (const r of p.requested ?? []) {
     lines.push(`- You booked this run (${r.id}, at ${r.atEt} ET) for: ${JSON.stringify(r.reason)}`);
@@ -350,23 +353,25 @@ async function runLocked(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, sta
     if (clockOutcome.isError) {
       throw new Error(`get_market_clock failed (${clockOutcome.code ?? 'error'}): ${clip(clockOutcome.text, 300)}`);
     }
-    let marketClock: { session?: unknown; tradingDate?: unknown; upcomingHolidays?: unknown };
+    let marketClock: { session?: unknown; tradingDate?: unknown; upcomingHolidays?: unknown; crypto?: unknown };
     try {
       marketClock = JSON.parse(clockOutcome.text) as typeof marketClock;
     } catch {
       throw new Error(`get_market_clock returned no JSON: ${clip(clockOutcome.text, 200)}`);
     }
     const tradingDay = typeof marketClock.tradingDate === 'string' && marketClock.tradingDate.length > 0;
-    if (!tradingDay && opts.requireTradingDay) {
+    // crypto pairs trade 24/7 while the admin keeps crypto on: a weekend or holiday run then goes ahead
+    const crypto = cryptoEnabled(marketClock);
+    if (!tradingDay && !crypto && opts.requireTradingDay) {
       summary.status = 'skipped_non_trading_day';
-      summary.message = `${dateEt} is not a trading day (session ${String(marketClock.session)})`;
+      summary.message = `${dateEt} is not a trading day (session ${String(marketClock.session)}) and crypto trading is off`;
       return finish(summary, deps, opts, started, null);
     }
 
     log = RunLog.open(dir, started, logger, () => clock.now());
     summary.logPath = log.path;
     const runLog = log;
-    const { tools, dropped } = functionTools(mcp.tools, scheduleRunTools(config.extraRunsPerDay));
+    const { tools, dropped } = functionTools(mcp.tools, scheduleRunTools(config.extraRunsPerDay, crypto));
     if (dropped.length > 0) logger.warn(`tools not offered to the model: ${dropped.join(', ')}`, bot.id);
     const mcpNames = new Set(mcp.tools.map((t) => t.name));
     const notes = readNotes(dir);
@@ -383,6 +388,7 @@ async function runLocked(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, sta
       requested: opts.requested,
       pending: config.extraRunsPerDay > 0 ? pendingOrNone(dir, logger, bot.id) : [],
       extraRunsPerDay: config.extraRunsPerDay,
+      crypto,
     });
     const holidays = holidaysOf(marketClock);
 
@@ -408,7 +414,11 @@ async function runLocked(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, sta
         daySpentBeforeUsd: formatUsd(spend.pico),
       },
     });
-    runLog.write('market_clock', { session: marketClock.session ?? null, tradingDate: marketClock.tradingDate ?? null });
+    runLog.write('market_clock', {
+      session: marketClock.session ?? null,
+      tradingDate: marketClock.tradingDate ?? null,
+      crypto,
+    });
 
     const onHttp: HttpObserver = (status, url) => {
       let path = url;
@@ -454,6 +464,7 @@ async function runLocked(bot: BotConfig, deps: RunnerDeps, opts: RunOptions, sta
           schedule: config.schedule,
           holidays,
           perDay: config.extraRunsPerDay,
+          crypto,
         });
         return {
           outcome: r.ok

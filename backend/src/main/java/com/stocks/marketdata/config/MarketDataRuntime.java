@@ -181,8 +181,12 @@ public final class MarketDataRuntime implements AutoCloseable {
       QuoteBook book = new QuoteBook(time, listenerSupplier);
       LiveFeed live = new LiveFeed(props, alpaca, alpacaHttp, alpacaStreams, finnhubHttp, finnhubStreams, book, budget,
           calendar, time, rules, assets::tier, universe::symbols);
+      if (a.hasKeys()) {
+        live.setCryptoStreams(alpaca::openCryptoStream);          // §29: crypto quotes, trades and bars, 24/7
+      }
       feed = live;
-      seed = universe.entries().stream().map(Universe.Entry::asset).toList();
+      seed = java.util.stream.Stream.concat(universe.entries().stream().map(Universe.Entry::asset),
+          AssetService.cryptoAssets().stream()).toList();     // the crypto pairs exist in every profile (§29)
       fundamentals = new FundamentalsService(finnhub);
       recommendations = new RecommendationService(finnhub, time);
       List<MarketDataProvider> newsSources = new ArrayList<>();

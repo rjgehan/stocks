@@ -23,7 +23,8 @@ const DELAYS = [
 ]
 
 /**
- * Admin · League settings (§21.3, §23.4): starting cash, self-reset, season start, eligibility, feed delay, rationale.
+ * Admin · League settings (§21.3, §23.4): starting cash, self-reset, season start, eligibility, feed delay, rationale,
+ * 24/7 crypto trading.
  * Holdings are always public (public mode, §16.7), so there is no visibility setting any more.
  */
 function SettingsPage() {
@@ -117,6 +118,15 @@ function SettingsForm({ initial }: { initial: Settings }) {
         />
         <Switch checked={s['social.showDepositsInFeed']} onChange={(v) => set('social.showDepositsInFeed', v)} label="Show deposits in the feed" />
         <Switch checked={s['bots.requireRationale']} onChange={(v) => set('bots.requireRationale', v)} label="Bots must explain each order" description="AI orders without a rationale are rejected (RATIONALE_REQUIRED)." />
+      </section>
+      <section className="space-y-3 rounded-lg border border-divider bg-bg-1 p-4">
+        <h2 className="text-section font-semibold">Crypto</h2>
+        <Switch
+          checked={s['crypto.enabled'] ?? true}
+          onChange={(v) => set('crypto.enabled', v)}
+          label="Crypto trading (24/7)"
+          description="BTC/USD, ETH/USD and 10 more pairs trade around the clock. Off: crypto buys are refused (sells still work) and weekends stop being P&L days."
+        />
       </section>
       {update.error ? (
         <p role="alert" className="rounded-sm bg-down-bg p-2 text-caption text-down">

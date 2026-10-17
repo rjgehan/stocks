@@ -11,6 +11,7 @@ import { Pill } from '@/components/ui/Pill'
 import { cx } from '@/components/ui/cx'
 import { toast } from '@/features/notifications/toastStore'
 import { describeCondition, statusLine } from './alertLogic'
+import { toPath } from '@/lib/symbols'
 
 function onError(title: string) {
   return (e: unknown) => {
@@ -33,7 +34,7 @@ export function AlertRow({ alert, showSymbol = true, onEdit }: { alert: Alert; s
       <div className={cx('min-w-0 flex-1', !live && 'opacity-80')}>
         <div className="flex flex-wrap items-center gap-2">
           {showSymbol && alert.symbol ? (
-            <Link to="/stock/$symbol" params={{ symbol: alert.symbol }} className="font-semibold text-text-1 hover:text-accent">
+            <Link to="/stock/$symbol" params={{ symbol: toPath(alert.symbol) }} className="font-semibold text-text-1 hover:text-accent">
               {alert.symbol}
             </Link>
           ) : null}

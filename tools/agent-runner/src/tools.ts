@@ -5,7 +5,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type OpenAI from 'openai';
 import { NOTES_MAX_BYTES } from './config.js';
-import { MAX_AHEAD_MS, MIN_GAP_MS, MIN_LEAD_MS, REASON_MAX, WINDOW_ET } from './requested.js';
+import { CRYPTO_WINDOW_ET, MAX_AHEAD_MS, MIN_GAP_MS, MIN_LEAD_MS, REASON_MAX, WINDOW_ET } from './requested.js';
 
 export type JsonObject = { [key: string]: unknown };
 
@@ -49,9 +49,16 @@ export const SAVE_NOTES_TOOL: FunctionTool = {
 export const SCHEDULE_RUN = 'schedule_run';
 export const CANCEL_SCHEDULED_RUN = 'cancel_scheduled_run';
 
-/** The runner-local tools for booking extra runs (docs/agents.md §2.5); none when the per-day limit is 0. */
-export function scheduleRunTools(perDay: number): FunctionTool[] {
+/**
+ * The runner-local tools for booking extra runs (docs/agents.md §2.5); none when the per-day limit is 0. `crypto`:
+ * the run's market clock says crypto trades 24/7, so any day and time can be booked.
+ */
+export function scheduleRunTools(perDay: number, crypto = false): FunctionTool[] {
   if (perDay <= 0) return [];
+  const when = crypto
+    ? `may be on any day, weekends and market holidays included, at any time (${CRYPTO_WINDOW_ET.text} ET), while ` +
+      'crypto trading is on (on a stock-market closed day only crypto pairs trade), and must be '
+    : `must be on a trading day between ${WINDOW_ET.text} ET, `;
   return [
     {
       name: SCHEDULE_RUN,
@@ -59,7 +66,7 @@ export function scheduleRunTools(perDay: number): FunctionTool[] {
         'Book an extra run of yourself at a time you choose, on top of your scheduled runs, to act at a planned ' +
         'moment: after an earnings release or other news, to re-check a price level, or to manage an order or ' +
         'position later in the day. `at_et` is America/New_York time, "YYYY-MM-DD HH:MM" or "HH:MM" for today. It ' +
-        `must be on a trading day between ${WINDOW_ET.text} ET, at least ${MIN_LEAD_MS / 60_000} minutes from now, ` +
+        `${when}at least ${MIN_LEAD_MS / 60_000} minutes from now, ` +
         `at most ${MAX_AHEAD_MS / 86_400_000} days ahead, and at least ${MIN_GAP_MS / 60_000} minutes away from your ` +
         `scheduled runs and your other extra runs; at most ${perDay} extra runs per day. Extra runs spend the same ` +
         `daily budget as scheduled runs. \`reason\` (1-${REASON_MAX} characters) is shown to you when that run ` +

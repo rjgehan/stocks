@@ -13,7 +13,27 @@ import java.util.List;
 public record ClockDto(Instant now, String nowEt, SessionType session, LocalDate tradingDate, Instant sessionEndsAt,
                        SessionType nextSession, Instant nextSessionAt, Instant nextRegularOpen,
                        Instant nextRegularClose, boolean earlyClose, List<ClockHolidayDto> upcomingHolidays,
-                       List<LocalDate> upcomingEarlyCloses, ClockFeedDto feed) {
+                       List<LocalDate> upcomingEarlyCloses, ClockFeedDto feed, ClockCryptoDto crypto) {
+
+  /** A clock without its crypto member (fixtures). */
+  public ClockDto(Instant now, String nowEt, SessionType session, LocalDate tradingDate, Instant sessionEndsAt,
+                  SessionType nextSession, Instant nextSessionAt, Instant nextRegularOpen, Instant nextRegularClose,
+                  boolean earlyClose, List<ClockHolidayDto> upcomingHolidays, List<LocalDate> upcomingEarlyCloses,
+                  ClockFeedDto feed) {
+    this(now, nowEt, session, tradingDate, sessionEndsAt, nextSession, nextSessionAt, nextRegularOpen,
+        nextRegularClose, earlyClose, upcomingHolidays, upcomingEarlyCloses, feed, null);
+  }
+
+  /**
+   * §29: crypto pairs trade 24/7 while {@code enabled} (the admin's {@code crypto.enabled}); the session members above
+   * describe the US stock market only.
+   */
+  public record ClockCryptoDto(boolean enabled, List<String> pairs) {
+
+    public static ClockCryptoDto of(boolean enabled) {
+      return new ClockCryptoDto(enabled, com.stocks.common.domain.Crypto.symbols());
+    }
+  }
 
   public record ClockHolidayDto(LocalDate date, String name) {}
 

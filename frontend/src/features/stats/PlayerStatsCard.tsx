@@ -10,6 +10,7 @@ import { DIRECTION_TEXT } from '@/features/market/Change'
 import { useFeedDelay } from '@/features/league/useFeedDelay'
 import { formatHold, profitFactorLabel, sharpeLabel } from './format'
 import { RankHistory } from './RankHistory'
+import { toPath } from '@/lib/symbols'
 
 export const STATS_PERIODS: ReadonlyArray<{ value: LeaderboardPeriod; label: string }> = [
   { value: 'WEEK', label: 'Week' },
@@ -35,7 +36,7 @@ function Trade({ label, lot }: { label: string; lot: ClosedLot | null | undefine
       {lot ? (
         <>
           <dd className="flex items-baseline gap-1.5">
-            <Link to="/stock/$symbol" params={{ symbol: lot.symbol ?? '' }} className="font-semibold hover:text-accent">
+            <Link to="/stock/$symbol" params={{ symbol: toPath(lot.symbol ?? '') }} className="font-semibold hover:text-accent">
               {lot.symbol}
             </Link>
             <span className={cx('font-semibold tabular-nums', DIRECTION_TEXT[moneyDirection(lot.realizedPnl)])}>{formatMoney(lot.realizedPnl, { signed: true })}</span>

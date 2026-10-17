@@ -180,6 +180,7 @@ public class MarketDataServiceImpl implements MarketDataService {
   public Optional<BigDecimal> previousClose(String symbol) {
     String s = normalize(symbol);
     Instant now = time.now();
+    MarketCalendar calendar = this.calendar.forSymbol(s);            // a crypto pair: yesterday's 24:00 ET (§29)
     LocalDate today = calendar.tradeDateFor(now);
     LocalDate prev = calendar.previousTradingDay(calendar.currentPnlDay(now));
     // the stored official (SIP) close first: a live snapshot's prevDailyBar is the IEX-only daily bar

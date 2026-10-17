@@ -1,5 +1,6 @@
 package com.stocks.marketdata.core;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.DataQuality;
 import com.stocks.common.domain.LiquidityTier;
 import com.stocks.common.domain.SessionType;
@@ -99,6 +100,9 @@ public class LiveFeed implements MarketFeed {
   private final Map<String, Object> probe = new ConcurrentHashMap<>();
   private volatile WebSocketStream alpacaStream;
   private volatile WebSocketStream finnhubStream;
+  /** Alpaca's crypto stream (§29); null without keys. */
+  private volatile StreamFactory cryptoStreams;
+  private volatile WebSocketStream cryptoStream;
   private final SizeSample restQuoteSizes = new SizeSample(256);
   private volatile boolean sizeUnitDecided;
   private volatile Instant universePolledAt;
@@ -138,6 +142,15 @@ public class LiveFeed implements MarketFeed {
     return alpacaStream;
   }
 
+  /** The crypto stream factory (§29), set before {@link #start()}. */
+  public void setCryptoStreams(StreamFactory cryptoStreams) {
+    this.cryptoStreams = cryptoStreams;
+  }
+
+  public WebSocketStream cryptoStream() {
+    return cryptoStream;
+  }
+
   public void putProbe(String key, Object value) {
     probe.put(key, value == null ? "null" : value);
   }
@@ -155,6 +168,10 @@ public class LiveFeed implements MarketFeed {
     if (finnhubStreams != null) {
       finnhubStream = finnhubStreams.open(book::onEvent);
     }
+    StreamFactory c = cryptoStreams;
+    if (c != null) {
+      cryptoStream = c.open(book::onEvent);
+    }
     loop = Thread.ofPlatform().daemon(true).name("marketdata-live").start(this::run);
   }
 
@@ -171,6 +188,10 @@ public class LiveFeed implements MarketFeed {
     WebSocketStream f = finnhubStream;
     if (f != null) {
       f.close();
+    }
+    WebSocketStream c = cryptoStream;
+    if (c != null) {
+      c.close();
     }
     refreshers.shutdownNow();
   }
@@ -216,15 +237,22 @@ public class LiveFeed implements MarketFeed {
     if (a != null) {
       // a 405 taught the stream a smaller limit: let the budget choose which symbols fit, by priority
       int max = Math.min(alpaca.capabilities().maxStreamSymbols(), a.symbolLimit());
-      List<String> want = budget.select(max, null, a.subscriptionTimes());
+      List<String> want = budget.select(max, null, a.subscriptionTimes(), STOCKS);
       Set<String> set = new LinkedHashSet<>(want);
       a.setDesired(set, set, set);
     }
     WebSocketStream f = finnhubStream;
     if (f != null) {
       List<String> want = budget.select(props.finnhub().maxStreamSymbols(),
-          SubscriptionBudgetManager.FINNHUB_PRIORITIES, f.subscriptionTimes());
+          SubscriptionBudgetManager.FINNHUB_PRIORITIES, f.subscriptionTimes(), STOCKS);
       f.setDesired(new LinkedHashSet<>(want), Set.of(), Set.of());
+    }
+    WebSocketStream c = cryptoStream;
+    if (c != null) {
+      // every leased pair: a dozen symbols, no plan limit to share (§29)
+      Set<String> set = new LinkedHashSet<>(budget.select(Integer.MAX_VALUE, null, c.subscriptionTimes(),
+          Crypto::isCrypto));
+      c.setDesired(set, set, set);
     }
   }
 
@@ -269,8 +297,19 @@ public class LiveFeed implements MarketFeed {
 
   private Set<String> streamedQuotes() {
     WebSocketStream a = alpacaStream;
-    return a == null ? Set.of() : a.subscribed();
+    WebSocketStream c = cryptoStream;
+    if (c == null) {
+      return a == null ? Set.of() : a.subscribed();
+    }
+    Set<String> out = new LinkedHashSet<>(c.subscribed());
+    if (a != null) {
+      out.addAll(a.subscribed());
+    }
+    return out;
   }
+
+  /** Symbols the stock streams (Alpaca IEX/SIP, Finnhub) may carry: never a crypto pair (§29). */
+  private static final java.util.function.Predicate<String> STOCKS = s -> !Crypto.isCrypto(s);
 
   /** Fetches snapshots and applies them; failures are logged once a minute, never thrown. */
   Map<String, Snapshot> fetch(Set<String> symbols, RefreshPriority priority) {
@@ -283,15 +322,19 @@ public class LiveFeed implements MarketFeed {
       lastRestSuccess = done;
       LocalDate day = calendar.currentPnlDay(done);
       Instant rthClose = calendar.day(day).map(TradingDay::rthCloseAt).orElse(null);
+      LocalDate cryptoDay = Et.date(done);
+      Instant cryptoClose = Et.startOfDay(cryptoDay.plusDays(1));
       for (String s : symbols) {
         lastPolled.put(s, done);
       }
       snaps.values().forEach(snap -> {
-        if (snap.quote() != null) {
+        boolean crypto = Crypto.isCrypto(snap.symbol());
+        if (snap.quote() != null && !crypto) {
           restQuoteSizes.add(snap.quote().bidSize());
           restQuoteSizes.add(snap.quote().askSize());
         }
-        book.applySnapshot(snap, done, day, rthClose);
+        // a crypto day closes at 24:00 ET (§29)
+        book.applySnapshot(snap, done, crypto ? cryptoDay : day, crypto ? cryptoClose : rthClose);
       });
       return snaps;
     } catch (ProviderException e) {
@@ -337,9 +380,10 @@ public class LiveFeed implements MarketFeed {
     if (!Thread.currentThread().getName().equals("engine-main") && !restCoolingDown(now)) {
       Set<String> due = new TreeSet<>();
       Set<String> streamed = streamedQuotes();
-      Duration maxAge = calendar.stateAt(now).type() == SessionType.CLOSED ? CLOSED_REFRESH_MAX_AGE
+      Duration stockAge = calendar.stateAt(now).type() == SessionType.CLOSED ? CLOSED_REFRESH_MAX_AGE
           : SYNC_REFRESH_MAX_AGE;
       for (String s : symbols) {
+        Duration maxAge = Crypto.isCrypto(s) ? SYNC_REFRESH_MAX_AGE : stockAge;   // crypto never closes (§29)
         Instant last = lastPolled.get(s);
         boolean fresh = streamed.contains(s) && last != null
             || last != null && Duration.between(last, now).compareTo(maxAge) < 0;
@@ -373,10 +417,12 @@ public class LiveFeed implements MarketFeed {
     }
     QuoteBook.View view = v.get();
     Instant confirmed = confirmedAt(symbol, view, null, now);
+    boolean crypto = Crypto.isCrypto(symbol);
+    boolean consolidated = crypto || "sip".equals(props.effectiveFeed());
     QuoteComposer.Inputs in = new QuoteComposer.Inputs(symbol, view.quote(), confirmed, view.lastTrade(),
-        view::close, d -> dayStats(view, d), !"sip".equals(props.effectiveFeed()), view.halted(), false,
-        "sip".equals(props.effectiveFeed()), AlpacaSource.ID);
-    return composer.compose(in, now, calendar, venue);
+        view::close, d -> dayStats(view, d), !consolidated, view.halted(), false, consolidated, AlpacaSource.ID);
+    // a crypto pair has its own 24/7 calendar and no IEX venue hours (§29)
+    return composer.compose(in, now, calendar.forSymbol(symbol), crypto ? null : venue);
   }
 
   private static Optional<DayStats> dayStats(QuoteBook.View v, LocalDate d) {
@@ -393,7 +439,7 @@ public class LiveFeed implements MarketFeed {
    */
   private Instant confirmedAt(String symbol, QuoteBook.View view, Instant notBefore, Instant now) {
     Instant best = null;
-    WebSocketStream a = alpacaStream;
+    WebSocketStream a = Crypto.isCrypto(symbol) ? cryptoStream : alpacaStream;
     if (a != null && a.lastMessageAt() != null) {
       Instant since = notBefore != null ? notBefore : now;
       if (a.subscribedSince(since).contains(symbol)) {
@@ -423,11 +469,12 @@ public class LiveFeed implements MarketFeed {
   @Override
   public Tape tape(String symbol, int limit) {
     List<TapePrint> prints = book.tape(symbol, limit);
-    WebSocketStream a = alpacaStream;
+    boolean crypto = Crypto.isCrypto(symbol);
+    WebSocketStream a = crypto ? cryptoStream : alpacaStream;
     WebSocketStream f = finnhubStream;
     boolean onFinnhub = f != null && f.subscribed().contains(symbol);
     boolean onAlpaca = a != null && a.subscribed().contains(symbol);
-    boolean sip = "sip".equals(props.effectiveFeed());
+    boolean sip = crypto || "sip".equals(props.effectiveFeed());   // the crypto tape is the whole market (§29)
     TapeSource source;
     if (!prints.isEmpty()) {
       source = prints.get(0).consolidated() ? TapeSource.SIP : TapeSource.IEX;
@@ -469,7 +516,8 @@ public class LiveFeed implements MarketFeed {
     Instant now = time.now();
     QuoteBook.View view = v.get();
     ExecutableQuoteBuilder.Inputs in = new ExecutableQuoteBuilder.Inputs(symbol, tiers.apply(symbol), view.halted(),
-        view.quote(), confirmedAt(symbol, view, notBefore, now), "sip".equals(props.effectiveFeed()),
+        view.quote(), confirmedAt(symbol, view, notBefore, now),
+        Crypto.isCrypto(symbol) || "sip".equals(props.effectiveFeed()),
         view.recentConsolidated(), view.lastConsolidated(), view.lastIex());
     return builder.build(in, now, notBefore, session);
   }
@@ -535,6 +583,15 @@ public class LiveFeed implements MarketFeed {
         alpaca.capabilities().maxStreamSymbols(), alpacaHttp == null ? 0 : alpacaHttp.limiter().usedLastMinute(),
         alpacaHttp == null ? 0 : alpacaHttp.limiter().perMinute(), a == null ? null : a.lastMessageAt(),
         alpaca.capabilities().asMap(), alpacaProbe));
+    WebSocketStream c = cryptoStream;
+    if (c != null) {
+      Map<String, Object> cp = new HashMap<>();
+      if (c.detail() != null) {
+        cp.put("streamDetail", c.detail());
+      }
+      out.add(new ProviderStatus("alpaca-crypto", stateOf(c), c.subscribed().size(), -1, 0, 0, c.lastMessageAt(),
+          Map.of("crypto", true), cp));
+    }
     WebSocketStream f = finnhubStream;
     if (finnhubHttp != null) {
       Map<String, Object> fp = new HashMap<>();
@@ -566,15 +623,18 @@ public class LiveFeed implements MarketFeed {
   public List<String> staleSymbols(Set<String> leased) {
     Instant now = time.now();
     SessionType session = calendar.stateAt(now).type();
-    if (session == SessionType.CLOSED || venue != null && !withinVenue(now)) {
-      return List.of();
-    }
+    boolean stocksQuiet = session == SessionType.CLOSED || venue != null && !withinVenue(now);
     Duration threshold = session == SessionType.REGULAR ? rules.regularConfirmed() : rules.extConfirmed();
     List<String> out = new ArrayList<>();
     for (String s : leased) {
+      boolean crypto = Crypto.isCrypto(s);
+      if (!crypto && stocksQuiet) {
+        continue;                                    // silence outside venue hours is expected; crypto never sleeps
+      }
+      Duration limit = crypto ? rules.regularConfirmed() : threshold;
       Optional<QuoteBook.View> v = book.view(s);
       Instant c = v.map(view -> confirmedAt(s, view, null, now)).orElse(null);
-      if (c == null || Duration.between(c, now).compareTo(threshold.multipliedBy(2)) > 0) {
+      if (c == null || Duration.between(c, now).compareTo(limit.multipliedBy(2)) > 0) {
         out.add(s);
       }
     }

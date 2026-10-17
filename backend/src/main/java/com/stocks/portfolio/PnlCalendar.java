@@ -5,6 +5,7 @@ import com.stocks.common.error.ErrorCode;
 import com.stocks.common.time.Et;
 import com.stocks.contract.calendar.MarketCalendar;
 import com.stocks.contract.calendar.TradingDay;
+import com.stocks.contract.identity.SettingsService;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -14,8 +15,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -26,6 +29,11 @@ import org.springframework.stereotype.Component;
  * <p>While WS2's calendar is still the Day-0 stub (501 {@code NOT_IMPLEMENTED}) it falls back to a plain weekday
  * calendar (Mon–Fri, 04:00 pre-open, 20:00 cut-off ET, no holidays), so the league works before the calendar lands;
  * the real calendar always wins once it exists.
+ *
+ * <p><b>Every calendar day (§29).</b> While {@code crypto.enabled} is on, crypto pairs move on weekends and holidays,
+ * so every calendar day is a P&amp;L day: a non-trading day runs from the previous day's cut-off to 20:00 ET
+ * (pre-open 04:00), and EOD snapshots, intraday samples, the P&amp;L calendar and the TODAY anchor follow. Trading days
+ * keep their own pre-open and cut-off (17:00 on early closes).
  */
 @Component
 public class PnlCalendar {
@@ -38,14 +46,44 @@ public class PnlCalendar {
   private static final int MAX_WALK_DAYS = 400;
 
   private final MarketCalendar calendar;
+  private final BooleanSupplier everyDay;
   private final AtomicBoolean warned = new AtomicBoolean();
 
+  /** NYSE trading days only (tests and tools). */
   public PnlCalendar(MarketCalendar calendar) {
+    this(calendar, () -> false);
+  }
+
+  /** The league's calendar: every calendar day is a P&amp;L day while {@code crypto.enabled} is on (§29). */
+  @Autowired
+  public PnlCalendar(MarketCalendar calendar, SettingsService settings) {
+    this(calendar, () -> cryptoEnabled(settings));
+  }
+
+  public PnlCalendar(MarketCalendar calendar, BooleanSupplier everyDay) {
     this.calendar = Objects.requireNonNull(calendar, "calendar");
+    this.everyDay = Objects.requireNonNull(everyDay, "everyDay");
+  }
+
+  private static boolean cryptoEnabled(SettingsService settings) {
+    try {
+      return settings.cryptoEnabled();
+    } catch (ApiException e) {
+      return true;                                   // the §23.4 default while settings are a Day-0 stub
+    }
+  }
+
+  /** True while every calendar day is a P&amp;L day (crypto trading is on, §29). */
+  public boolean everyDay() {
+    return everyDay.getAsBoolean();
   }
 
   /** §16.3: the latest trading day whose pre-open is at or before {@code t}. */
   public LocalDate currentPnlDay(Instant t) {
+    if (everyDay()) {
+      LocalDate d = Et.date(t);
+      return preOpen(d).isAfter(t) ? d.minusDays(1) : d;
+    }
     try {
       return calendar.currentPnlDay(t);
     } catch (ApiException e) {
@@ -59,6 +97,9 @@ public class PnlCalendar {
   }
 
   public boolean isTradingDay(LocalDate date) {
+    if (everyDay()) {
+      return true;
+    }
     try {
       return calendar.isTradingDay(date);
     } catch (ApiException e) {
@@ -69,6 +110,9 @@ public class PnlCalendar {
 
   /** The trading day strictly before {@code date}. */
   public LocalDate previousTradingDay(LocalDate date) {
+    if (everyDay()) {
+      return date.minusDays(1);
+    }
     try {
       return calendar.previousTradingDay(date);
     } catch (ApiException e) {
@@ -79,6 +123,9 @@ public class PnlCalendar {
 
   /** The trading day strictly after {@code date}. */
   public LocalDate nextTradingDay(LocalDate date) {
+    if (everyDay()) {
+      return date.plusDays(1);
+    }
     try {
       return calendar.nextTradingDay(date);
     } catch (ApiException e) {
@@ -92,6 +139,9 @@ public class PnlCalendar {
   }
 
   public LocalDate tradingDayOnOrBefore(LocalDate date) {
+    if (everyDay()) {
+      return date;
+    }
     try {
       return calendar.tradingDayOnOrBefore(date);
     } catch (ApiException e) {

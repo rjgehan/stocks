@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   availableOrderTypes,
   buildOrderRequest,
+  cryptoQtyStep,
   defaultLimitPrice,
   defaultStopPrice,
   defaultTrail,
@@ -9,6 +10,7 @@ import {
   gtcAllowed,
   initialTicket,
   midPrice,
+  qtyUnit,
   quickQuantity,
   stepTrail,
   stopExplanation,
@@ -111,6 +113,36 @@ describe('trade ticket rules (§22.5)', () => {
     expect(defaultLimitPrice('BUY', { ask: '0', bid: '0', last: '0' })).toBeNull()
     const sell = { side: 'SELL' as const, qtyMode: 'AMOUNT' as const, buyingPower: '0', ask: '0', bid: '0', availableQty: '2', fractionable: true }
     expect(quickQuantity('1', sell)).toBeNull()
+  })
+
+  it('trades crypto in fractional units on every order type, never with the extended-hours flag', () => {
+    const crypto = { fractionable: true, availableQty: '0.5', crypto: true }
+    let s = initialTicket({ clientOrderId: 'web-1' })
+    s = ticketReducer(s, { type: 'extendedHours', value: true })
+    s = ticketReducer(s, { type: 'tif', tif: 'GTC' })
+    s = ticketReducer(s, { type: 'field', field: 'qty', value: '0.01234' })
+    s = ticketReducer(s, { type: 'field', field: 'limitPrice', value: '112000.00' })
+    expect(buildOrderRequest(s, 'BTC/USD', crypto)).toMatchObject({ symbol: 'BTC/USD', type: 'LIMIT', qty: '0.01234', timeInForce: 'GTC', extendedHours: false })
+    // the same ticket on a stock keeps the flag
+    expect(buildOrderRequest(s, 'AAPL', ctx)).toMatchObject({ extendedHours: true })
+    const stop = ticketReducer(ticketReducer(s, { type: 'orderType', orderType: 'STOP' }), { type: 'field', field: 'stopPrice', value: '110000.00' })
+    expect(buildOrderRequest(stop, 'BTC/USD', crypto)).toMatchObject({ type: 'STOP', qty: '0.01234', stopPrice: '110000.00' })
+    expect(qtyUnit('BTC/USD', true)).toBe('BTC')
+    expect(qtyUnit('AAPL', false)).toBe('sh')
+  })
+
+  it('sizes crypto quick chips to 5 decimals and steps by about $100 to $1,000', () => {
+    const base = { side: 'BUY' as const, qtyMode: 'SHARES' as const, buyingPower: '500000.00', ask: '112000.00', bid: '111990.00', availableQty: null, fractionable: true, crypto: true }
+    expect(quickQuantity('1', base)).toBe('4.37675') // 500000 / (112000 × 1.02) = 4.376750…
+    expect(quickQuantity('0.25', { ...base, ask: '0.2400' })).toBe('510620.91503')
+    expect(quickQuantity('1', { ...base, crypto: false })).toBe('4')
+    expect(quickQuantity('0.5', { ...base, side: 'SELL', availableQty: '0.00003' })).toBe('0.00001')
+    expect(cryptoQtyStep('112000.00')).toBe('0.001')
+    expect(cryptoQtyStep('4200.00')).toBe('0.1')
+    expect(cryptoQtyStep('210.00')).toBe('1')
+    expect(cryptoQtyStep('2.6000')).toBe('100')
+    expect(cryptoQtyStep('0.2400')).toBe('1000')
+    expect(cryptoQtyStep(null)).toBe('1')
   })
 
   // Review regression: closed-market previews showed the queue notice twice (sessionNote + QUEUED_FOR_OPEN warning).

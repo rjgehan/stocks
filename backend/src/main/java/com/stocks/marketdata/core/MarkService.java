@@ -64,6 +64,8 @@ public class MarkService {
   }
 
   public Mark mark(String symbol) {
+    // a crypto pair (§29) is always in its REGULAR session: live marks on weekends and nights too
+    MarketCalendar calendar = this.calendar.forSymbol(symbol);
     Instant now = time.now();
     LocalDate today = Et.date(now);
     LocalDate heldEx = holdExDate.apply(symbol);
@@ -141,7 +143,7 @@ public class MarkService {
   }
 
   private Mark dayEnd(String symbol, DailyMarkRepository.DayEnd d, LocalDate today, DataQuality quality) {
-    Instant at = calendar.day(d.tradeDate()).map(TradingDay::postCloseAt).orElse(null);
+    Instant at = calendar.forSymbol(symbol).day(d.tradeDate()).map(TradingDay::postCloseAt).orElse(null);
     return new Mark(splits.adjust(symbol, d.mark(), d.tradeDate(), today), quality, at, MarkBasis.DAY_END);
   }
 

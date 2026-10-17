@@ -1,5 +1,6 @@
 package com.stocks.marketdata.core;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.Timeframe;
 import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
@@ -18,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,6 +41,11 @@ import org.slf4j.LoggerFactory;
  *       both {@code PROVISIONAL} and re-marked the next morning. The SIM writes {@code SIMULATED}, {@code FINAL}.</li>
  * </ul>
  * Both are idempotent: symbols that already have a value ({@code FINAL} for day-end marks) are skipped.
+ *
+ * <p>Crypto pairs (§29) have no official close. Their day-end mark is the close of the last 1-minute bar before the
+ * league's cut-off of day D ({@link #cutoff}: {@code post_close_at} on a trading day, 20:00 ET on any other day),
+ * basis {@code CRYPTO_1MIN}, {@code FINAL} (crypto bars have no embargo), else the last trade before the cut-off
+ * ({@code LAST_TRADE}, {@code PROVISIONAL}); every calendar day has one, weekends included.
  */
 public class DailyMarkServiceImpl implements DailyMarkService {
 
@@ -73,6 +80,10 @@ public class DailyMarkServiceImpl implements DailyMarkService {
       return;
     }
     Set<String> missing = new TreeSet<>(symbols);
+    missing.removeIf(Crypto::isCrypto);               // a crypto pair has no official close (§29)
+    if (missing.isEmpty()) {
+      return;
+    }
     missing.removeAll(repository.officialCloses(tradeDate, symbols).keySet());
     if (missing.isEmpty()) {
       return;
@@ -108,12 +119,16 @@ public class DailyMarkServiceImpl implements DailyMarkService {
 
   @Override
   public void ensureDayEndMarks(LocalDate tradeDate, Set<String> symbols) {
+    Set<String> crypto = new TreeSet<>();
+    Set<String> stocks = new TreeSet<>();
+    symbols.forEach(s -> (Crypto.isCrypto(s) ? crypto : stocks).add(s));
+    ensureCryptoDayEndMarks(tradeDate, crypto);
     Optional<TradingDay> day = calendar.day(tradeDate);
     Instant now = time.now();
-    if (day.isEmpty() || now.isBefore(day.get().postCloseAt()) || symbols.isEmpty()) {
+    if (day.isEmpty() || now.isBefore(day.get().postCloseAt()) || stocks.isEmpty()) {
       return;
     }
-    Set<String> todo = new TreeSet<>(symbols);
+    Set<String> todo = new TreeSet<>(stocks);
     todo.removeAll(repository.withDayEnd(tradeDate, DailyMarkRepository.FINAL));
     if (todo.isEmpty()) {
       return;
@@ -164,15 +179,80 @@ public class DailyMarkServiceImpl implements DailyMarkService {
         left.size());
   }
 
-  /** The SIM day-end mark: the last print before {@code post_close_at}, once the post session is over. */
+  /** §29: crypto day-end marks at the league cut-off of {@code tradeDate}, any calendar day. */
+  private void ensureCryptoDayEndMarks(LocalDate tradeDate, Set<String> symbols) {
+    Instant cutoff = cutoff(calendar, tradeDate);
+    Instant now = time.now();
+    if (symbols.isEmpty() || now.isBefore(cutoff)) {
+      return;
+    }
+    Set<String> todo = new TreeSet<>(symbols);
+    todo.removeAll(repository.withDayEnd(tradeDate, DailyMarkRepository.FINAL));
+    if (todo.isEmpty()) {
+      return;
+    }
+    if (sim != null) {
+      for (String s : todo) {
+        simDayEnd(sim, calendar, s, tradeDate, now).ifPresent(p ->
+            repository.upsertDayEnd(s, tradeDate, p, "SIMULATED", DailyMarkRepository.FINAL, time.now()));
+      }
+      return;
+    }
+    Set<String> left = new TreeSet<>(todo);
+    Map<String, List<Bar>> bars = fetch(new BarQuery(Set.copyOf(todo), Timeframe.MIN1, cutoff.minus(DAY_END_WINDOW),
+        cutoff.minusSeconds(1), AdjustmentMode.RAW, true, 10_000, null));
+    for (Map.Entry<String, List<Bar>> e : bars.entrySet()) {
+      Bar last = null;
+      for (Bar b : e.getValue()) {
+        if (b.start().isBefore(cutoff) && (last == null || b.start().isAfter(last.start()))) {
+          last = b;
+        }
+      }
+      if (last != null && last.close() != null) {
+        repository.upsertDayEnd(e.getKey(), tradeDate, last.close(), "CRYPTO_1MIN", DailyMarkRepository.FINAL,
+            time.now());
+        left.remove(e.getKey());
+      }
+    }
+    for (String s : List.copyOf(left)) {
+      Trade t = feed.markInputs(s).lastTrade();
+      if (t != null && !t.ts().isAfter(cutoff) && t.ts().isAfter(cutoff.minus(Duration.ofDays(1)))) {
+        repository.upsertDayEnd(s, tradeDate, t.price(), "LAST_TRADE", DailyMarkRepository.PROVISIONAL, time.now());
+        left.remove(s);
+      }
+    }
+    log.info("Daily marks {}: crypto day-end marks for {} pairs ({} without any price)", tradeDate,
+        todo.size() - left.size(), left.size());
+  }
+
+  /**
+   * The league's P&amp;L cut-off of {@code date} (§16.3, §29): {@code post_close_at} on a trading day, else 20:00 ET
+   * (the same instant {@code PnlCalendar.cutoff} uses).
+   */
+  public static Instant cutoff(MarketCalendar calendar, LocalDate date) {
+    return calendar.day(date).map(TradingDay::postCloseAt).orElseGet(() -> Et.at(date, LocalTime.of(20, 0)));
+  }
+
+  /**
+   * The SIM day-end mark: the last print before {@code post_close_at}, once the post session is over; for a crypto
+   * pair, the last print before the league cut-off of any calendar day (§29).
+   */
   static Optional<BigDecimal> simDayEnd(PointInTimeMarket sim, MarketCalendar calendar, String symbol,
                                         LocalDate tradeDate, Instant now) {
-    Optional<TradingDay> day = calendar.day(tradeDate);
-    if (day.isEmpty() || now.isBefore(day.get().postCloseAt())) {
+    Instant end;
+    if (Crypto.isCrypto(symbol)) {
+      end = cutoff(calendar, tradeDate);
+    } else {
+      Optional<TradingDay> day = calendar.day(tradeDate);
+      if (day.isEmpty()) {
+        return Optional.empty();
+      }
+      end = day.get().postCloseAt();
+    }
+    if (now.isBefore(end)) {
       return Optional.empty();
     }
-    Instant at = day.get().postCloseAt().minus(1, ChronoUnit.MICROS);
-    return sim.lastTradeAt(symbol, at).map(Trade::price);
+    return sim.lastTradeAt(symbol, end.minus(1, ChronoUnit.MICROS)).map(Trade::price);
   }
 
   private Map<String, List<Bar>> fetch(BarQuery q) {

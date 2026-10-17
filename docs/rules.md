@@ -32,7 +32,7 @@
 |---|---|
 | Account type | **Cash account** (no margin, no shorting, no options). Margin comes in Phase 2. |
 | Starting cash | **$500,000.00** for new players (admin setting `league.defaultStartingCash`; it was $500.00 until 2026-10-14, and the admin topped up the players who started with that) |
-| Settlement | **T+1**: stock sale proceeds settle on the next trading day [V]. |
+| Settlement | **T+1**: stock sale proceeds settle on the next trading day [V]. **Crypto** settles at once (§3.1). |
 | Deposits | The league admin can deposit, withdraw or adjust fake cash for one player or for everyone, with a memo you see in your activity. Admin transfers **settle immediately** and never change your return on the leaderboard. |
 | Buying power | Total cash (settled + unsettled sale proceeds) − cash held for your open buy orders. Under `SETTLED_CASH_ONLY`: settled cash − holds (never below 0). Under `LIQUIDATION_ONLY` or `FROZEN`: 0. |
 | Short selling | Not allowed: you can only sell shares you own. |
@@ -63,6 +63,23 @@ have settled** is a good-faith violation (GFV), as at Webull:
 
 Early-close days (for example Nov 27 and Dec 24, 2026): the regular session ends at 13:00 and after-hours at 17:00.
 There is no overnight session.
+
+### 3.1 Crypto pairs (24/7)
+
+While the admin keeps crypto on (setting `crypto.enabled`, on by default), twelve USD crypto pairs trade **around the
+clock, weekends and US market holidays included**: BTC/USD, ETH/USD, SOL/USD, XRP/USD, DOGE/USD, LTC/USD, BCH/USD,
+LINK/USD, AVAX/USD, DOT/USD, UNI/USD and AAVE/USD (prices from Alpaca's crypto market data).
+
+| Rule | Value |
+|---|---|
+| Symbols | Written with a slash, e.g. `BTC/USD`; `BTC-USD` is accepted too (and is how web addresses spell it). |
+| Hours | Every order type works at any hour; nothing queues for an open and there is no extended-hours flag. DAY orders last until 24:00 ET, GTC orders 60 days. |
+| Quantities | Fractional quantities up to 5 decimals on **every** order type (stops and group orders included), or a dollar amount on MARKET orders; at most 100,000,000 units per order. Prices use the stock tick ($0.01 at or above $1.00, $0.0001 below). |
+| Fills | Like a fractional stock order: one fill at the touch (the best bid or ask), within the limit or the 5% market collar. |
+| Settlement | **Immediate**: proceeds are settled cash at once, and crypto never causes a good-faith violation. |
+| Fees | **None** (SEC, TAF and CAT are stock fees). |
+| P&L days | **Every calendar day** is a P&L day while crypto is on: Saturdays, Sundays and holidays end at 20:00 ET with their own end-of-day snapshot, so weekend crypto moves show in Day P&L, the P&L calendar, the charts and the leaderboard. Stocks keep their last trading day's price on those days. |
+| Turned off | Crypto buys are refused; you can still sell crypto you hold, and weekends stop being P&L days. |
 
 ## 4. Orders
 
@@ -174,7 +191,7 @@ There is no overnight session.
 ## 6. Fees
 
 Commission is **$0** for US stocks and ETFs [V]. Regulatory fees are passed through as at a real broker; `GET /rules`
-lists the rows in force and scheduled.
+lists the rows in force and scheduled. Crypto pairs pay no fees at all (§3.1).
 
 | Fee | Applies to | Rate | Rounding |
 |---|---|---|---|
@@ -191,7 +208,7 @@ Fees are charged cumulatively per order, so splitting an order into many small f
 |---|---|
 | Return (default ranking) | **Time-weighted return** from unit values: TWR = U(end) / U(start) − 1. Deposits, withdrawals and resets never move it. |
 | P&L ranking | Net-contribution P&L: the change in (equity − net deposits) over the period, summed across resets. Ranking by dollars favours larger accounts. |
-| Periods | TODAY, WEEK, MONTH, YTD, SEASON, ALL. A trading day's P&L ends at **20:00 ET** (17:00 on early-close days); on weekends and holidays TODAY shows the last trading day. |
+| Periods | TODAY, WEEK, MONTH, YTD, SEASON, ALL. A trading day's P&L ends at **20:00 ET** (17:00 on early-close days); on weekends and holidays TODAY shows the last trading day, except while crypto is on: then every calendar day is a P&L day ending at 20:00 ET (§3.1). |
 | Eligibility | WEEK, MONTH, YTD and SEASON rank players with at least **5 fills** across at least **2 symbols** in the period; others are listed below the ranked rows ("3/5 trades"). TODAY and ALL have no minimum. |
 | League ranking | The League board ranks everyone by **all-time dollar P&L** (ALL, metric PNL). |
 | Ties | Equal returns (within 1e-8) rank by P&L, then by who opened their first account earlier. |

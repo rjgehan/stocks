@@ -9,6 +9,7 @@ import com.stocks.common.error.ErrorCode;
 import com.stocks.common.error.Warning;
 import com.stocks.common.error.WarningCode;
 import com.stocks.common.time.Et;
+import com.stocks.contract.calendar.CryptoCalendar;
 import com.stocks.contract.calendar.MarketCalendar;
 import com.stocks.contract.calendar.SessionState;
 import com.stocks.contract.calendar.TradingDay;
@@ -52,7 +53,7 @@ public final class SessionOrderMatrix {
               "Trailing stops can only be entered during regular hours (09:30–16:00 ET).")
           .withHint("Enter the trailing stop after the 09:30 ET open.");
     }
-    if (tif == TimeInForce.GTC && !ext) {
+    if (tif == TimeInForce.GTC && !ext && !(calendar instanceof CryptoCalendar)) {   // crypto never pauses (§29)
       warnings.add(Warning.of(WarningCode.WILL_PAUSE_OUTSIDE_SESSION,
           "A GTC order without extended hours pauses outside the regular session."));
     }

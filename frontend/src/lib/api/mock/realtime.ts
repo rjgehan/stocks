@@ -4,6 +4,7 @@
  */
 import type { DriverHooks, RealtimeDriver } from '../../realtime/hub'
 import { mockServer } from './index'
+import { fromPath, toPath } from '../../symbols'
 
 const QUOTE_RE = /^\/topic\/(quote|tick|trades)\.(.+)$/
 
@@ -22,7 +23,8 @@ export function createMockDriver(): RealtimeDriver {
     const symbols = new Set<string>()
     for (const d of subscribed) {
       const m = QUOTE_RE.exec(d)
-      if (m) symbols.add(m[2]!)
+      // topics carry the path spelling (`BTC-USD`); the market keys the canonical `BTC/USD`
+      if (m) symbols.add(fromPath(m[2]!))
     }
     // open orders keep working while their symbol is off screen (a stop must trigger on any page)
     for (const symbol of server.workingSymbols()) symbols.add(symbol)
@@ -30,12 +32,13 @@ export function createMockDriver(): RealtimeDriver {
       if (Math.random() < 0.55) continue // not every symbol prints every tick
       server.market.step(symbol)
       server.onMarketStep(symbol)
-      if (subscribed.has(`/topic/quote.${symbol}`)) hooks.onMessage(`/topic/quote.${symbol}`, server.market.quote(symbol))
-      if (subscribed.has(`/topic/tick.${symbol}`)) hooks.onMessage(`/topic/tick.${symbol}`, server.market.tick(symbol))
+      const topic = toPath(symbol)
+      if (subscribed.has(`/topic/quote.${topic}`)) hooks.onMessage(`/topic/quote.${topic}`, server.market.quote(symbol))
+      if (subscribed.has(`/topic/tick.${topic}`)) hooks.onMessage(`/topic/tick.${topic}`, server.market.tick(symbol))
       // §15.10 Time & Sales: a print per market step while someone watches the tape
-      if (subscribed.has(`/topic/trades.${symbol}`)) {
+      if (subscribed.has(`/topic/trades.${topic}`)) {
         const print = server.phase2.step(symbol)
-        if (print) hooks.onMessage(`/topic/trades.${symbol}`, server.phase2.tradesMessage(symbol, print))
+        if (print) hooks.onMessage(`/topic/trades.${topic}`, server.phase2.tradesMessage(symbol, print))
       }
     }
     if (subscribed.has('/topic/feed') && Date.now() >= nextFeedAt) {

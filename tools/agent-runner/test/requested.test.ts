@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type BookContext, bookRun, cancelRun, holidaysOf, nextPendingRun, pendingRuns, takeDue } from '../src/requested.js';
+import { type BookContext, bookRun, cancelRun, cryptoEnabled, holidaysOf, nextPendingRun, pendingRuns, takeDue } from '../src/requested.js';
 import { parseSchedule } from '../src/time.js';
 import { removeDir, tempDir } from './helpers.js';
 
@@ -63,14 +63,32 @@ describe('booking an extra run', () => {
     expect(book('2026-10-19 09:00').ok).toBe(true);
   });
 
-  it('refuses weekends, market holidays and times outside 04:00-20:00 ET', () => {
-    expect(refusal(book('2026-10-17 10:00')).message).toBe('2026-10-17 is a Saturday; the market is closed on weekends.');
+  it('refuses weekends, market holidays and times outside 04:00-20:00 ET while crypto is off', () => {
+    expect(refusal(book('2026-10-17 10:00')).message).toBe(
+      '2026-10-17 is a Saturday; the market is closed on weekends and crypto trading is off.',
+    );
     const holidays = new Map([['2026-10-13', 'Test Day']]);
-    expect(refusal(book('2026-10-13 10:00', { holidays })).message).toBe('2026-10-13 is a market holiday (Test Day).');
-    expect(refusal(book('2026-10-13 03:59')).message).toContain('outside 04:00-20:00 ET');
+    expect(refusal(book('2026-10-13 10:00', { holidays })).message).toBe(
+      '2026-10-13 is a market holiday (Test Day) and crypto trading is off.',
+    );
+    expect(refusal(book('2026-10-13 03:59', { crypto: false })).message).toContain('outside 04:00-20:00 ET');
     expect(refusal(book('2026-10-13 20:01')).code).toBe('RUN_TIME_NOT_ALLOWED');
     expect(book('2026-10-13 04:00').ok).toBe(true);
     expect(book('2026-10-13 20:00').ok).toBe(true);
+  });
+
+  it('allows weekends, market holidays and any time of day while crypto trades', () => {
+    const holidays = new Map([['2026-10-13', 'Test Day']]);
+    const crypto = { crypto: true, holidays };
+    expect(book('2026-10-17 10:00', crypto).ok).toBe(true); // Saturday
+    expect(book('2026-10-18 23:59', crypto).ok).toBe(true); // Sunday night
+    expect(book('2026-10-13 10:00', crypto).ok).toBe(true); // holiday
+    expect(book('2026-10-14 00:00', crypto).ok).toBe(true);
+    expect(book('2026-10-14 03:30', crypto).ok).toBe(true);
+    // the other limits still hold
+    expect(refusal(book('2026-10-17 10:05', crypto)).message).toContain('within 10 minutes of your extra run');
+    expect(refusal(book('2026-10-17 09:25', crypto)).message).toContain('within 10 minutes of your scheduled 09:30 ET run');
+    expect(refusal(book('2026-10-19 11:00', crypto)).message).toContain('more than 7 days ahead');
   });
 
   it('keeps 10 minutes between a booked run and the scheduled or other booked runs', () => {
@@ -124,6 +142,17 @@ describe('taking due runs', () => {
     writeFileSync(join(dir, 'requested-runs.json'), '{not json');
     expect(pendingRuns(dir)).toEqual([]);
     expect(book('14:15').ok).toBe(true);
+  });
+});
+
+describe('cryptoEnabled', () => {
+  it('is true only for a clock whose crypto member says enabled: true (older servers have none)', () => {
+    expect(cryptoEnabled({ crypto: { enabled: true, pairs: ['BTC/USD'] } })).toBe(true);
+    expect(cryptoEnabled({ crypto: { enabled: false, pairs: [] } })).toBe(false);
+    expect(cryptoEnabled({ crypto: { enabled: 'true' } })).toBe(false);
+    expect(cryptoEnabled({ crypto: null })).toBe(false);
+    expect(cryptoEnabled({ crypto: true })).toBe(false);
+    expect(cryptoEnabled({})).toBe(false);
   });
 });
 

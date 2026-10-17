@@ -1,5 +1,6 @@
 package com.stocks.trading.web;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.common.web.Cursor;
@@ -135,7 +136,7 @@ public class OrderController {
   }
 
   static String upper(String symbol) {
-    return symbol == null || symbol.isBlank() ? null : symbol.trim().toUpperCase(Locale.ROOT);
+    return symbol == null || symbol.isBlank() ? null : Crypto.fromPath(symbol.trim().toUpperCase(Locale.ROOT));
   }
 
   private static ApiException notFound(String id) {

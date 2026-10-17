@@ -15,6 +15,7 @@ import { DIRECTION_TEXT } from '@/features/market/Change'
 import { ReactionBar } from '@/features/stats/ReactionBar'
 import { AiChip, Avatar } from './PlayerBadge'
 import { useFeedDelay } from './useFeedDelay'
+import { toPath } from '@/lib/symbols'
 
 type Kind = NonNullable<FeedItem['kind']>
 export type FeedFilter = 'ALL' | 'TRADES' | 'JOURNAL' | 'LEADERS' | 'MONEY' | 'PLAYERS'
@@ -43,7 +44,7 @@ const PERIOD_WORD: Record<string, string> = { TODAY: 'today', WEEK: 'the week', 
 
 function SymbolLink({ symbol }: { symbol: string | null | undefined }) {
   return (
-    <Link to="/stock/$symbol" params={{ symbol: symbol ?? '' }} className="font-semibold text-text-1 hover:text-accent">
+    <Link to="/stock/$symbol" params={{ symbol: toPath(symbol ?? '') }} className="font-semibold text-text-1 hover:text-accent">
       {symbol}
     </Link>
   )

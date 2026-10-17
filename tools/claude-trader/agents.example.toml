@@ -17,7 +17,8 @@
 #                       API key now", or the player's API keys page). Each agent needs its own player and key.
 #   strategy            required. Your instructions for this agent, at most 4000 characters. The agent follows them
 #                       at every check-in; the league rules (get_rules) always come first.
-#   schedule_et         optional. Check-in times, ET on weekdays (default STOCKS_TRADER_SCHEDULE_ET or
+#   schedule_et         optional. Check-in times, ET on weekdays, and on weekends too while the app trades crypto
+#                       (STOCKS_TRADER_WEEKENDS, default on) (default STOCKS_TRADER_SCHEDULE_ET or
 #                       "09:30,12:45,15:50": the open, midday, 10 minutes before the close).
 #   model               optional. A Claude model name or alias, e.g. "sonnet" or "opus" (default
 #                       STOCKS_TRADER_MODEL, else Claude Code's default for your plan).

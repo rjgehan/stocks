@@ -24,13 +24,14 @@ import { canSell } from '@/features/trade/ticketState'
 import { StarButton } from '@/features/watchlist/StarButton'
 import { ChartTypePicker, IndicatorPicker, useChartType, useIndicatorSettings } from '@/features/charts/IndicatorPicker'
 import { activeOscillators } from '@/features/charts/indicatorSettings'
-import { etDateOf, regularSessionTest } from '@/features/charts/sessions'
+import { ALWAYS_REGULAR, etDateOf, regularSessionTest } from '@/features/charts/sessions'
 import { useCalendarDays } from '@/lib/api/hooks/marketExtras'
 import { BidAskBar } from './BidAskBar'
 import { IntervalPicker, effectiveTimeframe } from './IntervalPicker'
 import { KeyStatsGrid } from './KeyStatsGrid'
 import { QuoteHeader } from './QuoteHeader'
 import { RangeChips } from './RangeChips'
+import { isCrypto } from '@/lib/symbols'
 
 const PriceChart = lazy(() => import('./PriceChart'))
 // Loaded on demand (review finding: wave A grew this chunk by ~80%): research cards, news and the tape
@@ -76,14 +77,19 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
   const [style, setStyle] = useChartType(phone, range === '1D')
   const [indicators, setIndicators] = useIndicatorSettings()
   const intraday = bars.data?.timeframe ? !['1Day', '1Week', '1Month'].includes(bars.data.timeframe) : range === '1D' || range === '5D'
+  // a crypto pair trades 24/7: no exchange, no regular session (so no extended-hours bands), no fundamentals
+  const cryptoPair = isCrypto(symbol) || asset.data?.type === 'CRYPTO'
   // §22.10: extended-hours bands use the calendar's regular session of each bar's ET date (early closes included)
   const barList = bars.data?.bars ?? []
   const firstT = barList[0]?.t
   const lastT = barList[barList.length - 1]?.t
-  const fromDate = intraday && firstT ? etDateOf(Date.parse(firstT) / 1000) : null
-  const toDate = intraday && lastT ? etDateOf(Date.parse(lastT) / 1000) : null
+  const fromDate = intraday && !cryptoPair && firstT ? etDateOf(Date.parse(firstT) / 1000) : null
+  const toDate = intraday && !cryptoPair && lastT ? etDateOf(Date.parse(lastT) / 1000) : null
   const sessionDays = useCalendarDays(fromDate, toDate)
-  const isRegular = useMemo(() => (intraday ? regularSessionTest(sessionDays.data) : undefined), [intraday, sessionDays.data])
+  const isRegular = useMemo(
+    () => (!intraday ? undefined : cryptoPair ? ALWAYS_REGULAR : regularSessionTest(sessionDays.data)),
+    [intraday, cryptoPair, sessionDays.data],
+  )
   const sizeKey = phone ? 'phone' : desktop ? 'desktop' : 'tablet'
   const chartHeight = CHART_HEIGHT[sizeKey] + activeOscillators(indicators).length * PANE_HEIGHT[sizeKey]
   // §22.5: Sell is disabled without a position to sell (it used to open a Buy ticket)
@@ -159,9 +165,11 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
           <div className="space-y-4">
             <KeyStatsGrid quote={quote} asset={asset.data} />
             {breakpoint !== 'wide' ? <BidAskBar quote={quote} /> : null}
-            <Suspense fallback={null}>
-              <AnalystRatings symbol={symbol} />
-            </Suspense>
+            {cryptoPair ? null : (
+              <Suspense fallback={null}>
+                <AnalystRatings symbol={symbol} />
+              </Suspense>
+            )}
             <div>
               <h2 className="mb-1 text-section font-semibold">About</h2>
               {asset.data ? (
@@ -169,7 +177,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
                   {asset.data.name}
                   {asset.data.fundamentals?.industry ? ` · ${asset.data.fundamentals.industry}` : ''}
                   {asset.data.type === 'ETF' ? ' · Exchange-traded fund' : ''}
-                  {asset.data.exchange ? ` · Listed on ${asset.data.exchange}` : ''}.
+                  {cryptoPair ? ' · Crypto · trades 24/7, weekends and holidays included' : asset.data.exchange ? ` · Listed on ${asset.data.exchange}` : ''}.
                   {asset.data.fundamentals?.website ? (
                     <>
                       {' '}

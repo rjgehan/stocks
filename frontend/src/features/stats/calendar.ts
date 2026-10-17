@@ -1,31 +1,52 @@
 /**
- * P&L calendar helpers (§16.10, §22.4 Phase 2): the Mon–Fri month grid, the 12-month year grid, month navigation
- * and the §22.8 heatmap ramp (`--down-strong → --bg-3 → --up-strong`, clamped at ±3% of the cell's return). Colors
+ * P&L calendar helpers (§16.10, §22.4 Phase 2): the Mon–Fri month grid (Mon–Sun once weekends are P&L days, crypto),
+ * the 12-month year grid, month navigation and the §22.8 heatmap ramp (`--down-strong → --bg-3 → --up-strong`, clamped at ±3% of the cell's return). Colors
  * are CSS `color-mix` strings; the intensity uses `Number` for display only.
  */
 import type { PnlCalendarCell } from '@/lib/api/types'
 import { isDecimal, sign } from '@/lib/format/decimal'
 
-/** "2026-10" → its days Mon–Fri as weeks (null slots before the 1st and after the last day). */
-export function monthGrid(month: string, cells: ReadonlyArray<PnlCalendarCell>): Array<Array<{ date: string; cell: PnlCalendarCell | null } | null>> {
+type Slot = { date: string; cell: PnlCalendarCell | null } | null
+
+export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const
+export const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+
+const dayOfWeek = (date: string): number => new Date(`${date}T00:00:00Z`).getUTCDay() // 0 Sun … 6 Sat
+
+/** Whether any cell falls on a Saturday or Sunday (crypto makes every calendar day a P&L day). */
+export function hasWeekendCells(cells: ReadonlyArray<PnlCalendarCell>): boolean {
+  return cells.some((c) => {
+    if (!c.date || !/^\d{4}-\d{2}-\d{2}$/.test(c.date)) return false
+    const dow = dayOfWeek(c.date)
+    return dow === 0 || dow === 6
+  })
+}
+
+/**
+ * "2026-10" → its days as weeks (null slots before the 1st and after the last day): Mon–Fri, or Mon–Sun when
+ * `weekends` (by default: when any cell falls on a weekend, as while crypto trades 24/7).
+ */
+export function monthGrid(month: string, cells: ReadonlyArray<PnlCalendarCell>, weekends: boolean = hasWeekendCells(cells)): Slot[][] {
   const [y, m] = month.split('-').map(Number) as [number, number]
   const byDate = new Map(cells.map((c) => [c.date ?? '', c]))
   const days = new Date(Date.UTC(y, m, 0)).getUTCDate()
-  const weeks: Array<Array<{ date: string; cell: PnlCalendarCell | null } | null>> = []
-  let week: Array<{ date: string; cell: PnlCalendarCell | null } | null> = []
+  const width = weekends ? 7 : 5
+  const weeks: Slot[][] = []
+  let week: Slot[] = []
   for (let d = 1; d <= days; d++) {
     const date = `${month}-${String(d).padStart(2, '0')}`
-    const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay()      // 0 Sun … 6 Sat
-    if (dow === 0 || dow === 6) continue
-    if (week.length === 0) for (let i = 1; i < dow; i++) week.push(null)
+    const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay()
+    if (!weekends && (dow === 0 || dow === 6)) continue
+    const col = (dow + 6) % 7 // Mon 0 … Sun 6
+    if (week.length === 0) for (let i = 0; i < col; i++) week.push(null)
     week.push({ date, cell: byDate.get(date) ?? null })
-    if (dow === 5) {
+    if (col === width - 1) {
       weeks.push(week)
       week = []
     }
   }
   if (week.length) {
-    while (week.length < 5) week.push(null)
+    while (week.length < width) week.push(null)
     weeks.push(week)
   }
   return weeks

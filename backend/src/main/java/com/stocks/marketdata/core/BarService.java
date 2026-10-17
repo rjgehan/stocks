@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Expiry;
 import com.stocks.common.domain.ChartRange;
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.Timeframe;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.time.Et;
@@ -98,6 +99,17 @@ public class BarService {
     };
   }
 
+  /**
+   * The start of a chart range of {@code symbol} at {@code now}: a crypto pair (§29) trades around the clock, so its
+   * 1D is the last 24 hours and its 5D the last 5 days; other ranges are the same for every symbol.
+   */
+  public Instant rangeStart(String symbol, ChartRange range, Instant now, boolean extendedHours) {
+    if (Crypto.isCrypto(symbol) && (range == ChartRange.D1 || range == ChartRange.D5)) {
+      return now.minus(Duration.ofDays(range == ChartRange.D1 ? 1 : 5)).truncatedTo(ChronoUnit.MINUTES);
+    }
+    return rangeStart(range, now, extendedHours);
+  }
+
   /** The start of a chart range at {@code now}. */
   public Instant rangeStart(ChartRange range, Instant now, boolean extendedHours) {
     LocalDate day = calendar.currentPnlDay(now);
@@ -137,7 +149,7 @@ public class BarService {
     Instant end = r.endOrNull() != null && r.endOrNull().isBefore(now) ? r.endOrNull() : now;
     Instant start;
     if (r.rangeOrNull() != null) {
-      start = rangeStart(r.rangeOrNull(), now, r.extendedHours());
+      start = rangeStart(r.symbol(), r.rangeOrNull(), now, r.extendedHours());
     } else if (r.startOrNull() != null) {
       start = r.startOrNull();
     } else {
@@ -211,6 +223,15 @@ public class BarService {
 
   private BarSeries liveBars(String symbol, Timeframe tf, Instant start, Instant end, AdjustmentMode adj, boolean ext,
                              int limit, Instant now) {
+    if (Crypto.isCrypto(symbol)) {
+      // crypto bars have no embargo and no feed split: one query to the crypto endpoint (§29)
+      List<Bar> bars = fetch(new BarQuery(Set.of(symbol), tf, start, end, adj, true, limit, null), symbol);
+      Optional<Bar> forming = tf == Timeframe.MIN1 && feed != null ? feed.currentMinuteBar(symbol) : Optional.empty();
+      if (forming.isPresent() && !forming.get().start().isBefore(start)) {
+        bars = BarMath.mergeByStart(List.of(forming.get()), bars);
+      }
+      return new BarSeries(symbol, tf, adj, tail(bars, limit), null, "alpaca");
+    }
     Instant sipEnd = now.minus(SIP_EMBARGO);
     List<Bar> history = List.of();
     if (start.isBefore(sipEnd)) {
@@ -252,6 +273,9 @@ public class BarService {
   }
 
   private boolean inRegularSession(Bar b) {
+    if (Crypto.isCrypto(b.symbol())) {
+      return true;                                   // crypto has no regular session to filter by (§29)
+    }
     Optional<TradingDay> d = calendar.day(Et.date(b.start()));
     return d.isPresent() && !b.start().isBefore(d.get().rthOpenAt()) && b.start().isBefore(d.get().rthCloseAt());
   }

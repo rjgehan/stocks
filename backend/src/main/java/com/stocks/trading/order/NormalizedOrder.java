@@ -1,5 +1,6 @@
 package com.stocks.trading.order;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.Side;
 import com.stocks.common.domain.TimeInForce;
@@ -42,8 +43,9 @@ public record NormalizedOrder(String clientOrderId, String symbol, Side side, Or
         r.acknowledge() == null ? Set.of() : upper(r.acknowledge()), Boolean.TRUE.equals(r.doNotReduce()));
   }
 
+  /** Trimmed and upper-cased; a crypto pair in its path spelling ({@code BTC-USD}) becomes {@code BTC/USD} (§29). */
   public static String normalizeSymbol(String symbol) {
-    return symbol == null ? null : symbol.trim().toUpperCase(Locale.ROOT);
+    return symbol == null ? null : Crypto.fromPath(symbol.trim().toUpperCase(Locale.ROOT));
   }
 
   private static Set<String> upper(Set<String> values) {
@@ -51,9 +53,14 @@ public record NormalizedOrder(String clientOrderId, String symbol, Side side, Or
         .collect(java.util.stream.Collectors.toUnmodifiableSet());
   }
 
-  /** A notional order, or a quantity with a fractional part (D7). */
+  /**
+   * A notional order, or a quantity with a fractional part (D7). A crypto pair's quantity is fractional by nature
+   * (0.5 BTC) and takes every order type, time in force and replace like a whole quantity (§29), so for crypto only a
+   * notional order counts.
+   */
   public boolean fractional() {
-    return notional != null || (qty != null && qty.stripTrailingZeros().scale() > 0);
+    return notional != null
+        || (qty != null && qty.stripTrailingZeros().scale() > 0 && !Crypto.isCrypto(symbol));
   }
 
   public boolean isBuy() {

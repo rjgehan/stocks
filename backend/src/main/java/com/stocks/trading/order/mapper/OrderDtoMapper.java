@@ -1,5 +1,6 @@
 package com.stocks.trading.order.mapper;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.contract.trading.dto.ExecutionDto;
 import com.stocks.contract.trading.dto.OrderDto;
 import com.stocks.contract.trading.dto.OrderEventDto;
@@ -36,13 +37,19 @@ public class OrderDtoMapper {
   public OrderDto toDto(OrderRow r, List<ExecutionDto> executions, List<OrderEventRow> events) {
     List<OrderEventDto> ev = events == null ? null : events.stream().map(this::event).toList();
     return new OrderDto(r.publicId(), r.clientOrderId(), r.accountPublicId(), r.symbol(), r.side(), r.type(),
-        OrderValidator.qtyOut(r.qty()), r.notional(), r.fractional(), r.limitPrice(), r.stopPrice(), r.trailAmount(),
+        OrderValidator.qtyOut(r.qty()), r.notional(), fractional(r), r.limitPrice(), r.stopPrice(), r.trailAmount(),
         r.trailPercent(), r.watermarkPrice(), r.collarPrice(), r.timeInForce(), r.extendedHours(), r.apiStatus(),
         r.waitReason(), r.statusReason(), r.triggered(), OrderValidator.qtyOut(r.filledQty()), r.filledPrincipal(),
         r.avgFillPrice(), r.feesTotal(), r.reservedCash(), OrderValidator.qtyOut(r.reservedQty()), r.sessionDate(),
         r.receivedAt(), r.acceptedAt(), r.eligibleAt(), r.activatedAt(), r.triggeredAt(), r.expiresAt(), r.doneAt(),
         r.replacesPublicId(), r.replacedByPublicId(), r.channel(), r.rationale(), executions, ev, group(r),
         r.doNotReduce(), r.cancelRequestedAt());
+  }
+
+  /** A notional order or a fractional quantity; a crypto pair's stored flag counts only notional orders (§29). */
+  static boolean fractional(OrderRow r) {
+    return r.fractional() || Crypto.isCrypto(r.symbol()) && r.qty() != null
+        && r.qty().stripTrailingZeros().scale() > 0;
   }
 
   /** §11.9: the leg's group, or null for a single order. */

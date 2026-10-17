@@ -171,6 +171,107 @@ public class AlpacaRestClient {
     };
   }
 
+  // ------------------------------------------------------------------------------------------- crypto (§29)
+
+  /** Alpaca's US crypto market data: no {@code feed} and no SIP embargo; symbols are pairs ({@code BTC/USD}). */
+  static final String CRYPTO = "/v1beta3/crypto/us";
+
+  /** {@code GET /v1beta3/crypto/us/snapshots?symbols=…} → {@code {snapshots: {PAIR: snapshot}}}. */
+  public Map<String, Snapshot> cryptoSnapshots(Set<String> symbols, RefreshPriority priority) {
+    Map<String, Snapshot> out = new LinkedHashMap<>();
+    if (symbols.isEmpty()) {
+      return out;
+    }
+    JsonNode root = http.getJson(priority, props.dataUrl(), CRYPTO + "/snapshots",
+        ProviderHttp.query("symbols", String.join(",", new TreeSet<>(symbols))));
+    Instant observed = clock.get();
+    JsonNode body = root.has("snapshots") && root.get("snapshots").isObject() ? root.get("snapshots") : root;
+    for (Map.Entry<String, JsonNode> e : body.properties()) {
+      if (e.getValue() != null && e.getValue().isObject()) {
+        out.put(e.getKey(), AlpacaJson.cryptoSnapshot(e.getKey(), e.getValue(), observed));
+      }
+    }
+    return out;
+  }
+
+  /** {@code GET /v1beta3/crypto/us/latest/quotes} → {@code {quotes: {PAIR: quote}}}. */
+  public Map<String, Quote> cryptoLatestQuotes(Set<String> symbols, RefreshPriority priority) {
+    JsonNode root = http.getJson(priority, props.dataUrl(), CRYPTO + "/latest/quotes",
+        ProviderHttp.query("symbols", String.join(",", new TreeSet<>(symbols))));
+    Instant observed = clock.get();
+    Map<String, Quote> out = new LinkedHashMap<>();
+    JsonNode quotes = root.get("quotes");
+    if (quotes != null && quotes.isObject()) {
+      for (Map.Entry<String, JsonNode> e : quotes.properties()) {
+        Quote q = AlpacaJson.quote(e.getKey(), e.getValue(), observed, AlpacaJson.CRYPTO_FEED, 1);
+        if (q != null) {
+          out.put(e.getKey(), q);
+        }
+      }
+    }
+    return out;
+  }
+
+  /** {@code GET /v1beta3/crypto/us/latest/trades} → {@code {trades: {PAIR: trade}}}. */
+  public Map<String, Trade> cryptoLatestTrades(Set<String> symbols, RefreshPriority priority) {
+    JsonNode root = http.getJson(priority, props.dataUrl(), CRYPTO + "/latest/trades",
+        ProviderHttp.query("symbols", String.join(",", new TreeSet<>(symbols))));
+    Map<String, Trade> out = new LinkedHashMap<>();
+    JsonNode trades = root.get("trades");
+    if (trades != null && trades.isObject()) {
+      for (Map.Entry<String, JsonNode> e : trades.properties()) {
+        Trade t = AlpacaJson.trade(e.getKey(), e.getValue(), null, AlpacaJson.CRYPTO_FEED);
+        if (t != null) {
+          out.put(e.getKey(), t);
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * {@code GET /v1beta3/crypto/us/bars} with {@code timeframe}, {@code start}, {@code end}, {@code limit} and
+   * {@code sort}, following {@code next_page_token} like {@link #bars}. Crypto has no adjustments and no feed.
+   */
+  public Map<String, List<Bar>> cryptoBars(BarQuery q, RefreshPriority priority) {
+    Map<String, List<Bar>> out = new LinkedHashMap<>();
+    if (q.symbols().isEmpty()) {
+      return out;
+    }
+    String token = null;
+    int total = 0;
+    int limit = q.limit() <= 0 ? MAX_BAR_PAGE : q.limit();
+    boolean newestFirst = q.symbols().size() == 1;
+    for (int page = 0; page < 50; page++) {
+      JsonNode root = http.getJson(priority, props.dataUrl(), CRYPTO + "/bars", ProviderHttp.query(
+          "symbols", String.join(",", new TreeSet<>(q.symbols())), "timeframe", q.tf().wireValue(),
+          "start", q.from() == null ? null : DateTimeFormatter.ISO_INSTANT.format(q.from()),
+          "end", q.to() == null ? null : DateTimeFormatter.ISO_INSTANT.format(q.to()),
+          "limit", Math.min(MAX_BAR_PAGE, limit - total), "sort", newestFirst ? "desc" : "asc", "page_token", token));
+      JsonNode bars = root.get("bars");
+      if (bars != null && bars.isObject()) {
+        for (Map.Entry<String, JsonNode> e : bars.properties()) {
+          List<Bar> list = out.computeIfAbsent(e.getKey(), k -> new ArrayList<>());
+          for (JsonNode b : e.getValue().values()) {
+            Bar bar = AlpacaJson.bar(e.getKey(), q.tf(), b, false);
+            if (bar != null) {
+              list.add(bar);
+              total++;
+            }
+          }
+        }
+      }
+      token = Json.str(root, "next_page_token");
+      if (token == null || token.isBlank() || total >= limit) {
+        break;
+      }
+    }
+    if (newestFirst) {
+      out.values().forEach(java.util.Collections::reverse);
+    }
+    return out;
+  }
+
   // ------------------------------------------------------------------------------------------- trading API
 
   /** {@code GET /v2/assets?status=active&asset_class=us_equity} (trading URL). */

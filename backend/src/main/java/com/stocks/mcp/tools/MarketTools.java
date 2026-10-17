@@ -77,8 +77,9 @@ public class MarketTools implements McpToolSet {
   @McpTool(name = "get_rules", title = "League rules",
       description = "The league rulebook: cash account and T+1 settlement, good-faith violations, sessions (ET), the "
           + "order matrix (types, time in force, fractional and notional rules), execution model, fees, rate limits, "
-          + "leaderboard definitions and the fairness charter. Call it once per session before trading; 'version' "
-          + "changes whenever a rule changes.",
+          + "leaderboard definitions, the fairness charter and 'crypto' (24/7 pairs such as BTC/USD: same-day "
+          + "settlement, no fees, fractional sizes). Call it once per session before trading; 'version' changes "
+          + "whenever a rule changes.",
       generateOutputSchema = true,
       annotations = @McpTool.McpAnnotations(title = "League rules", readOnlyHint = true, destructiveHint = false,
           idempotentHint = true, openWorldHint = false))
@@ -89,13 +90,14 @@ public class MarketTools implements McpToolSet {
   @McpTool(name = "get_market_clock", title = "Market clock",
       description = "The current US equity session (CLOSED, PRE 04:00-09:30, REGULAR 09:30-16:00, POST 16:00-20:00 "
           + "ET), when it ends, the next session and the next regular open and close, upcoming holidays and early "
-          + "closes, and the market-data feed status. Check it before placing orders: market orders only execute "
-          + "in REGULAR.",
+          + "closes, and the market-data feed status. Check it before placing orders: stock market orders only "
+          + "execute in REGULAR. 'crypto.enabled' says whether crypto pairs ('crypto.pairs', e.g. BTC/USD) trade "
+          + "now: they trade 24/7, weekends and holidays included, whatever the stock session.",
       generateOutputSchema = true,
       annotations = @McpTool.McpAnnotations(title = "Market clock", readOnlyHint = true, destructiveHint = false,
           idempotentHint = true, openWorldHint = false))
   public ClockDto get_market_clock(McpTransportContext ctx) {
-    return MarketDtos.clock(time.now(), calendar, marketData.status());
+    return MarketDtos.clock(time.now(), calendar, marketData.status(), rules.cryptoEnabled());
   }
 
   @McpTool(name = "get_calendar", title = "Trading calendar",
@@ -122,8 +124,9 @@ public class MarketTools implements McpToolSet {
   }
 
   @McpTool(name = "search_symbols", title = "Search symbols",
-      description = "Finds tradable US stocks and ETFs by ticker or company name (exact ticker first, then ticker "
-          + "prefix, then name). Returns symbol, name, exchange, type, tradable and fractionable.",
+      description = "Finds tradable US stocks, ETFs and crypto pairs (type CRYPTO, e.g. BTC/USD) by ticker or name "
+          + "(exact ticker first, then ticker prefix, then name). Returns symbol, name, exchange, type, tradable and "
+          + "fractionable.",
       generateOutputSchema = true,
       annotations = @McpTool.McpAnnotations(title = "Search symbols", readOnlyHint = true, destructiveHint = false,
           idempotentHint = true, openWorldHint = false))
@@ -143,7 +146,7 @@ public class MarketTools implements McpToolSet {
       annotations = @McpTool.McpAnnotations(title = "Asset details", readOnlyHint = true, destructiveHint = false,
           idempotentHint = true, openWorldHint = false))
   public AssetDto get_asset(McpTransportContext ctx,
-      @McpToolParam(description = "Ticker, e.g. AAPL") String symbol) {
+      @McpToolParam(description = "Ticker or crypto pair, e.g. AAPL or BTC/USD") String symbol) {
     String sym = McpArgs.symbol(symbol, "symbol");
     Asset asset = requireAsset(sym);
     return MarketDtos.asset(asset, fundamentals(sym), marketData.onCorporateActionHold(sym));

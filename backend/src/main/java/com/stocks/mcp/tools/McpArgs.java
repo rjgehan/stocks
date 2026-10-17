@@ -1,5 +1,6 @@
 package com.stocks.mcp.tools;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.common.web.Cursor;
@@ -20,7 +21,7 @@ import java.util.regex.Pattern;
  */
 final class McpArgs {
 
-  private static final Pattern SYMBOL = Pattern.compile("^[A-Za-z][A-Za-z0-9.\\-]{0,11}$");
+  private static final Pattern SYMBOL = Pattern.compile(Crypto.SYMBOL_REGEX);
   private static final Pattern HANDLE = Pattern.compile("^[A-Za-z0-9_.\\-]{1,40}$");
 
   private McpArgs() {}
@@ -34,16 +35,16 @@ final class McpArgs {
     return v;
   }
 
-  /** A ticker, upper-cased ({@code brk.b} → {@code BRK.B}). */
+  /** A ticker, upper-cased ({@code brk.b} → {@code BRK.B}), or a pair ({@code btc-usd} → {@code BTC/USD}). */
   static String symbol(String raw, String field) {
     if (raw == null || raw.isBlank()) {
       throw ApiException.validation(field, field + " is required.");
     }
-    String s = raw.strip();
+    String s = Crypto.fromPath(raw.strip().toUpperCase(Locale.ROOT));
     if (!SYMBOL.matcher(s).matches()) {
-      throw ApiException.validation(field, "'" + clip(s) + "' is not a ticker symbol.");
+      throw ApiException.validation(field, "'" + clip(raw.strip()) + "' is not a ticker symbol or crypto pair.");
     }
-    return s.toUpperCase(Locale.ROOT);
+    return s;
   }
 
   /** An optional ticker: null stays null. */

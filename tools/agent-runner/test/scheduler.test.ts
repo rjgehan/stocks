@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { bookRun } from '../src/requested.js';
 import { runSchedule } from '../src/scheduler.js';
 import { anthropicServer, claudeReply, fnCall, message, openaiReply, openaiServer, type ScriptedLlmServer, text } from './fakes/llm.js';
-import { fakeMcp } from './fakes/mcp.js';
+import { CLOSED_CLOCK, fakeMcp, WEEKEND_CRYPTO_CLOCK } from './fakes/mcp.js';
 import { removeDir, tempDir, testConfig, testDeps } from './helpers.js';
 
 let dataDir: string;
@@ -63,6 +63,30 @@ describe('scheduler', () => {
     // Each fake answers after 1 s: run one after the other, the second bot's first request would come >= 1 s later.
     const first = [claude.calls[0]?.receivedAt ?? 0, gpt.calls[0]?.receivedAt ?? 0];
     expect(Math.abs((first[0] ?? 0) - (first[1] ?? 0))).toBeLessThan(800);
+  });
+
+  it('runs a weekend slot while the clock says crypto trades, and skips it otherwise', async () => {
+    const claude = await anthropicServer([() => claudeReply([text('ok')])]).start();
+    servers.push(claude);
+    const config = testConfig({ dataDir, anthropicUrl: claude.url });
+    // 150 ms before the Saturday 2026-10-17 09:30 ET slot
+    for (const [clock, status] of [
+      [WEEKEND_CRYPTO_CLOCK, 'completed'],
+      [CLOSED_CLOCK, 'skipped_non_trading_day'],
+    ] as const) {
+      const shutdown = new AbortController();
+      const deps = testDeps(config, fakeMcp({}, clock).connect, {
+        clock: clockBefore('2026-10-17T13:30:00Z', 150),
+        shutdown: shutdown.signal,
+      });
+      const done = runSchedule(config.bots, deps);
+      await until(deps, 'run bot=claude');
+      shutdown.abort();
+      await done;
+      expect(deps.sink.text).toContain('[claude] next run: 2026-10-17 09:30 ET');
+      expect(deps.sink.text).toMatch(new RegExp(`run bot=claude .*trigger=schedule@09:30 status=${status}`));
+    }
+    expect(claude.calls).toHaveLength(1);
   });
 
   it('skips a slot it reaches more than 10 minutes late', async () => {

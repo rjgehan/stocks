@@ -1,6 +1,7 @@
 package com.stocks.trading.engine;
 
 import com.stocks.common.domain.CancelReason;
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.OrderStatus;
 import com.stocks.common.domain.WaitReason;
 import com.stocks.common.error.ApiException;
@@ -300,7 +301,7 @@ public class EngineCore {
   private Object transition(TransitionCmd c, Instant now, EngineTx t) {
     SessionState session = clock.session(now);
     for (OpenOrderIndex.Entry e : index.all()) {
-      evaluator.lifecycle(e, session, now, t);
+      evaluator.lifecycle(e, sessionOf(e.symbol, session, now), now, t);   // crypto never pauses (§29)
     }
     t.publish(new SessionChanged(session));
     return null;
@@ -399,7 +400,7 @@ public class EngineCore {
     SessionState session = clock.session(now);
     for (String symbol : Set.copyOf(dirty)) {
       dirty.remove(symbol);
-      evaluateSymbol(symbol, now, session, true);
+      evaluateSymbol(symbol, now, sessionOf(symbol, session, now), true);
     }
   }
 
@@ -413,13 +414,19 @@ public class EngineCore {
       return;
     }
     Instant now = clock.now();
-    SessionState session = clock.session(now);
+    SessionState stocks = clock.session(now);
     for (String symbol : index.symbols()) {
+      SessionState session = sessionOf(symbol, stocks, now);
       boolean due = index.on(symbol).stream().anyMatch(e -> needsAttention(e, now, session));
       if (due) {
         evaluateSymbol(symbol, now, session, false);
       }
     }
+  }
+
+  /** The session {@code symbol} trades in: the NYSE session for stocks, always REGULAR for crypto pairs (§29). */
+  private SessionState sessionOf(String symbol, SessionState stocks, Instant now) {
+    return Crypto.isCrypto(symbol) ? clock.session(symbol, now) : stocks;
   }
 
   boolean needsAttention(OpenOrderIndex.Entry e, Instant now, SessionState session) {

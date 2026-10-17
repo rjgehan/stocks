@@ -16,6 +16,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
 import { IconArrowDown, IconArrowUp, IconChevronDown } from '@/components/ui/icons'
 import { StarButton } from '@/features/watchlist/StarButton'
+import { toPath } from '@/lib/symbols'
 import {
   CAPS,
   CHANGES,
@@ -206,7 +207,7 @@ export function ScreenerScreen({ search, breakpoint, onSearch }: { search: Scree
         <ul className={cx('divide-y divide-divider transition-opacity', stale && 'opacity-60')} aria-label="Screener results" aria-busy={stale} data-testid="screener-results">
           {rows.map((r) => (
             <li key={r.symbol} className="flex items-center gap-2">
-              <Link to="/stock/$symbol" params={{ symbol: r.symbol! }} data-symbol={r.symbol} className="flex min-h-16 min-w-0 flex-1 items-center gap-3 py-2">
+              <Link to="/stock/$symbol" params={{ symbol: toPath(r.symbol!) }} data-symbol={r.symbol} className="flex min-h-16 min-w-0 flex-1 items-center gap-3 py-2">
                 <span className="min-w-0 flex-1">
                   <span className="block font-semibold">{r.symbol}</span>
                   <span className="block truncate text-caption text-text-3">{r.name ?? ''}</span>
@@ -243,7 +244,7 @@ export function ScreenerScreen({ search, breakpoint, onSearch }: { search: Scree
               {rows.map((r) => (
                 <tr key={r.symbol} className="hover:bg-bg-2">
                   <td className="py-1.5">
-                    <Link to="/stock/$symbol" params={{ symbol: r.symbol! }} aria-label={`${r.symbol} ${r.name ?? ''}`.trim()} data-symbol={r.symbol} className="block min-w-0">
+                    <Link to="/stock/$symbol" params={{ symbol: toPath(r.symbol!) }} aria-label={`${r.symbol} ${r.name ?? ''}`.trim()} data-symbol={r.symbol} className="block min-w-0">
                       <span className="font-semibold text-text-1">{r.symbol}</span>
                       <span className="block max-w-56 truncate text-caption text-text-3">{r.name ?? ''}</span>
                     </Link>

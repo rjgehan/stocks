@@ -3,6 +3,7 @@
  * §11.1 table (the real backend publishes only the types its release accepts, `RulesService.AVAILABLE_ORDER_TYPES`).
  */
 import type { Rules, Settings } from '../types'
+import { CRYPTO_PAIRS } from '../../symbols'
 
 export function mockRules(settings: Settings, now: string): Rules {
   return {
@@ -105,6 +106,18 @@ export function mockRules(settings: Settings, now: string): Rules {
       resetPolicy: 'A reset never erases a loss from any leaderboard period.',
     },
     social: { tradeFeedDelay: settings['social.tradeFeedDelay'], visibility: 'PUBLIC' },
+    // §29: 24/7 crypto pairs (admin setting crypto.enabled)
+    crypto: {
+      enabled: settings['crypto.enabled'],
+      pairs: [...CRYPTO_PAIRS],
+      hours: 'Around the clock, 7 days a week, holidays included, while crypto.enabled is on (off: buys are refused, sells still work).',
+      symbols: 'Canonical BTC/USD in JSON and query strings; BTC-USD in URL paths and STOMP topics.',
+      quantities: 'Up to 5 decimals on every order type (GTC included); dollar (notional) amounts on MARKET orders.',
+      orders: 'Every order type at any hour; extendedHours is ignored; a DAY order lasts until 24:00 ET.',
+      settlement: 'Immediate: no unsettled cash, no good-faith violations.',
+      fees: 'None (no SEC, TAF or CAT fee).',
+      pnlDays: 'Every calendar day is a P&L day while crypto is on (weekends included).',
+    },
     dataSources: ['Mock market (simulated prices)'],
     // the §16.7 public mode charter (RulesService.fairness), the "rationale required" variant
     fairness: [

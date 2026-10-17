@@ -1,6 +1,7 @@
 package com.stocks.marketdata.core;
 
 import com.stocks.common.domain.AssetType;
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.LiquidityTier;
 import com.stocks.common.time.TimeSource;
 import com.stocks.contract.marketdata.model.Asset;
@@ -45,6 +46,12 @@ public class AssetService {
 
   public Universe universe() {
     return universe;
+  }
+
+  /** The seeded crypto pairs (§29) as assets: tradable, fractionable, exchange {@code CRYPTO}, type CRYPTO. */
+  public static List<Asset> cryptoAssets() {
+    return Crypto.PAIRS.stream().map(p -> new Asset(p.symbol(), p.name(), Crypto.EXCHANGE, AssetType.CRYPTO, true,
+        true, false, false, false, p.tier(), true)).toList();
   }
 
   /** Loads the table into memory. */
@@ -101,7 +108,7 @@ public class AssetService {
   }
 
   public List<Asset> search(String query, int limit) {
-    String q = query == null ? "" : query.trim().toUpperCase(Locale.ROOT);
+    String q = query == null ? "" : Crypto.fromPath(query.trim().toUpperCase(Locale.ROOT));   // BTC-USD → BTC/USD
     if (q.isEmpty() || limit <= 0) {
       return List.of();
     }
@@ -114,7 +121,7 @@ public class AssetService {
       }
     }
     hits.sort(Comparator.comparingInt(Hit::rank)
-        .thenComparing(h -> universe.contains(h.asset().symbol()) ? 0 : 1)
+        .thenComparing(h -> universe.contains(h.asset().symbol()) || Crypto.isCrypto(h.asset().symbol()) ? 0 : 1)
         .thenComparingInt(h -> h.asset().symbol().length())
         .thenComparing(h -> h.asset().symbol()));
     return hits.stream().limit(limit).map(Hit::asset).toList();

@@ -6,6 +6,7 @@ import type { Quote, Tick } from '../api/types'
 import { selectQuote, useQuoteStore } from './quoteStore'
 import { usePollWhenOffline } from './status'
 import { realtime } from './stomp'
+import { fromPath, toPath } from '../symbols'
 
 export type QuoteMode = 'quote' | 'tick'
 
@@ -32,7 +33,8 @@ async function fetchQuotes(symbols: string): Promise<Quote[]> {
  */
 export function useQuote(symbol: string | null | undefined, mode: QuoteMode = 'quote', options: { seed?: boolean } = {}): Quote | undefined {
   const seed = options.seed ?? true
-  const sym = symbol?.toUpperCase()
+  // canonical (`BTC/USD`): the store is keyed by the symbol the payloads carry; the topic takes the path spelling
+  const sym = symbol ? fromPath(symbol) : undefined
   const poll = usePollWhenOffline(5_000, 60_000)
   useQuery({
     queryKey: queryKeys.quote(sym ?? ''),
@@ -44,7 +46,7 @@ export function useQuote(symbol: string | null | undefined, mode: QuoteMode = 'q
   useEffect(() => {
     if (!sym) return
     const store = useQuoteStore.getState()
-    return realtime().subscribe(`/topic/${mode}.${sym}`, (body) => {
+    return realtime().subscribe(`/topic/${mode}.${toPath(sym)}`, (body) => {
       if (mode === 'quote') store.upsertQuote(body as Quote)
       else store.applyTick(body as Tick)
     })

@@ -1,6 +1,7 @@
 /**
  * Seed data for mock mode (§22.9). Built from the §18.4 example: a $500 CASH account that bought $125.00 of
- * NVDA (0.95274 sh @ 131.2000). Prices are fictional and tick in ten-thousandths (integers) in the fake market.
+ * NVDA (0.95274 sh @ 131.2000). Prices are fictional and tick in ten-thousandths (integers) in the fake market. The 12
+ * crypto pairs (§29) trade 24/7; their `adv` is in coins and their prices below $1 keep 4 decimals.
  */
 import type { AssetSummary } from '../types'
 
@@ -47,11 +48,24 @@ export const MOCK_UNIVERSE: MockSymbol[] = [
   { symbol: 'SOFI', name: 'SoFi Technologies, Inc.', exchange: 'NASDAQ', type: 'COMMON_STOCK', fractionable: true, prevClose: 262_100, openBps: 88, vol: 2.2, marketCap: '29000000000', peTtm: '53.10', week52High: '29.5000', week52Low: '8.6000', industry: 'Financial Services', adv: 70_000_000 },
   { symbol: 'BRK.B', name: 'Berkshire Hathaway Inc. Class B', exchange: 'NYSE', type: 'COMMON_STOCK', fractionable: true, prevClose: 4_891_200, openBps: 4, vol: 0.4, marketCap: '1050000000000', peTtm: '16.80', week52High: '542.0700', week52Low: '440.1000', industry: 'Insurance', adv: 4_100_000 },
   { symbol: 'XYZW', name: 'Whole-Share Only Corp (mock, not fractionable)', exchange: 'NYSE', type: 'COMMON_STOCK', fractionable: false, prevClose: 412_200, openBps: 12, vol: 1, marketCap: '3100000000', peTtm: '12.40', week52High: '48.2000', week52Low: '30.1000', industry: 'Industrials', adv: 900_000 },
+  // §29 crypto pairs: canonical BTC/USD (BTC-USD in URL paths and STOMP topics)
+  { symbol: 'BTC/USD', name: 'Bitcoin / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 1_120_000_000, openBps: 45, vol: 1.8, marketCap: null, peTtm: null, week52High: '124450.0000', week52Low: '74420.0000', industry: null, adv: 35_000 },
+  { symbol: 'ETH/USD', name: 'Ethereum / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 42_000_000, openBps: 70, vol: 2.2, marketCap: null, peTtm: null, week52High: '4950.0000', week52Low: '1385.0000', industry: null, adv: 420_000 },
+  { symbol: 'SOL/USD', name: 'Solana / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 2_100_000, openBps: -90, vol: 2.8, marketCap: null, peTtm: null, week52High: '295.8300', week52Low: '95.2600', industry: null, adv: 3_100_000 },
+  { symbol: 'XRP/USD', name: 'XRP / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 26_000, openBps: 35, vol: 2.6, marketCap: null, peTtm: null, week52High: '3.6600', week52Low: '0.4900', industry: null, adv: 900_000_000 },
+  { symbol: 'DOGE/USD', name: 'Dogecoin / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 2_400, openBps: -120, vol: 3.2, marketCap: null, peTtm: null, week52High: '0.4800', week52Low: '0.0980', industry: null, adv: 2_000_000_000 },
+  { symbol: 'LTC/USD', name: 'Litecoin / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 1_050_000, openBps: 20, vol: 2.2, marketCap: null, peTtm: null, week52High: '146.2000', week52Low: '62.7500', industry: null, adv: 4_000_000 },
+  { symbol: 'BCH/USD', name: 'Bitcoin Cash / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 5_400_000, openBps: -15, vol: 2.1, marketCap: null, peTtm: null, week52High: '640.5000', week52Low: '252.1000', industry: null, adv: 300_000 },
+  { symbol: 'LINK/USD', name: 'Chainlink / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 220_000, openBps: 110, vol: 2.9, marketCap: null, peTtm: null, week52High: '30.9400', week52Low: '9.8700', industry: null, adv: 20_000_000 },
+  { symbol: 'AVAX/USD', name: 'Avalanche / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 300_000, openBps: -60, vol: 3, marketCap: null, peTtm: null, week52High: '55.0800', week52Low: '14.6500', industry: null, adv: 15_000_000 },
+  { symbol: 'DOT/USD', name: 'Polkadot / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 42_000, openBps: -45, vol: 2.8, marketCap: null, peTtm: null, week52High: '11.5500', week52Low: '3.1200', industry: null, adv: 40_000_000 },
+  { symbol: 'UNI/USD', name: 'Uniswap / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 85_000, openBps: 80, vol: 3, marketCap: null, peTtm: null, week52High: '19.4200', week52Low: '4.7800', industry: null, adv: 12_000_000 },
+  { symbol: 'AAVE/USD', name: 'Aave / US Dollar', exchange: 'CRYPTO', type: 'CRYPTO', fractionable: true, prevClose: 2_800_000, openBps: 140, vol: 3, marketCap: null, peTtm: null, week52High: '399.8700', week52Low: '118.4000', industry: null, adv: 500_000 },
   { symbol: 'SIMA', name: 'Sim Alpha Corp (test symbol)', exchange: 'SIM', type: 'COMMON_STOCK', fractionable: true, prevClose: 4_212, openBps: 300, vol: 3, marketCap: null, peTtm: null, week52High: '0.9800', week52Low: '0.2100', industry: null, adv: 4_000_000 },
 ]
 
 export const MOCK_INDEX_SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM'] as const
-export const POPULAR_SYMBOLS = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN'] as const
+export const POPULAR_SYMBOLS = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN', 'BTC/USD', 'ETH/USD'] as const
 
 export const MOCK_ME_BASE = {
   playerId: 'ply_01J9Y4N2QK7D3X8M5R6T1V0WZB',

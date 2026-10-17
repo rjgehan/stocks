@@ -1,5 +1,6 @@
 package com.stocks.realtime;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.contract.marketdata.LeasePriority;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -66,7 +67,7 @@ public final class StompDestinations {
   public static final String ADMIN_QUEUE = "/queue/admin";
   public static final String USER_PREFIX = "/user";
 
-  private static final Pattern SYMBOL = Pattern.compile("^[A-Z][A-Z0-9.\\-]{0,11}$");
+  private static final Pattern SYMBOL = Pattern.compile(Crypto.SYMBOL_REGEX);
   private static final Pattern BARS = Pattern.compile("^/topic/bars\\.(.+)\\.1Min$");
 
   private StompDestinations() {}
@@ -120,7 +121,8 @@ public final class StompDestinations {
    * broker, so {@code /topic/quote.aapl} would never receive anything: it is refused rather than silently dead.
    */
   static String symbolOrInvalid(String raw) {
-    return raw != null && SYMBOL.matcher(raw).matches() ? raw : null;
+    // a crypto pair travels in its path spelling (BTC-USD): a slash cannot be part of a topic name (§29)
+    return raw != null && SYMBOL.matcher(raw).matches() && raw.indexOf('/') < 0 ? Crypto.fromPath(raw) : null;
   }
 
   /** True for a parsed market destination whose symbol did not validate. */
@@ -130,21 +132,21 @@ public final class StompDestinations {
 
   /** {@code /topic/quote.AAPL}. */
   public static String quote(String symbol) {
-    return QUOTE_PREFIX + symbol;
+    return QUOTE_PREFIX + Crypto.toPath(symbol);
   }
 
   /** {@code /topic/tick.AAPL}. */
   public static String tick(String symbol) {
-    return TICK_PREFIX + symbol;
+    return TICK_PREFIX + Crypto.toPath(symbol);
   }
 
   /** {@code /topic/trades.AAPL} (§15.10). */
   public static String trades(String symbol) {
-    return TRADES_PREFIX + symbol;
+    return TRADES_PREFIX + Crypto.toPath(symbol);
   }
 
   /** {@code /topic/bars.AAPL.1Min}. */
   public static String bars(String symbol) {
-    return BARS_PREFIX + symbol + BARS_SUFFIX;
+    return BARS_PREFIX + Crypto.toPath(symbol) + BARS_SUFFIX;
   }
 }

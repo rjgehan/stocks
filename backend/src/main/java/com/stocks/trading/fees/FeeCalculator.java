@@ -1,5 +1,6 @@
 package com.stocks.trading.fees;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.Side;
 import com.stocks.common.money.Money;
 import java.math.BigDecimal;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Component;
  * {@code exact_k = rate × Σ basis} over the order's executions with the same trade date up to and including
  * execution k, {@code rounded_k = cap(round(exact_k))}, and execution k is charged {@code rounded_k − rounded_{k−1}}.
  * Many tiny partial fills therefore never over-charge (ten 100-share sells at $50 pay $1.03 of SEC fee, not $1.10).
+ * SEC, TAF and CAT are equity fees: a crypto pair (§29) pays none.
  */
 @Component
 public class FeeCalculator {
@@ -27,6 +29,14 @@ public class FeeCalculator {
    * @param priorQty       Σ qty of the order's earlier executions with the same trade date
    * @param priorPrincipal Σ principal of those executions
    */
+  public Fees forExecution(String symbol, Side side, LocalDate tradeDate, BigDecimal priorQty,
+                           BigDecimal priorPrincipal, BigDecimal qty, BigDecimal principal) {
+    return Crypto.isCrypto(symbol) ? Fees.ZERO
+        : forExecution(side, tradeDate, priorQty, priorPrincipal, qty, principal);
+  }
+
+  /** The fees of one execution of a stock or ETF (as {@link #forExecution(String, Side, LocalDate, BigDecimal,
+   * BigDecimal, BigDecimal, BigDecimal)}). */
   public Fees forExecution(Side side, LocalDate tradeDate, BigDecimal priorQty, BigDecimal priorPrincipal,
                            BigDecimal qty, BigDecimal principal) {
     BigDecimal sec = Money.ZERO;
@@ -48,5 +58,10 @@ public class FeeCalculator {
   /** The fees of a single execution of {@code qty} for {@code principal} (previews, holds, notional sizing). */
   public Fees estimate(Side side, BigDecimal qty, BigDecimal principal, LocalDate tradeDate) {
     return forExecution(side, tradeDate, BigDecimal.ZERO, BigDecimal.ZERO, qty, principal);
+  }
+
+  /** As {@link #estimate(Side, BigDecimal, BigDecimal, LocalDate)}; zero for a crypto pair (§29). */
+  public Fees estimate(String symbol, Side side, BigDecimal qty, BigDecimal principal, LocalDate tradeDate) {
+    return Crypto.isCrypto(symbol) ? Fees.ZERO : estimate(side, qty, principal, tradeDate);
   }
 }

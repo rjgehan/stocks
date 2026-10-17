@@ -1,5 +1,6 @@
 package com.stocks.trading.order;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.PlayerKind;
 import com.stocks.common.domain.Side;
 import com.stocks.common.domain.WaitReason;
@@ -72,12 +73,13 @@ public class OrderEvaluation {
   public Evaluated evaluate(AccountRow acc, PlayerKind kind, NormalizedOrder o, Instant now, boolean preview,
                             int extraOpenOrders) {
     OrderValidator.requireShape(o);
-    SessionState session = clock.session(now);
+    requireCryptoOpen(o);
+    SessionState session = clock.session(o.symbol(), now);
     SessionOrderMatrix.Acceptance acceptance;
     ApiException sessionRejection = null;
     try {
-      acceptance = SessionOrderMatrix.accept(clock.calendar(), o.type(), o.extendedHours(), o.timeInForce(), session,
-          now);
+      acceptance = SessionOrderMatrix.accept(clock.calendar(o.symbol()), o.type(), o.extendedHours(),
+          o.timeInForce(), session, now);
     } catch (ApiException e) {
       if (e.code() != ErrorCode.SESSION_NOT_ALLOWED) {
         throw e;
@@ -86,7 +88,8 @@ public class OrderEvaluation {
       sessionRejection = e;
       acceptance = new SessionOrderMatrix.Acceptance(now, WaitReason.LATENCY, false, List.of());
     }
-    var expiry = ExpiryCalculator.compute(clock.calendar(), rules, now, o.extendedHours(), o.timeInForce());
+    var expiry = ExpiryCalculator.compute(clock.calendar(o.symbol()), rules, now, o.extendedHours(),
+        o.timeInForce());
     LocalDate today = Et.date(now);
     var market = context.market(o.symbol(), today);
     var snapshot = withExtraOpen(context.account(acc, o.symbol(), today, -1), extraOpenOrders);
@@ -110,7 +113,7 @@ public class OrderEvaluation {
   public Evaluated evaluateHeldChild(AccountRow acc, PlayerKind kind, NormalizedOrder o, Instant now, boolean preview,
                                      BigDecimal entryPrice) {
     OrderValidator.requireShape(o);
-    var expiry = ExpiryCalculator.compute(clock.calendar(), rules, now, false, o.timeInForce());
+    var expiry = ExpiryCalculator.compute(clock.calendar(o.symbol()), rules, now, false, o.timeInForce());
     LocalDate today = Et.date(now);
     var live = context.market(o.symbol(), today);
     var market = new OrderValidator.MarketSnapshot(live.asset(), live.corporateActionHold(), live.quote(), entryPrice);
@@ -120,6 +123,16 @@ public class OrderEvaluation {
     var result = validator.validateHeldChild(new OrderValidator.Input(o, kind, requireRationale, market, snapshot,
         acceptance, expiry.sessionDate(), false, Money.ZERO, now, null));
     return new Evaluated(acceptance, expiry, result, live);
+  }
+
+  /** §29: while {@code crypto.enabled} is off, crypto buys are refused; sells still close positions. */
+  private void requireCryptoOpen(NormalizedOrder o) {
+    if (o.side() == Side.BUY && Crypto.isCrypto(o.symbol()) && !settings.cryptoEnabled()) {
+      throw ApiException.of(ErrorCode.SYMBOL_NOT_TRADABLE, "Crypto trading is turned off; " + o.symbol()
+              + " can only be sold.")
+          .withHint("The admin turned crypto off (Admin → Settings). Existing crypto positions can still be sold.")
+          .withField("symbol", ErrorCode.SYMBOL_NOT_TRADABLE, "Crypto is off");
+    }
   }
 
   private static OrderValidator.AccountSnapshot withExtraOpen(OrderValidator.AccountSnapshot s, int extra) {

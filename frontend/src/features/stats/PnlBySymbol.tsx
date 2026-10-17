@@ -8,6 +8,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { symbolBars } from './bySymbol'
+import { toPath } from '@/lib/symbols'
 
 /**
  * P&L by symbol (§16.10): diverging horizontal bars sorted by total P&L over the window; tapping or hovering a row
@@ -71,7 +72,7 @@ export function PnlBySymbol({ analysis, isPending }: { analysis: PnlAnalysis | u
                           Dividends <b className={DIRECTION_TEXT[moneyDirection(r.dividends)]}>{formatMoney(r.dividends, { signed: true })}</b>
                         </span>
                         {r.held ? <Pill tone="accent">Held</Pill> : <Pill tone="neutral">Closed</Pill>}
-                        <Link to="/stock/$symbol" params={{ symbol: b.symbol }} className="text-accent">
+                        <Link to="/stock/$symbol" params={{ symbol: toPath(b.symbol) }} className="text-accent">
                           Quote
                         </Link>
                       </>

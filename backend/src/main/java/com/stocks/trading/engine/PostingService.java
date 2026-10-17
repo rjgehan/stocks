@@ -1,6 +1,7 @@
 package com.stocks.trading.engine;
 
 import com.stocks.common.domain.CancelReason;
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.LedgerEntryType;
 import com.stocks.common.domain.OrderEventType;
 import com.stocks.common.domain.OrderStatus;
@@ -103,7 +104,7 @@ public class PostingService {
   public Outcome post(OrderRow order, List<Leg> legs, ExecQuote quote, Instant now, EngineTx tx) {
     EngineThread.assertCurrent();
     LocalDate tradeDate = clock.tradeDate(now);
-    LocalDate settleDate = clock.settlementDate(tradeDate);
+    LocalDate settleDate = clock.settlementDate(order.symbol(), tradeDate);   // crypto: the trade date (§29)
     BigDecimal reservedCash = order.reservedCash();
     BigDecimal reservedQty = order.reservedQty();
     BigDecimal filled = order.filledQty();
@@ -118,7 +119,7 @@ public class PostingService {
       BigDecimal price = leg.price();
       BigDecimal[] sums = orders.sameDaySums(order.id(), tradeDate);
       BigDecimal principal = Rounding.principal(order.side(), qty, price);
-      Fees f = fees.forExecution(order.side(), tradeDate, sums[0], sums[1], qty, principal);
+      Fees f = fees.forExecution(order.symbol(), order.side(), tradeDate, sums[0], sums[1], qty, principal);
 
       if (order.isBuy()) {
         BigDecimal allowed = reservedCash.add(freeBuyingPower(order.accountId(), now));
@@ -129,7 +130,7 @@ public class PostingService {
             break;
           }
           principal = Rounding.principal(order.side(), qty, price);
-          f = fees.forExecution(order.side(), tradeDate, sums[0], sums[1], qty, principal);
+          f = fees.forExecution(order.symbol(), order.side(), tradeDate, sums[0], sums[1], qty, principal);
         }
       } else {
         BigDecimal held = accounts.position(order.accountId(), order.symbol()).map(PositionRow::qty)
@@ -141,7 +142,7 @@ public class PostingService {
             break;
           }
           principal = Rounding.principal(order.side(), qty, price);
-          f = fees.forExecution(order.side(), tradeDate, sums[0], sums[1], qty, principal);
+          f = fees.forExecution(order.symbol(), order.side(), tradeDate, sums[0], sums[1], qty, principal);
         }
       }
 
@@ -150,8 +151,9 @@ public class PostingService {
       long executionId;
       if (order.isBuy()) {
         BigDecimal cost = principal.add(f.total());
-        GfvService.Funding funding = gfv.attributeFunding(order.accountId(), cost,
-            com.stocks.common.time.Et.date(now));
+        // crypto settles at once and is outside the good-faith rules (§29): its lots carry no unsettled funding
+        GfvService.Funding funding = Crypto.isCrypto(order.symbol()) ? new GfvService.Funding(Money.ZERO, null)
+            : gfv.attributeFunding(order.accountId(), cost, com.stocks.common.time.Et.date(now));
         executionId = executionWriter.insert(new ExecutionWriter.NewExecution(exeId, order.id(), order.accountId(),
             order.symbol(), Side.BUY, qty, price, principal, f, net, null, leg.liquidity(), now, tradeDate,
             settleDate, quote));
@@ -235,14 +237,17 @@ public class PostingService {
     return b.buyingPower().max(Money.ZERO).min(b.cashTotal().subtract(b.openBuyHolds()).max(Money.ZERO));
   }
 
-  /** The largest quantity whose principal + fees fit in {@code allowed}: whole shares, or 5 dp for fractional. */
+  /**
+   * The largest quantity whose principal + fees fit in {@code allowed}: whole shares, or 5 dp for fractional orders
+   * and crypto pairs.
+   */
   private BigDecimal affordable(OrderRow order, BigDecimal price, BigDecimal allowed, LocalDate tradeDate,
                                 BigDecimal[] sums) {
-    int scale = order.fractional() ? Qty.SCALE : 0;
+    int scale = order.fractional() || Crypto.isCrypto(order.symbol()) ? Qty.SCALE : 0;
     BigDecimal qty = allowed.max(BigDecimal.ZERO).divide(price, scale, RoundingMode.FLOOR);
     while (qty.signum() > 0) {
       BigDecimal principal = Rounding.principal(order.side(), qty, price);
-      Fees f = fees.forExecution(order.side(), tradeDate, sums[0], sums[1], qty, principal);
+      Fees f = fees.forExecution(order.symbol(), order.side(), tradeDate, sums[0], sums[1], qty, principal);
       if (principal.add(f.total()).compareTo(allowed) <= 0) {
         return Qty.normalize(qty);
       }
@@ -258,7 +263,7 @@ public class PostingService {
     }
     BigDecimal basis = OrderTypes.usesLimit(order.type()) ? order.limitPrice()
         : fillPrice.multiply(rules.holdPctRegular()).divide(HUNDRED, 8, RoundingMode.HALF_UP);
-    return holds.holdFor(remaining, basis, tradeDate);
+    return holds.holdFor(order.symbol(), remaining, basis, tradeDate);
   }
 
   /** {@code Σ(qty·price) / Σ qty} over the order's executions, scale 6 (display only). */

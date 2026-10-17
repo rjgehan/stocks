@@ -39,6 +39,15 @@ public class TradingSettings {
     }
   }
 
+  /** {@code crypto.enabled} (§29), default true. */
+  public boolean cryptoEnabled() {
+    try {
+      return settings.cryptoEnabled();
+    } catch (ApiException e) {
+      return fallback(e, Boolean.TRUE);
+    }
+  }
+
   /** {@code league.allowSelfReset}, default false. */
   public boolean allowSelfReset() {
     try {

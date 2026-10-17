@@ -244,8 +244,8 @@ public class OrderServiceImpl implements OrderService {
       return null;
     }
     try {
-      return SessionOrderMatrix.sessionNote(SessionOrderMatrix.accept(clock.calendar(), o.type(), o.extendedHours(),
-          o.timeInForce(), clock.session(now), now), now);
+      return SessionOrderMatrix.sessionNote(SessionOrderMatrix.accept(clock.calendar(o.symbol()), o.type(),
+          o.extendedHours(), o.timeInForce(), clock.session(o.symbol(), now), now), now);
     } catch (RuntimeException e) {
       return null;
     }

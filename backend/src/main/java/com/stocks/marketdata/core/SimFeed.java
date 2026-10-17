@@ -153,7 +153,7 @@ public class SimFeed implements MarketFeed {
       return QuoteView.none(symbol, SOURCE);
     }
     Instant now = time.now();
-    return composer.compose(inputs(symbol, now), now, calendar, null);
+    return composer.compose(inputs(symbol, now), now, calendar.forSymbol(symbol), null);
   }
 
   private QuoteComposer.Inputs inputs(String symbol, Instant now) {
@@ -164,7 +164,7 @@ public class SimFeed implements MarketFeed {
 
   /** The official close of {@code d}, once its regular session has ended. */
   private Optional<BigDecimal> closeIfDone(String symbol, LocalDate d, Instant now) {
-    Optional<TradingDay> day = calendar.day(d);
+    Optional<TradingDay> day = calendar.forSymbol(symbol).day(d);    // a crypto day closes at 24:00 ET (§29)
     if (day.isEmpty() || now.isBefore(day.get().rthCloseAt())) {
       return Optional.empty();
     }
@@ -251,8 +251,9 @@ public class SimFeed implements MarketFeed {
     Instant now = time.now();
     Optional<Trade> last = sim.lastTradeAt(symbol, now);
     Map<LocalDate, BigDecimal> closes = new TreeMap<>();
-    LocalDate day = calendar.currentPnlDay(now);
-    for (LocalDate d : List.of(day, calendar.previousTradingDay(day))) {
+    MarketCalendar cal = calendar.forSymbol(symbol);
+    LocalDate day = cal.currentPnlDay(now);
+    for (LocalDate d : List.of(day, cal.previousTradingDay(day))) {
       closeIfDone(symbol, d, now).ifPresent(c -> closes.put(d, c));
     }
     return new MarkInputs(sim.quoteAt(symbol, now).orElse(null), sim.confirmedAt(symbol, now), last.orElse(null),

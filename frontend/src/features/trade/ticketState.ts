@@ -2,9 +2,10 @@
  * Trade-ticket state and rules (§22.5), kept pure so they are unit-testable:
  *  - Amount ($) forces Market + Day + no extended hours, and needs a fractionable symbol;
  *  - GTC is disabled for Trailing Stop and for Amount;
- *  - extended hours are enabled for Limit only;
+ *  - extended hours are enabled for Limit only, and never for crypto (it trades 24/7);
  *  - Sell is disabled without a position (no shorting);
  *  - the clientOrderId (`web-<uuid>`) is created when the ticket opens and reused on retry.
+ * Crypto pairs (`BTC/USD`) take quantities with up to 5 decimals on every order type.
  */
 import type { OrderMatrixRow, OrderType, PlaceOrderRequest, Preferences, Side, TimeInForce } from '@/lib/api/types'
 import {
@@ -16,14 +17,18 @@ import {
   mul,
   parseUserDecimal,
   roundToTick,
+  parts,
   roundToTickOf,
   setScale,
+  shift,
   sign,
+  stripTrailingZeros,
   sub,
   tickFor,
 } from '@/lib/format/decimal'
 import { formatTrailAmount } from '@/lib/format/money'
 import { formatPrice } from '@/lib/format/number'
+import { baseAsset } from '@/lib/symbols'
 
 export type QtyMode = 'SHARES' | 'AMOUNT'
 export type TrailMode = 'AMOUNT' | 'PERCENT'
@@ -245,6 +250,8 @@ export function ticketExplanation(s: Pick<TicketState, 'side' | 'type' | 'stopPr
 
 export interface TicketContext {
   fractionable: boolean
+  /** A crypto pair: 24/7, no extended-hours flag, fractional quantities on every order type. */
+  crypto?: boolean
   /** Shares the player can sell (0 / null = no position). */
   availableQty: Dec | null
 }
@@ -274,7 +281,7 @@ export function buildOrderRequest(s: TicketState, symbol: string, ctx: TicketCon
     side: s.side,
     type: s.type,
     timeInForce: gtcAllowed(s) ? s.tif : 'DAY',
-    extendedHours: extAllowed(s) && s.extendedHours,
+    extendedHours: !ctx.crypto && extAllowed(s) && s.extendedHours,
   }
   if (qty) req.qty = qty
   if (notional) req.notional = setScale(notional, 2, 'DOWN')
@@ -297,7 +304,7 @@ export function buildOrderRequest(s: TicketState, symbol: string, ctx: TicketCon
   const note = s.note.trim()
   if (note) req.rationale = note.slice(0, 1000)
   if (s.gfvAck) req.acknowledge = ['GFV_RISK']
-  if (s.doNotReduce && dividendAdjustable(s)) req.doNotReduce = true
+  if (s.doNotReduce && dividendAdjustable(s) && !ctx.crypto) req.doNotReduce = true
   return req
 }
 
@@ -331,19 +338,19 @@ export function midPrice(bid: Dec, ask: Dec): Dec {
 
 /**
  * Quick quantity chips (§22.5): 25% · 50% · Max. Max = buying power ÷ (ask × 1.02) whole shares for share
- * buys, buying power for amount buys, and the available position for sells. Client-side sizing only; the
+ * buys (crypto: units to 5 decimals), buying power for amount buys, and the available position for sells. Client-side sizing only; the
  * server re-validates everything.
  */
 export function quickQuantity(
   fraction: '0.25' | '0.5' | '1',
-  opts: { side: Side; qtyMode: QtyMode; buyingPower: Dec | null; ask: Dec | null; bid: Dec | null; availableQty: Dec | null; fractionable: boolean },
+  opts: { side: Side; qtyMode: QtyMode; buyingPower: Dec | null; ask: Dec | null; bid: Dec | null; availableQty: Dec | null; fractionable: boolean; crypto?: boolean },
 ): string | null {
   if (opts.side === 'BUY') {
     if (!opts.buyingPower || sign(opts.buyingPower) <= 0) return null
     const budget = mul(opts.buyingPower, fraction)
     if (opts.qtyMode === 'AMOUNT') return setScale(budget, 2, 'FLOOR')
     if (!opts.ask || isZero(opts.ask)) return null
-    return div(budget, mul(opts.ask, '1.02'), 0, 'FLOOR')
+    return opts.crypto ? stripTrailingZeros(div(budget, mul(opts.ask, '1.02'), 5, 'FLOOR')) : div(budget, mul(opts.ask, '1.02'), 0, 'FLOOR')
   }
   if (!opts.availableQty || sign(opts.availableQty) <= 0) return null
   if (opts.qtyMode === 'AMOUNT') {
@@ -352,4 +359,23 @@ export function quickQuantity(
   }
   if (fraction === '1') return opts.availableQty
   return setScale(mul(opts.availableQty, fraction), opts.fractionable ? 5 : 0, 'FLOOR')
+}
+
+/** What a quantity counts: "sh" for a stock, the coin for a crypto pair (`BTC/USD` → "BTC"). */
+export function qtyUnit(symbol: string, crypto: boolean): string {
+  return crypto ? baseAsset(symbol) : 'sh'
+}
+
+/**
+ * The quantity stepper's step for a crypto pair: the power of ten worth about $100 to $1,000 at the last price
+ * (0.001 BTC at $112,000, 1 SOL at $210, 1,000 DOGE at $0.24), never finer than the 5 decimals the server takes.
+ * 1 without a price.
+ */
+export function cryptoQtyStep(last: Dec | null | undefined): Dec {
+  if (!last || !isDecimal(last) || sign(last) <= 0) return '1'
+  const { int, frac } = parts(last)
+  const intDigits = int.replace(/^0+/, '').length
+  // price in [10^(d−1), 10^d) → step 10^(3−d); below $1, d is minus the zeros after the point
+  const d = intDigits > 0 ? intDigits : -(frac.length - frac.replace(/^0+/, '').length)
+  return stripTrailingZeros(shift('1', Math.max(3 - d, -5)))
 }

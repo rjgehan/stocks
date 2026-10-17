@@ -14,6 +14,7 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
 import { IconInfo } from '@/components/ui/icons'
 import { formatPrintPrice, formatPrintTime, mergePrints, type Print, sideView } from './tape'
+import { toPath } from '@/lib/symbols'
 
 const SOURCE_LABEL: Record<string, { badge: string; note: string }> = {
   SIP: { badge: 'SIP', note: 'Consolidated prints from every exchange.' },
@@ -29,7 +30,7 @@ export function TimeAndSales({ symbol, className, maxHeight = 'max-h-[320px]' }:
   const [live, setLive] = useState<{ symbol: string; prints: Print[]; meta: Pick<Tape, 'source' | 'streaming'> | null }>({ symbol, prints: [], meta: null })
 
   useEffect(() => {
-    return realtime().subscribe(`/topic/trades.${symbol}`, (body) => {
+    return realtime().subscribe(`/topic/trades.${toPath(symbol)}`, (body) => {
       const msg = body as Tape
       setLive((s) => ({
         symbol,

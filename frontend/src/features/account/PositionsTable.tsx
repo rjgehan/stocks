@@ -8,6 +8,8 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { QualityBadge } from '@/features/market/QualityBadge'
+import { toPath } from '@/lib/symbols'
+import { baseAsset, isCrypto } from '@/lib/symbols'
 
 export function Signed({ value, pct, className }: { value: string | null | undefined; pct?: string | null; className?: string }) {
   return (
@@ -21,14 +23,14 @@ export function Signed({ value, pct, className }: { value: string | null | undef
 /** One position as a phone card: a read-only link to the stock (also another player's portfolio, public mode). */
 export function PositionCard({ p }: { p: Position }) {
   return (
-    <Link to="/stock/$symbol" params={{ symbol: p.symbol ?? '' }} className="flex items-center justify-between gap-3 px-4 py-3 active:bg-bg-2">
+    <Link to="/stock/$symbol" params={{ symbol: toPath(p.symbol ?? '') }} className="flex items-center justify-between gap-3 px-4 py-3 active:bg-bg-2">
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 font-semibold">
           {p.symbol}
           <QualityBadge quality={p.markQuality === 'SIMULATED' ? null : p.markQuality} />
         </div>
         <div className="text-caption text-text-3">
-          {formatQty(p.qty)} sh · avg {formatPrice(p.avgCost)}
+          {formatQty(p.qty)} {isCrypto(p.symbol) ? baseAsset(p.symbol ?? '') : 'sh'} · avg {formatPrice(p.avgCost)}
         </div>
         <div className="text-caption">
           <span className="text-text-3">Today </span>
@@ -82,7 +84,7 @@ export function PositionsTable({ compact }: { compact?: boolean }) {
             {data.map((p) => (
               <tr key={p.symbol} className={cx('hover:bg-bg-2', compact ? 'h-8' : 'h-10')}>
                 <td className="px-4 font-semibold">
-                  <Link to="/stock/$symbol" params={{ symbol: p.symbol ?? '' }} className="hover:text-accent">
+                  <Link to="/stock/$symbol" params={{ symbol: toPath(p.symbol ?? '') }} className="hover:text-accent">
                     {p.symbol}
                   </Link>
                   {p.name && !compact ? <span className="ml-2 hidden font-normal text-text-3 desktop:inline">{p.name}</span> : null}

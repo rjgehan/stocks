@@ -7,9 +7,7 @@ import { Segmented } from '@/components/ui/Segmented'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
-import { MONTH_NAMES, heatColor, heatIsStrong, monthGrid, monthLabel } from './calendar'
-
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const
+import { MONTH_NAMES, WEEKDAYS, WEEK_DAYS, hasWeekendCells, heatColor, heatIsStrong, monthGrid, monthLabel } from './calendar'
 
 /** A day cell's tooltip: P&L, return, and any deposit or withdrawal (never part of the P&L). */
 function cellTitle(date: string, c: PnlCalendarCell): string {
@@ -25,7 +23,8 @@ function cellMoney(pnl: string | null | undefined): string {
 }
 
 /**
- * P&L calendar (§16.10, Webull "P&L Analysis"): Day view (a month of trading days, Mon–Fri, ◀ ▶ months) or Month
+ * P&L calendar (§16.10, Webull "P&L Analysis"): Day view (a month of trading days, Mon–Fri, or Mon–Sun once weekend
+ * days carry P&L while crypto trades 24/7; ◀ ▶ months) or Month
  * view (12 months of a year). Cells use the §22.8 heatmap ramp with the sign and value written in every cell; today
  * is marked live. A day's P&L never counts deposits or withdrawals, nor splits or renames.
  */
@@ -49,6 +48,8 @@ export function PnlCalendarCard({
   isError: boolean
 }) {
   const cells = calendar?.cells ?? []
+  // crypto makes Saturdays and Sundays P&L days: the grid then shows the whole week
+  const weekends = hasWeekendCells(cells)
   const title = view === 'DAY' ? monthLabel(month) : String(year)
   return (
     <section aria-label="P&L calendar" className="rounded-lg border border-divider bg-bg-1 p-4">
@@ -76,7 +77,7 @@ export function PnlCalendarCard({
         <table className="w-full table-fixed border-separate border-spacing-1 text-center" aria-label={`Daily P&L, ${title}`}>
           <thead>
             <tr>
-              {WEEKDAYS.map((d) => (
+              {(weekends ? WEEK_DAYS : WEEKDAYS).map((d) => (
                 <th key={d} scope="col" className="text-micro font-medium text-text-3">
                   {d}
                 </th>
@@ -84,7 +85,7 @@ export function PnlCalendarCard({
             </tr>
           </thead>
           <tbody>
-            {monthGrid(month, cells).map((week, wi) => (
+            {monthGrid(month, cells, weekends).map((week, wi) => (
               <tr key={wi}>
                 {week.map((slot, di) =>
                   slot ? (

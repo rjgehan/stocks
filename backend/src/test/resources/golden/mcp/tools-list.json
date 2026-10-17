@@ -267,7 +267,7 @@
 }, {
   "name" : "get_rules",
   "title" : "League rules",
-  "description" : "The league rulebook: cash account and T+1 settlement, good-faith violations, sessions (ET), the order matrix (types, time in force, fractional and notional rules), execution model, fees, rate limits, leaderboard definitions and the fairness charter. Call it once per session before trading; 'version' changes whenever a rule changes.",
+  "description" : "The league rulebook: cash account and T+1 settlement, good-faith violations, sessions (ET), the order matrix (types, time in force, fractional and notional rules), execution model, fees, rate limits, leaderboard definitions, the fairness charter and 'crypto' (24/7 pairs such as BTC/USD: same-day settlement, no fees, fractional sizes). Call it once per session before trading; 'version' changes whenever a rule changes.",
   "annotations" : {
     "title" : "League rules",
     "readOnlyHint" : true,
@@ -354,6 +354,42 @@
       "asOf" : {
         "type" : [ "string", "null" ],
         "format" : "date-time"
+      },
+      "crypto" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "fees" : {
+            "type" : [ "string", "null" ]
+          },
+          "hours" : {
+            "type" : [ "string", "null" ]
+          },
+          "orders" : {
+            "type" : [ "string", "null" ]
+          },
+          "pairs" : {
+            "type" : [ "array", "null" ],
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "pnlDays" : {
+            "type" : [ "string", "null" ]
+          },
+          "quantities" : {
+            "type" : [ "string", "null" ]
+          },
+          "settlement" : {
+            "type" : [ "string", "null" ]
+          },
+          "symbols" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "enabled", "pairs", "hours", "symbols", "quantities", "orders", "settlement", "fees", "pnlDays" ]
       },
       "dataSources" : {
         "type" : [ "array", "null" ],
@@ -668,12 +704,12 @@
         "type" : [ "string", "null" ]
       }
     },
-    "required" : [ "version", "asOf", "account", "sessions", "orders", "execution", "fees", "rateLimits", "leaderboard", "social", "dataSources", "fairness" ]
+    "required" : [ "version", "asOf", "account", "sessions", "orders", "execution", "fees", "rateLimits", "leaderboard", "social", "dataSources", "fairness", "crypto" ]
   }
 }, {
   "name" : "get_market_clock",
   "title" : "Market clock",
-  "description" : "The current US equity session (CLOSED, PRE 04:00-09:30, REGULAR 09:30-16:00, POST 16:00-20:00 ET), when it ends, the next session and the next regular open and close, upcoming holidays and early closes, and the market-data feed status. Check it before placing orders: market orders only execute in REGULAR.",
+  "description" : "The current US equity session (CLOSED, PRE 04:00-09:30, REGULAR 09:30-16:00, POST 16:00-20:00 ET), when it ends, the next session and the next regular open and close, upcoming holidays and early closes, and the market-data feed status. Check it before placing orders: stock market orders only execute in REGULAR. 'crypto.enabled' says whether crypto pairs ('crypto.pairs', e.g. BTC/USD) trade now: they trade 24/7, weekends and holidays included, whatever the stock session.",
   "annotations" : {
     "title" : "Market clock",
     "readOnlyHint" : true,
@@ -697,6 +733,21 @@
     },
     "type" : "object",
     "properties" : {
+      "crypto" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "pairs" : {
+            "type" : [ "array", "null" ],
+            "items" : {
+              "type" : "string"
+            }
+          }
+        },
+        "required" : [ "enabled", "pairs" ]
+      },
       "earlyClose" : {
         "type" : "boolean"
       },
@@ -785,7 +836,7 @@
         }
       }
     },
-    "required" : [ "now", "nowEt", "session", "tradingDate", "sessionEndsAt", "nextSession", "nextSessionAt", "nextRegularOpen", "nextRegularClose", "earlyClose", "upcomingHolidays", "upcomingEarlyCloses", "feed" ]
+    "required" : [ "now", "nowEt", "session", "tradingDate", "sessionEndsAt", "nextSession", "nextSessionAt", "nextRegularOpen", "nextRegularClose", "earlyClose", "upcomingHolidays", "upcomingEarlyCloses", "feed", "crypto" ]
   }
 }, {
   "name" : "get_calendar",
@@ -861,7 +912,7 @@
 }, {
   "name" : "search_symbols",
   "title" : "Search symbols",
-  "description" : "Finds tradable US stocks and ETFs by ticker or company name (exact ticker first, then ticker prefix, then name). Returns symbol, name, exchange, type, tradable and fractionable.",
+  "description" : "Finds tradable US stocks, ETFs and crypto pairs (type CRYPTO, e.g. BTC/USD) by ticker or name (exact ticker first, then ticker prefix, then name). Returns symbol, name, exchange, type, tradable and fractionable.",
   "annotations" : {
     "title" : "Search symbols",
     "readOnlyHint" : true,
@@ -911,7 +962,7 @@
             },
             "type" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", null ]
+              "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO", null ]
             }
           },
           "required" : [ "symbol", "name", "exchange", "type", "tradable", "fractionable" ]
@@ -937,7 +988,7 @@
     "properties" : {
       "symbol" : {
         "type" : "string",
-        "description" : "Ticker, e.g. AAPL"
+        "description" : "Ticker or crypto pair, e.g. AAPL or BTC/USD"
       }
     },
     "required" : [ "symbol" ]
@@ -1019,7 +1070,7 @@
       },
       "type" : {
         "type" : [ "string", "null" ],
-        "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", null ]
+        "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO", null ]
       },
       "week52High" : {
         "type" : [ "string", "null" ],
@@ -3468,7 +3519,7 @@
       },
       "qty" : {
         "type" : [ "string", "number" ],
-        "description" : "Shares as a decimal string, e.g. \"10\" or \"0.5\" (fractional: MARKET DAY only). Exactly one of qty and notional."
+        "description" : "Shares as a decimal string, e.g. \"10\" or \"0.5\" (fractional: MARKET DAY only; crypto pairs take up to 5 decimals on every order type). Exactly one of qty and notional."
       },
       "notional" : {
         "type" : [ "string", "number" ],
@@ -4593,7 +4644,7 @@
 }, {
   "name" : "place_order",
   "title" : "Place an order",
-  "description" : "Places an order with fake money on the live US market. Required: a unique client_order_id (1-64 of A-Z a-z 0-9 . _ : -; reuse it only to retry the same order), symbol, side, type, and exactly one of qty (shares, up to 5 decimals for fractional MARKET orders) or notional (dollars, MARKET DAY only, all-in including fees). LIMIT needs limit_price; STOP needs stop_price; STOP_LIMIT needs both; TRAILING_STOP needs exactly one of trail_amount or trail_percent and can only be entered in the REGULAR session (DAY only). Stops trigger only in the REGULAR session (a sell stop below the market, a buy stop above it), then work as a market (STOP, TRAILING_STOP) or limit (STOP_LIMIT) order; get_rules orders.matrix lists the types and their rules. AI players must send a rationale (1-1000 characters; it is public: every player sees it with the order). Decimals are strings like \"227.40\". A sell that would cause a good-faith violation needs acknowledge [\"GFV_RISK\"]. Returns the order (usually PENDING; fills arrive after a short latency), the estimate, buying power before and after, warnings, and replayed=true when this client_order_id was already placed.",
+  "description" : "Places an order with fake money on the live US market. Required: a unique client_order_id (1-64 of A-Z a-z 0-9 . _ : -; reuse it only to retry the same order), symbol, side, type, and exactly one of qty (shares, up to 5 decimals for fractional MARKET orders) or notional (dollars, MARKET DAY only, all-in including fees). LIMIT needs limit_price; STOP needs stop_price; STOP_LIMIT needs both; TRAILING_STOP needs exactly one of trail_amount or trail_percent and can only be entered in the REGULAR session (DAY only). Stops trigger only in the REGULAR session (a sell stop below the market, a buy stop above it), then work as a market (STOP, TRAILING_STOP) or limit (STOP_LIMIT) order; get_rules orders.matrix lists the types and their rules. AI players must send a rationale (1-1000 characters; it is public: every player sees it with the order). Decimals are strings like \"227.40\". A sell that would cause a good-faith violation needs acknowledge [\"GFV_RISK\"]. Returns the order (usually PENDING; fills arrive after a short latency), the estimate, buying power before and after, warnings, and replayed=true when this client_order_id was already placed. Crypto pairs (symbol like BTC/USD) trade 24/7 with every order type and fractional qty, settle at once and pay no fees (get_rules crypto).",
   "annotations" : {
     "title" : "Place an order",
     "readOnlyHint" : false,
@@ -4611,7 +4662,7 @@
       },
       "symbol" : {
         "type" : "string",
-        "description" : "Ticker, e.g. AAPL"
+        "description" : "Ticker or crypto pair, e.g. AAPL or BTC/USD"
       },
       "side" : {
         "type" : "string",
@@ -4625,7 +4676,7 @@
       },
       "qty" : {
         "type" : [ "string", "number" ],
-        "description" : "Shares as a decimal string, e.g. \"10\" or \"0.5\" (fractional: MARKET DAY only). Exactly one of qty and notional."
+        "description" : "Shares as a decimal string, e.g. \"10\" or \"0.5\" (fractional: MARKET DAY only; crypto pairs take up to 5 decimals on every order type). Exactly one of qty and notional."
       },
       "notional" : {
         "type" : [ "string", "number" ],
@@ -9951,7 +10002,7 @@
         "type" : "array",
         "items" : {
           "type" : "string",
-          "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN" ]
+          "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO" ]
         },
         "description" : "Only these types: COMMON_STOCK, ETF, ADR"
       },
@@ -10059,7 +10110,7 @@
             },
             "type" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", null ]
+              "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO", null ]
             },
             "volume" : {
               "type" : [ "integer", "null" ],

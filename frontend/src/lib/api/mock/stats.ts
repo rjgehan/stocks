@@ -247,14 +247,15 @@ export function mockPnlCalendar(
   view: 'DAY' | 'MONTH',
   month: string,
   year: number,
-  input: { openedAtMs: number; dayPnl: Dec; dayReturn: Dec; deposits: ReadonlyArray<{ date: string; amount: Dec }>; key?: string },
+  /** `weekends`: Saturdays and Sundays are P&L days too (crypto trades 24/7 while it is enabled). */
+  input: { openedAtMs: number; dayPnl: Dec; dayReturn: Dec; deposits: ReadonlyArray<{ date: string; amount: Dec }>; key?: string; weekends?: boolean },
   nowMs: number,
 ): PnlCalendar {
   const today = etDate(nowMs)
   const days: PnlCalendarCell[] = []
   for (let t = input.openedAtMs; t <= nowMs + DAY; t += DAY) {
     const date = etDate(t)
-    if (!isWeekday(date) || date > today || days.some((d) => d.date === date)) continue
+    if ((!input.weekends && !isWeekday(date)) || date > today || days.some((d) => d.date === date)) continue
     const live = date === today
     const rng = mulberry32(hashString(`${input.key ?? 'demo'}:cal:${date}`))
     const r = live ? Number(input.dayReturn) : (rng() - 0.47) * 0.04

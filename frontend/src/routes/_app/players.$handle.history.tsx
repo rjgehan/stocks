@@ -6,6 +6,7 @@ import { Segmented } from '@/components/ui/Segmented'
 import { PlayerActivityList } from '@/features/league/PlayerActivityList'
 import { PlayerOrderHistory } from '@/features/league/PlayerOrderHistory'
 import { ManualSessionsSection } from '@/features/manualbot/ManualSessionsSection'
+import { fromPath } from '@/lib/symbols'
 
 type View = 'orders' | 'activity'
 
@@ -21,7 +22,8 @@ export const Route = createFileRoute('/_app/players/$handle/history')({
   validateSearch: (s: Record<string, unknown>): HistorySearch => ({
     view: s.view === 'activity' || s.view === 'orders' ? s.view : undefined,
     status: s.status === 'OPEN' || s.status === 'CLOSED' || s.status === 'ALL' ? s.status : undefined,
-    symbol: typeof s.symbol === 'string' && /^[A-Z][A-Z0-9.-]{0,11}$/.test(s.symbol.toUpperCase()) ? s.symbol.toUpperCase() : undefined,
+    // a ticker or a crypto pair (`BTC/USD`, or its path spelling `BTC-USD`)
+    symbol: typeof s.symbol === 'string' && /^[A-Z0-9][A-Z0-9./-]{0,11}$/.test(s.symbol.toUpperCase()) ? fromPath(s.symbol) : undefined,
     session: typeof s.session === 'string' && /^mbs_[0-9A-Z]{26}$/.test(s.session) ? s.session : undefined,
   }),
   component: PlayerHistoryPage,

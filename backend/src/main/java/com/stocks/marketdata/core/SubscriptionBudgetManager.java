@@ -138,9 +138,16 @@ public class SubscriptionBudgetManager {
    * {@code subscribedSince} gives when each current symbol was subscribed (hysteresis).
    */
   public List<String> select(int maxSymbols, Set<LeasePriority> allowed, Map<String, Instant> subscribedSince) {
+    return select(maxSymbols, allowed, subscribedSince, s -> true);
+  }
+
+  /** As {@link #select(int, Set, Map)}, among the symbols {@code eligible} accepts (a stream's asset class, §29). */
+  public List<String> select(int maxSymbols, Set<LeasePriority> allowed, Map<String, Instant> subscribedSince,
+                             java.util.function.Predicate<String> eligible) {
     int slots = Math.max(0, maxSymbols == Integer.MAX_VALUE ? Integer.MAX_VALUE : maxSymbols - 2);
     Instant now = time.now();
-    List<Demand> ranked = demand().stream().filter(d -> allowed == null || allowed.contains(d.best())).toList();
+    List<Demand> ranked = demand().stream().filter(d -> allowed == null || allowed.contains(d.best()))
+        .filter(d -> eligible.test(d.symbol())).toList();
     List<Demand> chosen = new ArrayList<>();
     for (Demand d : ranked) {
       if (chosen.size() >= slots) {
@@ -154,7 +161,7 @@ public class SubscriptionBudgetManager {
     chosen.forEach(d -> chosenSymbols.add(d.symbol()));
     // Hysteresis: a symbol subscribed less than 60 s ago keeps its slot against equal or lower priorities.
     List<Map.Entry<String, Instant>> recent = subscribedSince.entrySet().stream()
-        .filter(e -> !chosenSymbols.contains(e.getKey()))
+        .filter(e -> !chosenSymbols.contains(e.getKey()) && eligible.test(e.getKey()))
         .filter(e -> Duration.between(e.getValue(), now).compareTo(HYSTERESIS) < 0)
         .sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
         .toList();

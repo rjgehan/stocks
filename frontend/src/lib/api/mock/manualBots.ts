@@ -5,6 +5,7 @@
  * approximation of `ManualReplyParser` (the first fenced block with an orders list, else the first `{…}`; `//`
  * comments and trailing commas removed; the common key aliases), and rows are previewed with the mock order preview.
  */
+import { fromPath } from '../../symbols'
 import type { Clock, ManualAction, ManualBot, ManualIssue, ManualSession, PlaceOrderRequest, PlayerSummary, Preview } from '../types'
 
 type Handler = (ctx: { url: URL; params: string[]; body: unknown }) => Response | Promise<Response>
@@ -39,7 +40,8 @@ export interface ManualMockDeps {
 const LIMITS = { maxInstructionsChars: 4000, maxReplyChars: 20_000, maxOrders: 10, expireAfter: 'PT24H' }
 const SESSIONS_PER_DAY = 50
 const KEY_SHAPED_INLINE = /stk_[A-Za-z0-9]{6,}_[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{12,}|[Bb][Ee][Aa][Rr][Ee][Rr][ \t]+[A-Za-z0-9._~+/-]{16,}=*/g
-const SYMBOL = /^[A-Z][A-Z0-9.-]{0,11}$/
+/** a ticker, or a crypto pair (`BTC/USD`; `BTC-USD` is canonicalised first) */
+const SYMBOL = /^[A-Z][A-Z0-9.-]{0,11}$|^[A-Z0-9]{2,10}\/USD$/
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -260,7 +262,7 @@ export function parseManualReply(text: string, sessionId: string): { summary: st
       if (!row.orderId) err('FIELD_MISSING', 'order_id is missing', 'order_id')
     } else if (row.action) {
       const symbol = pick(o, 'symbol')
-      row.symbol = typeof symbol?.value === 'string' ? symbol.value.trim().replace(/^\$/, '').toUpperCase() : null
+      row.symbol = typeof symbol?.value === 'string' ? fromPath(symbol.value.trim().replace(/^\$/, '')) : null
       if (!row.symbol) err('FIELD_MISSING', 'symbol is missing', 'symbol')
       else if (!SYMBOL.test(row.symbol)) err('FIELD_INVALID', `"${row.symbol}" is not a ticker`, symbol?.key ?? 'symbol')
       for (const name of ['qty', 'notional', 'limitPrice', 'stopPrice', 'trailAmount', 'trailPercent'] as const) {

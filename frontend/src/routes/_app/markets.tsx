@@ -13,6 +13,7 @@ import { Change } from '@/features/market/Change'
 import { INDEX_SYMBOLS } from '@/features/market/IndexStrip'
 import { NewsFeed } from '@/features/research/NewsFeed'
 import { IconScreener } from '@/features/screener/icon'
+import { toPath } from '@/lib/symbols'
 
 type MarketsTab = 'MOVERS' | 'NEWS'
 
@@ -33,7 +34,7 @@ function IndexCard({ symbol }: { symbol: string }) {
   return (
     <Link
       to="/stock/$symbol"
-      params={{ symbol }}
+      params={{ symbol: toPath(symbol) }}
       className={cx('rounded-lg border bg-bg-1 p-3 transition-colors hover:border-border', dir === 'up' ? 'border-up/25' : dir === 'down' ? 'border-down/25' : 'border-divider')}
     >
       <div className="flex items-baseline justify-between gap-2">
@@ -56,7 +57,7 @@ function Movers({ list }: { list: MoverList }) {
       <ol className="divide-y divide-divider">
         {items.map((m, i) => (
           <li key={m.symbol}>
-            <Link to="/stock/$symbol" params={{ symbol: m.symbol! }} className="flex min-h-14 items-center gap-3 px-1 py-2 hover:bg-bg-2">
+            <Link to="/stock/$symbol" params={{ symbol: toPath(m.symbol!) }} className="flex min-h-14 items-center gap-3 px-1 py-2 hover:bg-bg-2">
               <span className="w-6 shrink-0 text-center text-caption text-text-3">{i + 1}</span>
               <span className="min-w-0 flex-1">
                 <span className="block font-semibold">{m.symbol}</span>

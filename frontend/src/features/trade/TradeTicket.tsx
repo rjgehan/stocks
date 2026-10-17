@@ -38,6 +38,7 @@ import {
   availableOrderTypes,
   buildOrderRequest,
   canSell,
+  cryptoQtyStep,
   defaultLimitPrice,
   defaultStopPrice,
   defaultTrail,
@@ -48,6 +49,7 @@ import {
   isStopType,
   midPrice,
   newClientOrderId,
+  qtyUnit,
   quickQuantity,
   showsLimit,
   showsStop,
@@ -58,6 +60,7 @@ import {
   trailingStopStart,
   withoutQueueDuplicates,
 } from './ticketState'
+import { isCrypto } from '@/lib/symbols'
 
 /** The Advanced (group order) ticket and its review sheet load when Advanced is first chosen. */
 const AdvancedTicket = lazy(() => import('./advanced/AdvancedTicket').then((m) => ({ default: m.AdvancedTicket })))
@@ -108,7 +111,13 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   useEffect(() => dispatch({ type: 'side', side: initialSide }), [initialSide])
 
   const position = positions.data?.find((p) => p.symbol === symbol)
-  const ctx = useMemo(() => ({ fractionable: asset.data?.fractionable ?? false, availableQty: position?.availableQty ?? null }), [asset.data?.fractionable, position?.availableQty])
+  // a crypto pair trades 24/7 with fractional quantities on every order type and no extended-hours flag
+  const cryptoPair = isCrypto(symbol) || asset.data?.type === 'CRYPTO'
+  const unit = qtyUnit(symbol, cryptoPair)
+  const ctx = useMemo(
+    () => ({ fractionable: asset.data?.fractionable ?? cryptoPair, availableQty: position?.availableQty ?? null, crypto: cryptoPair }),
+    [asset.data?.fractionable, position?.availableQty, cryptoPair],
+  )
   const sellable = canSell(ctx)
   const tradable = asset.data ? asset.data.tradable : true
   const amountMode = state.qtyMode === 'AMOUNT'
@@ -167,7 +176,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const placed = new Set(['qty', 'notional', 'limitPrice', 'stopPrice', 'trailAmount', 'trailPercent'])
   const session = clock.data?.session
   const stopSessionNote =
-    session && session !== 'REGULAR' && isStopType(state.type)
+    !cryptoPair && session && session !== 'REGULAR' && isStopType(state.type)
       ? state.type === 'TRAILING_STOP'
         ? 'Trailing stops can only be placed during regular hours, 9:30–16:00 ET.'
         : 'Stops only trigger during regular hours (9:30–16:00 ET); this one arms at the next open.'
@@ -210,11 +219,11 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
           tone: o.side === 'BUY' ? 'up' : 'down',
           title: `${o.side === 'BUY' ? 'Buy' : 'Sell'} ${size} ${o.symbol} ${o.type ? ORDER_TYPE_LABEL[o.type] : ''}${price ? ` ${price}` : ''} · ${res.replayed ? 'Already placed' : 'Pending'}`,
           body:
-            o.waitReason === 'QUEUED_FOR_OPEN'
+            !cryptoPair && o.waitReason === 'QUEUED_FOR_OPEN'
               ? isStopType(o.type)
                 ? 'Arms at the 9:30 ET open.'
                 : 'Queued for the 9:30 ET open.'
-              : o.waitReason === 'QUEUED_FOR_EXT_OPEN'
+              : !cryptoPair && o.waitReason === 'QUEUED_FOR_EXT_OPEN'
                 ? 'Queued for 4:00 ET pre-market.'
                 : isStopType(o.type)
                   ? 'Waiting for the stop price.'
@@ -263,6 +272,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
       bid: quote?.bid ?? quote?.last ?? null,
       availableQty: position?.availableQty ?? null,
       fractionable: ctx.fractionable,
+      crypto: cryptoPair,
     })
     if (v !== null && sign(v) > 0) dispatch({ type: 'field', field: amountMode ? 'amount' : 'qty', value: v })
   }
@@ -471,7 +481,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
               value={state.qtyMode}
               onChange={(mode) => dispatch({ type: 'qtyMode', mode })}
               options={[
-                { value: 'SHARES', label: 'Shares' },
+                { value: 'SHARES', label: cryptoPair ? unit : 'Shares' },
                 { value: 'AMOUNT', label: 'Amount ($)', disabled: !ctx.fractionable && asset.isSuccess, title: ctx.fractionable ? undefined : 'Dollar orders need a fractionable symbol' },
               ]}
             />
@@ -487,12 +497,13 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             />
           ) : (
             <Stepper
-              label="Shares"
+              label={cryptoPair ? `Quantity (${unit})` : 'Shares'}
               value={state.qty}
               onChange={(v) => dispatch({ type: 'field', field: 'qty', value: v })}
               onStep={(d) => {
                 const current = parseUserDecimal(state.qty) ?? '0'
-                const next = d === 1 ? add(current, '1') : sub(current, '1')
+                const by = cryptoPair ? cryptoQtyStep(quote?.last) : '1'
+                const next = d === 1 ? add(current, by) : sub(current, by)
                 dispatch({ type: 'field', field: 'qty', value: next.startsWith('-') || sign(next) === 0 ? '' : next })
               }}
               error={fieldErrors.qty}
@@ -519,10 +530,10 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
               </span>
             ) : (
               <span>
-                Available <span className="font-semibold text-text-1">{formatQty(position?.availableQty)}</span> sh
+                Available <span className="font-semibold text-text-1">{formatQty(position?.availableQty)}</span> {unit}
               </span>
             )}
-            {est ? <span>{amountMode ? `≈ ${formatQty(est.qty)} sh` : `≈ ${formatMoney(est.principal)}`}</span> : null}
+            {est ? <span>{amountMode ? `≈ ${formatQty(est.qty)} ${unit}` : `≈ ${formatMoney(est.principal)}`}</span> : null}
           </p>
         </div>
 
@@ -545,20 +556,24 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
           />
         </div>
 
-        <Switch
-          checked={state.extendedHours}
-          disabled={!extAllowed(state)}
-          onChange={(value) => dispatch({ type: 'extendedHours', value })}
-          label={<span className="text-caption font-medium text-text-2">Extended hours</span>}
-          description={<span className="text-micro">Limit orders only · 4:00–9:30 & 16:00–20:00 ET</span>}
-        />
-        {state.extendedHours ? (
+        {cryptoPair ? (
+          <p className="text-caption text-text-3">Crypto trades 24/7: every order type works at any hour, weekends included.</p>
+        ) : (
+          <Switch
+            checked={state.extendedHours}
+            disabled={!extAllowed(state)}
+            onChange={(value) => dispatch({ type: 'extendedHours', value })}
+            label={<span className="text-caption font-medium text-text-2">Extended hours</span>}
+            description={<span className="text-micro">Limit orders only · 4:00–9:30 & 16:00–20:00 ET</span>}
+          />
+        )}
+        {state.extendedHours && !cryptoPair ? (
           <p className="flex gap-1.5 rounded-sm bg-warn/10 p-2 text-caption text-warn">
             <IconInfo size={16} className="mt-0.5 shrink-0" />
             No live IEX quotes 4:00–8:00 and 17:00–20:00 ET; orders then use the last known prices.
           </p>
         ) : null}
-        {dividendAdjustable(state) ? (
+        {dividendAdjustable(state) && !cryptoPair ? (
           <Checkbox checked={state.doNotReduce} onChange={(value) => dispatch({ type: 'doNotReduce', value })} className="text-caption text-text-2">
             Don't reduce on dividends (keep my prices on ex-dividend dates)
           </Checkbox>
@@ -637,8 +652,8 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
       <div className="sticky bottom-0 z-10 border-t border-divider bg-bg-1 px-4 py-3">
         {est && request ? (
           <p className="mb-1.5 flex justify-between text-caption text-text-3">
-            <span>{amountMode ? 'Estimated shares' : state.side === 'BUY' ? 'Estimated cost' : 'Estimated proceeds'}</span>
-            <span className="font-semibold text-text-1">{amountMode ? `≈ ${formatQty(est.qty)} sh` : `≈ ${formatMoney(est.principal)}`}</span>
+            <span>{amountMode ? (cryptoPair ? `Estimated ${unit}` : 'Estimated shares') : state.side === 'BUY' ? 'Estimated cost' : 'Estimated proceeds'}</span>
+            <span className="font-semibold text-text-1">{amountMode ? `≈ ${formatQty(est.qty)} ${unit}` : `≈ ${formatMoney(est.principal)}`}</span>
           </p>
         ) : null}
         <Button variant={state.side === 'BUY' ? 'buy' : 'sell'} size="lg" block disabled={!canSubmit} onClick={onSubmitClick}>

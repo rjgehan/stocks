@@ -104,6 +104,34 @@ abstract class SchemaContract {
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
+  /** V13 (§29): CRYPTO assets, same-day settlement and the crypto day-end basis; the replaced CHECKs still hold. */
+  @Test
+  void cryptoAssetsSettleTheSameDayAndHaveTheirOwnDayEndBasis() {
+    String pair = "C" + SEQ.incrementAndGet() + "/USD";
+    jdbc().sql("""
+            INSERT INTO asset (symbol, name, asset_type, tradable, fractionable, status, source, updated_at)
+            VALUES (?, 'Coin', 'CRYPTO', TRUE, TRUE, 'ACTIVE', 'manual', ?)
+            """).params(pair, Jdbc.ts(T0)).update();
+    assertThatThrownBy(() -> jdbc().sql("""
+            INSERT INTO asset (symbol, name, asset_type, tradable, fractionable, status, source, updated_at)
+            VALUES (?, 'Bad', 'BOND', TRUE, TRUE, 'ACTIVE', 'manual', ?)
+            """).params("B" + SEQ.incrementAndGet(), Jdbc.ts(T0)).update())
+        .isInstanceOf(DataIntegrityViolationException.class);
+    jdbc().sql("""
+            INSERT INTO daily_mark (symbol, trade_date, day_end_mark, day_end_basis, quality, updated_at)
+            VALUES (?, ?, 112000.0000, 'CRYPTO_1MIN', 'FINAL', ?)
+            """).params(pair, LocalDate.of(2026, 10, 10), Jdbc.ts(T0)).update();
+    assertThatThrownBy(() -> jdbc().sql("""
+            INSERT INTO daily_mark (symbol, trade_date, day_end_mark, day_end_basis, quality, updated_at)
+            VALUES (?, ?, 1.0000, 'GUESS', 'FINAL', ?)
+            """).params(pair, LocalDate.of(2026, 10, 11), Jdbc.ts(T0)).update())
+        .isInstanceOf(DataIntegrityViolationException.class);
+    String check = vendor().equals("h2")
+        ? "SELECT COUNT(*) FROM information_schema.check_constraints WHERE constraint_name = 'ck_execution_settle'"
+        : "SELECT COUNT(*) FROM pg_constraint WHERE conname = 'ck_execution_settle'";
+    assertThat(jdbc().sql(check).query(Long.class).single()).isEqualTo(1L);
+  }
+
   // ------------------------------------------------------------------------------------------------ JDBC typing
 
   @Test

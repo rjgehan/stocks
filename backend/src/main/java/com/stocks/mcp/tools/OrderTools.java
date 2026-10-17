@@ -149,14 +149,16 @@ public class OrderTools implements McpToolSet {
           + "characters; it is public: every player sees it with the order). Decimals are strings like \"227.40\". "
           + "A sell that would cause a good-faith violation needs acknowledge [\"GFV_RISK\"]. Returns the order "
           + "(usually PENDING; fills arrive after a short latency), the estimate, buying power before and after, "
-          + "warnings, and replayed=true when this client_order_id was already placed.",
+          + "warnings, and replayed=true when this client_order_id was already placed. Crypto pairs (symbol like "
+          + "BTC/USD) trade 24/7 with every order type and fractional qty, settle at once and pay no fees "
+          + "(get_rules crypto).",
       generateOutputSchema = true,
       annotations = @McpTool.McpAnnotations(title = "Place an order", readOnlyHint = false, destructiveHint = false,
           idempotentHint = true, openWorldHint = false))
   public PlaceOrderResponse place_order(McpTransportContext ctx,
       @McpToolParam(description = "Unique id you choose for this order, e.g. claude-20261009-0007")
       String client_order_id,
-      @McpToolParam(description = "Ticker, e.g. AAPL") String symbol,
+      @McpToolParam(description = SYMBOL) String symbol,
       @McpToolParam(description = "BUY or SELL") Side side,
       @McpToolParam(description = "Order type") OrderType type,
       @McpToolParam(required = false, description = QTY) BigDecimal qty,
@@ -249,8 +251,9 @@ public class OrderTools implements McpToolSet {
 
   // ------------------------------------------------------------------------------------------- helpers
 
+  private static final String SYMBOL = "Ticker or crypto pair, e.g. AAPL or BTC/USD";
   private static final String QTY = "Shares as a decimal string, e.g. \"10\" or \"0.5\" (fractional: MARKET DAY "
-      + "only). Exactly one of qty and notional.";
+      + "only; crypto pairs take up to 5 decimals on every order type). Exactly one of qty and notional.";
   private static final String NOTIONAL = "Dollar amount as a decimal string, e.g. \"125.00\" (MARKET DAY only, "
       + "fractionable symbols, minimum \"1.00\" for buys; all-in including fees). Exactly one of qty and notional.";
   private static final String LIMIT_PRICE = "Limit price as a decimal string on tick ($0.01, or $0.0001 below $1)";

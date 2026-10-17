@@ -4,6 +4,7 @@ import com.stocks.alerts.AlertRepository.AlertRow;
 import com.stocks.alerts.AlertRepository.NewAlert;
 import com.stocks.common.domain.AlertCondition;
 import com.stocks.common.domain.AlertStatus;
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.common.id.Prefix;
@@ -40,7 +41,7 @@ public class AlertService {
 
   public static final int NOTE_MAX = 140;
   public static final Duration MAX_EXPIRY = Duration.ofDays(365);
-  static final Pattern SYMBOL = Pattern.compile("^[A-Z][A-Z0-9.\\-]{0,11}$");
+  static final Pattern SYMBOL = Pattern.compile(Crypto.SYMBOL_REGEX);
 
   /** The result of a create: the alert, and whether it is new (201) or an identical existing one (200). */
   public record Created(AlertDto alert, boolean created) {}
@@ -221,7 +222,7 @@ public class AlertService {
 
   /** Upper-cased and known (market data or the {@code asset} table), else {@code SYMBOL_NOT_FOUND}. */
   String knownSymbol(String raw) {
-    String symbol = normalize(raw);
+    String symbol = Crypto.fromPath(normalize(raw));
     if (symbol.isEmpty()) {
       throw ApiException.validation("symbol", "symbol is required.");
     }

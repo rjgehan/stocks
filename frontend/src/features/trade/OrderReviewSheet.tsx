@@ -7,6 +7,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { ORDER_TYPE_LABEL } from '@/features/account/orderLabels'
 import { EstimatesPanel } from './EstimatesPanel'
 import { isStopType, stopExplanation, withoutQueueDuplicates } from './ticketState'
+import { isCrypto } from '@/lib/symbols'
 
 /** Review sheet (§22.5, on by default via `confirmOrders`): every field and warning, then Confirm or Edit. */
 export function OrderReviewSheet({
@@ -29,7 +30,7 @@ export function OrderReviewSheet({
     ['Symbol', request.symbol ?? ''],
     ['Side', buy ? 'Buy' : 'Sell'],
     ['Order type', request.type ? ORDER_TYPE_LABEL[request.type] : ''],
-    [request.notional ? 'Amount' : 'Shares', request.notional ? formatMoney(request.notional) : formatQty(request.qty)],
+    [request.notional ? 'Amount' : isCrypto(request.symbol) ? 'Quantity' : 'Shares', request.notional ? formatMoney(request.notional) : formatQty(request.qty)],
   ]
   if (request.stopPrice) rows.push(['Stop price', formatPrice(request.stopPrice)])
   if (request.limitPrice) rows.push(['Limit price', formatPrice(request.limitPrice)])

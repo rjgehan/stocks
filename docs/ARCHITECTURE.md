@@ -42,6 +42,7 @@
 26. Testing strategy
 27. Phase 1 work breakdown
 28. Open items and verification list
+29. Crypto pairs (24/7)
 
 ---
 
@@ -5310,6 +5311,7 @@ stocks:
 | `social.showDepositsInFeed` | `true` | boolean |
 | `bots.requireRationale` | `true` | boolean |
 | `league.humanKindExcludesApiTraders` | `false` | boolean (§16.5) |
+| `crypto.enabled` | `true` | boolean (§29): crypto pairs trade 24/7 and every calendar day is a P&L day; off refuses crypto buys (sells still work) |
 
 ---
 
@@ -5790,3 +5792,56 @@ WS3 owns **`DirectEngineExecutor`** (`src/test/java/com/stocks/trading/engine/te
 | 24 | **H2 2.4.240 regression**: a CHECK constraint becomes "invalid" (`23514 Check constraint invalid`) once the connection that created it closes, until the database is reopened (reproduced on 2026-10-09 with plain JDBC, mem and file databases, with or without `MODE=PostgreSQL`; 2.3.232 is fine) | dev and test set `spring.datasource.hikari.max-lifetime: 0`, so Flyway's pooled connection is never retired; `TestDb` uses a Hikari pool too. A fresh dev DB would otherwise break every CHECK-ed insert 30 minutes after first boot. | Drop the workaround when Boot manages a fixed H2 (report upstream); never pin H2 ourselves (§2.1) |
 | 25 | Spring AI 2.0.1 `@McpTool` results bypass `mcpServerJsonMapper` (private `JacksonUtils` mapper: decimals as numbers; structured mode has no text block), and the SDK server validates `structuredContent` against `outputSchema` | **Resolved** (§20.1 Tool results): annotation scanner off; `McpToolCatalog` + `McpToolHandler` (Boot mapper) + `McpOutputSchemas` | Re-check on every Spring AI upgrade; drop our handler if Spring AI lets the callback use `mcpServerJsonMapper` |
 | 26 | MCP transport cosmetics: (a) SDK 2.0.0's stateless server has no notification handlers, so each `notifications/initialized` logs WARN "Missing handler for notification type"; (b) a malformed `Accept` on `POST /mcp` throws `InvalidMediaTypeException` inside Spring AI's transport → 500 | (a) harmless (202); (b) only broken clients | (a) optional `logging.level.io.modelcontextprotocol.server.DefaultMcpStatelessServerHandler: ERROR`; (b) `ProblemDetailsAdvice` maps `InvalidMediaTypeException` → 400 `VALIDATION_FAILED` (both WS1-owned) |
+---
+
+## 29. Crypto pairs (24/7)
+
+Added 2026-10-17 so the league has something to trade on weekends. Twelve USD pairs (`Crypto.PAIRS`: BTC, ETH, SOL,
+XRP, DOGE, LTC, BCH, LINK, AVAX, DOT, UNI, AAVE) trade around the clock while the runtime setting `crypto.enabled`
+(§23.4, default `true`) is on. Stocks are unchanged.
+
+**One test, no lookup.** A crypto symbol is `BASE/QUOTE` with a slash (Alpaca's spelling); no stock symbol has one, so
+`Crypto.isCrypto(symbol)` (`common.domain`) is the switch every layer uses. URL path segments and STOMP topics spell a
+pair with a dash (`BTC-USD`): Spring Security's firewall refuses `%2F`. `Crypto.fromPath` maps the dash (and `BTCUSD`)
+back for the seeded pairs only, at every boundary (REST paths and bodies, MCP arguments, watchlists, alerts, journal,
+manual-bot replies, SSE and STOMP); JSON always carries `BTC/USD`. `Crypto.SYMBOL_REGEX` is the shared validation
+pattern.
+
+**Calendar.** `MarketCalendar.forSymbol(symbol)` returns `CryptoCalendar.INSTANCE` for a pair, the NYSE calendar
+otherwise. The crypto calendar has a trading day every ET date with REGULAR from 00:00 to the next 00:00 ET (PRE and
+POST empty), settlement on the trade date and no transitions. The engine asks it per symbol (`TradingClock.session(
+symbol, t)`, `calendar(symbol)`, `settlementDate(symbol, d)`; `EngineCore` sweeps and transitions per symbol), so a
+crypto order is accepted with `LATENCY` at any hour, never pauses, `session_date` is the ET date and a DAY order expires
+at 24:00 ET (`ExpiryCalculator` unchanged). Marks, quote composition, previous closes, chart ranges and the SIM use it
+too.
+
+**Orders and fills.** `NormalizedOrder.fractional()` counts only notional orders for a pair, so a fractional crypto
+quantity takes every order type, GTC and replace like a whole one; check 10 allows `Crypto.MAX_ORDER_QTY` (100,000,000)
+and group legs take 5 decimals. `FillModel` treats every crypto order as fractional (one fill at the touch), and the
+execution-time guard sizes in 5 decimals. A BUY is refused with `SYMBOL_NOT_TRADABLE` while `crypto.enabled` is off;
+sells always work.
+
+**Cash.** A crypto execution and its ledger row settle on the trade date (V13 relaxes `execution` to
+`settle_date >= trade_date`), its lot carries no unsettled funding (so no GFV, §10.4) and `FeeCalculator` charges no
+SEC/TAF/CAT (`forExecution`/`estimate` take the symbol).
+
+**Market data.** Alpaca's crypto API (`/v1beta3/crypto/us/snapshots`, `latest/quotes`, `latest/trades`, `bars`; no
+`feed`, no SIP embargo) behind the same provider: `AlpacaMarketDataProvider` splits each request by class. Prices are
+put on the app's tick at parse time (bids down, asks up), sizes and volumes become whole counts, and Alpaca's crypto day
+bars are re-dated to ET days. A second stream (`/v1beta3/crypto/us` on the stock stream's host, `LiveFeed.setCryptoStreams`)
+carries every leased pair; the stock streams and Finnhub never see a pair. Crypto quotes are consolidated (rank 1 of
+§12.3), never "dark" outside IEX hours, and stale only by the regular 15 s rule. Fundamentals, recommendations, splits
+and corporate actions are skipped for pairs. The SIM prices pairs with a second `SimModel` on the crypto calendar
+(45–90% annual volatility on a 365-day basis), so dev prices move every hour. The pairs are seeded as `asset` rows
+(type `CRYPTO`, exchange `CRYPTO`, fractionable) in every profile.
+
+**League.** While `crypto.enabled` is on, `PnlCalendar` makes every calendar day a P&L day: a non-trading day runs from
+the previous day's cut-off to 20:00 ET (pre-open 04:00), and EOD snapshots, the leaderboard anchors (TODAY on Monday is
+Sunday's EOD), the P&L calendar and intraday samples (00:00–24:00 every day) follow. `DailyMarkService` writes a crypto
+day-end mark for any day (the last 1-minute bar before the cut-off, basis `CRYPTO_1MIN`, `FINAL`); a stock on a weekend
+or holiday keeps its last trading day's mark (`MarkResolver.lastTradingDay`). Known limit: Sharpe and volatility keep
+the √252 annualization, so a stock-only player's zero weekend returns understate both slightly.
+
+**Bots.** `get_rules` → `crypto`, `get_market_clock` → `crypto {enabled, pairs}`, the MCP instructions and tool texts,
+the shared system prompt (agent runner: weekend scheduled and booked runs while crypto is on), the claude-trader
+(weekend check-ins in server mode, `STOCKS_TRADER_WEEKENDS`) and the manual-bot prompt describe the pairs.

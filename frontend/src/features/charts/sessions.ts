@@ -42,6 +42,9 @@ export const etDateOf = (sec: number): string => etOf(sec).date
 const OPEN_MIN = 9 * 60 + 30
 const CLOSE_MIN = 16 * 60
 
+/** A crypto pair has no regular session (it trades 24/7): every bar counts as regular, so nothing is shaded. */
+export const ALWAYS_REGULAR: (sec: number) => boolean = () => true
+
 /**
  * `isRegular(time)`: true when a bar starting at `time` (epoch seconds) is inside its date's regular session. A
  * calendar day wins (an early close ends at 13:00); a date the calendar does not list falls back to 09:30–16:00 ET.

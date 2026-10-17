@@ -13,6 +13,7 @@ import { PositionCard, Signed } from '@/features/account/PositionsTable'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { QualityBadge } from '@/features/market/QualityBadge'
 import { PublicOrderRow } from './PublicOrderRow'
+import { toPath } from '@/lib/symbols'
 
 const RESTRICTION_LABEL: Record<string, string> = {
   SETTLED_CASH_ONLY: 'Settled cash only',
@@ -99,7 +100,7 @@ function HoldingsTable({ positions }: { positions: Position[] }) {
         {positions.map((p) => (
           <tr key={p.symbol} className="h-10 hover:bg-bg-2">
             <td className="px-4 font-semibold">
-              <Link to="/stock/$symbol" params={{ symbol: p.symbol ?? '' }} className="hover:text-accent">
+              <Link to="/stock/$symbol" params={{ symbol: toPath(p.symbol ?? '') }} className="hover:text-accent">
                 {p.symbol}
               </Link>
               {p.name ? <span className="ml-2 hidden font-normal text-text-3 desktop:inline">{p.name}</span> : null}

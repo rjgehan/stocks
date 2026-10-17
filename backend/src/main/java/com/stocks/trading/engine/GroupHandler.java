@@ -276,11 +276,11 @@ class GroupHandler {
 
   /** A held child released by its entry's execution: its own session, expiry and latency window from now. */
   private void release(OrderRow child, OrderRow entry, Instant now, EngineTx tx) {
-    SessionState session = clock.session(now);
-    SessionOrderMatrix.Acceptance a = SessionOrderMatrix.accept(clock.calendar(), child.type(), false,
+    SessionState session = clock.session(child.symbol(), now);
+    SessionOrderMatrix.Acceptance a = SessionOrderMatrix.accept(clock.calendar(child.symbol()), child.type(), false,
         child.timeInForce(), session, now);
     Instant eligibleAt = a.eligibleBase().plus(latency.latency(child.publicId(), 0));
-    ExpiryCalculator.Expiry expiry = ExpiryCalculator.compute(clock.calendar(), rules, now, false,
+    ExpiryCalculator.Expiry expiry = ExpiryCalculator.compute(clock.calendar(child.symbol()), rules, now, false,
         child.timeInForce());
     writer.release(child.id(), eligibleAt, a.waitReason(), expiry.sessionDate(), expiry.expiresAt());
     BigDecimal w = entry.filledQty().subtract(child.filledQty()).min(child.remainingQty()).max(Qty.ZERO);

@@ -3,11 +3,13 @@ package com.stocks.marketdata.mapper;
 import com.stocks.calendar.NyseCalendarGenerator;
 import com.stocks.common.domain.DataQuality;
 import com.stocks.common.domain.SessionType;
+import com.stocks.common.error.ApiException;
 import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
 import com.stocks.contract.calendar.MarketCalendar;
 import com.stocks.contract.calendar.SessionState;
 import com.stocks.contract.calendar.TradingDay;
+import com.stocks.contract.identity.SettingsService;
 import com.stocks.contract.marketdata.dto.ClockDto;
 import com.stocks.marketdata.config.MarketDataRuntime;
 import com.stocks.marketdata.core.MarketFeed;
@@ -19,6 +21,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -35,11 +39,29 @@ public class ClockDtoMapper {
   private final TimeSource time;
   private final MarketCalendar calendar;
   private final MarketDataRuntime runtime;
+  private final BooleanSupplier cryptoEnabled;
 
   public ClockDtoMapper(TimeSource time, MarketCalendar calendar, MarketDataRuntime runtime) {
+    this(time, calendar, runtime, () -> true);
+  }
+
+  @Autowired
+  public ClockDtoMapper(TimeSource time, MarketCalendar calendar, MarketDataRuntime runtime,
+                        SettingsService settings) {
+    this(time, calendar, runtime, () -> {
+      try {
+        return settings.cryptoEnabled();
+      } catch (ApiException e) {
+        return true;                                 // the §23.4 default while settings are a Day-0 stub
+      }
+    });
+  }
+
+  ClockDtoMapper(TimeSource time, MarketCalendar calendar, MarketDataRuntime runtime, BooleanSupplier cryptoEnabled) {
     this.time = time;
     this.calendar = calendar;
     this.runtime = runtime;
+    this.cryptoEnabled = cryptoEnabled;
   }
 
   public ClockDto clock() {
@@ -80,7 +102,8 @@ public class ClockDtoMapper {
         ClockDto.FeedStatus.valueOf(health.name()), feed.liveWindowEt());
     String nowEt = Et.zoned(now).truncatedTo(ChronoUnit.SECONDS).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
     return new ClockDto(now, nowEt, s.type(), s.tradingDate(), s.type() == SessionType.CLOSED ? null : s.endsAt(),
-        s.nextType(), s.nextStartsAt(), nextRegularOpen, nextRegularClose, earlyClose, holidays, earlyCloses, feedDto);
+        s.nextType(), s.nextStartsAt(), nextRegularOpen, nextRegularClose, earlyClose, holidays, earlyCloses, feedDto,
+        ClockDto.ClockCryptoDto.of(cryptoEnabled.getAsBoolean()));
   }
 
   private TradingDay nextRegularOpenDay(Instant now) {

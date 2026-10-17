@@ -9,6 +9,7 @@ import { StarButton } from '@/features/watchlist/StarButton'
 import { Change } from './Change'
 import { QualityBadge } from './QualityBadge'
 import { usePriceFlash } from './usePriceFlash'
+import { isCrypto } from '@/lib/symbols'
 
 /**
  * Quote page header (§22.4): symbol, name and exchange; the last price large (32/600 phone, 28/600
@@ -37,6 +38,8 @@ export function QuoteHeader({
   const sentinel = useRef<HTMLDivElement>(null)
   const [compact, setCompact] = useState(false)
   const flash = usePriceFlash(quote?.last)
+  // a crypto pair trades around the clock: no exchange listing, no extended-hours line, never "At close"
+  const cryptoPair = isCrypto(symbol) || asset?.type === 'CRYPTO'
 
   useEffect(() => {
     const el = sentinel.current
@@ -80,7 +83,7 @@ export function QuoteHeader({
               {asset ? (
                 <>
                   {asset.name}
-                  {asset.exchange ? <span className="text-text-3"> · {asset.exchange}</span> : null}
+                  {cryptoPair ? <span className="text-text-3"> · Crypto · trades 24/7</span> : asset.exchange ? <span className="text-text-3"> · {asset.exchange}</span> : null}
                 </>
               ) : (
                 <Skeleton className="h-3 w-40" />
@@ -117,7 +120,7 @@ export function QuoteHeader({
             </>
           ) : quote?.asOf ? (
             <>
-              {quote.session === 'CLOSED' ? 'At close' : 'As of'} {formatTimeEt(quote.asOf)}
+              {quote.session === 'CLOSED' && !cryptoPair ? 'At close' : 'As of'} {formatTimeEt(quote.asOf)}
             </>
           ) : (
             ' '

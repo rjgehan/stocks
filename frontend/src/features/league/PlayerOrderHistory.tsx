@@ -18,6 +18,7 @@ import { DIRECTION_TEXT } from '@/features/market/Change'
 import { GROUP_TYPE_LABEL, ROLE_LABEL } from '@/features/groups/groupLabels'
 import { feedDayLabel } from './FeedList'
 import { ManualConsolePill, OrderSourcePills, RationaleQuote, StatusPill, publicOrderLine, publicStatusLine, publicWaitLabel } from './PublicOrderRow'
+import { toPath } from '@/lib/symbols'
 
 const positive = (d: string | null | undefined): boolean => d != null && isDecimal(d) && sign(d) > 0
 const nonZero = (d: string | null | undefined): boolean => d != null && isDecimal(d) && !isZero(d)
@@ -83,7 +84,7 @@ function OrderDetail({ o }: { o: PublicOrder }) {
           {o.symbol ? (
             <>
               {' · '}
-              <Link to="/stock/$symbol" params={{ symbol: o.symbol }} className="text-accent">
+              <Link to="/stock/$symbol" params={{ symbol: toPath(o.symbol) }} className="text-accent">
                 {o.symbol} quote
               </Link>
             </>

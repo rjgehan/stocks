@@ -140,9 +140,10 @@ public class GroupEvaluation {
                                              boolean preview) {
     BigDecimal ref = context.market(o.symbol(), Et.date(now)).reference();
     OrderEvaluation.Evaluated ev = evaluation.evaluateHeldChild(acc, kind, o, now, preview, ref);
-    SessionOrderMatrix.Acceptance a = SessionOrderMatrix.accept(clock.calendar(), o.type(), false, o.timeInForce(),
-        clock.session(now), now);
-    ExpiryCalculator.Expiry expiry = ExpiryCalculator.compute(clock.calendar(), rules, now, false, o.timeInForce());
+    SessionOrderMatrix.Acceptance a = SessionOrderMatrix.accept(clock.calendar(o.symbol()), o.type(), false,
+        o.timeInForce(), clock.session(o.symbol(), now), now);
+    ExpiryCalculator.Expiry expiry = ExpiryCalculator.compute(clock.calendar(o.symbol()), rules, now, false,
+        o.timeInForce());
     return new OrderEvaluation.Evaluated(a, expiry, ev.result(), ev.market());
   }
 

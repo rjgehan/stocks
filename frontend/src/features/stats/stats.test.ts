@@ -5,7 +5,7 @@ import { groupReactions, mockPnlCalendar, mockRace, setReaction } from '@/lib/ap
 import { queryKeys } from '@/lib/api/queryKeys'
 import type { FeedItem, FeedReaction, Leaderboard, PnlCalendarCell, RaceSeries, Reactor } from '@/lib/api/types'
 import { symbolBars } from './bySymbol'
-import { HEAT_CLAMP, etMonth, heatColor, heatIsStrong, monthGrid, monthLabel, shiftMonth } from './calendar'
+import { HEAT_CLAMP, etMonth, hasWeekendCells, heatColor, heatIsStrong, monthGrid, monthLabel, shiftMonth } from './calendar'
 import { loadColumns, loadPhoneStat, saveColumns, savePhoneStat, toggleColumn } from './columns'
 import { formatHold, lastRankChange, profitFactorLabel, sharpeLabel } from './format'
 import { plotPoints, raceStyles, shade } from './race'
@@ -120,6 +120,26 @@ describe('P&L calendar (§16.10)', () => {
     expect(weeks.every((w) => w.length === 5)).toBe(true)
     const feb = monthGrid('2026-02', []) // Feb 1 2026 is a Sunday
     expect(feb[0]![0]!.date).toBe('2026-02-02')
+    expect(hasWeekendCells(cells)).toBe(false)
+  })
+
+  it('lays a month out Mon–Sun once a weekend day carries P&L (crypto, 24/7)', () => {
+    const cells: PnlCalendarCell[] = [
+      { date: '2026-10-02', pnl: '5.00', return: '0.005', flows: '0.00', live: false },
+      { date: '2026-10-04', pnl: '-3.00', return: '-0.003', flows: '0.00', live: false }, // a Sunday
+    ]
+    expect(hasWeekendCells(cells)).toBe(true)
+    const weeks = monthGrid('2026-10', cells)
+    expect(weeks.every((w) => w.length === 7)).toBe(true)
+    expect(weeks[0]!.map((d) => d?.date ?? null)).toEqual([null, null, null, '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'])
+    expect(weeks[0]![6]).toEqual({ date: '2026-10-04', cell: cells[1] })
+    expect(weeks.flat().filter(Boolean)).toHaveLength(31)
+    expect(weeks.at(-1)!.map((d) => d?.date ?? null)).toEqual(['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', null])
+    // an explicit choice wins over the cells
+    expect(monthGrid('2026-10', [], true)).toHaveLength(5)
+    expect(monthGrid('2026-10', cells, false).every((w) => w.length === 5)).toBe(true)
+    const feb = monthGrid('2026-02', [], true) // Feb 1 2026 is a Sunday
+    expect(feb[0]!.map((d) => d?.date ?? null)).toEqual([null, null, null, null, null, null, '2026-02-01'])
   })
 
   it('navigates months and names them', () => {
@@ -150,6 +170,10 @@ describe('P&L calendar (§16.10)', () => {
     const year = mockPnlCalendar('MONTH', '2026-10', 2026, { openedAtMs: Date.parse('2026-10-05T14:00:00Z'), dayPnl: '1.23', dayReturn: '0.002', deposits: [] }, now)
     expect(year.cells).toHaveLength(1)
     expect(year.cells![0]!.pnl).toBe(day.total!.pnl)
+    // crypto on: Saturdays and Sundays are P&L days too
+    const all = mockPnlCalendar('DAY', '2026-10', 2026, { openedAtMs: Date.parse('2026-10-05T14:00:00Z'), dayPnl: '1.23', dayReturn: '0.002', deposits: [], weekends: true }, now)
+    expect(all.cells!.map((c) => c.date)).toContain('2026-10-10')
+    expect(all.cells).toHaveLength(10)
   })
 })
 

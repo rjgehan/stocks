@@ -1,5 +1,6 @@
 package com.stocks.trading.order;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.OrderGroupRole;
 import com.stocks.common.domain.OrderGroupType;
 import com.stocks.common.domain.OrderType;
@@ -7,6 +8,7 @@ import com.stocks.common.domain.Side;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.common.money.Money;
+import com.stocks.common.money.Qty;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.EnumSet;
@@ -53,7 +55,14 @@ public final class GroupRules {
     if (g.qty() == null) {
       throw invalid("qty", "qty is required: a whole number of shares for every leg.");
     }
-    if (g.qty().signum() <= 0 || !Money.hasAtMostDecimals(g.qty(), 0) || g.qty().compareTo(maxQty) > 0) {
+    if (Crypto.isCrypto(g.symbol())) {
+      // a crypto pair's legs take fractional quantities (§29)
+      if (g.qty().signum() <= 0 || !Money.hasAtMostDecimals(g.qty(), Qty.SCALE)
+          || g.qty().compareTo(Crypto.MAX_ORDER_QTY) > 0) {
+        throw invalid("qty", "Crypto group orders take a quantity above 0 with at most 5 decimals, up to "
+            + Crypto.MAX_ORDER_QTY.toPlainString() + ".");
+      }
+    } else if (g.qty().signum() <= 0 || !Money.hasAtMostDecimals(g.qty(), 0) || g.qty().compareTo(maxQty) > 0) {
       throw invalid("qty", "Group orders take a whole number of shares from 1 to " + maxQty.toPlainString() + ".");
     }
     if (g.type() != OrderGroupType.OCO && g.side() != Side.BUY) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { etDateOf, etOf, regularSessionTest } from './sessions'
+import { ALWAYS_REGULAR, etDateOf, etOf, regularSessionTest } from './sessions'
 import { DEFAULT_INDICATORS, activeLabels, activeOscillators, loadIndicators, sanitizeIndicators, saveIndicators } from './indicatorSettings'
 
 const sec = (iso: string) => Date.parse(iso) / 1000
@@ -22,6 +22,11 @@ describe('market time', () => {
     expect(isRegular(sec('2026-10-09T19:59:00Z'))).toBe(true)
     expect(isRegular(sec('2026-10-09T20:00:00Z'))).toBe(false) // 16:00 ET
     expect(regularSessionTest(null)(sec('2026-10-09T15:00:00Z'))).toBe(true)
+  })
+
+  it('treats every crypto minute as regular (24/7: nothing is shaded)', () => {
+    expect(ALWAYS_REGULAR(sec('2026-10-10T03:00:00Z'))).toBe(true) // a Friday 23:00 ET
+    expect(ALWAYS_REGULAR(sec('2026-10-11T16:00:00Z'))).toBe(true) // a Sunday noon ET
   })
 })
 

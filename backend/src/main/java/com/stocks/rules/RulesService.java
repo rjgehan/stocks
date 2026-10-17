@@ -1,6 +1,7 @@
 package com.stocks.rules;
 
 import com.stocks.common.domain.AccountType;
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.FeeCode;
 import com.stocks.common.domain.OrderGroupType;
 import com.stocks.common.domain.OrderType;
@@ -11,7 +12,6 @@ import com.stocks.common.jdbc.Jdbc;
 import com.stocks.common.time.TimeSource;
 import com.stocks.config.StocksProperties;
 import com.stocks.contract.identity.SettingsService;
-import com.stocks.contract.rules.dto.RulesDto;
 import com.stocks.contract.rules.dto.RulesDto.OrderGroupRuleDto;
 import com.stocks.contract.rules.dto.RulesDto.OrderMatrixRowDto;
 import com.stocks.contract.rules.dto.RulesDto.RulesAccountDto;
@@ -23,6 +23,7 @@ import com.stocks.contract.rules.dto.RulesDto.RulesLeaderboardDto;
 import com.stocks.contract.rules.dto.RulesDto.RulesOrdersDto;
 import com.stocks.contract.rules.dto.RulesDto.RulesSessionsDto;
 import com.stocks.contract.rules.dto.RulesDto.RulesSocialDto;
+import com.stocks.contract.rules.dto.RulesDto;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -123,11 +124,12 @@ public class RulesService {
     RulesSocialDto social = new RulesSocialDto(tradeFeedDelay().toString(), "PUBLIC");
 
     RulesDto content = new RulesDto(null, null, account, sessions, orders, execution, fees(today), rateLimits,
-        leaderboard, social, dataSources(config), fairness(botsRequireRationale()));
+        leaderboard, social, dataSources(config), fairness(botsRequireRationale()),
+        crypto(cryptoEnabled(), r.gtcDays()));
     String version = version(content);
     return new RulesDto(version, time.now(), content.account(), content.sessions(), content.orders(),
         content.execution(), content.fees(), content.rateLimits(), content.leaderboard(), content.social(),
-        content.dataSources(), content.fairness());
+        content.dataSources(), content.fairness(), content.crypto());
   }
 
   // ------------------------------------------------------------------------------------------- orders
@@ -345,6 +347,33 @@ public class RulesService {
         "Kill switch: the admin can freeze any player, and every such action is audited. Bots can never act as "
             + "admin.",
         "Secrets stay private: passwords, API keys, OAuth tokens, email addresses, sessions and the audit log.");
+  }
+
+  // ------------------------------------------------------------------------------------------- crypto
+
+  /** §29: how crypto pairs differ from stocks. */
+  static RulesDto.RulesCryptoDto crypto(boolean enabled, int gtcDays) {
+    return new RulesDto.RulesCryptoDto(enabled, Crypto.symbols(),
+        "24/7: every hour of every day, weekends and US market holidays included, while the admin keeps crypto on. "
+            + "There are no sessions, queues for the open or extended-hours flags; DAY orders last until 24:00 ET, "
+            + "GTC orders " + gtcDays + " days.",
+        "USD pairs written with a slash, e.g. \"BTC/USD\" (\"BTC-USD\" is accepted too and in URL paths).",
+        "Fractional quantities up to 5 decimals on every order type (stops and group legs included); notional "
+            + "(dollar) amounts on MARKET orders; at most " + Crypto.MAX_ORDER_QTY.toPlainString() + " units per "
+            + "order. Prices use the stock tick ($0.01 at or above $1.00, $0.0001 below).",
+        "MARKET, LIMIT, STOP, STOP_LIMIT and TRAILING_STOP, as for stocks; every fill is one piece at the touch.",
+        "Immediate: a crypto fill settles on its trade date, so its proceeds are settled cash at once and crypto never "
+            + "causes a good-faith violation.",
+        "None: SEC, FINRA TAF and CAT fees apply to stocks only.",
+        enabled ? "Every calendar day is a P&L day: weekend and holiday days end at 20:00 ET and get their own EOD "
+            + "snapshot, so crypto moves show in Day P&L, the P&L calendar, charts and the leaderboard."
+            : "Crypto is off: buys are refused (sells of existing positions still work) and P&L days are trading "
+                + "days only.");
+  }
+
+  /** {@code crypto.enabled} (§29), true while settings are a Day-0 stub. */
+  public boolean cryptoEnabled() {
+    return setting(settings::cryptoEnabled, () -> true);
   }
 
   // ------------------------------------------------------------------------------------------- settings

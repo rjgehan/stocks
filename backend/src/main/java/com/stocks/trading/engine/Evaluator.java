@@ -1,6 +1,7 @@
 package com.stocks.trading.engine;
 
 import com.stocks.common.domain.CancelReason;
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.OrderEventType;
 import com.stocks.common.domain.OrderStatus;
 import com.stocks.common.domain.SessionType;
@@ -236,7 +237,8 @@ class Evaluator {
       return;
     }
     // a triggered STOP / TRAILING_STOP works as a MARKET order, a triggered STOP_LIMIT as a LIMIT (§12.7)
-    FillModel.OrderView view = new FillModel.OrderView(r.side(), OrderTypes.fillsAs(r.type()), r.fractional(),
+    FillModel.OrderView view = new FillModel.OrderView(r.side(), OrderTypes.fillsAs(r.type()),
+        r.fractional() || Crypto.isCrypto(r.symbol()),   // a crypto pair takes one fill at the touch (§29)
         remaining, r.limitPrice(), r.collarPrice());
     FillModel.Decision d;
     if (resting) {
@@ -313,7 +315,7 @@ class Evaluator {
       return null;
     }
     if (r.side() == Side.BUY) {
-      return validator.notionalBuyQty(r.notional(), q.ask(), clock.tradeDate(now));
+      return validator.notionalBuyQty(r.symbol(), r.notional(), q.ask(), clock.tradeDate(now));
     }
     BigDecimal held = accounts.position(r.accountId(), r.symbol()).map(PositionRow::qty).orElse(Qty.ZERO);
     BigDecimal available = held.subtract(orders.reservedSellQty(r.accountId(), r.symbol(), r.id())).max(Qty.ZERO);

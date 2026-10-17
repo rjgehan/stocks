@@ -4,6 +4,7 @@ import { groupChipLabel, heldLabel } from '@/features/groups/groupLabels'
 import {
   availableGroupTypes,
   buildGroupRequest,
+  cryptoUnits,
   defaultPrices,
   entryReference,
   entryTypesFor,
@@ -72,6 +73,16 @@ describe('advanced ticket (§11.9, §22.5)', () => {
     // a market entry needs no entry price
     const mkt = groupTicketReducer(groupTicketReducer(bracket(), { type: 'entryType', entryType: 'MARKET' }), { type: 'field', field: 'entryLimit', value: '' })
     expect(buildGroupRequest(mkt, 'AAPL')?.entry).toEqual({ type: 'MARKET', limitPrice: null, stopPrice: null })
+  })
+
+  it('takes up to 5 decimals on a crypto pair', () => {
+    expect(cryptoUnits('0.01234')).toBe('0.01234')
+    expect(cryptoUnits('0.012340')).toBe('0.01234')
+    expect(cryptoUnits('0.000001')).toBeNull()
+    expect(cryptoUnits('0')).toBeNull()
+    const s = groupTicketReducer(bracket(), { type: 'field', field: 'qty', value: '2.5' })
+    expect(buildGroupRequest(s, 'AAPL')).toBeNull()
+    expect(buildGroupRequest(s, 'ETH/USD')).toMatchObject({ symbol: 'ETH/USD', qty: '2.5' })
   })
 
   it('builds an OCO on its side without an entry, and an OTO with its then-order', () => {

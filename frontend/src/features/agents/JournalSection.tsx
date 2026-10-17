@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { IconBook } from '@/components/ui/icons'
 import { delayWords } from './agentView'
+import { toPath } from '@/lib/symbols'
 
 function Note({ n }: { n: JournalNote }) {
   return (
@@ -18,7 +19,7 @@ function Note({ n }: { n: JournalNote }) {
       <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-micro text-text-3">
         <span>{formatDateTimeEt(n.at)}</span>
         {(n.symbols ?? []).map((sym) => (
-          <Link key={sym} to="/stock/$symbol" params={{ symbol: sym }} className="font-semibold text-text-2 hover:text-accent">
+          <Link key={sym} to="/stock/$symbol" params={{ symbol: toPath(sym) }} className="font-semibold text-text-2 hover:text-accent">
             {sym}
           </Link>
         ))}

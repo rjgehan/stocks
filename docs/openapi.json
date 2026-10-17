@@ -2439,7 +2439,7 @@
         ]
       },
       "put": {
-        "description": "Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live). Errors: SETTING_INVALID.",
+        "description": "Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live); crypto.enabled turns 24/7 crypto trading and weekend P&L days on or off (off: crypto buys are refused, sells still work). Errors: SETTING_INVALID.",
         "operationId": "put",
         "requestBody": {
           "content": {
@@ -4214,7 +4214,8 @@
                   "ETF",
                   "ADR",
                   "OTHER",
-                  "UNKNOWN"
+                  "UNKNOWN",
+                  "CRYPTO"
                 ]
               }
             }
@@ -9648,6 +9649,7 @@
               "ADR",
               "OTHER",
               "UNKNOWN",
+              "CRYPTO",
               null
             ]
           },
@@ -9721,6 +9723,7 @@
               "ADR",
               "OTHER",
               "UNKNOWN",
+              "CRYPTO",
               null
             ]
           }
@@ -10572,6 +10575,16 @@
       "Clock": {
         "type": "object",
         "properties": {
+          "crypto": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClockCrypto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "earlyClose": {
             "type": "boolean"
           },
@@ -10680,6 +10693,7 @@
           }
         },
         "required": [
+          "crypto",
           "earlyClose",
           "feed",
           "nextRegularClose",
@@ -10693,6 +10707,27 @@
           "tradingDate",
           "upcomingEarlyCloses",
           "upcomingHolidays"
+        ]
+      },
+      "ClockCrypto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "pairs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "enabled",
+          "pairs"
         ]
       },
       "ClockFeed": {
@@ -18767,6 +18802,16 @@
             ],
             "format": "date-time"
           },
+          "crypto": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesCrypto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "dataSources": {
             "type": [
               "array",
@@ -18861,6 +18906,7 @@
         "required": [
           "account",
           "asOf",
+          "crypto",
           "dataSources",
           "execution",
           "fairness",
@@ -18935,6 +18981,76 @@
           "shortSelling",
           "startingCash",
           "type"
+        ]
+      },
+      "RulesCrypto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "fees": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hours": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orders": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pairs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "pnlDays": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quantities": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "settlement": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "symbols": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "fees",
+          "hours",
+          "orders",
+          "pairs",
+          "pnlDays",
+          "quantities",
+          "settlement",
+          "symbols"
         ]
       },
       "RulesExecution": {
@@ -19988,6 +20104,7 @@
               "ADR",
               "OTHER",
               "UNKNOWN",
+              "CRYPTO",
               null
             ]
           },
@@ -20064,6 +20181,9 @@
           "bots.requireRationale": {
             "type": "boolean"
           },
+          "crypto.enabled": {
+            "type": "boolean"
+          },
           "league.allowSelfReset": {
             "type": "boolean"
           },
@@ -20104,6 +20224,7 @@
         },
         "required": [
           "bots.requireRationale",
+          "crypto.enabled",
           "league.allowSelfReset",
           "league.defaultStartingCash",
           "league.eligibility.minFills",
@@ -21804,6 +21925,12 @@
         "type": "object",
         "properties": {
           "bots.requireRationale": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "crypto.enabled": {
             "type": [
               "boolean",
               "null"

@@ -1,5 +1,6 @@
 package com.stocks.marketdata.web;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.contract.marketdata.MarketDataService;
@@ -19,7 +20,7 @@ final class Symbols {
   private Symbols() {}
 
   static String normalize(String raw, String field) {
-    String s = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
+    String s = raw == null ? "" : Crypto.fromPath(raw.trim().toUpperCase(Locale.ROOT));   // BTC-USD → BTC/USD
     if (!SYMBOL.matcher(s).matches()) {
       throw ApiException.validation(field, "not a valid symbol: '" + clip(raw) + "'");
     }

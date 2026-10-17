@@ -11,6 +11,7 @@ import type { ExtraColumn } from '@/features/stats/columns'
 import { ExtraStatValue, columnLabel } from '@/features/stats/ExtraStat'
 import { FormulaPopover } from './MetricInfoPopover'
 import { AiChip, Avatar } from './PlayerBadge'
+import { toPath } from '@/lib/symbols'
 
 const MEDAL = ['bg-gold', 'bg-silver', 'bg-bronze'] as const
 /** Room for "+$1,234,567.89" whichever unit shows, so the %/$ toggle never resizes the board. */
@@ -117,7 +118,7 @@ function Name({ row, me }: { row: LeaderboardRow; me: boolean }) {
 
 function SpyName({ b }: { b: BenchmarkPlayer }) {
   return (
-    <Link to="/stock/$symbol" params={{ symbol: b.symbol ?? 'SPY' }} className="flex min-h-11 min-w-0 items-center gap-2.5 hover:text-accent">
+    <Link to="/stock/$symbol" params={{ symbol: toPath(b.symbol ?? 'SPY') }} className="flex min-h-11 min-w-0 items-center gap-2.5 hover:text-accent">
       <span aria-hidden="true" className="inline-flex size-[30px] shrink-0 items-center justify-center rounded-full bg-bg-3 text-[10px] font-bold text-text-1">
         {b.symbol ?? 'SPY'}
       </span>

@@ -19,6 +19,7 @@ import { cx } from '@/components/ui/cx'
 import { IconArrowDown, IconArrowUp, IconGrip } from '@/components/ui/icons'
 import { usePriceFlash } from '@/features/market/usePriceFlash'
 import { COLUMNS, type ColumnId, type WatchlistSort, columnValue, cycleSort, sortSymbols } from './columns'
+import { toPath } from '@/lib/symbols'
 
 const PILL = { up: 'bg-up text-on-updown', down: 'bg-down text-on-updown', flat: 'bg-bg-3 text-text-1' } as const
 const UP_DOWN = { up: 'text-up', down: 'text-down', flat: 'text-text-1' } as const
@@ -122,7 +123,7 @@ const Row = memo(function Row({
     >
       <Link
         to="/stock/$symbol"
-        params={{ symbol }}
+        params={{ symbol: toPath(symbol) }}
         aria-current={active ? 'page' : undefined}
         aria-label={`${symbol} ${asset?.name ?? ''} ${formatPrice(quote?.last)}`.trim()}
         className={cx('sticky left-0 z-[1] flex shrink-0 items-center gap-1 self-stretch py-1.5 pl-1', active ? 'bg-accent-bg' : 'bg-bg-1 group-hover:bg-bg-2')}

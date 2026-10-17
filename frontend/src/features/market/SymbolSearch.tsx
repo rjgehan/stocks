@@ -6,13 +6,14 @@ import { readLocal, writeLocal } from '@/lib/prefs/local'
 import { IconSearch } from '@/components/ui/icons'
 import { Kbd } from '@/components/ui/Kbd'
 import { cx } from '@/components/ui/cx'
+import { isSymbolLike, toPath } from '@/lib/symbols'
 
 const RECENT_KEY = 'stocks.search.recent'
 
 function readRecent(): string[] {
   return readLocal(RECENT_KEY, '')
     .split(',')
-    .filter((s) => /^[A-Z0-9.]{1,10}$/.test(s))
+    .filter(isSymbolLike)
     .slice(0, 6)
 }
 
@@ -90,7 +91,7 @@ export function SymbolSearch({
     setRecent(readRecent())
     input.current?.blur()
     onDone?.()
-    void navigate({ to: '/stock/$symbol', params: { symbol } })
+    void navigate({ to: '/stock/$symbol', params: { symbol: toPath(symbol) } })
   }
 
   const showRecent = variant === 'page' && !onSelect && q.trim().length === 0 && recent.length > 0
@@ -174,9 +175,9 @@ export function SymbolSearch({
                   onMouseEnter={() => setActive(i)}
                   className={cx('flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left', i === active ? 'bg-bg-2' : 'hover:bg-bg-2', added && 'cursor-default opacity-50')}
                 >
-                  <span className="w-16 shrink-0 text-body font-semibold">{r.symbol}</span>
+                  <span className="min-w-16 shrink-0 text-body font-semibold">{r.symbol}</span>
                   <span className="min-w-0 flex-1 truncate text-caption text-text-2">{r.name}</span>
-                  <span className="ml-auto shrink-0 text-micro text-text-3">{added ? 'Added' : r.type === 'ETF' ? 'ETF' : r.exchange}</span>
+                  <span className="ml-auto shrink-0 text-micro text-text-3">{added ? 'Added' : r.type === 'ETF' ? 'ETF' : r.type === 'CRYPTO' ? 'Crypto' : r.exchange}</span>
                 </div>
               )
             })

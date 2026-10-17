@@ -1,6 +1,7 @@
 package com.stocks.agents;
 
 import com.stocks.common.domain.Channel;
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.PlayerKind;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
@@ -16,8 +17,8 @@ import com.stocks.common.web.Text;
 import com.stocks.contract.agents.JournalService;
 import com.stocks.contract.agents.dto.AddJournalNoteRequest;
 import com.stocks.contract.agents.dto.AddJournalNoteResultDto;
-import com.stocks.contract.agents.dto.JournalNoteDto;
 import com.stocks.contract.agents.dto.JournalNoteDto.UntrustedJournalTextDto;
+import com.stocks.contract.agents.dto.JournalNoteDto;
 import com.stocks.contract.identity.SettingsService;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.security.PlayerPrincipal;
@@ -57,7 +58,7 @@ public class JournalServiceImpl implements JournalService {
 
   private static final Logger log = LoggerFactory.getLogger(JournalServiceImpl.class);
 
-  static final Pattern SYMBOL = Pattern.compile("^[A-Z][A-Z0-9.\\-]{0,11}$");
+  static final Pattern SYMBOL = Pattern.compile(Crypto.SYMBOL_REGEX);
   private static final Pattern BREAKS = Pattern.compile("[\\r\\n\\t\\u2028\\u2029]+");
   private static final Pattern SPACES = Pattern.compile("[\\s\\u00A0\\u1680\\u2000-\\u200A\\u202F\\u205F\\u3000]+");
 
@@ -178,7 +179,7 @@ public class JournalServiceImpl implements JournalService {
     }
     LinkedHashSet<String> out = new LinkedHashSet<>();
     for (String s : raw) {
-      String sym = s == null ? "" : s.strip().toUpperCase(Locale.ROOT);
+      String sym = s == null ? "" : Crypto.fromPath(s.strip().toUpperCase(Locale.ROOT));
       if (!SYMBOL.matcher(sym).matches()) {
         throw ApiException.validation("symbols", "'" + Text.clip(s, 20) + "' is not a symbol");
       }

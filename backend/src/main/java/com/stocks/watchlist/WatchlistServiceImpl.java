@@ -1,5 +1,6 @@
 package com.stocks.watchlist;
 
+import com.stocks.common.domain.Crypto;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
 import com.stocks.common.id.Prefix;
@@ -42,7 +43,7 @@ public class WatchlistServiceImpl implements WatchlistService {
   public static final int MAX_LISTS = 20;
   public static final int MAX_SYMBOLS = 200;
   public static final int MAX_NAME = 40;
-  static final Pattern SYMBOL = Pattern.compile("^[A-Z][A-Z0-9.\\-]{0,11}$");
+  static final Pattern SYMBOL = Pattern.compile(Crypto.SYMBOL_REGEX);
 
   private final JdbcClient jdbc;
   private final TransactionTemplate tx;
@@ -287,7 +288,7 @@ public class WatchlistServiceImpl implements WatchlistService {
   }
 
   static String normalize(String symbol) {
-    return symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
+    return symbol == null ? "" : Crypto.fromPath(symbol.trim().toUpperCase(Locale.ROOT));
   }
 
   /** Normalized, de-duplicated (first occurrence wins) and known; {@code SYMBOL_NOT_FOUND} lists the unknown. */

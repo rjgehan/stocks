@@ -35,6 +35,17 @@ export const TRADING_CLOCK = {
 
 export const CLOSED_CLOCK = { ...TRADING_CLOCK, session: 'CLOSED', tradingDate: null };
 
+/** Saturday 2026-10-17 10:00 ET: the stock market is closed, crypto pairs trade (24/7). */
+export const WEEKEND_CRYPTO_CLOCK = {
+  now: '2026-10-17T14:00:00.000Z',
+  nowEt: '2026-10-17T10:00:00-04:00',
+  session: 'CLOSED',
+  tradingDate: null,
+  sessionEndsAt: null,
+  nextSession: 'PRE',
+  crypto: { enabled: true, pairs: ['BTC/USD', 'ETH/USD'] },
+};
+
 export interface FakeMcp {
   connect: ConnectMcp;
   calls: { name: string; args: JsonObject }[];

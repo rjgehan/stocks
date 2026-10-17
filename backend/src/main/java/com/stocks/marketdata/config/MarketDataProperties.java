@@ -95,6 +95,15 @@ public record MarketDataProperties(
       return !keyId.isEmpty() && !secretKey.isEmpty();
     }
 
+    /**
+     * The crypto stream (§29) on the stock stream's host: {@code wss://stream.data.alpaca.markets/v1beta3/crypto/us}
+     * in production (the {@code /v2/…} path of {@code stream-url} is replaced).
+     */
+    public String cryptoStreamUrl() {
+      java.net.URI u = java.net.URI.create(streamUrl);
+      return u.getScheme() + "://" + u.getRawAuthority() + "/v1beta3/crypto/us";
+    }
+
     @Override
     public String toString() {                     // never log the secret
       return "Alpaca[feed=" + feed + ", dataUrl=" + dataUrl + ", streamUrl=" + streamUrl + ", keys="

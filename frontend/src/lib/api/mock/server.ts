@@ -15,6 +15,7 @@ import {
   type Dec,
   add,
   compare,
+  decimals,
   div,
   fromInteger,
   gt,
@@ -89,6 +90,7 @@ import type { PlaceOrderGroupRequest } from '../groupTypes'
 import { Phase2Mock } from './phase2'
 import { type Lot, type MockOtherPlayer, type MockState, clearState, loadState, saveState } from './state'
 import { groupReactions, mockPlayerStats, mockPnlAnalysis, mockPnlCalendar, mockRace, mockRowStats, setReaction } from './stats'
+import { CRYPTO_PAIRS, fromPath, isCrypto, toPath } from '../../symbols'
 
 type Listener = (destination: string, body: unknown) => void
 type Handler = (ctx: Ctx) => Response | Promise<Response>
@@ -147,8 +149,9 @@ const RECENT_AUTH_MS = 15 * MIN
 const TRADE_DATE = '2026-10-09'
 const SETTLE_DATE = '2026-10-13'
 
-/** §13 seed rates (Oct 2026): SEC 0.0000206 × sell principal (CEIL cent), TAF paused, CAT 0.000003/share. */
-function estimateFees(side: 'BUY' | 'SELL', qty: Dec, principal: Dec): Fees {
+/** §13 seed rates (Oct 2026): SEC 0.0000206 × sell principal (CEIL cent), TAF paused, CAT 0.000003/share; crypto pays none. */
+function estimateFees(side: 'BUY' | 'SELL', qty: Dec, principal: Dec, crypto = false): Fees {
+  if (crypto) return { sec: '0.00', taf: '0.00', cat: '0.00', total: '0.00' }
   const sec = side === 'SELL' ? setScale(mul(principal, '0.0000206'), 2, 'CEILING') : '0.00'
   const catExact = mul(qty, '0.000003')
   const cat = lt(catExact, '0.01') ? '0.00' : setScale(catExact, 2, 'HALF_UP')
@@ -222,8 +225,23 @@ function defaultSettings(): Settings {
     'social.showDepositsInFeed': true,
     'bots.requireRationale': true,
     'league.humanKindExcludesApiTraders': false,
+    'crypto.enabled': true,
   }
 }
+
+/** The next 24:00 ET after `ms` (a crypto DAY order's expiry). */
+function nextEtMidnight(ms: number): string {
+  const date = etDate(ms)
+  for (let h = 3; h <= 6; h++) {
+    // 04:00Z (EDT) or 05:00Z (EST) of the next day: the first hour whose ET date has moved on
+    const t = Date.parse(`${date}T00:00:00Z`) + (24 + h) * 3_600_000
+    if (etDate(t) !== date) return iso(t)
+  }
+  return iso(Date.parse(`${date}T00:00:00Z`) + 28 * 3_600_000)
+}
+
+/** A symbol from a query string or body, canonical (`btc-usd` → `BTC/USD`); undefined when absent. */
+const symbolParam = (s: string | null | undefined): string | undefined => (s ? fromPath(s.trim()) : undefined)
 
 export class MockServer {
   /** Jobs the admin ran by hand this session (§21.1 "Run now"): shown as the job's last run. */
@@ -236,7 +254,7 @@ export class MockServer {
   private loggedIn = true
   private csrfToken: string | null = null
   private s: MockState
-  private readonly routes: Array<[string, RegExp, Handler]> = []
+  private readonly routes: Array<[string, RegExp, Handler, string[]]> = []
   /** Phase 2 group orders (§11.9) on top of this engine (`./groups`). */
   private readonly groups = new MockGroups({
     orders: () => this.s.orders,
@@ -269,6 +287,8 @@ export class MockServer {
       /* no storage */
     }
     const saved = loadState()
+    // a state saved by an older build lacks the newer settings (crypto.enabled)
+    if (saved) saved.settings = { ...defaultSettings(), ...saved.settings }
     this.s = saved ?? this.seed()
     this.registerRoutes()
     if (saved) this.resumeEngine()
@@ -624,11 +644,12 @@ export class MockServer {
     if (method === 'POST' && path === '/auth/signup') return this.signup(body)
     if (!this.loggedIn) return problem(401, 'UNAUTHENTICATED', 'Unauthenticated', 'Sign in to continue.')
 
-    for (const [m, re, handler] of this.routes) {
+    for (const [m, re, handler, names] of this.routes) {
       if (m !== method) continue
       const match = re.exec(path)
       if (!match) continue
-      ctx.params = match.slice(1).map((p) => decodeURIComponent(p))
+      // a `{symbol}` segment arrives in its path spelling (`BTC-USD`): handlers get the canonical `BTC/USD`
+      ctx.params = match.slice(1).map((p, i) => (names[i] === 'symbol' ? fromPath(decodeURIComponent(p)) : decodeURIComponent(p)))
       const res = await handler(ctx)
       if (method !== 'GET') this.persist()
       return res
@@ -638,7 +659,8 @@ export class MockServer {
 
   private route(method: string, pattern: string, handler: Handler): void {
     const re = new RegExp(`^${pattern.replace(/\{[a-zA-Z]+\}/g, '([^/]+)')}$`)
-    this.routes.push([method, re, handler])
+    const names = [...pattern.matchAll(/\{([a-zA-Z]+)\}/g)].map((m) => m[1]!)
+    this.routes.push([method, re, handler, names])
   }
 
   private registerRoutes(): void {
@@ -758,7 +780,7 @@ export class MockServer {
       return json({ list, asOf: iso(), source: 'mock', items: this.market.movers(list, limit) })
     })
     r('GET', '/quotes', ({ url }) => {
-      const symbols = (url.searchParams.get('symbols') ?? '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean)
+      const symbols = (url.searchParams.get('symbols') ?? '').split(',').map((s) => fromPath(s.trim())).filter(Boolean)
       return json({ quotes: symbols.slice(0, 50).map((s) => this.market.quote(s)) })
     })
     r('GET', '/assets/search', ({ url }) => {
@@ -840,7 +862,7 @@ export class MockServer {
     // orders
     r('GET', '/orders', ({ url }) => {
       const status = (url.searchParams.get('status') ?? 'ALL').toUpperCase()
-      const symbol = url.searchParams.get('symbol')?.toUpperCase()
+      const symbol = symbolParam(url.searchParams.get('symbol'))
       const items = this.s.orders
         .filter((o) => status === 'ALL' || (status === 'OPEN') === isOpen(o))
         .filter((o) => !symbol || o.symbol === symbol)
@@ -848,7 +870,7 @@ export class MockServer {
       return json(this.page(items, url))
     })
     r('DELETE', '/orders', ({ url }) => {
-      const symbol = url.searchParams.get('symbol')?.toUpperCase()
+      const symbol = symbolParam(url.searchParams.get('symbol'))
       const cancelled = this.s.orders.filter((o) => isOpen(o) && (!symbol || o.symbol === symbol))
       for (const o of cancelled) this.finish(o, 'CANCELLED', 'USER')
       return json({ cancelled })
@@ -874,7 +896,7 @@ export class MockServer {
       const name = b.name?.trim()
       if (!name) return problem(400, 'VALIDATION_FAILED', 'Validation failed', 'Name the list.', null, [{ field: 'name', code: 'NotBlank', message: 'Name the list.' }])
       if (this.s.watchlists.length >= 20) return problem(422, 'VALIDATION_FAILED', 'Too many lists', 'You can have up to 20 lists.')
-      const symbols = [...new Set((b.symbols ?? []).map((x) => x.toUpperCase()))]
+      const symbols = [...new Set((b.symbols ?? []).map((x) => fromPath(x)))]
       const bad = symbols.find((x) => !this.market.has(x))
       if (bad) return problem(404, 'SYMBOL_NOT_FOUND', 'Symbol not found', `Unknown symbol ${bad}.`)
       const list = { id: publicId('wlt'), name: name.slice(0, 40), sortOrder: this.s.watchlists.length, symbols }
@@ -886,7 +908,7 @@ export class MockServer {
       if (!list) return problem(404, 'NOT_FOUND', 'Watchlist not found')
       const b = (body ?? {}) as { name?: string; symbols?: string[] }
       if (!b.name?.trim() || !Array.isArray(b.symbols)) return problem(400, 'VALIDATION_FAILED', 'Validation failed', 'A name and the full symbol list are required.')
-      const symbols = [...new Set(b.symbols.map((x) => x.toUpperCase()))]
+      const symbols = [...new Set(b.symbols.map((x) => fromPath(x)))]
       const bad = symbols.find((x) => !this.market.has(x))
       if (bad) return problem(404, 'SYMBOL_NOT_FOUND', 'Symbol not found', `Unknown symbol ${bad}.`)
       list.name = b.name.trim().slice(0, 40)
@@ -902,7 +924,7 @@ export class MockServer {
     })
     r('POST', '/watchlists/{id}/symbols', ({ params, body }) => {
       const list = this.s.watchlists.find((w) => w.id === params[0])
-      const symbol = String((body as { symbol?: unknown } | null)?.symbol ?? '').toUpperCase()
+      const symbol = fromPath(String((body as { symbol?: unknown } | null)?.symbol ?? ''))
       if (!list) return problem(404, 'NOT_FOUND', 'Watchlist not found')
       if (!this.market.has(symbol)) return problem(404, 'SYMBOL_NOT_FOUND', 'Symbol not found', `Unknown symbol ${symbol}.`)
       list.symbols ??= []
@@ -941,7 +963,7 @@ export class MockServer {
     r('GET', '/players/{handle}/orders', ({ params, url }) =>
       this.listed(params[0]!, (h) => {
         const status = (url.searchParams.get('status') ?? 'ALL').toUpperCase()
-        const symbol = url.searchParams.get('symbol')?.trim().toUpperCase()
+        const symbol = symbolParam(url.searchParams.get('symbol'))
         const rows = this.publicOrders(h)
           .filter((o) => status === 'ALL' || (status === 'OPEN') === isOpenPublic(o))
           .filter((o) => !symbol || o.symbol === symbol)
@@ -988,7 +1010,7 @@ export class MockServer {
       const deposits = this.s.transfers
         .filter((t) => t.handle === this.s.me.handle && t.type !== 'INITIAL' && t.status === 'APPLIED' && t.isContribution)
         .map((t) => ({ date: new Date(Date.parse(t.effectiveAt ?? '')).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }), amount: t.amount ?? '0.00' }))
-      return json(mockPnlCalendar(view, month, year, { openedAtMs: Date.parse(this.s.openedAt), dayPnl: a.dayPnl ?? '0.00', dayReturn: a.dayReturn ?? '0', deposits }, Date.now()))
+      return json(mockPnlCalendar(view, month, year, { openedAtMs: Date.parse(this.s.openedAt), dayPnl: a.dayPnl ?? '0.00', dayReturn: a.dayReturn ?? '0', deposits, weekends: this.s.settings['crypto.enabled'] }, Date.now()))
     })
     r('PUT', '/feed/{itemId}/reaction', ({ params, body }) => this.react(params[0]!, (body as { reaction?: string } | null)?.reaction ?? null, true))
     r('DELETE', '/feed/{itemId}/reaction', ({ params }) => this.react(params[0]!, null, false))
@@ -1382,6 +1404,7 @@ export class MockServer {
       upcomingHolidays: [{ date: '2026-11-26', name: 'Thanksgiving Day' }],
       upcomingEarlyCloses: ['2026-11-27'],
       feed: { profile: 'mock', quality: 'SIMULATED', status: 'LIVE', liveIexWindowEt: null },
+      crypto: { enabled: this.s.settings['crypto.enabled'], pairs: [...CRYPTO_PAIRS] },
     }
   }
 
@@ -1500,9 +1523,9 @@ export class MockServer {
       status: 'ACTIVE',
       week52High: meta.week52High,
       week52Low: meta.week52Low,
-      logoUrl: `/api/v1/assets/${symbol}/logo`,
+      logoUrl: `/api/v1/assets/${toPath(symbol)}/logo`,
       fundamentals:
-        meta.type === 'ETF'
+        meta.type === 'ETF' || meta.type === 'CRYPTO'
           ? null
           : {
               marketCap: meta.marketCap,
@@ -1519,7 +1542,7 @@ export class MockServer {
   }
 
   private news(symbols: string) {
-    const list = symbols ? symbols.split(',').map((s) => s.trim().toUpperCase()).filter((s) => this.market.has(s)) : ['SPY', 'NVDA', 'AAPL']
+    const list = symbols ? symbols.split(',').map((s) => fromPath(s.trim())).filter((s) => this.market.has(s)) : ['SPY', 'NVDA', 'AAPL']
     return list.slice(0, 3).flatMap((symbol, i) => {
       const name = this.market.meta(symbol)?.name ?? symbol
       return [0, 1].map((k) => ({
@@ -1761,7 +1784,7 @@ export class MockServer {
     const errors: NonNullable<Preview['errors']> = []
     const warnings: Warning[] = []
     const err = (code: string, field: string | null, message: string, hint: string | null = null) => errors.push({ code, field, message, hint })
-    const meta = this.market.meta(String(req.symbol ?? '').toUpperCase())
+    const meta = this.market.meta(fromPath(String(req.symbol ?? '')))
     const ba = meta ? this.market.bidAsk(meta.symbol) : null
     if (!meta || !ba) {
       err('SYMBOL_NOT_FOUND', 'symbol', 'Unknown symbol.')
@@ -1776,16 +1799,24 @@ export class MockServer {
     const bid = unitsToDec(ba.bid)
     const ask = unitsToDec(ba.ask)
     const last = unitsToDec(ba.last)
+    // §29 crypto: 24/7, up to 5 decimals on every order type, extendedHours ignored, no fees; buys refused while off
+    const crypto = meta.type === 'CRYPTO'
+    const extendedHours = !crypto && Boolean(req.extendedHours)
 
+    if (crypto && side === 'BUY' && !this.s.settings['crypto.enabled']) {
+      err('SYMBOL_NOT_TRADABLE', 'symbol', 'Crypto trading is turned off: crypto buys are refused (sells still work).')
+    }
     if ((qty == null) === (notional == null)) err('QTY_OR_NOTIONAL_REQUIRED', 'qty', 'Enter a quantity or a dollar amount.')
     if (qty != null && (!isDecimal(qty) || sign(qty) <= 0)) err('INVALID_QTY', 'qty', 'Quantity must be greater than 0.')
     const fractionalQty = qty != null && isDecimal(qty) && sign(qty) > 0 && compare(setScale(qty, 0, 'DOWN'), qty) !== 0
-    if (fractionalQty && !meta.fractionable) err('NOT_FRACTIONABLE', 'qty', `${meta.symbol} trades in whole shares only.`)
+    if (crypto) {
+      if (qty != null && isDecimal(qty) && sign(qty) > 0 && decimals(qty) > 5) err('INVALID_QTY', 'qty', 'Crypto quantities take at most 5 decimals.')
+    } else if (fractionalQty && !meta.fractionable) err('NOT_FRACTIONABLE', 'qty', `${meta.symbol} trades in whole shares only.`)
     else if (fractionalQty && type !== 'MARKET') err('FRACTIONAL_MARKET_ONLY', 'qty', 'Fractional shares need a Market order.')
     if (notional != null) {
       if (!isDecimal(notional) || lt(notional, side === 'BUY' ? '1.00' : '0.01')) err('NOTIONAL_TOO_SMALL', 'notional', 'The minimum dollar order is $1.00.')
       if (type !== 'MARKET') err('FRACTIONAL_MARKET_ONLY', 'type', 'Dollar orders must be Market orders.')
-      if (tif !== 'DAY' || req.extendedHours) err('FRACTIONAL_DAY_ONLY', 'timeInForce', 'Dollar orders are Day only, regular hours.')
+      if (tif !== 'DAY' || extendedHours) err('FRACTIONAL_DAY_ONLY', 'timeInForce', 'Dollar orders are Day only, regular hours.')
       if (!meta.fractionable) err('NOT_FRACTIONABLE', 'notional', `${meta.symbol} does not support fractional shares.`)
     }
     // §11.2 checks 15–20 for every Phase 1 type (the mock accepts the full §11.1 matrix)
@@ -1808,7 +1839,7 @@ export class MockServer {
       err('INVALID_TICK', 'trailAmount', `The trail must be a positive multiple of $${tickFor(last)}.`)
     }
     if ((type === 'MARKET' || type === 'TRAILING_STOP') && tif === 'GTC') err('TIF_NOT_ALLOWED', 'timeInForce', `${label} orders are Day only.`)
-    if (req.extendedHours && type !== 'LIMIT') err('EXT_HOURS_LIMIT_ONLY', 'extendedHours', 'Extended hours need a Limit order.')
+    if (extendedHours && type !== 'LIMIT') err('EXT_HOURS_LIMIT_ONLY', 'extendedHours', 'Extended hours need a Limit order.')
     const priceFields: Array<readonly ['limitPrice' | 'stopPrice', Dec | null | undefined]> = [
       ['limitPrice', usesLimit ? req.limitPrice : null],
       ['stopPrice', usesStop ? req.stopPrice : null],
@@ -1852,12 +1883,12 @@ export class MockServer {
       let estQty: Dec
       if (notional != null) {
         const q0 = floor5(div(notional, refPrice, 8, 'DOWN'))
-        estQty = side === 'BUY' ? floor5(div(sub(notional, estimateFees('BUY', q0, '0').cat ?? '0'), refPrice, 8, 'DOWN')) : min(lot?.qty ?? '0', q0)
+        estQty = side === 'BUY' ? floor5(div(sub(notional, estimateFees('BUY', q0, '0', crypto).cat ?? '0'), refPrice, 8, 'DOWN')) : min(lot?.qty ?? '0', q0)
       } else {
         estQty = qty!
       }
       const principal = money(mul(estQty, refPrice))
-      const fees = estimateFees(side, estQty, principal)
+      const fees = estimateFees(side, estQty, principal, crypto)
       let hold = '0.00'
       if (side === 'BUY') {
         hold =
@@ -1876,7 +1907,9 @@ export class MockServer {
             'INSUFFICIENT_BUYING_POWER',
             notional != null ? 'notional' : 'qty',
             `This order needs $${hold}; your buying power is $${bp}.`,
-            `You can afford ${maxShares} whole shares at $${setScale(ask, 2)}${meta.fractionable ? ', or try a dollar amount' : ''}.`,
+            crypto
+              ? `You can afford about ${div(bp, mul(ask, '1.02'), 5, 'FLOOR')} at $${setScale(ask, 2)}, or try a dollar amount.`
+              : `You can afford ${maxShares} whole shares at $${setScale(ask, 2)}${meta.fractionable ? ', or try a dollar amount' : ''}.`,
           )
         }
         buyingPowerAfter = sub(bp, hold)
@@ -1906,7 +1939,7 @@ export class MockServer {
       orderId: publicId('ord'),
       clientOrderId: req.clientOrderId ?? `web-${crypto.randomUUID()}`,
       accountId: this.s.me.accountId,
-      symbol: (req.symbol ?? '').toUpperCase(),
+      symbol: fromPath(req.symbol ?? ''),
       side: req.side ?? 'BUY',
       type: req.type ?? 'MARKET',
       qty: req.qty ?? null,
@@ -1936,7 +1969,12 @@ export class MockServer {
       eligibleAt: iso(Date.parse(at) + 400),
       activatedAt: null,
       triggeredAt: null,
-      expiresAt: (req.timeInForce ?? 'DAY') === 'GTC' ? '2026-12-04T21:00:00.000Z' : iso(this.startedAt + ((2 * 60 + 14) * 60 + 7) * 1000),
+      expiresAt:
+        (req.timeInForce ?? 'DAY') === 'GTC'
+          ? '2026-12-04T21:00:00.000Z'
+          : isCrypto(req.symbol)
+            ? nextEtMidnight(Date.parse(at))
+            : iso(this.startedAt + ((2 * 60 + 14) * 60 + 7) * 1000),
       doneAt: null,
       replacesOrderId: null,
       replacedByOrderId: null,
@@ -1952,7 +1990,7 @@ export class MockServer {
 
   private requestHash(req: PlaceOrderRequest): string {
     const { symbol, side, type, qty, notional, limitPrice, stopPrice, timeInForce, extendedHours } = req
-    return JSON.stringify([symbol?.toUpperCase(), side, type, qty, notional, limitPrice, stopPrice, timeInForce ?? 'DAY', Boolean(extendedHours)])
+    return JSON.stringify([symbol ? fromPath(symbol) : symbol, side, type, qty, notional, limitPrice, stopPrice, timeInForce ?? 'DAY', Boolean(extendedHours)])
   }
 
   private place(req: PlaceOrderRequest): Response {
@@ -2128,7 +2166,7 @@ export class MockServer {
     let qty: Dec
     if (order.notional != null) {
       const q0 = floor5(div(order.notional, price, 8, 'DOWN'))
-      qty = order.side === 'BUY' ? floor5(div(sub(order.notional, estimateFees('BUY', q0, '0').cat ?? '0'), price, 8, 'DOWN')) : min(this.s.lots[order.symbol!]?.qty ?? '0', q0)
+      qty = order.side === 'BUY' ? floor5(div(sub(order.notional, estimateFees('BUY', q0, '0', isCrypto(order.symbol)).cat ?? '0'), price, 8, 'DOWN')) : min(this.s.lots[order.symbol!]?.qty ?? '0', q0)
     } else {
       qty = order.qty!
     }
@@ -2151,7 +2189,7 @@ export class MockServer {
     const symbol = order.symbol!
     const side = order.side ?? 'BUY'
     const principal = money(mul(qty, price))
-    const fees = estimateFees(side, qty, principal)
+    const fees = estimateFees(side, qty, principal, isCrypto(symbol))
     const net = side === 'BUY' ? add(principal, fees.total ?? '0') : sub(principal, fees.total ?? '0')
     const lot: Lot | undefined = this.s.lots[symbol]
     let realized: Dec | null = null
@@ -2467,7 +2505,7 @@ export class MockServer {
     }
     if (market && qty) {
       const principal = money(mul(qty, px))
-      const fees = estimateFees(side, qty, principal).total ?? '0.00'
+      const fees = estimateFees(side, qty, principal, isCrypto(symbol)).total ?? '0.00'
       const pos = p.positions.find((x) => x.symbol === symbol)
       let realized: Dec | null = null
       if (side === 'BUY') {
@@ -2635,7 +2673,7 @@ export class MockServer {
     for (const o of p.orders) {
       for (const f of o.fills ?? []) {
         const principal = money(mul(f.qty ?? '0', f.price ?? '0'))
-        const fees = estimateFees(o.side!, f.qty ?? '0', principal)
+        const fees = estimateFees(o.side!, f.qty ?? '0', principal, isCrypto(o.symbol))
         const amount = o.side === 'BUY' ? negate(add(principal, f.fees ?? '0.00')) : sub(principal, f.fees ?? '0.00')
         rows.push(this.ledgerRow({ at: f.executedAt, type: 'FILL', symbol: o.symbol, side: o.side, qty: f.qty, price: f.price, fees, amount, by: 'SELF', orderId: o.orderId, executionId: f.executionId, tradeDate: etDate(Date.parse(f.executedAt ?? '')), settleDate: etDate(Date.parse(f.executedAt ?? '') + DAY_MS) }))
       }
@@ -2667,10 +2705,10 @@ export class MockServer {
       .map((t) => ({ date: etDate(Date.parse(t.effectiveAt ?? '')), amount: t.amount ?? '0.00' }))
     if (handle === this.s.me.handle) {
       const a = this.account()
-      return mockPnlCalendar(view, month, year, { openedAtMs: Date.parse(this.s.openedAt), dayPnl: a.dayPnl ?? '0.00', dayReturn: a.dayReturn ?? '0', deposits }, Date.now())
+      return mockPnlCalendar(view, month, year, { openedAtMs: Date.parse(this.s.openedAt), dayPnl: a.dayPnl ?? '0.00', dayReturn: a.dayReturn ?? '0', deposits, weekends: this.s.settings['crypto.enabled'] }, Date.now())
     }
     const pf = this.publicPortfolio(handle)
-    return mockPnlCalendar(view, month, year, { openedAtMs: Date.parse(this.other(handle)!.createdAt), dayPnl: pf.dayPnl ?? '0.00', dayReturn: pf.dayReturn ?? '0', deposits, key: handle }, Date.now())
+    return mockPnlCalendar(view, month, year, { openedAtMs: Date.parse(this.other(handle)!.createdAt), dayPnl: pf.dayPnl ?? '0.00', dayReturn: pf.dayReturn ?? '0', deposits, key: handle, weekends: this.s.settings['crypto.enabled'] }, Date.now())
   }
 
   /** Period anchor for a player's unit value: deterministic per player and period (ALL = 1, TODAY = session start). */
@@ -3376,6 +3414,7 @@ export class MockServer {
     const cash = next['league.defaultStartingCash']
     if (!cash || !isDecimal(cash) || lt(cash, '1.00')) return problem(422, 'SETTING_INVALID', 'Invalid setting', 'Starting cash must be at least $1.00.', null, [{ field: 'league.defaultStartingCash', code: 'SETTING_INVALID', message: 'At least $1.00.' }])
     if (next['league.eligibility.minFills'] < 0 || next['league.eligibility.minSymbols'] < 0) return problem(422, 'SETTING_INVALID', 'Invalid setting', 'Eligibility minimums cannot be negative.')
+    if (typeof next['crypto.enabled'] !== 'boolean') return problem(422, 'SETTING_INVALID', 'Invalid setting', 'crypto.enabled must be true or false.', null, [{ field: 'crypto.enabled', code: 'SETTING_INVALID', message: 'true or false.' }])
     if (!/^P(?=\d|T\d)(?:\d+D)?(?:T(?=\d)(?:\d+H)?(?:\d+M)?(?:\d+S)?)?$/.test(next['social.tradeFeedDelay'] ?? '')) return problem(422, 'SETTING_INVALID', 'Invalid setting', 'Feed delay must be an ISO-8601 duration such as PT15M.', null, [{ field: 'social.tradeFeedDelay', code: 'SETTING_INVALID', message: 'ISO-8601 duration, e.g. PT15M.' }])
     next['league.defaultStartingCash'] = setScale(cash, 2)
     this.s.settings = next

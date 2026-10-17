@@ -23,7 +23,8 @@ function useNow(intervalMs: number): number {
 /**
  * "● Market Open · closes 2:14:07" (§22.3), driven by GET /market/clock and /topic/market.session. The countdown
  * runs on the server's clock (`Clock.now` plus the time since it was fetched), not the device's: the dev and e2e
- * backends may run an offset or anchored SIM clock (§15.7).
+ * backends may run an offset or anchored SIM clock (§15.7). The chip is the US stock market's; while the stock market is
+ * closed and crypto is on, a quiet "Crypto 24/7" says the pairs still trade.
  */
 export function SessionChip({ compact, detailClassName, truncate }: { compact?: boolean; detailClassName?: string; truncate?: boolean }) {
   const { data: clock, dataUpdatedAt } = useClock()
@@ -36,6 +37,7 @@ export function SessionChip({ compact, detailClassName, truncate }: { compact?: 
   const detail = target
     ? `${clock.session === 'PRE' ? 'opens' : s.verb} ${formatCountdown(Date.parse(target) - now)}`
     : `opens ${formatSessionStartEt(clock.nextSessionAt, now)}`
+  const cryptoOpen = clock.session === 'CLOSED' && clock.crypto?.enabled === true
   return (
     <span
       className={cx(
@@ -45,11 +47,12 @@ export function SessionChip({ compact, detailClassName, truncate }: { compact?: 
       )}
       role="status"
       aria-live="off"
-      title={`${s.label} · ${detail}${clock.earlyClose ? ' · early close today' : ''}`}
+      title={`${s.label} · ${detail}${clock.earlyClose ? ' · early close today' : ''}${cryptoOpen ? ' · Crypto trades 24/7' : ''}`}
     >
       <span className={cx('size-2 shrink-0 rounded-full', s.dot, clock.session === 'REGULAR' && 'motion-safe:animate-pulse')} aria-hidden="true" />
       <span className="shrink-0 text-text-1">{s.label}</span>
       {compact ? null : <span className={cx('text-text-3', truncate && 'min-w-0 truncate', detailClassName)}>· {detail}</span>}
+      {cryptoOpen && !compact && !truncate ? <span className={cx('text-text-3', detailClassName)}>· Crypto 24/7</span> : null}
     </span>
   )
 }

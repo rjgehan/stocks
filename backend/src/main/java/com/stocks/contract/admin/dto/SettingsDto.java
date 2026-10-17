@@ -17,4 +17,5 @@ public record SettingsDto(
     @JsonProperty("social.tradeFeedDelay") String tradeFeedDelay,
     @JsonProperty("social.showDepositsInFeed") boolean showDepositsInFeed,
     @JsonProperty("bots.requireRationale") boolean botsRequireRationale,
-    @JsonProperty("league.humanKindExcludesApiTraders") boolean humanKindExcludesApiTraders) {}
+    @JsonProperty("league.humanKindExcludesApiTraders") boolean humanKindExcludesApiTraders,
+    @JsonProperty("crypto.enabled") boolean cryptoEnabled) {}

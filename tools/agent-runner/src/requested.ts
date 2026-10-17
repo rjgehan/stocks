@@ -20,6 +20,8 @@ export const MAX_PENDING = 10;
 export const REASON_MAX = 300;
 /** The ET wall-clock window a run can be booked in: the pre-market open to the post-market close. */
 export const WINDOW_ET = { from: 4 * 60, to: 20 * 60, text: '04:00-20:00' };
+/** While crypto trades (24/7, the market clock's `crypto.enabled`), any day and any time of day can be booked. */
+export const CRYPTO_WINDOW_ET = { text: '00:00-24:00' };
 /** How long the outcome of a past booked run is kept (the per-day limit only looks at one date). */
 const DONE_KEEP_DAYS = 8;
 
@@ -50,6 +52,8 @@ export interface BookContext {
   /** Market holidays by ET date ("2026-11-26" → "Thanksgiving Day"), from the market clock. */
   holidays: Map<string, string>;
   perDay: number;
+  /** The market clock says crypto trades (`crypto.enabled`): weekends, holidays and any time of day can be booked. */
+  crypto?: boolean;
 }
 
 export type BookResult =
@@ -194,26 +198,34 @@ export function bookRun(dir: string, args: { at_et?: unknown; reason?: unknown }
     );
   }
   const [y, mo, d] = dateEt.split('-').map(Number) as [number, number, number];
-  const weekday = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
-  if (weekday === 0 || weekday === 6) {
-    return refuse(
-      'RUN_TIME_NOT_ALLOWED',
-      `${dateEt} is a ${WEEKDAYS[weekday]}; the market is closed on weekends.`,
-      'Book a trading day.',
-    );
-  }
-  const holiday = ctx.holidays.get(dateEt);
-  if (holiday) {
-    return refuse('RUN_TIME_NOT_ALLOWED', `${dateEt} is a market holiday (${holiday}).`, 'Book a trading day.');
-  }
-  const p = etParts(at);
-  const minuteOfDay = p.hour * 60 + p.minute;
-  if (minuteOfDay < WINDOW_ET.from || minuteOfDay > WINDOW_ET.to) {
-    return refuse(
-      'RUN_TIME_NOT_ALLOWED',
-      `${atEt} ET is outside ${WINDOW_ET.text} ET (the pre-market open to the post-market close).`,
-      'Pick a time inside that window; orders entered overnight wait for the next session anyway.',
-    );
+  // While crypto trades, every day and every minute is bookable; otherwise only stock trading days, 04:00-20:00 ET.
+  if (!ctx.crypto) {
+    const weekday = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+    if (weekday === 0 || weekday === 6) {
+      return refuse(
+        'RUN_TIME_NOT_ALLOWED',
+        `${dateEt} is a ${WEEKDAYS[weekday]}; the market is closed on weekends and crypto trading is off.`,
+        'Book a trading day.',
+      );
+    }
+    const holiday = ctx.holidays.get(dateEt);
+    if (holiday) {
+      return refuse(
+        'RUN_TIME_NOT_ALLOWED',
+        `${dateEt} is a market holiday (${holiday}) and crypto trading is off.`,
+        'Book a trading day.',
+      );
+    }
+    const p = etParts(at);
+    const minuteOfDay = p.hour * 60 + p.minute;
+    if (minuteOfDay < WINDOW_ET.from || minuteOfDay > WINDOW_ET.to) {
+      return refuse(
+        'RUN_TIME_NOT_ALLOWED',
+        `${atEt} ET is outside ${WINDOW_ET.text} ET (the pre-market open to the post-market close) and crypto ` +
+          'trading is off.',
+        'Pick a time inside that window; orders entered overnight wait for the next session anyway.',
+      );
+    }
   }
   for (const s of ctx.schedule) {
     const slotAt = etToInstant(y, mo, d, s.hour, s.minute);
@@ -297,6 +309,12 @@ export function takeDue(dir: string, now: Date, maxLateMs: number): { due: Reque
   );
   write(dir, f, now);
   return { due, missed };
+}
+
+/** Whether a get_market_clock result says crypto pairs trade (24/7); a clock without a `crypto` member (older server): no. */
+export function cryptoEnabled(clock: { crypto?: unknown }): boolean {
+  const c = clock.crypto as { enabled?: unknown } | null | undefined;
+  return c !== null && typeof c === 'object' && c.enabled === true;
 }
 
 /** Market holidays from a get_market_clock result (`upcomingHolidays: [{date, name}]`); malformed entries ignored. */

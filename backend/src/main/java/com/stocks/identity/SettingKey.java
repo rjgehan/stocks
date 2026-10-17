@@ -92,6 +92,13 @@ public enum SettingKey {
     String canonical(String v) {
       return bool(v);
     }
+  },
+  /** §29: crypto pairs trade 24/7, and every calendar day is a P&amp;L day, while this is on. */
+  CRYPTO_ENABLED("crypto.enabled", "true") {
+    @Override
+    String canonical(String v) {
+      return bool(v);
+    }
   };
 
   /** Upper bound for any starting cash (fits NUMERIC(19,2) with room for every deposit). */

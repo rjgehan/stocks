@@ -276,4 +276,43 @@ class AlpacaRestClientTest {
         .contains("PNG");
     assertThat(http.requests("/v1beta1/logos/AAPL").getFirst().query()).containsEntry("placeholder", "true");
   }
+
+  /** §29: crypto pairs go to the crypto API (no feed), prices land on the tick and day bars on ET days. */
+  @Test
+  void cryptoSnapshotsAndBarsUseTheCryptoApi() {
+    http.fixture("/v2/stocks/snapshots", "alpaca/snapshots.json");
+    http.fixture("/v1beta3/crypto/us/snapshots", "alpaca/crypto-snapshots.json");
+    Map<String, Snapshot> snaps = alpaca.snapshots(Set.of("AAPL", "BTC/USD", "DOGE/USD"), RefreshPriority.UI);
+    assertThat(http.requests("/v2/stocks/snapshots").getFirst().query()).containsEntry("symbols", "AAPL");
+    FakeHttpServer.Request crypto = http.requests("/v1beta3/crypto/us/snapshots").getFirst();
+    assertThat(crypto.query()).containsEntry("symbols", "BTC/USD,DOGE/USD").doesNotContainKey("feed");
+    Snapshot btc = snaps.get("BTC/USD");
+    assertThat(btc.quote().bid()).isEqualByComparingTo("112000.45");          // bid rounded down to the cent tick
+    assertThat(btc.quote().ask()).isEqualByComparingTo("112010.01");          // ask rounded up
+    assertThat(btc.quote().bidSize()).isEqualTo(1);                           // 0.25 coin shows as 1
+    assertThat(btc.quote().quality()).isEqualTo(com.stocks.common.domain.DataQuality.REALTIME_CONSOLIDATED);
+    assertThat(btc.lastTrade().price()).isEqualByComparingTo("112005.12");
+    assertThat(btc.lastTrade().consolidated()).isTrue();
+    assertThat(btc.lastTrade().eligible()).isTrue();
+    LocalDate today = com.stocks.common.time.Et.date(time.now());
+    assertThat(com.stocks.common.time.Et.date(btc.dailyBar().start())).isEqualTo(today);
+    assertThat(com.stocks.common.time.Et.date(btc.prevDailyBar().start())).isEqualTo(today.minusDays(1));
+    assertThat(btc.prevDailyBar().close()).isEqualByComparingTo("111000.00");
+    Snapshot doge = snaps.get("DOGE/USD");
+    assertThat(doge.quote().bid()).isEqualByComparingTo("0.2411");           // sub-dollar tick 0.0001
+    assertThat(doge.quote().ask()).isEqualByComparingTo("0.2413");
+    assertThat(snaps).containsKey("AAPL");
+
+    http.fixture("/v1beta3/crypto/us/bars", "alpaca/crypto-bars.json");
+    Map<String, List<Bar>> bars = alpaca.bars(new BarQuery(Set.of("BTC/USD"), Timeframe.MIN1,
+        Instant.parse("2026-10-09T13:00:00Z"), Instant.parse("2026-10-09T14:00:00Z"), AdjustmentMode.SPLIT, false, 2,
+        "sip"), RefreshPriority.UI);
+    FakeHttpServer.Request req = http.requests("/v1beta3/crypto/us/bars").getFirst();
+    assertThat(req.query()).containsEntry("symbols", "BTC/USD").containsEntry("timeframe", "1Min")
+        .containsEntry("sort", "desc").doesNotContainKey("feed").doesNotContainKey("adjustment");
+    assertThat(http.requests("/v2/stocks/bars")).isEmpty();
+    assertThat(bars.get("BTC/USD")).extracting(Bar::close).extracting(BigDecimal::toPlainString)
+        .containsExactly("112001.5000", "112005.1200");                      // ascending, on the tick
+    assertThat(bars.get("BTC/USD").get(0).volume()).isEqualTo(2);
+  }
 }

@@ -56,10 +56,11 @@ class SettingsServiceImplTest {
     assertThat(s.showDepositsInFeed()).isTrue();
     assertThat(s.botsRequireRationale()).isTrue();
     assertThat(s.humanKindExcludesApiTraders()).isFalse();
-    assertThat(s.all()).containsEntry("league.defaultStartingCash", "1000.00").hasSize(9)
+    assertThat(s.cryptoEnabled()).isTrue();                       // §29: crypto trades 24/7 by default
+    assertThat(s.all()).containsEntry("league.defaultStartingCash", "1000.00").hasSize(10)
         .doesNotContainKey("social.holdingsVisibility");
     assertThat(db.jdbc().sql("SELECT COUNT(*) FROM app_setting WHERE updated_by IS NULL").query(Long.class).single())
-        .isEqualTo(9);
+        .isEqualTo(10);
 
     // the environment seeds once: a later boot with another value keeps the admin's value
     SettingsServiceImpl later = service(TestProperties.stocks("stocks.bootstrap.default-starting-cash", "250"));

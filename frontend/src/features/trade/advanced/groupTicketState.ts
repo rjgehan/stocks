@@ -3,12 +3,13 @@
  *  - Bracket: a buy entry (Market or Limit) + a take profit above it + a stop loss below it, at least 0.1% apart;
  *  - OTOCO: the same, with Stop / Stop Limit entries and no distance rule; OTO: an entry + one "then" order;
  *  - OCO: a limit and a stop on one side (Sell to protect shares you hold, or Buy);
- *  - whole shares and one time in force for every leg (a Market entry is Day);
+ *  - whole shares (a crypto pair: up to 5 decimals) and one time in force for every leg (a Market entry is Day);
  *  - the group's clientOrderId (`web-<uuid>`) is created when the ticket opens and reused on retry.
  */
 import type { OrderGroupRule, OrderGroupType, PlaceOrderGroupRequest } from '@/lib/api/groupTypes'
 import type { OrderType, Side, TimeInForce } from '@/lib/api/types'
-import { type Dec, compare, div, isDecimal, mul, parseUserDecimal, roundToTick, setScale, sign, sub } from '@/lib/format/decimal'
+import { type Dec, compare, decimals, div, isDecimal, mul, parseUserDecimal, roundToTick, setScale, sign, stripTrailingZeros, sub } from '@/lib/format/decimal'
+import { isCrypto } from '@/lib/symbols'
 import { newClientOrderId } from '../ticketState'
 
 export type EntryType = 'MARKET' | 'LIMIT' | 'STOP' | 'STOP_LIMIT'
@@ -154,17 +155,25 @@ export function wholeShares(input: string): Dec | null {
   return compare(setScale(q, 0, 'DOWN'), q) === 0 ? setScale(q, 0, 'DOWN') : null
 }
 
+/** A crypto quantity above 0 with at most 5 decimals, or null. */
+export function cryptoUnits(input: string): Dec | null {
+  const q = parseUserDecimal(input)
+  if (!q || !isDecimal(q) || sign(q) <= 0 || decimals(q) > 5) return null
+  return stripTrailingZeros(q)
+}
+
 function price(input: string): Dec | null {
   const p = parseUserDecimal(input)
   return p && isDecimal(p) && sign(p) > 0 ? p : null
 }
 
 /**
- * The `POST /order-groups` body, or null while a required input is empty (whole shares; every price the legs use).
+ * The `POST /order-groups` body, or null while a required input is empty (whole shares, or up to 5 decimals of a
+ * crypto pair; every price the legs use).
  * Prices go out as typed (the server checks the tick and reports the leg's field).
  */
 export function buildGroupRequest(s: GroupTicketState, symbol: string): PlaceOrderGroupRequest | null {
-  const qty = wholeShares(s.qty)
+  const qty = isCrypto(symbol) ? cryptoUnits(s.qty) : wholeShares(s.qty)
   if (!qty) return null
   const t = s.groupType
   const entry = hasEntry(t)
@@ -196,7 +205,7 @@ export function buildGroupRequest(s: GroupTicketState, symbol: string): PlaceOrd
     stopLoss: stopLoss ? { ...stopLoss, type: s.slUseLimit ? 'STOP_LIMIT' : 'STOP' } : null,
     secondary,
     rationale: note || null,
-    doNotReduce: s.doNotReduce,
+    doNotReduce: s.doNotReduce && !isCrypto(symbol),
     acknowledge: s.gfvAck ? ['GFV_RISK'] : [],
   }
 }

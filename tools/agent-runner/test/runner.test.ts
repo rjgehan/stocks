@@ -16,7 +16,7 @@ import {
   text,
   toolUse,
 } from './fakes/llm.js';
-import { CLOSED_CLOCK, fail, fakeMcp, FIXTURE_TOOLS, ok } from './fakes/mcp.js';
+import { CLOSED_CLOCK, fail, fakeMcp, FIXTURE_TOOLS, ok, WEEKEND_CRYPTO_CLOCK } from './fakes/mcp.js';
 import {
   bot,
   CHATGPT_STOCKS_KEY,
@@ -338,6 +338,44 @@ describe('Claude run (Messages API)', () => {
     const manual = await runBot(bot(config, 'claude'), deps, { trigger: 'once', slot: null, requireTradingDay: false });
     expect(manual.status).toBe('completed');
     expect(llm.calls).toHaveLength(1);
+
+    // crypto off (or a server without the crypto member, as above): still skipped
+    const off = fakeMcp({}, { ...CLOSED_CLOCK, crypto: { enabled: false, pairs: [] } });
+    const s2 = await runBot(bot(config, 'claude'), testDeps(config, off.connect), {
+      trigger: 'requested',
+      slot: '10:00',
+      requireTradingDay: true,
+    });
+    expect(s2).toMatchObject({ status: 'skipped_non_trading_day', message: expect.stringContaining('crypto trading is off') });
+    expect(llm.calls).toHaveLength(1);
+  });
+
+  it('runs on a weekend while crypto trades: the opening says so and schedule_run accepts weekend times', async () => {
+    const llm = await claudeFake(
+      () =>
+        claudeReply([
+          toolUse('b1', 'schedule_run', { at_et: '2026-10-18 22:30', reason: 'Re-check BTC/USD Sunday night' }),
+        ]),
+      () => claudeReply([text('Booked a Sunday run.')]),
+    );
+    const mcp = fakeMcp({}, WEEKEND_CRYPTO_CLOCK);
+    const config = testConfig({ dataDir, anthropicUrl: llm.url });
+    const deps = testDeps(config, mcp.connect, { clock: { now: () => new Date('2026-10-17T14:00:00Z') } });
+    const s = await runBot(bot(config, 'claude'), deps, { trigger: 'schedule', slot: '10:00', requireTradingDay: true });
+    expect(s.status).toBe('completed');
+    expect(s.toolErrors).toBe(0);
+    const opening = llm.calls[0]?.body.messages[0].content as string;
+    expect(opening).toContain(
+      'Scheduled runs happen at 09:30, 12:45, 15:50 ET on trading days, and on weekends and market holidays while ' +
+        'crypto trading is on (crypto pairs trade 24/7).',
+    );
+    expect(opening).toContain('"crypto":{"enabled":true');
+    const scheduleRun = llm.calls[0]?.body.tools.find((t: { name: string }) => t.name === 'schedule_run');
+    expect(scheduleRun.description).toContain('may be on any day, weekends and market holidays included');
+    expect(scheduleRun.description).not.toContain('04:00-20:00');
+    const [booked] = lastToolResults(llm.calls[1]!);
+    expect(JSON.parse(booked.content as string).scheduled).toMatchObject({ at_et: '2026-10-18 22:30' });
+    expect(readRunLog(s.logPath).find((l) => l.type === 'market_clock')).toMatchObject({ tradingDate: null, crypto: true });
   });
 
   it('retries RATE_LIMITED tool results once after retry_after_s', async () => {
@@ -521,6 +559,9 @@ describe('booking extra runs', () => {
     expect(mcp.calls.map((c) => c.name)).toEqual(['get_market_clock']); // runner-local: never sent to the server
     const opening = llm.calls[0]?.body.messages[0].content as string;
     expect(opening).toContain('Scheduled runs happen at 09:30, 12:45, 15:50 ET on trading days. To act at another time, book an extra run with schedule_run (at most 4 per day).');
+    // no crypto member in this clock (an older server): the stock-only booking rules
+    const scheduleRun = llm.calls[0]?.body.tools.find((t: { name: string }) => t.name === 'schedule_run');
+    expect(scheduleRun.description).toContain('must be on a trading day between 04:00-20:00 ET, at least 2 minutes from now');
     expect(opening).toContain('Your pending extra runs: none.');
     const [booked, tooClose, unknown] = lastToolResults(llm.calls[1]!);
     expect(booked.is_error).toBe(false);

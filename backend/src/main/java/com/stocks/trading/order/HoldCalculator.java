@@ -91,13 +91,18 @@ public class HoldCalculator {
     if (price == null) {
       return null;
     }
-    return holdFor(o.qty(), price, tradeDate);
+    return holdFor(o.symbol(), o.qty(), price, tradeDate);
   }
 
-  /** {@code HOLD(qty × price + estFees(qty))}. */
+  /** {@code HOLD(qty × price + estFees(qty))} for a stock. */
   public BigDecimal holdFor(BigDecimal qty, BigDecimal price, LocalDate tradeDate) {
+    return holdFor(null, qty, price, tradeDate);
+  }
+
+  /** {@code HOLD(qty × price + estFees(qty))}; a crypto pair has no fees (§29). */
+  public BigDecimal holdFor(String symbol, BigDecimal qty, BigDecimal price, LocalDate tradeDate) {
     BigDecimal principal = Rounding.PRINCIPAL_BUY.multiply(qty, price);
-    BigDecimal est = fees.estimate(Side.BUY, qty, principal, tradeDate).total();
+    BigDecimal est = fees.estimate(symbol, Side.BUY, qty, principal, tradeDate).total();
     return Rounding.HOLD.apply(qty.multiply(price).add(est));
   }
 

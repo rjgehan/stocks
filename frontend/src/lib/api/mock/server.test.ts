@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, expectTypeOf, it } from 'vitest'
 import type { Activity, Leaderboard, Order, PlaceOrderResponse, PlayerProfile, PublicOrder, PublicPortfolio, Rules, Settings, TransferBatchResult } from '../types'
 import { MockServer, durationMs } from './server'
+import { roundToTick } from '../../format/decimal'
 
 /**
  * The mock backend (§22.9) must answer with the exact §18.3 / §21.1 shapes, so screens built against it work
@@ -394,5 +395,58 @@ describe('mock server: public mode (§16.7)', () => {
     expect(durationMs('PT15M')).toBe(15 * 60_000)
     expect(durationMs('P1D')).toBe(24 * 60 * 60_000)
     expect(durationMs('PT0S')).toBe(0)
+  })
+})
+
+type PreviewBody = { valid: boolean; errors: Array<{ code: string; field: string | null }>; estimate: { fees: { total: string } } | null }
+/** The touch, on the price tick (a marketable buy limit). */
+const ask = async (symbol: string) => roundToTick((await call<{ quotes: Array<{ ask: string }> }>('GET', `/quotes?symbols=${symbol}`)).body.quotes[0]!.ask, 'CEILING')
+
+describe('mock server: crypto (§29)', () => {
+  it('serves the pairs on dash paths with canonical BTC/USD symbols and 24 h of 1D bars', async () => {
+    const asset = await call<Record<string, unknown>>('GET', '/assets/BTC-USD')
+    expect(asset.status).toBe(200)
+    expect(asset.body).toMatchObject({ symbol: 'BTC/USD', type: 'CRYPTO', exchange: 'CRYPTO', fractionable: true, tradable: true, fundamentals: null })
+    expect(asset.body.logoUrl).toBe('/api/v1/assets/BTC-USD/logo')
+    const bars = await call<{ symbol: string; bars: Array<{ t: string }> }>('GET', '/bars/btc-usd?range=1D')
+    expect(bars.body.symbol).toBe('BTC/USD')
+    expect(bars.body.bars).toHaveLength(1440)
+    expect(Date.parse(bars.body.bars.at(-1)!.t) - Date.parse(bars.body.bars[0]!.t)).toBe(1439 * 60_000)
+    const quotes = await call<{ quotes: Array<{ symbol: string; last: string }> }>('GET', '/quotes?symbols=BTC-USD,DOGE/USD')
+    expect(quotes.body.quotes.map((q) => q.symbol)).toEqual(['BTC/USD', 'DOGE/USD'])
+    expect(quotes.body.quotes[1]!.last).toMatch(/^0\.\d{4}$/)
+    const search = await call<Array<{ symbol: string; type: string }>>('GET', '/assets/search?q=BTC')
+    expect(search.body[0]).toMatchObject({ symbol: 'BTC/USD', type: 'CRYPTO' })
+  })
+
+  it('takes 5-decimal quantities on every order type, ignores extendedHours and charges no fees', async () => {
+    const px = await ask('ETH/USD')
+    const limit = await call<PreviewBody>('POST', '/orders/preview', { symbol: 'ETH/USD', side: 'BUY', type: 'LIMIT', qty: '0.01234', limitPrice: px, timeInForce: 'GTC', extendedHours: true })
+    expect(limit.body.errors).toEqual([])
+    expect(limit.body.valid).toBe(true)
+    expect(limit.body.estimate!.fees.total).toBe('0.00')
+    const tooFine = await call<PreviewBody>('POST', '/orders/preview', { symbol: 'ETH-USD', side: 'BUY', type: 'LIMIT', qty: '0.000001', limitPrice: px })
+    expect(tooFine.body.errors.map((e) => e.code)).toContain('INVALID_QTY')
+    // the same fractional limit on a stock still needs a Market order
+    const stock = await call<PreviewBody>('POST', '/orders/preview', { symbol: 'AAPL', side: 'BUY', type: 'LIMIT', qty: '0.5', limitPrice: await ask('AAPL') })
+    expect(stock.body.errors.map((e) => e.code)).toContain('FRACTIONAL_MARKET_ONLY')
+  })
+
+  it('publishes crypto in the clock and the rules, and refuses crypto buys (not sells) while it is off', async () => {
+    const clock = await call<{ crypto: { enabled: boolean; pairs: string[] } }>('GET', '/market/clock')
+    expect(clock.body.crypto.enabled).toBe(true)
+    expect(clock.body.crypto.pairs).toHaveLength(12)
+    expect((await call<Rules>('GET', '/rules')).body.crypto).toMatchObject({ enabled: true })
+    expect((await call<Settings>('GET', '/admin/settings')).body['crypto.enabled']).toBe(true)
+
+    expect((await call('PUT', '/admin/settings', { 'crypto.enabled': 'yes' })).status).toBe(422)
+    const off = await call<Settings>('PUT', '/admin/settings', { 'crypto.enabled': false })
+    expect(off.status).toBe(200)
+    expect(off.body['crypto.enabled']).toBe(false)
+    expect((await call<{ crypto: { enabled: boolean } }>('GET', '/market/clock')).body.crypto.enabled).toBe(false)
+    const buy = await call<PreviewBody>('POST', '/orders/preview', { symbol: 'BTC/USD', side: 'BUY', type: 'MARKET', notional: '10.00' })
+    expect(buy.body.errors.map((e) => e.code)).toContain('SYMBOL_NOT_TRADABLE')
+    const sell = await call<PreviewBody>('POST', '/orders/preview', { symbol: 'BTC/USD', side: 'SELL', type: 'MARKET', qty: '0.001' })
+    expect(sell.body.errors.map((e) => e.code)).not.toContain('SYMBOL_NOT_TRADABLE')
   })
 })

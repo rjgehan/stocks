@@ -19,7 +19,23 @@ import java.util.Map;
 public record RulesDto(String version, Instant asOf, RulesAccountDto account, RulesSessionsDto sessions,
                        RulesOrdersDto orders, RulesExecutionDto execution, List<RulesFeeDto> fees,
                        Map<String, Object> rateLimits, RulesLeaderboardDto leaderboard, RulesSocialDto social,
-                       List<String> dataSources, List<String> fairness) {
+                       List<String> dataSources, List<String> fairness, RulesCryptoDto crypto) {
+
+  /** The rulebook without its crypto section (fixtures). */
+  public RulesDto(String version, Instant asOf, RulesAccountDto account, RulesSessionsDto sessions,
+                  RulesOrdersDto orders, RulesExecutionDto execution, List<RulesFeeDto> fees,
+                  Map<String, Object> rateLimits, RulesLeaderboardDto leaderboard, RulesSocialDto social,
+                  List<String> dataSources, List<String> fairness) {
+    this(version, asOf, account, sessions, orders, execution, fees, rateLimits, leaderboard, social, dataSources,
+        fairness, null);
+  }
+
+  /**
+   * Crypto pairs (§29): {@code enabled} is the admin setting {@code crypto.enabled}; {@code pairs} the tradable
+   * symbols. The other members describe how crypto differs from stocks, in words a bot can quote.
+   */
+  public record RulesCryptoDto(boolean enabled, List<String> pairs, String hours, String symbols, String quantities,
+                               String orders, String settlement, String fees, String pnlDays) {}
 
   /** {@code type} is always {@code CASH}; {@code settlement} {@code "T+1"}. */
   public record RulesAccountDto(AccountType type, BigDecimal startingCash, String settlement, boolean pdtEnforced,

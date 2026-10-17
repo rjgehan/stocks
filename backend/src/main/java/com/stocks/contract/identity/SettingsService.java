@@ -35,6 +35,9 @@ public interface SettingsService {
   /** {@code league.humanKindExcludesApiTraders}. */
   boolean humanKindExcludesApiTraders();
 
+  /** {@code crypto.enabled} (§29): crypto pairs trade 24/7 and weekends are P&amp;L days. */
+  boolean cryptoEnabled();
+
   /** Every setting as stored (key → string value). */
   Map<String, String> all();
 

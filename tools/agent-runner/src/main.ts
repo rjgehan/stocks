@@ -65,8 +65,9 @@ export function parseArgs(argv: string[]): Args {
 
 const HELP = `stocks agent runner
 
-  node dist/main.js                       run on AGENT_SCHEDULE_ET (ET) on trading days, plus the extra runs
-                                          the bots book with schedule_run, until SIGTERM
+  node dist/main.js                       run on AGENT_SCHEDULE_ET (ET) on trading days (every day
+                                          while crypto trades), plus the extra runs the bots book
+                                          with schedule_run, until SIGTERM
   node dist/main.js --once [--bot NAME]   run claude, chatgpt or all (default) once now, then exit
   node dist/main.js --check               print the configuration (never secrets) and exit
 

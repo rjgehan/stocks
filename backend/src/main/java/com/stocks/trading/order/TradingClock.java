@@ -51,6 +51,17 @@ public class TradingClock {
     }
   }
 
+  /** The calendar {@code symbol} trades on: 24/7 for crypto pairs (§29), the NYSE calendar otherwise. */
+  public MarketCalendar calendar(String symbol) {
+    return calendar.forSymbol(symbol);
+  }
+
+  /** The session of {@code symbol} at {@code t}: always REGULAR for a crypto pair (§29). */
+  public SessionState session(String symbol, Instant t) {
+    MarketCalendar c = calendar.forSymbol(symbol);
+    return c == calendar ? session(t) : c.stateAt(t);
+  }
+
   /** {@code calendar.tradeDateFor(t)}, falling back to the ET date of {@code t}. */
   public LocalDate tradeDate(Instant t) {
     try {
@@ -63,5 +74,10 @@ public class TradingClock {
   /** T+1 (bank-holiday aware) settlement of a trade date (§9). */
   public LocalDate settlementDate(LocalDate tradeDate) {
     return calendar.settlementDate(tradeDate);
+  }
+
+  /** The settlement date of a trade in {@code symbol}: the trade date itself for a crypto pair (§29), else T+1. */
+  public LocalDate settlementDate(String symbol, LocalDate tradeDate) {
+    return calendar.forSymbol(symbol).settlementDate(tradeDate);
   }
 }
