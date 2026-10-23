@@ -9,6 +9,7 @@ import { compare, isDecimal, isZero, stripTrailingZeros } from '@/lib/format/dec
 import { formatMoney } from '@/lib/format/money'
 import { formatPrice, formatQty } from '@/lib/format/number'
 import { formatDateEt, formatDateTimeEt } from '@/lib/format/time'
+import { contractsLabel, expiryLabel, formatOptionPrice, isOption, optionLabel } from '@/lib/options'
 
 export const ACTIVITY_TYPE_LABEL: Record<ActivityType, string> = {
   FILL: 'Trade',
@@ -71,6 +72,11 @@ export function activityView(a: Activity): ActivityView {
   }
   switch (type) {
     case 'FILL':
+      // §30: an option's quantity is contracts and its price per share; the system's sell at expiration is the settlement
+      if (isOption(a.symbol)) {
+        if (a.side === 'SELL' && a.by === 'SYSTEM') return { ...base, title: `Expired: ${contractsLabel(a.qty)} ${optionLabel(a.symbol)}`, lines: [expiryLabel(a.price)], icon: 'trade' }
+        return { ...base, title: `${a.side === 'SELL' ? 'Sold to close' : 'Bought to open'} ${contractsLabel(a.qty)} ${optionLabel(a.symbol)} @ ${formatOptionPrice(a.price)}`, icon: 'trade' }
+      }
       return { ...base, title: `${a.side === 'SELL' ? 'Sold' : 'Bought'} ${formatQty(a.qty)} ${a.symbol ?? ''} @ ${formatPrice(a.price)}`, icon: 'trade' }
     case 'INITIAL_FUNDING':
     case 'DEPOSIT':

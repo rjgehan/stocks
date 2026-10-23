@@ -32,14 +32,16 @@ import { KeyStatsGrid } from './KeyStatsGrid'
 import { QuoteHeader } from './QuoteHeader'
 import { RangeChips } from './RangeChips'
 import { isCrypto } from '@/lib/symbols'
+import { isOption, optionShortLabel, underlyingOf } from '@/lib/options'
 
 const PriceChart = lazy(() => import('./PriceChart'))
 // Loaded on demand (review finding: wave A grew this chunk by ~80%): research cards, news and the tape
 const AnalystRatings = lazy(() => import('@/features/research/AnalystRatings').then((m) => ({ default: m.AnalystRatings })))
 const NewsFeed = lazy(() => import('@/features/research/NewsFeed').then((m) => ({ default: m.NewsFeed })))
 const TimeAndSales = lazy(() => import('@/features/tape/TimeAndSales').then((m) => ({ default: m.TimeAndSales })))
+const OptionChain = lazy(() => import('./OptionChain').then((m) => ({ default: m.OptionChain })))
 
-export type QuoteTab = 'OVERVIEW' | 'NEWS' | 'TRADES' | 'POSITION'
+export type QuoteTab = 'OVERVIEW' | 'OPTIONS' | 'NEWS' | 'TRADES' | 'POSITION'
 
 export interface StockScreenProps {
   symbol: string
@@ -49,10 +51,14 @@ export interface StockScreenProps {
   tf?: Timeframe
   tab: QuoteTab
   ticket: Side | undefined
+  /** §30: the option contract selected on the Options tab (OCC symbol); the ticket trades it instead of the stock. */
+  contract?: string
   onRange: (r: ChartRange) => void
   onTf?: (tf: Timeframe | undefined) => void
   onTab: (t: QuoteTab) => void
   onTicket: (side: Side | undefined) => void
+  /** Selects (or, undefined, clears) the contract, opening the ticket on `side` when given. */
+  onContract?: (contract: string | undefined, side?: Side) => void
 }
 
 /** Chart heights (px) by breakpoint, plus room for each oscillator pane (§22.10). */
@@ -64,15 +70,20 @@ const PANE_HEIGHT = { phone: 80, tablet: 100, desktop: 110 } as const
  * dock. Tablet: ticket in a right side sheet, dock as tabs under the chart. Phone: pushed screen with a
  * sticky header and a Trade bar that opens a bottom sheet.
  */
-export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, ticket, onRange, onTf, onTab, onTicket }: StockScreenProps) {
+export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, ticket, contract, onRange, onTf, onTab, onTicket, onContract }: StockScreenProps) {
   const asset = useAsset(symbol)
   const quote = useQuote(symbol, 'quote')
   const bars = useBars(symbol, range, effectiveTimeframe(range, tf))
   const scroller = useRef<HTMLDivElement>(null)
   const desktop = breakpoint === 'desktop' || breakpoint === 'wide'
   const phone = breakpoint === 'phone'
+  // §30: stocks and ETFs have an Options tab (not crypto pairs, not a contract's own page)
+  const optionable = !isCrypto(symbol) && !isOption(symbol) && asset.data?.type !== 'CRYPTO' && asset.data?.type !== 'OPTION'
   // desktop shows Time & Sales in the right column, so a `tab=TRADES` link (or a resize) lands on the overview
-  const tab: QuoteTab = desktop && requestedTab === 'TRADES' ? 'OVERVIEW' : requestedTab
+  const tab: QuoteTab = (desktop && requestedTab === 'TRADES') || (!optionable && requestedTab === 'OPTIONS') ? 'OVERVIEW' : requestedTab
+  // the ticket trades the contract chosen on the Options tab, else the stock
+  const selectedContract = tab === 'OPTIONS' && contract && underlyingOf(contract) === symbol ? contract : undefined
+  const tradeSymbol = selectedContract ?? symbol
   const [dockTab, setDockTab] = useState<'POSITIONS' | 'ORDERS'>('POSITIONS')
   const [style, setStyle] = useChartType(phone, range === '1D')
   const [indicators, setIndicators] = useIndicatorSettings()
@@ -94,9 +105,12 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
   const chartHeight = CHART_HEIGHT[sizeKey] + activeOscillators(indicators).length * PANE_HEIGHT[sizeKey]
   // §22.5: Sell is disabled without a position to sell (it used to open a Buy ticket)
   const positions = usePositions()
-  const held = positions.data?.find((p) => p.symbol === symbol)
+  const held = positions.data?.find((p) => p.symbol === tradeSymbol)
   const sellable = canSell({ fractionable: false, availableQty: held?.availableQty ?? null })
-  const sellTitle = sellable ? undefined : `You don't own ${symbol}`
+  const sellTitle = sellable ? undefined : `You don't own ${selectedContract ? optionShortLabel(selectedContract) : symbol}`
+  const buyLabel = selectedContract ? 'Buy to open' : 'Buy'
+  const sellLabel = selectedContract ? 'Sell to close' : 'Sell'
+  const selectContract = (c: string) => onContract?.(c, desktop ? undefined : 'BUY')
   const liveBar = useLiveBar(symbol, range === '1D')
   const live = useMemo(() => ({ bar: liveBar, last: quote?.last ?? null }), [liveBar, quote?.last])
 
@@ -154,6 +168,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
         onChange={onTab}
         items={[
           { value: 'OVERVIEW', label: 'Overview' },
+          ...(optionable ? [{ value: 'OPTIONS' as const, label: 'Options' }] : []),
           { value: 'NEWS', label: 'News' },
           // desktop shows Time & Sales in the right column (§22.10)
           ...(desktop ? [] : [{ value: 'TRADES' as const, label: 'Trades' }]),
@@ -194,6 +209,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
           </div>
         ) : null}
         <Suspense fallback={<Skeleton className="h-24" />}>
+          {tab === 'OPTIONS' ? <OptionChain underlying={symbol} selected={selectedContract} onSelect={selectContract} /> : null}
           {tab === 'NEWS' ? <NewsFeed symbols={symbol} /> : null}
           {tab === 'TRADES' ? <TimeAndSales symbol={symbol} maxHeight="max-h-[60vh]" /> : null}
         </Suspense>
@@ -214,13 +230,13 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
         {/* Trade bar → 92%-height bottom sheet */}
         <div className="sticky bottom-0 z-20 flex gap-2 border-t border-divider bg-bg-1/95 px-3 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))] backdrop-blur">
           <Button variant="buy" size="lg" className="flex-1" onClick={() => onTicket('BUY')}>
-            Buy
+            {buyLabel}
           </Button>
           <Button variant="sell" size="lg" className="flex-1" disabled={!sellable} title={sellTitle} onClick={() => onTicket('SELL')}>
-            Sell
+            {sellLabel}
           </Button>
         </div>
-        <TradeSheet symbol={symbol} side={ticket ?? 'BUY'} open={ticket !== undefined} onClose={() => onTicket(undefined)} variant="bottom" />
+        <TradeSheet key={tradeSymbol} symbol={tradeSymbol} side={ticket ?? 'BUY'} open={ticket !== undefined} onClose={() => onTicket(undefined)} variant="bottom" />
       </div>
     )
   }
@@ -238,10 +254,10 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
             <>
               <AlertButton symbol={symbol} />
               <Button variant="buy" onClick={() => onTicket('BUY')}>
-                Buy
+                {buyLabel}
               </Button>
               <Button variant="sell" disabled={!sellable} title={sellTitle} onClick={() => onTicket('SELL')}>
-                Sell
+                {sellLabel}
               </Button>
             </>
           }
@@ -260,7 +276,7 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
           <div className="-mx-4">{dockTab === 'POSITIONS' ? <PositionsTable compact /> : <OrdersTable view="ALL" limit={20} />}</div>
         </section>
         {detailTabs}
-        <TradeSheet symbol={symbol} side={ticket ?? 'BUY'} open={ticket !== undefined} onClose={() => onTicket(undefined)} variant="right" />
+        <TradeSheet key={tradeSymbol} symbol={tradeSymbol} side={ticket ?? 'BUY'} open={ticket !== undefined} onClose={() => onTicket(undefined)} variant="right" />
       </div>
     )
   }
@@ -277,7 +293,15 @@ export function StockScreen({ symbol, breakpoint, range, tf, tab: requestedTab, 
         <BottomDock />
       </div>
       <aside aria-label={`Trade ${symbol}`} className="scrollbar-thin relative flex w-[340px] shrink-0 flex-col overflow-y-auto border-l border-divider bg-bg-1 wide:w-[380px]">
-        <TradeTicket key={symbol} symbol={symbol} initialSide={ticket ?? 'BUY'} />
+        {selectedContract ? (
+          <div className="flex items-center justify-between gap-2 border-b border-divider bg-bg-2/60 px-4 py-1.5 text-caption text-text-2">
+            <span>Option ticket</span>
+            <button type="button" onClick={() => onContract?.(undefined)} className="font-semibold text-accent hover:text-accent-hover">
+              Trade {symbol} shares
+            </button>
+          </div>
+        ) : null}
+        <TradeTicket key={tradeSymbol} symbol={tradeSymbol} initialSide={ticket ?? 'BUY'} />
         {breakpoint === 'wide' ? (
           <div className="border-t border-divider px-4 py-3">
             <h2 className="mb-2 text-caption font-semibold tracking-wide text-text-2 uppercase">Bid / Ask</h2>

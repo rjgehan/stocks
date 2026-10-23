@@ -1,6 +1,7 @@
 package com.stocks.marketdata.core;
 
 import com.stocks.common.domain.DataQuality;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.SessionType;
 import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
@@ -78,6 +79,9 @@ public class MarkService {
           .orElse(new Mark(null, DataQuality.NONE, null, null));
     }
     MarketFeed.MarkInputs in = feed.markInputs(symbol);
+    if (OptionSymbol.isOption(symbol)) {
+      return optionMark(symbol, in, calendar, now);
+    }
     if (in.simulated()) {
       Trade t = in.lastTrade();
       if (t != null) {
@@ -140,6 +144,53 @@ public class MarkService {
     // 5. last day-end mark
     return safeLastDayEnd(symbol, today).map(d -> dayEnd(symbol, d, today, DataQuality.STALE))
         .orElse(new Mark(null, DataQuality.NONE, null, null));
+  }
+
+  /**
+   * §30: an option is marked at its quote mid, or its bid when there is no ask (an ask without a bid counts the bid as
+   * zero), and its last trade is never used (the indicative feed's trades are 15 minutes late). In the regular
+   * session a confirmed quote is live; outside it, or with a stale quote, the day's {@code day_end_mark} wins once
+   * it exists, then the latest quote (STALE), then the last day-end mark.
+   */
+  private Mark optionMark(String symbol, MarketFeed.MarkInputs in, MarketCalendar calendar, Instant now) {
+    LocalDate pnlDay = calendar.currentPnlDay(now);
+    SessionType session = calendar.stateAt(now).type();
+    Quote q = in.quote();
+    BigDecimal mid = optionMid(q);
+    boolean confirmed = in.quoteConfirmedAt() != null
+        && Duration.between(in.quoteConfirmedAt(), now).compareTo(quoteFreshRegular) <= 0;
+    if (mid != null && session == SessionType.REGULAR && (confirmed || in.simulated())) {
+      DataQuality quality = in.simulated() ? DataQuality.SIMULATED
+          : q.quality() == null ? DataQuality.REALTIME_CONSOLIDATED : q.quality();
+      return new Mark(mid, quality, q.ts(), MarkBasis.OPTION_MID);
+    }
+    Optional<DailyMarkRepository.DayEnd> de = safeLastDayEnd(symbol, pnlDay);
+    if (de.isPresent() && de.get().tradeDate().equals(pnlDay)) {
+      return new Mark(de.get().mark(), DataQuality.DELAYED_15M,
+          calendar.day(de.get().tradeDate()).map(TradingDay::rthCloseAt).orElse(null), MarkBasis.DAY_END);
+    }
+    if (mid != null) {
+      return new Mark(mid, in.simulated() ? DataQuality.SIMULATED : DataQuality.STALE, q.ts(), MarkBasis.OPTION_MID);
+    }
+    return de.map(d -> new Mark(d.mark(), DataQuality.STALE, calendar.day(d.tradeDate())
+            .map(TradingDay::rthCloseAt).orElse(null), MarkBasis.DAY_END))
+        .orElse(new Mark(null, DataQuality.NONE, null, null));
+  }
+
+  /** The option mark of a quote: mid, the bid without an ask, half the ask without a bid; null without prices. */
+  public static BigDecimal optionMid(Quote q) {
+    if (q == null) {
+      return null;
+    }
+    BigDecimal bid = q.bid() != null && q.bid().signum() > 0 ? q.bid() : null;
+    BigDecimal ask = q.ask() != null && q.ask().signum() > 0 ? q.ask() : null;
+    if (bid != null && ask != null && ask.compareTo(bid) >= 0) {
+      return bid.add(ask).divide(BigDecimal.TWO, 4, RoundingMode.HALF_EVEN);
+    }
+    if (bid != null) {
+      return bid.setScale(4, RoundingMode.HALF_EVEN);
+    }
+    return ask == null ? null : ask.divide(BigDecimal.TWO, 4, RoundingMode.HALF_EVEN);
   }
 
   private Mark dayEnd(String symbol, DailyMarkRepository.DayEnd d, LocalDate today, DataQuality quality) {

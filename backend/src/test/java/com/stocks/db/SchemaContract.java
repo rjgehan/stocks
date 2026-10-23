@@ -132,6 +132,24 @@ abstract class SchemaContract {
     assertThat(jdbc().sql(check).query(Long.class).single()).isEqualTo(1L);
   }
 
+  /** V14 (§30): OCC symbols fit every symbol column, OPTION assets and OPTION_MID day-end marks exist. */
+  @Test
+  void optionContractsFitTheSymbolColumns() {
+    jdbc().sql("""
+            INSERT INTO asset (symbol, name, asset_type, tradable, fractionable, status, source, updated_at)
+            VALUES (?, 'ABCDEF 20 Nov 26 $250 Call', 'OPTION', TRUE, FALSE, 'ACTIVE', 'manual', ?)
+            """).params("ABCDEF261120C00250000", Jdbc.ts(T0)).update();
+    jdbc().sql("""
+            INSERT INTO daily_mark (symbol, trade_date, day_end_mark, day_end_basis, quality, updated_at)
+            VALUES (?, ?, 4.2500, 'OPTION_MID', 'FINAL', ?)
+            """).params("ABCDEF261120C00250000", LocalDate.of(2026, 10, 9), Jdbc.ts(T0)).update();
+    String check = vendor().equals("h2")
+        ? "SELECT COUNT(*) FROM information_schema.check_constraints WHERE constraint_name IN "
+            + "('ck_execution_price', 'ck_execution_liquidity')"
+        : "SELECT COUNT(*) FROM pg_constraint WHERE conname IN ('ck_execution_price', 'ck_execution_liquidity')";
+    assertThat(jdbc().sql(check).query(Long.class).single()).isEqualTo(2L);
+  }
+
   // ------------------------------------------------------------------------------------------------ JDBC typing
 
   @Test

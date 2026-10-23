@@ -248,9 +248,10 @@ export function useUpdateLeagueSettings() {
     mutationFn: (patch: UpdateSettingsRequest) => withRecentAuth(() => unwrap(api.PUT('/api/v1/admin/settings', { body: patch }))),
     onSuccess: (settings) => {
       qc.setQueryData(K.settings, settings)
-      // crypto.enabled shows in the clock and the rulebook
+      // crypto.enabled shows in the clock and the rulebook; options.enabled in the rulebook and the option chains
       void qc.invalidateQueries({ queryKey: queryKeys.clock })
       void qc.invalidateQueries({ queryKey: queryKeys.rules })
+      void qc.invalidateQueries({ queryKey: ['options'] })
     },
   })
 }

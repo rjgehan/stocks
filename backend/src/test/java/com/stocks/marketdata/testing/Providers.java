@@ -12,7 +12,7 @@ public final class Providers {
 
   public static MarketDataProperties.Alpaca alpaca(String httpUrl, String streamUrl) {
     return new MarketDataProperties.Alpaca("test-key", "test-secret", "iex", httpUrl, httpUrl, streamUrl, 30, 180, 100,
-        Duration.ofSeconds(2), Duration.ofSeconds(5));
+        Duration.ofSeconds(2), Duration.ofSeconds(5), "indicative");
   }
 
   public static MarketDataProperties.Finnhub finnhub(String httpUrl, String wsUrl) {

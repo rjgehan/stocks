@@ -12,6 +12,8 @@ import com.stocks.contract.marketdata.LeasePriority;
 import com.stocks.contract.marketdata.Mark;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.MarketDataStatus;
+import com.stocks.contract.marketdata.OptionChain;
+import com.stocks.contract.marketdata.OptionExpirations;
 import com.stocks.contract.marketdata.Print;
 import com.stocks.contract.marketdata.QuoteView;
 import com.stocks.contract.marketdata.Recommendations;
@@ -68,6 +70,7 @@ public class MarketDataServiceImpl implements MarketDataService {
   private final PointInTimeMarket sim;
   private final RecommendationService recommendations;
   private final ScreenerService screener;
+  private final OptionChainService options;
 
   public MarketDataServiceImpl(String profile, MarketFeed feed, AssetService assets, BarService bars, MarkService marks,
                                MoversService movers, NewsService news, FundamentalsService fundamentals,
@@ -75,7 +78,7 @@ public class MarketDataServiceImpl implements MarketDataService {
                                SplitAdjustments splits, CorporateActionHolds holds,
                                QuoteSplitAdjuster splitAdjuster, MarketCalendar calendar,
                                TimeSource time, PointInTimeMarket simOrNull, RecommendationService recommendations,
-                               ScreenerService screenerOrNull) {
+                               ScreenerService screenerOrNull, OptionChainService options) {
     this.profile = profile;
     this.feed = feed;
     this.assets = assets;
@@ -94,6 +97,7 @@ public class MarketDataServiceImpl implements MarketDataService {
     this.sim = simOrNull;
     this.recommendations = recommendations;
     this.screener = screenerOrNull;
+    this.options = options;
   }
 
   /** Upper case, trimmed; null stays null. */
@@ -117,6 +121,16 @@ public class MarketDataServiceImpl implements MarketDataService {
   @Override
   public List<Asset> search(String query, int limit) {
     return assets.search(query, limit);
+  }
+
+  @Override
+  public OptionExpirations optionExpirations(String underlying) {
+    return options.expirations(underlying);
+  }
+
+  @Override
+  public OptionChain optionChain(String underlying, LocalDate expiration) {
+    return options.chain(underlying, expiration);
   }
 
   @Override

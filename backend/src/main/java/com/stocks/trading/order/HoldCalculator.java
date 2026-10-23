@@ -1,5 +1,6 @@
 package com.stocks.trading.order;
 
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.Side;
 import com.stocks.common.money.Money;
@@ -99,11 +100,15 @@ public class HoldCalculator {
     return holdFor(null, qty, price, tradeDate);
   }
 
-  /** {@code HOLD(qty × price + estFees(qty))}; a crypto pair has no fees (§29). */
+  /**
+   * {@code HOLD(qty × price + estFees(qty))}; a crypto pair has no fees (§29); an option holds
+   * {@code qty × price × 100} (§30).
+   */
   public BigDecimal holdFor(String symbol, BigDecimal qty, BigDecimal price, LocalDate tradeDate) {
-    BigDecimal principal = Rounding.PRINCIPAL_BUY.multiply(qty, price);
+    BigDecimal unit = OptionSymbol.unitValue(symbol, price);
+    BigDecimal principal = Rounding.PRINCIPAL_BUY.multiply(qty, unit);
     BigDecimal est = fees.estimate(symbol, Side.BUY, qty, principal, tradeDate).total();
-    return Rounding.HOLD.apply(qty.multiply(price).add(est));
+    return Rounding.HOLD.apply(qty.multiply(unit).add(est));
   }
 
   /** {@code reserved_qty} of a SELL. */

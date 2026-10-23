@@ -253,7 +253,7 @@ public class SecurityConfig {
                 .access(RouteAuthorization.sessionWithScope(Scopes.TRADE))
             // §18.2 market:read
             .requestMatchers("/api/v1/market/**", "/api/v1/assets/**", "/api/v1/quotes", "/api/v1/snapshots/**",
-                "/api/v1/bars/**", "/api/v1/news", "/api/v1/rules")
+                "/api/v1/bars/**", "/api/v1/news", "/api/v1/rules", "/api/v1/options/**")
                 .access(RouteAuthorization.scope(Scopes.MARKET_READ))
             // §18.2 trade (preview is account:read)
             .requestMatchers(HttpMethod.POST, "/api/v1/orders/preview", "/api/v1/order-groups/preview")

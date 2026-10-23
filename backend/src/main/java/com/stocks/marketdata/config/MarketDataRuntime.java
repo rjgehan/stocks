@@ -27,6 +27,7 @@ import com.stocks.marketdata.core.MarkService;
 import com.stocks.marketdata.core.MarketDataServiceImpl;
 import com.stocks.marketdata.core.MarketFeed;
 import com.stocks.marketdata.core.MoversService;
+import com.stocks.marketdata.core.OptionChainService;
 import com.stocks.marketdata.core.NewsService;
 import com.stocks.marketdata.core.ProviderHttp;
 import com.stocks.marketdata.core.ProviderRateLimiter;
@@ -225,7 +226,8 @@ public final class MarketDataRuntime implements AutoCloseable {
     this.splitGuard = new SplitGuard(primary, props.simulated() ? null : "sip", tracked,
         splits instanceof SplitAdjustmentsImpl impl ? impl : null, external.splitFlagger(), calendar, time);
     this.service = new MarketDataServiceImpl(props.profile(), feed, assets, bars, marks, movers, news, fundamentals,
-        budget, dailyMarks, splits, holds, splitAdjuster, calendar, time, sim, recommendations, screener);
+        budget, dailyMarks, splits, holds, splitAdjuster, calendar, time, sim, recommendations, screener,
+        new OptionChainService(primary, assets, s -> marks.mark(s).price(), time));
     log.info("Market data: profile={} feed={} finnhub={} alpaca={}", props.profile(),
         props.simulated() ? "SIM" : props.effectiveFeed(), finnhub != null ? "on" : "off",
         props.simulated() ? "-" : props.alpaca());

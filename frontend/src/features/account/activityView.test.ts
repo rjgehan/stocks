@@ -50,4 +50,17 @@ describe('activityView (§22.4 Activity rows)', () => {
     expect(activityView(row({ type: 'FILL', side: 'BUY', symbol: 'NVDA', qty: '0.95274', price: '131.2000', amount: '-125.00' }))).toMatchObject({ title: 'Bought 0.95274 NVDA @ 131.20', amount: '−$125.00' })
     expect(activityView(row({ type: 'CASH_IN_LIEU', symbol: 'XYZW', qty: '0.5', price: '41.2200', amount: '20.61' }))).toMatchObject({ title: 'Cash in lieu · XYZW', amount: '+$20.61' })
   })
+
+  it('reads option fills in contracts and the expiration settlement (§30)', () => {
+    const occ = 'F261016C00011000'
+    expect(activityView(row({ type: 'FILL', side: 'BUY', symbol: occ, qty: '1', price: '0.4500', amount: '-45.00' }))).toMatchObject({
+      title: 'Bought to open 1 contract F 16 Oct 26 $11 Call @ 0.45',
+      amount: '−$45.00',
+    })
+    expect(activityView(row({ type: 'FILL', side: 'SELL', symbol: occ, qty: '1', price: '0.6200', amount: '62.00', by: 'SYSTEM' }))).toMatchObject({
+      title: 'Expired: 1 contract F 16 Oct 26 $11 Call',
+      lines: ['Cash-settled at $0.62'],
+      amount: '+$62.00',
+    })
+  })
 })

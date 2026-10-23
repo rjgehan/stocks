@@ -5,7 +5,8 @@ import java.util.Collection;
 
 /**
  * Orders {@link DataQuality} from best to worst for "the worst quality among the marks used" (§16.1, §21.2):
- * REALTIME_CONSOLIDATED, then REALTIME_SINGLE_VENUE and SIMULATED, DELAYED_15M, SYNTHETIC, STALE, NONE.
+ * REALTIME_CONSOLIDATED, then REALTIME_SINGLE_VENUE, SIMULATED and INDICATIVE (§30 option quotes), DELAYED_15M,
+ * SYNTHETIC, STALE, NONE.
  */
 public final class Qualities {
 
@@ -18,7 +19,7 @@ public final class Qualities {
     }
     return switch (q) {
       case REALTIME_CONSOLIDATED -> 0;
-      case REALTIME_SINGLE_VENUE, SIMULATED -> 1;
+      case REALTIME_SINGLE_VENUE, SIMULATED, INDICATIVE -> 1;
       case DELAYED_15M -> 2;
       case SYNTHETIC -> 3;
       case STALE -> 4;

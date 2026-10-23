@@ -14,7 +14,8 @@ import org.springframework.core.env.Environment;
  * the defaults mirror {@code application.yml}. Once WS3's properties land, {@code RulesService} may read them instead
  * (same keys, same values).
  */
-public record RulesConfig(Rules rules, Engine engine, String marketDataProfile, String alpacaFeed) {
+public record RulesConfig(Rules rules, Engine engine, String marketDataProfile, String alpacaFeed,
+                          String optionsFeed) {
 
   public record Rules(@DefaultValue("60") int gtcDays,
                       @DefaultValue("50") int maxOpenOrders,
@@ -71,6 +72,7 @@ public record RulesConfig(Rules rules, Engine engine, String marketDataProfile, 
     Engine engine = binder.bindOrCreate("stocks.engine", Bindable.of(Engine.class));
     String profile = binder.bind("stocks.marketdata.profile", String.class).orElse("simulated");
     String feed = binder.bind("stocks.marketdata.alpaca.feed", String.class).orElse("iex");
-    return new RulesConfig(rules, engine, profile, feed);
+    String optionsFeed = binder.bind("stocks.marketdata.alpaca.options-feed", String.class).orElse("indicative");
+    return new RulesConfig(rules, engine, profile, feed, optionsFeed);
   }
 }

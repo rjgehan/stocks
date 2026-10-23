@@ -21,6 +21,9 @@ export const queryKeys = {
   movers: (list: MoverList) => ['movers', list] as const,
   indices: ['indices'] as const,
   news: (symbols: string) => ['news', symbols] as const,
+  // long options (§30)
+  optionExpirations: (underlying: string) => ['options', underlying, 'expirations'] as const,
+  optionChain: (underlying: string, expiration: string) => ['options', underlying, 'chain', expiration] as const,
   watchlists: ['watchlists'] as const,
   leaderboard: (period: LeaderboardPeriod, metric: LeaderboardMetric, kind: KindFilter) => ['leaderboard', period, metric, kind] as const,
   players: ['players'] as const,

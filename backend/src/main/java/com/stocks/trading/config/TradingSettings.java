@@ -48,6 +48,15 @@ public class TradingSettings {
     }
   }
 
+  /** {@code options.enabled} (§30), default true. */
+  public boolean optionsEnabled() {
+    try {
+      return settings.optionsEnabled();
+    } catch (ApiException e) {
+      return fallback(e, Boolean.TRUE);
+    }
+  }
+
   /** {@code league.allowSelfReset}, default false. */
   public boolean allowSelfReset() {
     try {

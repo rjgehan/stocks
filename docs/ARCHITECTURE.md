@@ -43,6 +43,7 @@
 27. Phase 1 work breakdown
 28. Open items and verification list
 29. Crypto pairs (24/7)
+30. Long options (calls and puts)
 
 ---
 
@@ -4231,7 +4232,7 @@ Write tools:
 | 37 | `delete_watchlist` | `trade` | RO=false, destructive=true, idempotent=true | `{name*}` | `{deleted: boolean}` (false if it did not exist) |
 | 38 | `mark_notifications_read` | `account:read` | RO=false, destructive=false, idempotent=true | `{ids?: string[], all?: bool}` (exactly one) | `{marked: int}` |
 
-**Phase 2 tools** are appended after #38 in `McpToolCatalog.ORDER`, so the Phase 1 order never changes (wave A order: group orders, league stats, alerts, research, journal; then public mode's five player tools, #56–#60; **60 tools** in all).
+**Phase 2 tools** are appended after #38 in `McpToolCatalog.ORDER`, so the Phase 1 order never changes (wave A order: group orders, league stats, alerts, research, journal; then public mode's five player tools, #56–#60; then the two option-chain tools of §30, #61–#62; **62 tools** in all).
 
 Phase 2 group orders (§11.9), #39–#42; `place_order`, `preview_order` and `replace_order` also take `do_not_reduce?: bool` (§14). Leg inputs are flat (no nested objects): `entry_type`, `entry_limit_price`, `entry_stop_price`, `take_profit_limit_price`, `stop_loss_stop_price`, `stop_loss_limit_price` (makes the stop loss a STOP_LIMIT), `secondary_type`, `secondary_limit_price`, `secondary_stop_price`.
 
@@ -5312,6 +5313,7 @@ stocks:
 | `bots.requireRationale` | `true` | boolean |
 | `league.humanKindExcludesApiTraders` | `false` | boolean (§16.5) |
 | `crypto.enabled` | `true` | boolean (§29): crypto pairs trade 24/7 and every calendar day is a P&L day; off refuses crypto buys (sells still work) |
+| `options.enabled` | `true` | boolean (§30): long calls and puts may be bought; off refuses option buys (sells and expirations still work) |
 
 ---
 
@@ -5641,6 +5643,7 @@ Actions are pinned to their current major versions: `actions/checkout@v7`, `acti
 | every 60 s (Phase 2) | `SCREENER_STATS` (`ScreenerStatsTask`, §15.10): daily volume averages once per trading day, ≤ 3 company profiles per minute | Periodic | WS2 | no | — | — |
 | 16:00 (13:00) | `RTH_CLOSE` transition | Scheduled (`SESSION_TRANSITION`) | WS3 | **yes** | `date:RTH_CLOSE` | ALL_MISSED |
 | 16:20 (13:20) | `DailyMarkJob` official close | Scheduled | WS2 | no | `date:OFFICIAL` | ALL_MISSED |
+| 16:30 (13:30) and 20:30 (17:30) trading days | `OPTION_EXPIRY` (§30): `SettleOptionExpiryCmd` for every held contract with `expiration ≤ date` whose underlying has an official close | Scheduled | WS3 | **yes** | `date:CLOSE`, `date:LATE` | ALL_MISSED |
 | 20:00 (17:00) | `POST_CLOSE` transition | Scheduled (`SESSION_TRANSITION`) | WS3 | **yes** | `date:POST_CLOSE` | ALL_MISSED |
 | 20:20 (17:20) | `DailyMarkJob` day-end, then `EodSnapshotJob` (+ benchmarks SPY and the extras such as QQQ, `leaderboard_snapshot`, NEW_LEADER, feed backfill) | Scheduled | WS2 → WS4 | no | date | ALL_MISSED |
 | 09:00 next trading day | Re-mark PROVISIONAL marks; re-run the EOD snapshot for that date if any mark changed | Scheduled | WS2 → WS4 | no | `date:REMARK` | LATEST_ONLY |
@@ -5845,3 +5848,68 @@ the √252 annualization, so a stock-only player's zero weekend returns understa
 **Bots.** `get_rules` → `crypto`, `get_market_clock` → `crypto {enabled, pairs}`, the MCP instructions and tool texts,
 the shared system prompt (agent runner: weekend scheduled and booked runs while crypto is on), the claude-trader
 (weekend check-ins in server mode, `STOCKS_TRADER_WEEKENDS`) and the manual-bot prompt describe the pairs.
+
+## 30. Long options (calls and puts)
+
+Added 2026-10-23. Players buy to open and sell to close US equity options on stocks and ETFs in the same cash accounts,
+while the runtime setting `options.enabled` (§23.4, default `true`) is on. No short options, spreads, multi-leg orders,
+exercise or assignment requests. Stocks and crypto are unchanged.
+
+**One test, no lookup.** An option symbol is the OCC spelling without padding, `ROOT YYMMDD C|P STRIKE×1000`
+(`AAPL261120C00250000`); `OptionSymbol.isOption` (`common.domain`, strict dates) is the switch every layer uses, like
+`Crypto.isCrypto`. `Crypto.SYMBOL_REGEX` accepts it at every boundary. V14 widens every symbol column to `VARCHAR(24)`,
+adds `asset_type` OPTION, the `OPTION_MID` day-end basis, and lets an `execution` have price 0.00 when its liquidity is
+the new `EXPIRY`. A contract gets an `asset` row (type OPTION, exchange OPRA, SMALL tier, not fractionable) only when
+first ordered (`OrderHandler.ensureAssetRow`); `AssetService` synthesizes it for any contract on a known stock or ETF
+and stops calling it tradable after its expiration date. Contracts are kept out of symbol search.
+
+**Money.** Quantities are whole contracts; prices are per share; every dollar amount is `price × 100 × contracts`:
+`Rounding.principal(symbol, …)` and `Rounding.marketValue(symbol, …)` (multiplier from `OptionSymbol.multiplier`) are
+used by posting, holds, the execution-time guard, estimates, live and EOD valuation, day P&L and the average-cost
+fallbacks, and `PositionDto.avgCost` is per share. No fees (`FeeCalculator`: SEC/TAF/CAT are per-share schedules).
+Premium is paid from cash; proceeds settle T+1 on the NYSE calendar and the GFV rules apply as for stocks.
+
+**Orders.** `OrderEvaluation.requireOptionRules`: MARKET or LIMIT, DAY, no extended hours, no notional, REGULAR session
+only (else `SESSION_NOT_ALLOWED`), not after the expiration date; check 10 takes 1–1,000 whole contracts; limits on
+$0.01; group orders are refused (`GroupRules`). An option has no reference price (`OrderContext`), so checks 19–20 do
+not apply and a market buy without an ask is `MARKET_DATA_UNAVAILABLE`. Buys are refused (`SYMBOL_NOT_TRADABLE`)
+while `options.enabled` is off; sells always work.
+
+**Fills.** `ExecutableQuoteBuilder` skips the ladder for an option: its own fresh two-sided quote (§12.3 freshness)
+whose spread is at most $0.10 or at most 50% of the mid (`saneOptionSpread`), quality as delivered (`INDICATIVE` on
+Alpaca's free feed), never a synthetic quote. `Evaluator` gives an option one fill at the touch (like a fractional
+order) and never trade-through prints: option prints are informative only (never consolidated or eligible).
+
+**Marks.** `MarkService.optionMark`: in REGULAR a confirmed quote's mid (the bid without an ask; half the ask without a
+bid), basis `OPTION_MID`; otherwise the day's `day_end_mark`, then the latest quote (STALE), then the last day-end
+mark. `DailyMarkService` writes option day-end marks after the regular close from the closing quote (FINAL when it was
+observed after the close), and never official closes.
+
+**Market data.** `MarketDataProvider.optionExpirations / optionChain / optionFeed`. Alpaca: `/v1beta1/options/snapshots`
+(contracts, 100 per call) and `/v1beta1/options/snapshots/{underlying}?expiration_date=` (chains, 1,000 per page) with
+`feed = stocks.marketdata.alpaca.options-feed` (`ALPACA_OPTIONS_FEED`, `indicative` by default, `opra` on paid plans);
+expirations and open interest from the trading API's `/v2/options/contracts` (both dates always sent: its default window
+ends next weekend), falling back to the chain snapshots. Prices land on the cent (bids down, asks up); sizes and volumes
+are contracts. Contracts are never streamed (the option stream is msgpack only): the snapshot poller polls leased
+contracts at most every 5 s (`LiveFeed.OPTION_HOT_POLL`). `OptionChainService` caches expirations 30 minutes and chains
+10 seconds. The SIM prices contracts with Black-Scholes from the underlying's SIM quote (`SimOptions`: 25/35/50%
+volatility by tier, 4% rate, 3% spread, weekly and monthly expirations, 12 strikes each side). REST:
+`GET /api/v1/options/{underlying}/expirations` and `/chain?expiration=` (`market:read`); MCP `get_option_expirations`
+and `get_option_chain` (#61–#62; the chain tool returns 10 strikes each side of the money by default).
+
+**Expiration.** `OPTION_EXPIRY` (§25) runs 30 minutes after the regular close and after the post-market close of every
+trading day (catch-up ALL_MISSED). For each held contract with `expiration ≤ date` it ensures the underlying's
+`official_close` for the expiration date and sends `SettleOptionExpiryCmd(symbol, close)`; a contract without a close
+waits for the next run. The command (`OptionExpiryHandler`) cancels the contract's open orders (`OPTION_EXPIRED`) and,
+for each account still holding it, inserts a SYSTEM MARKET SELL order (`client_order_id = expiry:<symbol>`, which
+makes it once-only) and posts one fill at the intrinsic value (`max(0, close − strike)` for a call, `max(0, strike −
+close)` for a put; 0.00 when out of the money), liquidity `EXPIRY`, so cash, lots, realized P&L, closed lots, P&L by
+symbol, the feed (`FeedPayload.expired = true`) and notifications follow the normal posting path. An expiry is never a
+good-faith violation. No shares are delivered.
+
+**Bots.** `get_rules` → `options`, the tool texts, the MCP instructions, the shared system prompt and the manual-bot
+prompt (option holdings named, the `stocks.manual.v1` reply format unchanged: `symbol` may be an OCC symbol and `qty`
+contracts).
+
+**Known limits.** Contracts are not adjusted for splits or other corporate actions of the underlying. Indicative quotes
+can differ from the real NBBO. No greeks on the indicative feed.

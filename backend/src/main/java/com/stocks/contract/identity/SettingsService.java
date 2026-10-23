@@ -38,6 +38,11 @@ public interface SettingsService {
   /** {@code crypto.enabled} (§29): crypto pairs trade 24/7 and weekends are P&amp;L days. */
   boolean cryptoEnabled();
 
+  /** {@code options.enabled} (§30): long calls and puts may be bought. */
+  default boolean optionsEnabled() {
+    return true;
+  }
+
   /** Every setting as stored (key → string value). */
   Map<String, String> all();
 

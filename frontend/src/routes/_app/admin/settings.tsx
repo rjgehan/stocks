@@ -24,7 +24,7 @@ const DELAYS = [
 
 /**
  * Admin · League settings (§21.3, §23.4): starting cash, self-reset, season start, eligibility, feed delay, rationale,
- * 24/7 crypto trading.
+ * 24/7 crypto trading, long options.
  * Holdings are always public (public mode, §16.7), so there is no visibility setting any more.
  */
 function SettingsPage() {
@@ -126,6 +126,15 @@ function SettingsForm({ initial }: { initial: Settings }) {
           onChange={(v) => set('crypto.enabled', v)}
           label="Crypto trading (24/7)"
           description="BTC/USD, ETH/USD and 10 more pairs trade around the clock. Off: crypto buys are refused (sells still work) and weekends stop being P&L days."
+        />
+      </section>
+      <section className="space-y-3 rounded-lg border border-divider bg-bg-1 p-4">
+        <h2 className="text-section font-semibold">Options</h2>
+        <Switch
+          checked={s['options.enabled'] ?? true}
+          onChange={(v) => set('options.enabled', v)}
+          label="Options trading"
+          description="Long calls and puts on stocks and ETFs (buy to open, sell to close, cash-settled at expiration). Off: option buys are refused; holders can still sell to close."
         />
       </section>
       {update.error ? (

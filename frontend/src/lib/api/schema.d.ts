@@ -830,7 +830,7 @@ export interface paths {
         get: operations["get"];
         /**
          * Change league settings
-         * @description Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live); crypto.enabled turns 24/7 crypto trading and weekend P&L days on or off (off: crypto buys are refused, sells still work). Errors: SETTING_INVALID.
+         * @description Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live); crypto.enabled turns 24/7 crypto trading and weekend P&L days on or off (off: crypto buys are refused, sells still work); options.enabled turns buying long calls and puts on or off (off: option buys are refused, sells to close still work). Errors: SETTING_INVALID.
          */
         put: operations["put"];
         post?: never;
@@ -1987,6 +1987,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/options/{underlying}/chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One expiration's option chain: calls and puts by strike, with quotes
+         * @description Prices are per share; one contract is 100 shares. Trade a contract by its OCC symbol (e.g. AAPL261120C00250000) with POST /orders: BUY to open, SELL to close, whole contracts, MARKET or LIMIT, DAY, 09:30-16:00 ET. Errors: SYMBOL_NOT_FOUND, VALIDATION_FAILED, PROVIDER_UNAVAILABLE.
+         */
+        get: operations["optionChain"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/options/{underlying}/expirations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Listed option expirations of a stock or ETF, nearest first
+         * @description feed: indicative (Alpaca's free derived quotes, not OPRA), opra or simulated. enabled: buying options is allowed. Errors: SYMBOL_NOT_FOUND, PROVIDER_UNAVAILABLE.
+         */
+        get: operations["optionExpirations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/order-groups": {
         parameters: {
             query?: never;
@@ -2612,7 +2652,7 @@ export interface components {
             /** Format: decimal */
             longMarketValue: string | null;
             /** @enum {string|null} */
-            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
             /** Format: decimal */
             netContributions: string | null;
             /** Format: decimal */
@@ -3040,7 +3080,7 @@ export interface components {
             symbol: string | null;
             tradable: boolean;
             /** @enum {string|null} */
-            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO" | null;
+            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO" | "OPTION" | null;
             /** Format: decimal */
             week52High: string | null;
             /** Format: decimal */
@@ -3053,7 +3093,7 @@ export interface components {
             symbol: string | null;
             tradable: boolean;
             /** @enum {string|null} */
-            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO" | null;
+            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO" | "OPTION" | null;
         };
         AuditRow: {
             action: string | null;
@@ -3265,7 +3305,7 @@ export interface components {
             liveIexWindowEt: string | null;
             profile: string | null;
             /** @enum {string|null} */
-            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
             /** @enum {string|null} */
             status: "LIVE" | "DEGRADED" | "DOWN" | null;
         };
@@ -3426,7 +3466,7 @@ export interface components {
             /** Format: date-time */
             quoteAsOf: string | null;
             /** @enum {string|null} */
-            quoteQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            quoteQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
         };
         Execution: {
             /** Format: date-time */
@@ -3434,7 +3474,7 @@ export interface components {
             executionId: string | null;
             fees: components["schemas"]["Fees"] | null;
             /** @enum {string|null} */
-            liquidity: "TOUCH" | "WALK" | "RESTING" | "PRINT" | "OPEN" | null;
+            liquidity: "TOUCH" | "WALK" | "RESTING" | "PRINT" | "OPEN" | "EXPIRY" | null;
             /** Format: decimal */
             netAmount: string | null;
             orderId: string | null;
@@ -3481,6 +3521,7 @@ export interface components {
         FeedPayload: {
             /** Format: decimal */
             amount: string | null;
+            expired: boolean | null;
             period: string | null;
             /** Format: decimal */
             price: string | null;
@@ -3955,6 +3996,63 @@ export interface components {
         OAuthRedirect: {
             redirectUrl: string | null;
         };
+        OptionChain: {
+            /** Format: date-time */
+            asOf: string | null;
+            calls: components["schemas"]["OptionContract"][] | null;
+            enabled: boolean;
+            /** Format: date */
+            expiration: string | null;
+            feed: string | null;
+            /** Format: int32 */
+            multiplier: number;
+            puts: components["schemas"]["OptionContract"][] | null;
+            underlying: string | null;
+            /** Format: decimal */
+            underlyingPrice: string | null;
+        };
+        OptionContract: {
+            /** Format: decimal */
+            ask: string | null;
+            /** Format: int64 */
+            askSize: number | null;
+            /** Format: decimal */
+            bid: string | null;
+            /** Format: int64 */
+            bidSize: number | null;
+            /** Format: decimal */
+            delta: string | null;
+            /** Format: date */
+            expiration: string | null;
+            /** Format: decimal */
+            impliedVolatility: string | null;
+            /** Format: decimal */
+            last: string | null;
+            /** Format: decimal */
+            mid: string | null;
+            /** Format: int64 */
+            openInterest: number | null;
+            /** @enum {string|null} */
+            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
+            /** Format: date-time */
+            quoteAt: string | null;
+            /** @enum {string|null} */
+            right: "CALL" | "PUT" | null;
+            /** Format: decimal */
+            strike: string | null;
+            symbol: string | null;
+            underlying: string | null;
+            /** Format: int64 */
+            volume: number | null;
+        };
+        OptionExpirations: {
+            enabled: boolean;
+            expirations: string[] | null;
+            feed: string | null;
+            /** Format: int32 */
+            multiplier: number;
+            underlying: string | null;
+        };
         Order: {
             /** Format: date-time */
             acceptedAt: string | null;
@@ -4374,7 +4472,7 @@ export interface components {
             /** Format: decimal */
             mark: string | null;
             /** @enum {string|null} */
-            markQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            markQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
             /** Format: decimal */
             marketValue: string | null;
             name: string | null;
@@ -4558,7 +4656,7 @@ export interface components {
             /** Format: decimal */
             longMarketValue: string | null;
             /** @enum {string|null} */
-            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
             /** Format: decimal */
             netContributions: string | null;
             /** Format: decimal */
@@ -4679,7 +4777,7 @@ export interface components {
             /** Format: decimal */
             prevClose: string | null;
             /** @enum {string|null} */
-            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
             /** @enum {string|null} */
             session: "CLOSED" | "PRE" | "REGULAR" | "POST" | null;
             source: string | null;
@@ -4775,7 +4873,7 @@ export interface components {
             /** Format: decimal */
             last: string | null;
             /** @enum {string|null} */
-            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
             /** Format: date-time */
             quoteAt: string | null;
             source: string | null;
@@ -4866,6 +4964,7 @@ export interface components {
             fairness: string[] | null;
             fees: components["schemas"]["RulesFee"][] | null;
             leaderboard: components["schemas"]["RulesLeaderboard"] | null;
+            options: components["schemas"]["RulesOptions"] | null;
             orders: components["schemas"]["RulesOrders"] | null;
             rateLimits: {
                 [key: string]: unknown;
@@ -4957,6 +5056,23 @@ export interface components {
             resetPolicy: string | null;
             returnDefinition: string | null;
             ties: string | null;
+        };
+        RulesOptions: {
+            enabled: boolean;
+            execution: string | null;
+            expiration: string | null;
+            feed: string | null;
+            fees: string | null;
+            hours: string | null;
+            /** Format: int32 */
+            multiplier: number;
+            orders: string | null;
+            quantities: string | null;
+            quotesIndicative: boolean;
+            scope: string | null;
+            settlement: string | null;
+            symbols: string | null;
+            valuation: string | null;
         };
         RulesOrders: {
             cancelLatency: string | null;
@@ -5128,14 +5244,14 @@ export interface components {
             /** Format: decimal */
             price: string | null;
             /** @enum {string|null} */
-            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
             /** Format: decimal */
             relVolume: string | null;
             /** @enum {string|null} */
             sector: "COMMUNICATION_SERVICES" | "CONSUMER_DISCRETIONARY" | "CONSUMER_STAPLES" | "ENERGY" | "FINANCIALS" | "HEALTH_CARE" | "INDUSTRIALS" | "INFORMATION_TECHNOLOGY" | "MATERIALS" | "REAL_ESTATE" | "UTILITIES" | null;
             symbol: string | null;
             /** @enum {string|null} */
-            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO" | null;
+            type: "COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO" | "OPTION" | null;
             /** Format: int64 */
             volume: number | null;
             volumeIsPartial: boolean;
@@ -5160,6 +5276,7 @@ export interface components {
             "league.humanKindExcludesApiTraders": boolean;
             /** Format: date */
             "league.seasonStart": string | null;
+            "options.enabled": boolean;
             "social.showDepositsInFeed": boolean;
             "social.tradeFeedDelay": string | null;
         };
@@ -5216,7 +5333,7 @@ export interface components {
             /** Format: decimal */
             prevClose: string | null;
             /** @enum {string|null} */
-            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            quality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
             /** @enum {string|null} */
             session: "CLOSED" | "PRE" | "REGULAR" | "POST" | null;
             source: string | null;
@@ -5388,7 +5505,7 @@ export interface components {
             equityBefore: string | null;
             handle: string | null;
             /** @enum {string|null} */
-            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
             skipReason: string | null;
             /** Format: decimal */
             unitValue: string | null;
@@ -5409,7 +5526,7 @@ export interface components {
             equityBefore: string | null;
             handle: string | null;
             /** @enum {string|null} */
-            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | null;
+            marksQuality: "REALTIME_CONSOLIDATED" | "REALTIME_SINGLE_VENUE" | "DELAYED_15M" | "SYNTHETIC" | "SIMULATED" | "STALE" | "NONE" | "INDICATIVE" | null;
             rebased: boolean;
             skipReason: string | null;
             /** @enum {string|null} */
@@ -5528,6 +5645,7 @@ export interface components {
             "league.humanKindExcludesApiTraders"?: boolean | null;
             /** Format: date */
             "league.seasonStart"?: string | null;
+            "options.enabled"?: boolean | null;
             "social.showDepositsInFeed"?: boolean | null;
             "social.tradeFeedDelay"?: string | null;
         };
@@ -8277,7 +8395,7 @@ export interface operations {
                 /** @description GICS sectors, comma-separated */
                 sectors?: ("COMMUNICATION_SERVICES" | "CONSUMER_DISCRETIONARY" | "CONSUMER_STAPLES" | "ENERGY" | "FINANCIALS" | "HEALTH_CARE" | "INDUSTRIALS" | "INFORMATION_TECHNOLOGY" | "MATERIALS" | "REAL_ESTATE" | "UTILITIES")[];
                 /** @description COMMON_STOCK, ETF and/or ADR, comma-separated */
-                types?: ("COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO")[];
+                types?: ("COMMON_STOCK" | "ETF" | "ADR" | "OTHER" | "UNKNOWN" | "CRYPTO" | "OPTION")[];
                 /** @description Sort column (default: the preset's, else MARKET_CAP) */
                 sort?: "SYMBOL" | "PRICE" | "CHANGE_PCT" | "VOLUME" | "AVG_VOLUME" | "REL_VOLUME" | "MARKET_CAP";
                 /** @description ASC or DESC (default: the preset's, else DESC; SYMBOL defaults to ASC) */
@@ -9264,6 +9382,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NewsList"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    optionChain: {
+        parameters: {
+            query: {
+                /** @description Expiration date, YYYY-MM-DD (one of /expirations) */
+                expiration: string;
+            };
+            header?: never;
+            path: {
+                underlying: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OptionChain"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    optionExpirations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                underlying: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OptionExpirations"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

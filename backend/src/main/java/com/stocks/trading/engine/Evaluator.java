@@ -2,6 +2,7 @@ package com.stocks.trading.engine;
 
 import com.stocks.common.domain.CancelReason;
 import com.stocks.common.domain.Crypto;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.OrderEventType;
 import com.stocks.common.domain.OrderStatus;
 import com.stocks.common.domain.SessionType;
@@ -219,10 +220,12 @@ class Evaluator {
     }
     Optional<ExecQuote> quote = marketData.executableQuote(r.symbol(), r.eligibleAt(), session.type());
     boolean resting = OrderTypes.usesLimit(r.type()) && r.hasRested() && !arriving;
-    List<Print> eligiblePrints = prints.stream().map(PrintBuffer.Seq::print)
+    // an option (§30) fills only against its quote: option prints are delayed and never trade-through evidence
+    boolean option = OptionSymbol.isOption(r.symbol());
+    List<Print> eligiblePrints = option ? List.of() : prints.stream().map(PrintBuffer.Seq::print)
         .filter(p -> !p.observedAt().isBefore(row.eligibleAt())).toList();
 
-    if (quote.isEmpty() && !resting) {
+    if (quote.isEmpty() && (!resting || option)) {
       setWait(r, WaitReason.AWAITING_QUOTE, OrderEventType.AWAITING_QUOTE, tx, now);
       requestRefresh(r.symbol(), now);
       return;
@@ -238,11 +241,12 @@ class Evaluator {
     }
     // a triggered STOP / TRAILING_STOP works as a MARKET order, a triggered STOP_LIMIT as a LIMIT (§12.7)
     FillModel.OrderView view = new FillModel.OrderView(r.side(), OrderTypes.fillsAs(r.type()),
-        r.fractional() || Crypto.isCrypto(r.symbol()),   // a crypto pair takes one fill at the touch (§29)
+        // a crypto pair (§29) and an option (§30) take one fill at the touch
+        r.fractional() || Crypto.isCrypto(r.symbol()) || option,
         remaining, r.limitPrice(), r.collarPrice());
     FillModel.Decision d;
     if (resting) {
-      d = FillModel.resting(view, q, eligiblePrints, rules.fill().restingRequiresPrint());
+      d = FillModel.resting(view, q, eligiblePrints, rules.fill().restingRequiresPrint() && !option);
     } else {
       boolean opening = e.queuedForOpen && !OrderTypes.isStop(r.type()) && r.filledQty().signum() == 0;
       d = FillModel.marketable(view, q, opening, rules.marketCollarPct());

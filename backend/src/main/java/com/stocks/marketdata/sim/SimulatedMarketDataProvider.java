@@ -4,7 +4,10 @@ import com.stocks.common.domain.AssetType;
 import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.LiquidityTier;
 import com.stocks.common.domain.MoverList;
+import com.stocks.common.domain.OptionRight;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.Timeframe;
+import com.stocks.common.money.Prices;
 import com.stocks.common.money.Rounding;
 import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
@@ -19,6 +22,7 @@ import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.contract.marketdata.model.Mover;
 import com.stocks.contract.marketdata.model.Movers;
 import com.stocks.contract.marketdata.model.NewsItem;
+import com.stocks.contract.marketdata.model.OptionQuote;
 import com.stocks.contract.marketdata.model.Quote;
 import com.stocks.contract.marketdata.model.Snapshot;
 import com.stocks.contract.marketdata.model.Trade;
@@ -148,16 +152,32 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
 
   @Override
   public boolean knows(String symbol) {
-    return entry(symbol).isPresent();
+    Optional<OptionSymbol.Contract> c = OptionSymbol.parse(symbol);
+    return c.isPresent() ? entry(c.get().underlying()).isPresent() : entry(symbol).isPresent();
   }
 
   @Override
   public Optional<Quote> quoteAt(String symbol, Instant t) {
+    Optional<OptionSymbol.Contract> c = OptionSymbol.parse(symbol);
+    if (c.isPresent()) {
+      return optionQuoteAt(c.get(), t);
+    }
     return modelOf(symbol).params(symbol).flatMap(p -> modelOf(p.symbol()).quoteAt(p, t));
   }
 
+  /** §30: a contract's quote, priced from its underlying's SIM quote in force at {@code t}. */
+  private Optional<Quote> optionQuoteAt(OptionSymbol.Contract c, Instant t) {
+    String u = c.underlying();
+    return model.params(u).flatMap(p -> model.quoteAt(p, t))
+        .flatMap(q -> SimOptions.quote(c, q, entry(u).map(Universe.Entry::tier).orElse(null)));
+  }
+
+  /** SIM option contracts have no prints (§30): they are marked and filled from their quotes only. */
   @Override
   public Optional<Trade> lastTradeAt(String symbol, Instant t) {
+    if (OptionSymbol.isOption(symbol)) {
+      return Optional.empty();
+    }
     return modelOf(symbol).params(symbol).flatMap(p -> modelOf(p.symbol()).lastTradeAt(p, t));
   }
 
@@ -174,6 +194,10 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
 
   @Override
   public Optional<BigDecimal> priceAt(String symbol, Instant t) {
+    if (OptionSymbol.isOption(symbol)) {
+      return quoteAt(symbol, t).filter(Quote::twoSided)
+          .map(q -> q.bid().add(q.ask()).divide(BigDecimal.TWO, 2, RoundingMode.HALF_EVEN).setScale(Prices.SCALE));
+    }
     return modelOf(symbol).params(symbol).flatMap(p -> modelOf(p.symbol()).priceAt(p, t));
   }
 
@@ -189,12 +213,17 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
 
   @Override
   public Instant confirmedAt(String symbol, Instant now) {
-    return model.scenarios().blackoutSince(symbol, now).orElse(now);
+    return model.scenarios().blackoutSince(underlyingOf(symbol), now).orElse(now);
   }
 
   @Override
   public boolean halted(String symbol, Instant t) {
-    return model.scenarios().halted(symbol, t);
+    return model.scenarios().halted(underlyingOf(symbol), t);
+  }
+
+  /** An option's scenarios (blackouts, halts) are its underlying's. */
+  private static String underlyingOf(String symbol) {
+    return OptionSymbol.parse(symbol).map(OptionSymbol.Contract::underlying).orElse(symbol);
   }
 
   // ------------------------------------------------------------------------------------------- provider SPI
@@ -204,7 +233,49 @@ public class SimulatedMarketDataProvider implements MarketDataProvider, PointInT
     Instant now = time.now();
     Map<String, Snapshot> out = new LinkedHashMap<>();
     for (String s : symbols) {
+      if (OptionSymbol.isOption(s)) {
+        quoteAt(s, now).ifPresent(q -> out.put(s, new Snapshot(s, null, q, null, null, null, now)));
+        continue;
+      }
       modelOf(s).params(s).ifPresent(p -> out.put(s, snapshot(p, now)));
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------------------------------------- options (§30)
+
+  @Override
+  public String optionFeed() {
+    return ID;
+  }
+
+  /** Stocks and ETFs of the SIM list options; crypto pairs do not. */
+  @Override
+  public List<LocalDate> optionExpirations(String underlying, RefreshPriority priority) {
+    if (Crypto.isCrypto(underlying) || entry(underlying).isEmpty()) {
+      return List.of();
+    }
+    return SimOptions.expirations(model.calendar(), Et.date(time.now()));
+  }
+
+  /** {@link SimOptions#strikes} around the underlying's current mid, calls and puts, priced now. */
+  @Override
+  public List<OptionQuote> optionChain(String underlying, LocalDate expiration, RefreshPriority priority) {
+    Instant now = time.now();
+    Optional<Quote> u = Crypto.isCrypto(underlying) ? Optional.empty()
+        : model.params(underlying).flatMap(p -> model.quoteAt(p, now)).filter(Quote::twoSided);
+    if (u.isEmpty() || expiration.isBefore(Et.date(now))) {
+      return List.of();
+    }
+    BigDecimal spot = u.get().bid().add(u.get().ask()).divide(BigDecimal.TWO, 4, RoundingMode.HALF_EVEN);
+    LiquidityTier tier = entry(underlying).map(Universe.Entry::tier).orElse(null);
+    List<OptionQuote> out = new ArrayList<>();
+    for (BigDecimal strike : SimOptions.strikes(spot)) {
+      for (OptionRight right : OptionRight.values()) {
+        String occ = OptionSymbol.format(underlying, expiration, right, strike);
+        OptionSymbol.Contract c = OptionSymbol.parse(occ).orElseThrow();
+        SimOptions.quote(c, u.get(), tier).ifPresent(q -> out.add(SimOptions.row(c, q, spot)));
+      }
     }
     return out;
   }

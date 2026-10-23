@@ -41,7 +41,8 @@ class EngineBootstrapFailureTest {
       mock(ApplicationEventPublisher.class), mock(OrderHandler.class), mock(Evaluator.class),
       mock(AccountCommands.class), mock(TransferCommands.class), invariants, orderStore, mock(AccountStore.class),
       mock(TradingClock.class), mock(MarketDataService.class), new OpenOrderIndex(), mock(JdbcClient.class),
-      mock(com.stocks.trading.corpactions.CorporateActionApplier.class), mock(GroupOrderEntry.class));
+      mock(com.stocks.trading.corpactions.CorporateActionApplier.class), mock(GroupOrderEntry.class),
+      mock(OptionExpiryHandler.class));
 
   @Test
   void aFailedBootstrapHaltsTheEngineAndAResumeRetriesIt() {

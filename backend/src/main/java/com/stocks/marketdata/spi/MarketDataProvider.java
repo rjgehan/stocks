@@ -10,6 +10,7 @@ import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.contract.marketdata.model.MarketEvent;
 import com.stocks.contract.marketdata.model.Movers;
 import com.stocks.contract.marketdata.model.NewsItem;
+import com.stocks.contract.marketdata.model.OptionQuote;
 import com.stocks.contract.marketdata.model.Quote;
 import com.stocks.contract.marketdata.model.RecommendationTrend;
 import com.stocks.contract.marketdata.model.Snapshot;
@@ -100,6 +101,24 @@ public interface MarketDataProvider {
    */
   default Optional<CompanyProfile> profile(String symbol, RefreshPriority priority) {
     throw unsupported("profile");
+  }
+
+  /**
+   * §30: the upcoming expiration dates of {@code underlying}'s listed options (today included), ascending; empty when
+   * it has none.
+   */
+  default List<LocalDate> optionExpirations(String underlying, RefreshPriority priority) {
+    throw unsupported("options");
+  }
+
+  /** §30: every contract of {@code underlying} expiring on {@code expiration}, with its latest quote. */
+  default List<OptionQuote> optionChain(String underlying, LocalDate expiration, RefreshPriority priority) {
+    throw unsupported("options");
+  }
+
+  /** §30: the option feed label, {@code indicative}, {@code opra} or {@code simulated}; null without options. */
+  default String optionFeed() {
+    return null;
   }
 
   /** At most one upstream stream per provider. */

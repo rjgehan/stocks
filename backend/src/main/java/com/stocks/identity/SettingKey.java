@@ -99,6 +99,13 @@ public enum SettingKey {
     String canonical(String v) {
       return bool(v);
     }
+  },
+  /** §30: buying long calls and puts is allowed while this is on (selling to close always is). */
+  OPTIONS_ENABLED("options.enabled", "true") {
+    @Override
+    String canonical(String v) {
+      return bool(v);
+    }
   };
 
   /** Upper bound for any starting cash (fits NUMERIC(19,2) with room for every deposit). */

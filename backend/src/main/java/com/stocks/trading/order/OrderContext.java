@@ -1,5 +1,6 @@
 package com.stocks.trading.order;
 
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.money.Qty;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.QuoteView;
@@ -67,6 +68,11 @@ public class OrderContext {
    * (split-adjusted by WS2), else null.
    */
   BigDecimal reference(String symbol, QuoteView q) {
+    if (OptionSymbol.isOption(symbol)) {
+      // §30: no reference for an option (its prints are delayed and its moves large): checks 19–20 do not apply, and
+      // a market buy without an ask has nothing to hold against (MARKET_DATA_UNAVAILABLE)
+      return null;
+    }
     if (q != null && q.last() != null && q.last().signum() > 0) {
       return q.last();
     }

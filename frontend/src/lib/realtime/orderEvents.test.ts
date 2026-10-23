@@ -15,6 +15,21 @@ describe('orderEventToast (§22.5 Result: live status from /user/queue/orders)',
     expect(orderEventToast(ev('PARTIAL_FILL', order({ side: 'SELL' }), { qty: '0.5', price: '0.4321', principal: '0.22' }))?.title).toBe('Partially filled sell 0.5 AAPL @ 0.4321')
   })
 
+  it('announces option fills in contracts and an expiration settlement (§30)', () => {
+    const occ = 'AAPL261120C00250000'
+    expect(orderEventToast(ev('FILL', order({ symbol: occ }), { qty: '3', price: '3.2000', principal: '960.00', liquidity: 'TOUCH' }))).toEqual({
+      tone: 'up',
+      title: 'Filled buy 3 contracts AAPL 20 Nov 26 $250 Call @ 3.20',
+      body: 'Cost $960.00',
+    })
+    const expiry = order({ symbol: occ, side: 'SELL', channel: 'SYSTEM', clientOrderId: `expiry:${occ}` })
+    expect(orderEventToast(ev('FILL', expiry, { qty: '1', price: '0.0000', principal: '0.00', liquidity: 'EXPIRY' }))).toEqual({
+      tone: 'neutral',
+      title: 'Expired: 1 contract AAPL 20 Nov 26 $250 Call',
+      body: 'Expired worthless',
+    })
+  })
+
   it('announces cancels with a non-user reason, and expiries', () => {
     expect(orderEventToast(ev('CANCELLED', order()))).toEqual({ tone: 'neutral', title: 'Cancelled: Buy AAPL', body: undefined })
     expect(orderEventToast(ev('CANCELLED', order({ statusReason: 'ADMIN' })))?.body).toBe('Admin')

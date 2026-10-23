@@ -1,6 +1,7 @@
 package com.stocks.trading.fees;
 
 import com.stocks.common.domain.Crypto;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.Side;
 import com.stocks.common.money.Money;
 import java.math.BigDecimal;
@@ -31,8 +32,7 @@ public class FeeCalculator {
    */
   public Fees forExecution(String symbol, Side side, LocalDate tradeDate, BigDecimal priorQty,
                            BigDecimal priorPrincipal, BigDecimal qty, BigDecimal principal) {
-    return Crypto.isCrypto(symbol) ? Fees.ZERO
-        : forExecution(side, tradeDate, priorQty, priorPrincipal, qty, principal);
+    return noFees(symbol) ? Fees.ZERO : forExecution(side, tradeDate, priorQty, priorPrincipal, qty, principal);
   }
 
   /** The fees of one execution of a stock or ETF (as {@link #forExecution(String, Side, LocalDate, BigDecimal,
@@ -62,6 +62,11 @@ public class FeeCalculator {
 
   /** As {@link #estimate(Side, BigDecimal, BigDecimal, LocalDate)}; zero for a crypto pair (§29). */
   public Fees estimate(String symbol, Side side, BigDecimal qty, BigDecimal principal, LocalDate tradeDate) {
-    return Crypto.isCrypto(symbol) ? Fees.ZERO : estimate(side, qty, principal, tradeDate);
+    return noFees(symbol) ? Fees.ZERO : estimate(side, qty, principal, tradeDate);
+  }
+
+  /** Crypto pairs (§29) and option contracts (§30) pay no SEC, TAF or CAT fees: those schedules are per share. */
+  static boolean noFees(String symbol) {
+    return Crypto.isCrypto(symbol) || OptionSymbol.isOption(symbol);
   }
 }

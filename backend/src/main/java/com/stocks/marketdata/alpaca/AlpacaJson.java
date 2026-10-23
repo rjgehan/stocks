@@ -2,10 +2,12 @@ package com.stocks.marketdata.alpaca;
 
 import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.DataQuality;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.Timeframe;
 import com.stocks.common.money.Prices;
 import com.stocks.common.time.Et;
 import com.stocks.contract.marketdata.model.Bar;
+import com.stocks.contract.marketdata.model.OptionQuote;
 import com.stocks.contract.marketdata.model.Quote;
 import com.stocks.contract.marketdata.model.Snapshot;
 import com.stocks.contract.marketdata.model.Trade;
@@ -140,6 +142,72 @@ public final class AlpacaJson {
         prev == null || !Json.present(prev, "o") ? null
             : cryptoBar(symbol, Timeframe.DAY1, prev, Et.startOfDay(today.minusDays(1))),
         observedAt);
+  }
+
+  // ------------------------------------------------------------------------------------------- options (§30)
+
+  /** The quality of Alpaca's option quotes: {@code opra} is the consolidated feed, {@code indicative} is not. */
+  static DataQuality optionQuality(String feed) {
+    return "opra".equalsIgnoreCase(feed) ? DataQuality.REALTIME_CONSOLIDATED : DataQuality.INDICATIVE;
+  }
+
+  /** An option price on the cent (bids down, asks up, so the spread never narrows); null or 0 when absent. */
+  static BigDecimal optionPrice(BigDecimal price, RoundingMode mode) {
+    if (price == null || price.signum() <= 0) {
+      return price == null ? null : BigDecimal.ZERO.setScale(Prices.SCALE);
+    }
+    return price.setScale(2, mode).setScale(Prices.SCALE, RoundingMode.UNNECESSARY);
+  }
+
+  /** An option quote: cent prices, sizes in contracts, labelled by the option feed. */
+  static Quote optionQuote(String symbol, JsonNode n, Instant observedAt, String feed) {
+    if (n == null || !Json.present(n, "bp") && !Json.present(n, "ap")) {
+      return null;
+    }
+    Instant ts = Json.instant(n, "t");
+    return new Quote(symbol, optionPrice(Json.dec(n, "bp"), RoundingMode.DOWN), Json.lng(n, "bs", 0),
+        optionPrice(Json.dec(n, "ap"), RoundingMode.UP), Json.lng(n, "as", 0), Json.str(n, "bx"), Json.str(n, "ax"), ts,
+        observedAt != null ? observedAt : ts, optionQuality(feed), SOURCE);
+  }
+
+  /**
+   * An option print: informative only. It is never consolidated or eligible, so it can neither trigger nor fill an
+   * order (the indicative feed's trades are delayed 15 minutes).
+   */
+  static Trade optionTrade(String symbol, JsonNode n) {
+    if (n == null || !Json.present(n, "p")) {
+      return null;
+    }
+    Instant ts = Json.instant(n, "t");
+    return new Trade(symbol, Json.dec(n, "p"), Json.lng(n, "s", 0), ts, ts, Json.str(n, "x"), Json.strings(n, "c"),
+        false, false, Json.str(n, "i"), SOURCE);
+  }
+
+  /** An option snapshot ({@code /v1beta1/options/snapshots}): quote, trade and day bars; volumes are contracts. */
+  static Snapshot optionSnapshot(String symbol, JsonNode n, Instant observedAt, String feed) {
+    return new Snapshot(symbol, optionTrade(symbol, n.get("latestTrade")),
+        optionQuote(symbol, n.get("latestQuote"), observedAt, feed),
+        bar(symbol, Timeframe.MIN1, n.get("minuteBar"), false), bar(symbol, Timeframe.DAY1, n.get("dailyBar"), false),
+        bar(symbol, Timeframe.DAY1, n.get("prevDailyBar"), false), observedAt);
+  }
+
+  /** One chain row; null when the key is not a well-formed OCC symbol. */
+  static OptionQuote optionChainRow(String symbol, JsonNode n, Instant observedAt, String feed, Long openInterest) {
+    OptionSymbol.Contract c = OptionSymbol.parse(symbol).orElse(null);
+    if (c == null) {
+      return null;
+    }
+    JsonNode daily = n.get("dailyBar");
+    Long volume = daily != null && Json.present(daily, "v") ? Json.lng(daily, "v", 0) : null;
+    JsonNode greeks = n.get("greeks");
+    return new OptionQuote(c.symbol(), c.underlying(), c.expiration(), c.right(), c.strike(),
+        optionQuote(symbol, n.get("latestQuote"), observedAt, feed), optionTrade(symbol, n.get("latestTrade")), volume,
+        openInterest, Json.dec(n, "impliedVolatility"), greeks == null ? null : Json.dec(greeks, "delta"));
+  }
+
+  /** As {@link #optionChainRow(String, JsonNode, Instant, String, Long)} without open interest. */
+  static OptionQuote optionChainRow(String symbol, JsonNode n, Instant observedAt, String feed) {
+    return optionChainRow(symbol, n, observedAt, feed, null);
   }
 
   static Snapshot snapshot(String symbol, JsonNode n, Instant observedAt, String feed) {

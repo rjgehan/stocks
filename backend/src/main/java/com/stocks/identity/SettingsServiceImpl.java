@@ -139,6 +139,11 @@ public class SettingsServiceImpl implements SettingsService, SmartInitializingSi
     return Boolean.parseBoolean(value(SettingKey.CRYPTO_ENABLED));
   }
 
+  @Override
+  public boolean optionsEnabled() {
+    return Boolean.parseBoolean(value(SettingKey.OPTIONS_ENABLED));
+  }
+
   /** Every §23.4 key with its effective value, in §23.4 order. */
   @Override
   public Map<String, String> all() {

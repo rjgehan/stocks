@@ -1,6 +1,7 @@
 package com.stocks.marketdata.core;
 
 import com.stocks.common.domain.Crypto;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.SessionType;
 import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
@@ -34,7 +35,8 @@ public final class QuoteSplitAdjuster {
   }
 
   public QuoteView adjust(QuoteView v) {
-    if (v == null || v.symbol() == null || splits == null || Crypto.isCrypto(v.symbol())) {   // coins never split
+    if (v == null || v.symbol() == null || splits == null || Crypto.isCrypto(v.symbol())
+        || OptionSymbol.isOption(v.symbol())) {   // coins never split; contracts are not split-adjusted (§30)
       return v;
     }
     Instant now = time.now();

@@ -5,12 +5,15 @@
  *  - extended hours are enabled for Limit only, and never for crypto (it trades 24/7);
  *  - Sell is disabled without a position (no shorting);
  *  - the clientOrderId (`web-<uuid>`) is created when the ticket opens and reused on retry.
- * Crypto pairs (`BTC/USD`) take quantities with up to 5 decimals on every order type.
+ * Crypto pairs (`BTC/USD`) take quantities with up to 5 decimals on every order type. Option contracts (OCC symbols,
+ * §30) take whole contracts on Market or Limit (prices in cents), Day only, regular hours only, never a dollar amount:
+ * BUY opens a long position, SELL closes it.
  */
 import type { OrderMatrixRow, OrderType, PlaceOrderRequest, Preferences, Side, TimeInForce } from '@/lib/api/types'
 import {
   type Dec,
   add,
+  compare,
   div,
   isDecimal,
   isZero,
@@ -29,6 +32,7 @@ import {
 import { formatTrailAmount } from '@/lib/format/money'
 import { formatPrice } from '@/lib/format/number'
 import { baseAsset } from '@/lib/symbols'
+import { MULTIPLIER } from '@/lib/options'
 
 export type QtyMode = 'SHARES' | 'AMOUNT'
 export type TrailMode = 'AMOUNT' | 'PERCENT'
@@ -144,12 +148,16 @@ export const isStopType = (t: OrderType | null | undefined): boolean => t === 'S
 export const ALL_ORDER_TYPES: readonly OrderType[] = ['MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT', 'TRAILING_STOP']
 /** What a backend that does not publish `GET /rules` (or has not answered yet) is sure to accept (M1). */
 export const BASE_ORDER_TYPES: readonly OrderType[] = ['MARKET', 'LIMIT']
+/** The order types an option contract takes (§30), whatever the rulebook's matrix lists for shares. */
+export const OPTION_ORDER_TYPES: readonly OrderType[] = ['MARKET', 'LIMIT']
 
 /**
  * The order types this release accepts, from `GET /rules` `orders.matrix` (§18.3: only the types in
- * `RulesService.AVAILABLE_ORDER_TYPES`), in §11.1 order. Without the rulebook the ticket offers MARKET and LIMIT.
+ * `RulesService.AVAILABLE_ORDER_TYPES`), in §11.1 order. Without the rulebook the ticket offers MARKET and LIMIT; an
+ * option contract always gets MARKET and LIMIT.
  */
-export function availableOrderTypes(matrix: ReadonlyArray<Pick<OrderMatrixRow, 'type'>> | null | undefined): OrderType[] {
+export function availableOrderTypes(matrix: ReadonlyArray<Pick<OrderMatrixRow, 'type'>> | null | undefined, option = false): OrderType[] {
+  if (option) return [...OPTION_ORDER_TYPES]
   if (!matrix?.length) return [...BASE_ORDER_TYPES]
   const listed = new Set(matrix.map((r) => r.type).filter((t): t is OrderType => t != null))
   const types = ALL_ORDER_TYPES.filter((t) => listed.has(t))
@@ -252,11 +260,14 @@ export interface TicketContext {
   fractionable: boolean
   /** A crypto pair: 24/7, no extended-hours flag, fractional quantities on every order type. */
   crypto?: boolean
+  /** An option contract (§30): whole contracts, Market or Limit in cents, Day, regular hours, no dollar amount. */
+  option?: boolean
   /** Shares the player can sell (0 / null = no position). */
   availableQty: Dec | null
 }
 
 export function amountHint(s: TicketState, ctx: TicketContext): string | null {
+  if (s.qtyMode === 'AMOUNT' && ctx.option) return 'Options trade in whole contracts, not dollar amounts.'
   if (s.qtyMode === 'AMOUNT' && !ctx.fractionable) return 'Dollar orders need a fractionable symbol.'
   return null
 }
@@ -268,11 +279,27 @@ const positive = (v: string): Dec | null => {
   return d !== null && sign(d) > 0 ? d : null
 }
 
-/** The `PlaceOrderRequest` for preview/submit, or null while the ticket is incomplete. */
+/** A whole number of contracts above 0, or null. */
+export function wholeContracts(input: string): Dec | null {
+  const q = positive(input)
+  return q && compare(setScale(q, 0, 'DOWN'), q) === 0 ? setScale(q, 0, 'DOWN') : null
+}
+
+/** An option price: above 0 with at most 2 decimals (cents), or null. */
+export function centPrice(input: string): Dec | null {
+  const p = positive(input)
+  return p && compare(setScale(p, 2, 'DOWN'), p) === 0 ? p : null
+}
+
+/**
+ * The `PlaceOrderRequest` for preview/submit, or null while the ticket is incomplete (an option ticket also while
+ * its quantity is not whole contracts or its limit has more than 2 decimals).
+ */
 export function buildOrderRequest(s: TicketState, symbol: string, ctx: TicketContext): PlaceOrderRequest | null {
   if (s.side === 'SELL' && !canSell(ctx)) return null
   if (amountHint(s, ctx)) return null
-  const qty = s.qtyMode === 'SHARES' ? positive(s.qty) : null
+  if (ctx.option && !OPTION_ORDER_TYPES.includes(s.type)) return null
+  const qty = s.qtyMode === 'SHARES' ? (ctx.option ? wholeContracts(s.qty) : positive(s.qty)) : null
   const notional = s.qtyMode === 'AMOUNT' ? positive(s.amount) : null
   if (!qty && !notional) return null
   const req: PlaceOrderRequest = {
@@ -280,13 +307,13 @@ export function buildOrderRequest(s: TicketState, symbol: string, ctx: TicketCon
     symbol,
     side: s.side,
     type: s.type,
-    timeInForce: gtcAllowed(s) ? s.tif : 'DAY',
-    extendedHours: !ctx.crypto && extAllowed(s) && s.extendedHours,
+    timeInForce: gtcAllowed(s) && !ctx.option ? s.tif : 'DAY',
+    extendedHours: !ctx.crypto && !ctx.option && extAllowed(s) && s.extendedHours,
   }
   if (qty) req.qty = qty
   if (notional) req.notional = setScale(notional, 2, 'DOWN')
   if (showsLimit(s.type)) {
-    const p = positive(s.limitPrice)
+    const p = ctx.option ? centPrice(s.limitPrice) : positive(s.limitPrice)
     if (!p) return null
     req.limitPrice = p
   }
@@ -304,7 +331,7 @@ export function buildOrderRequest(s: TicketState, symbol: string, ctx: TicketCon
   const note = s.note.trim()
   if (note) req.rationale = note.slice(0, 1000)
   if (s.gfvAck) req.acknowledge = ['GFV_RISK']
-  if (s.doNotReduce && dividendAdjustable(s) && !ctx.crypto) req.doNotReduce = true
+  if (s.doNotReduce && dividendAdjustable(s) && !ctx.crypto && !ctx.option) req.doNotReduce = true
   return req
 }
 
@@ -326,30 +353,36 @@ const quoted = (v: Dec | null | undefined): Dec | null => (v && sign(v) > 0 ? v 
  * The limit price a new ticket starts with: the touch (ask to buy, bid to sell), else the last trade, rounded to the
  * tick. A zero side counts as no quote, so a closed-market ticket never pre-fills 0.00.
  */
-export function defaultLimitPrice(side: Side, q: { ask?: Dec | null; bid?: Dec | null; last?: Dec | null }): Dec | null {
+export function defaultLimitPrice(side: Side, q: { ask?: Dec | null; bid?: Dec | null; last?: Dec | null }, option = false): Dec | null {
   const px = quoted(side === 'BUY' ? q.ask : q.bid) ?? quoted(q.last)
-  return px ? roundToTick(px) : null
+  return px ? roundPrice(px, option) : null
 }
 
-/** Mid price rounded to tick, for the Bid · Mid · Ask · Last chips. */
-export function midPrice(bid: Dec, ask: Dec): Dec {
-  return roundToTick(div(add(bid, ask), '2', 6, 'HALF_EVEN'))
+/** A price on its tick: a stock's ($0.01, or $0.0001 under $1), an option's cent (§30). */
+export function roundPrice(price: Dec, option = false): Dec {
+  return option ? setScale(price, 2, 'HALF_UP') : roundToTick(price)
+}
+
+/** Mid price rounded to tick (an option's to the cent), for the Bid · Mid · Ask · Last chips. */
+export function midPrice(bid: Dec, ask: Dec, option = false): Dec {
+  return roundPrice(div(add(bid, ask), '2', 6, 'HALF_EVEN'), option)
 }
 
 /**
  * Quick quantity chips (§22.5): 25% · 50% · Max. Max = buying power ÷ (ask × 1.02) whole shares for share
- * buys (crypto: units to 5 decimals), buying power for amount buys, and the available position for sells. Client-side sizing only; the
- * server re-validates everything.
+ * buys (crypto: units to 5 decimals; options: whole contracts of 100 shares), buying power for amount buys, and the
+ * available position for sells. Client-side sizing only; the server re-validates everything.
  */
 export function quickQuantity(
   fraction: '0.25' | '0.5' | '1',
-  opts: { side: Side; qtyMode: QtyMode; buyingPower: Dec | null; ask: Dec | null; bid: Dec | null; availableQty: Dec | null; fractionable: boolean; crypto?: boolean },
+  opts: { side: Side; qtyMode: QtyMode; buyingPower: Dec | null; ask: Dec | null; bid: Dec | null; availableQty: Dec | null; fractionable: boolean; crypto?: boolean; option?: boolean },
 ): string | null {
   if (opts.side === 'BUY') {
     if (!opts.buyingPower || sign(opts.buyingPower) <= 0) return null
     const budget = mul(opts.buyingPower, fraction)
     if (opts.qtyMode === 'AMOUNT') return setScale(budget, 2, 'FLOOR')
     if (!opts.ask || isZero(opts.ask)) return null
+    if (opts.option) return div(budget, mul(mul(opts.ask, String(MULTIPLIER)), '1.02'), 0, 'FLOOR')
     return opts.crypto ? stripTrailingZeros(div(budget, mul(opts.ask, '1.02'), 5, 'FLOOR')) : div(budget, mul(opts.ask, '1.02'), 0, 'FLOOR')
   }
   if (!opts.availableQty || sign(opts.availableQty) <= 0) return null
@@ -361,9 +394,9 @@ export function quickQuantity(
   return setScale(mul(opts.availableQty, fraction), opts.fractionable ? 5 : 0, 'FLOOR')
 }
 
-/** What a quantity counts: "sh" for a stock, the coin for a crypto pair (`BTC/USD` → "BTC"). */
-export function qtyUnit(symbol: string, crypto: boolean): string {
-  return crypto ? baseAsset(symbol) : 'sh'
+/** What a quantity counts: "sh" for a stock, the coin for a crypto pair (`BTC/USD` → "BTC"), "contracts" for an option. */
+export function qtyUnit(symbol: string, crypto: boolean, option = false): string {
+  return option ? 'contracts' : crypto ? baseAsset(symbol) : 'sh'
 }
 
 /**

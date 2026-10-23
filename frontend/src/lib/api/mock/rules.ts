@@ -118,6 +118,23 @@ export function mockRules(settings: Settings, now: string): Rules {
       fees: 'None (no SEC, TAF or CAT fee).',
       pnlDays: 'Every calendar day is a P&L day while crypto is on (weekends included).',
     },
+    // §30: long calls and puts (admin setting options.enabled); the mock prices them off its own random walks
+    options: {
+      enabled: settings['options.enabled'],
+      feed: 'simulated',
+      quotesIndicative: false,
+      multiplier: 100,
+      scope: 'Long US equity options only: BUY to open and SELL to close calls and puts. No short options, spreads or exercise.',
+      symbols: 'OCC: root + YYMMDD + C|P + strike × 1000 in 8 digits (AAPL261120C00250000 = AAPL 2026-11-20 $250 call).',
+      hours: 'Regular session only (09:30–16:00 ET); buys are refused while options.enabled is off (sells still work).',
+      quantities: 'Whole contracts of 100 shares; prices are per share, dollar amounts include the × 100.',
+      orders: 'BUY opens, SELL closes (no short options, spreads or exercise). MARKET or LIMIT (at most 2 decimals), DAY only, no extended hours, no notional. Buys fill at the ask, sells at the bid.',
+      settlement: 'T+1 for sale proceeds.',
+      fees: 'None.',
+      execution: 'Buys fill at the ask, sells at the bid, in one piece; no fill without a two-sided quote or when the spread is wider than $0.10 and more than 50% of the mid.',
+      valuation: 'Marked at the mid (the bid without an ask) × 100 × contracts.',
+      expiration: 'At the close on expiration day an in-the-money contract cash-settles at its intrinsic value from the underlying close; an out-of-the-money one expires worthless (a SYSTEM sell with liquidity EXPIRY).',
+    },
     dataSources: ['Mock market (simulated prices)'],
     // the §16.7 public mode charter (RulesService.fairness), the "rationale required" variant
     fairness: [

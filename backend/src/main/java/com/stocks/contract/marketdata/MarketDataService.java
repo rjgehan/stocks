@@ -93,6 +93,19 @@ public interface MarketDataService {
   }
 
   /**
+   * §30: the listed expirations of {@code underlying} (a stock or ETF). {@code SYMBOL_NOT_FOUND} for an unknown or
+   * non-optionable symbol, {@code PROVIDER_UNAVAILABLE} when the provider fails.
+   */
+  default OptionExpirations optionExpirations(String underlying) {
+    throw ApiException.notImplemented("options");
+  }
+
+  /** §30: one expiration's chain of {@code underlying}, with quotes; errors as {@link #optionExpirations}. */
+  default OptionChain optionChain(String underlying, LocalDate expiration) {
+    throw ApiException.notImplemented("options");
+  }
+
+  /**
    * Phase 2 (§15.10): screens the universe with the latest quotes and the {@code screener_stat} statistics; never
    * calls a provider on the caller's thread. {@code NOT_IMPLEMENTED} where no market data runtime exists.
    */

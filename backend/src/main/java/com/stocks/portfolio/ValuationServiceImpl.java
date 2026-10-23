@@ -88,7 +88,7 @@ public class ValuationServiceImpl implements ValuationService {
     List<DataQuality> qualities = new ArrayList<>();
     for (PositionRow p : positions) {
       Mark m = markMap.get(p.symbol());
-      longMarketValue = longMarketValue.add(Rounding.MARKET_VALUE.multiply(p.qty(), m.price()));
+      longMarketValue = longMarketValue.add(Rounding.marketValue(p.symbol(), p.qty(), m.price()));
       qualities.add(m.quality());
     }
     BigDecimal cash = Money.cents(a.cash());

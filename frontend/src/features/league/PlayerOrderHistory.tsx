@@ -17,8 +17,9 @@ import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { GROUP_TYPE_LABEL, ROLE_LABEL } from '@/features/groups/groupLabels'
 import { feedDayLabel } from './FeedList'
-import { ManualConsolePill, OrderSourcePills, RationaleQuote, StatusPill, publicOrderLine, publicStatusLine, publicWaitLabel } from './PublicOrderRow'
-import { toPath } from '@/lib/symbols'
+import { ManualConsolePill, OrderSourcePills, RationaleQuote, StatusPill, publicOrderBody, publicSideLabel, publicStatusLine, publicWaitLabel } from './PublicOrderRow'
+import { stockLink } from '@/features/market/symbolLink'
+import { isExpiryOrder, optionLabel } from '@/lib/options'
 
 const positive = (d: string | null | undefined): boolean => d != null && isDecimal(d) && sign(d) > 0
 const nonZero = (d: string | null | undefined): boolean => d != null && isDecimal(d) && !isZero(d)
@@ -84,8 +85,8 @@ function OrderDetail({ o }: { o: PublicOrder }) {
           {o.symbol ? (
             <>
               {' · '}
-              <Link to="/stock/$symbol" params={{ symbol: toPath(o.symbol) }} className="text-accent">
-                {o.symbol} quote
+              <Link to="/stock/$symbol" {...stockLink(o.symbol)} className="text-accent">
+                {optionLabel(o.symbol)} quote
               </Link>
             </>
           ) : null}
@@ -108,13 +109,13 @@ export function OrderHistoryRow({ o, handle }: { o: PublicOrder; handle?: string
         <span className="w-16 shrink-0 pt-px text-caption text-text-3 tabular-nums">{formatTimeEt(o.receivedAt).replace(' ET', '')}</span>
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-1.5">
-            <span className={cx('font-semibold', o.side === 'SELL' ? 'text-down' : 'text-up')}>{o.side === 'SELL' ? 'Sell' : 'Buy'}</span>
-            <span className="font-semibold">{publicOrderLine(o).replace(/^(Buy|Sell) /, '')}</span>
+            <span className={cx('font-semibold', o.side === 'SELL' ? 'text-down' : 'text-up')}>{publicSideLabel(o)}</span>
+            <span className="font-semibold">{publicOrderBody(o)}</span>
             <StatusPill o={o} />
             <OrderSourcePills o={o} manual={false} />
           </span>
           <span className="mt-0.5 block text-caption text-text-3">
-            {positive(o.filledQty) ? `Filled ${formatQty(o.filledQty)} @ ${formatPrice(o.avgFillPrice)}` : publicStatusLine(o)}
+            {isExpiryOrder(o) ? publicStatusLine(o) : positive(o.filledQty) ? `Filled ${formatQty(o.filledQty)} @ ${formatPrice(o.avgFillPrice)}` : publicStatusLine(o)}
             {nonZero(o.fees) ? ` · fees ${formatMoney(o.fees)}` : ''}
           </span>
           {note && !open ? <RationaleQuote text={note} clamp className="mt-1" /> : null}

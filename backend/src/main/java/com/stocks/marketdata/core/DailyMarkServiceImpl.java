@@ -1,6 +1,7 @@
 package com.stocks.marketdata.core;
 
 import com.stocks.common.domain.Crypto;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.Timeframe;
 import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
@@ -10,6 +11,7 @@ import com.stocks.contract.marketdata.DailyMarkService;
 import com.stocks.contract.marketdata.RefreshPriority;
 import com.stocks.contract.marketdata.model.AdjustmentMode;
 import com.stocks.contract.marketdata.model.Bar;
+import com.stocks.contract.marketdata.model.Quote;
 import com.stocks.contract.marketdata.model.Trade;
 import com.stocks.marketdata.spi.BarQuery;
 import com.stocks.marketdata.spi.MarketDataProvider;
@@ -80,7 +82,7 @@ public class DailyMarkServiceImpl implements DailyMarkService {
       return;
     }
     Set<String> missing = new TreeSet<>(symbols);
-    missing.removeIf(Crypto::isCrypto);               // a crypto pair has no official close (§29)
+    missing.removeIf(s -> Crypto.isCrypto(s) || OptionSymbol.isOption(s));   // no official close (§29, §30)
     if (missing.isEmpty()) {
       return;
     }
@@ -118,11 +120,18 @@ public class DailyMarkServiceImpl implements DailyMarkService {
   }
 
   @Override
+  public Optional<BigDecimal> officialClose(String symbol, LocalDate tradeDate) {
+    return Optional.ofNullable(repository.officialCloses(tradeDate, Set.of(symbol)).get(symbol));
+  }
+
+  @Override
   public void ensureDayEndMarks(LocalDate tradeDate, Set<String> symbols) {
     Set<String> crypto = new TreeSet<>();
+    Set<String> options = new TreeSet<>();
     Set<String> stocks = new TreeSet<>();
-    symbols.forEach(s -> (Crypto.isCrypto(s) ? crypto : stocks).add(s));
+    symbols.forEach(s -> (Crypto.isCrypto(s) ? crypto : OptionSymbol.isOption(s) ? options : stocks).add(s));
     ensureCryptoDayEndMarks(tradeDate, crypto);
+    ensureOptionDayEndMarks(tradeDate, options);
     Optional<TradingDay> day = calendar.day(tradeDate);
     Instant now = time.now();
     if (day.isEmpty() || now.isBefore(day.get().postCloseAt()) || stocks.isEmpty()) {
@@ -177,6 +186,43 @@ public class DailyMarkServiceImpl implements DailyMarkService {
     }
     log.info("Daily marks {}: day-end marks for {} symbols ({} without any price)", tradeDate, todo.size() - left.size(),
         left.size());
+  }
+
+  /**
+   * §30: option day-end marks once the regular session of {@code tradeDate} has closed: the mid (the bid without an
+   * ask) of the last quote, basis {@code OPTION_MID}; {@code FINAL} when that quote was observed after the close (the
+   * closing quote), otherwise {@code PROVISIONAL} (re-marked like a stock's). The SIM prices the closing quote.
+   */
+  private void ensureOptionDayEndMarks(LocalDate tradeDate, Set<String> symbols) {
+    Optional<TradingDay> day = calendar.day(tradeDate);
+    Instant now = time.now();
+    if (symbols.isEmpty() || day.isEmpty() || now.isBefore(day.get().rthCloseAt())) {
+      return;
+    }
+    Set<String> todo = new TreeSet<>(symbols);
+    todo.removeAll(repository.withDayEnd(tradeDate, DailyMarkRepository.FINAL));
+    Instant close = day.get().rthCloseAt();
+    int written = 0;
+    for (String s : todo) {
+      Quote q;
+      boolean closing;
+      if (sim != null) {
+        q = sim.quoteAt(s, close.minus(1, ChronoUnit.MICROS)).orElse(null);
+        closing = true;
+      } else {
+        MarketFeed.MarkInputs in = feed.markInputs(s);
+        q = in.quote();
+        closing = in.quoteConfirmedAt() != null && !in.quoteConfirmedAt().isBefore(close)
+            && q != null && q.ts() != null && Et.date(q.ts()).equals(tradeDate);
+      }
+      BigDecimal mid = MarkService.optionMid(q);
+      if (mid != null && mid.signum() > 0) {
+        repository.upsertDayEnd(s, tradeDate, mid, sim != null ? "SIMULATED" : "OPTION_MID",
+            closing ? DailyMarkRepository.FINAL : DailyMarkRepository.PROVISIONAL, time.now());
+        written++;
+      }
+    }
+    log.info("Daily marks {}: option day-end marks for {} of {} contracts", tradeDate, written, todo.size());
   }
 
   /** §29: crypto day-end marks at the league cut-off of {@code tradeDate}, any calendar day. */

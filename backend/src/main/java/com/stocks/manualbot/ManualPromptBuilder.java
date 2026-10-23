@@ -3,6 +3,7 @@ package com.stocks.manualbot;
 import com.stocks.common.domain.AccountRestriction;
 import com.stocks.common.domain.AccountType;
 import com.stocks.common.domain.DataQuality;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.SessionType;
 import com.stocks.common.time.Et;
 import com.stocks.contract.marketdata.dto.ClockDto;
@@ -191,6 +192,7 @@ public class ManualPromptBuilder {
     s.append("- Fees: no commission; regulatory fees (").append(feeCodes(r.fees(), Et.date(in.now())))
         .append(") are charged per fill, as in the US market.\n");
     s.append(cryptoLine(r.crypto()));
+    s.append(optionsLine(r.options()));
     s.append("- Every order needs a rationale (1-1000 characters). It is public.\n");
     long wait = properties.settleWait() == null ? 0 : properties.settleWait().toSeconds();
     s.append("- The app runs your actions in this order: all CANCELs, then SELLs, then BUYs. Cash from a SELL can pay "
@@ -218,6 +220,23 @@ public class ManualPromptBuilder {
         + "the symbol with a slash (\"BTC/USD\"). Every order type works at any hour with fractional quantities (up "
         + "to 5 decimals) or a notional amount on MARKET orders; no \"extended_hours\". Crypto fills settle at once "
         + "(no good-faith violations), pay no fees and sell at any hour.\n";
+  }
+
+  /** §30: the options rule line, or nothing when the rulebook has no options section. */
+  static String optionsLine(RulesDto.RulesOptionsDto o) {
+    if (o == null) {
+      return "";
+    }
+    if (!o.enabled()) {
+      return "- Options are turned off: option buys are refused; you may still sell option contracts you hold.\n";
+    }
+    return "- Long options: BUY to open or SELL to close calls and puts by OCC symbol (ROOT + YYMMDD + C/P + strike x "
+        + "1000, e.g. \"AAPL261120C00250000\" = AAPL 20 Nov 2026 $250 call), whole contracts as \"qty\" (1 contract = "
+        + o.multiplier() + " shares, so it costs the price x " + o.multiplier() + "), MARKET or LIMIT, DAY, regular "
+        + "session only, no shorts or spreads. This prompt has no option chain: use standard listed strikes and "
+        + "expirations (weekly Fridays; monthlies on the third Friday); an unlisted contract never fills. Option "
+        + "prices are per share; in-the-money contracts are cash-settled at expiration, the rest expire worthless."
+        + (o.quotesIndicative() ? " Option quotes are indicative (a free derived feed)." : "") + "\n";
   }
 
   /**
@@ -334,7 +353,10 @@ public class ManualPromptBuilder {
       BigDecimal last = p.last() != null ? p.last() : p.mark();
       String flag = p.markQuality() == DataQuality.STALE ? " (stale)"
           : p.markQuality() == DataQuality.SYNTHETIC ? " (est.)" : "";
-      s.append("| ").append(p.symbol()).append(" | ").append(qty(p.qty())).append(" | ").append(price(p.avgCost()))
+      // §30: an option row names its contract; its qty is contracts and its prices are per share
+      String symbol = OptionSymbol.parse(p.symbol()).map(c -> p.symbol() + " (" + c.label() + ", contracts)")
+          .orElse(p.symbol());
+      s.append("| ").append(symbol).append(" | ").append(qty(p.qty())).append(" | ").append(price(p.avgCost()))
           .append(" | ").append(price(last)).append(flag).append(" | ").append(money(p.marketValue())).append(" | ")
           .append(signedMoney(p.unrealizedPnl())).append(" (").append(pct(p.unrealizedReturn())).append(") | ")
           .append(pct(p.dayReturn())).append(" | ").append(weight(p.weight())).append(" |\n");
@@ -419,7 +441,7 @@ public class ManualPromptBuilder {
     s.append("""
         BUY or SELL, with these fields:
         - "action": "BUY" or "SELL"
-        - "symbol": the ticker, e.g. "AAPL"
+        - "symbol": the ticker, e.g. "AAPL" (an option: its OCC symbol, e.g. "AAPL261120C00250000", with "qty" in         contracts)
         - "type": "MARKET", "LIMIT", "STOP", "STOP_LIMIT" or "TRAILING_STOP"
         - exactly one of "qty" (shares, e.g. "10") and "notional" (dollars, e.g. "250.00"; MARKET only)
         - "limit_price": for LIMIT and STOP_LIMIT

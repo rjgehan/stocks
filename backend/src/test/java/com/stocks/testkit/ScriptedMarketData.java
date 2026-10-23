@@ -1,5 +1,7 @@
 package com.stocks.testkit;
 
+import com.stocks.common.domain.OptionSymbol;
+import com.stocks.marketdata.core.ExecutableQuoteBuilder;
 import com.stocks.common.domain.AssetType;
 import com.stocks.common.domain.DataQuality;
 import com.stocks.common.domain.LiquidityTier;
@@ -236,6 +238,8 @@ public class ScriptedMarketData implements MarketDataService {
     }
     return latestQuote(sym, now)
         .filter(q -> notBefore == null || !q.at().isBefore(notBefore))
+        // §30, as ExecutableQuoteBuilder: an option needs a sane two-sided spread
+        .filter(q -> !OptionSymbol.isOption(sym) || ExecutableQuoteBuilder.saneOptionSpread(q.bid(), q.ask()))
         .map(q -> new ExecQuote(sym, q.bid(), q.bidSize(), q.ask(), q.askSize(),
             latestPrint(sym, now).map(Print::price).orElse(null), q.at(), q.at(), q.quality(), SOURCE, false));
   }

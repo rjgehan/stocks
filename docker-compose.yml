@@ -98,6 +98,7 @@ services:
       ALPACA_KEY_ID: ${ALPACA_KEY_ID:-}
       ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
       ALPACA_FEED: ${ALPACA_FEED:-iex}
+      ALPACA_OPTIONS_FEED: ${ALPACA_OPTIONS_FEED:-indicative}
       FINNHUB_TOKEN: ${FINNHUB_TOKEN:-}
       # Never pass this empty (an empty value would trust no proxy). Same networks as the §24.3 default.
       TRUSTED_PROXIES: '${TRUSTED_PROXIES:-127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|0:0:0:0:0:0:0:1|::1}'
@@ -165,6 +166,10 @@ services:
           description:
             en_us: iex (free) or sip (after the paid upgrade).
             en_US: iex (free) or sip (after the paid upgrade).
+        - container: ALPACA_OPTIONS_FEED
+          description:
+            en_us: Option quotes, indicative (free) or opra (paid plan).
+            en_US: Option quotes, indicative (free) or opra (paid plan).
         - container: FINNHUB_TOKEN
           description:
             en_us: Finnhub free API key (recommended).

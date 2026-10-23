@@ -115,6 +115,37 @@ describe('trade ticket rules (§22.5)', () => {
     expect(quickQuantity('1', sell)).toBeNull()
   })
 
+  it('trades an option in whole contracts on Market or Limit in cents, Day only, never extended hours or dollars', () => {
+    const occ = 'AAPL261120C00250000'
+    const option = { fractionable: false, availableQty: '2', option: true }
+    expect(availableOrderTypes([{ type: 'MARKET' }, { type: 'LIMIT' }, { type: 'STOP' }], true)).toEqual(['MARKET', 'LIMIT'])
+    let s = initialTicket({ clientOrderId: 'web-1' })
+    s = ticketReducer(s, { type: 'extendedHours', value: true })
+    s = ticketReducer(s, { type: 'tif', tif: 'GTC' })
+    s = ticketReducer(s, { type: 'field', field: 'qty', value: '2' })
+    s = ticketReducer(s, { type: 'field', field: 'limitPrice', value: '3.25' })
+    expect(buildOrderRequest(s, occ, option)).toMatchObject({ symbol: occ, type: 'LIMIT', qty: '2', limitPrice: '3.25', timeInForce: 'DAY', extendedHours: false })
+    // the same ticket on a stock keeps GTC and the flag
+    expect(buildOrderRequest(s, 'AAPL', ctx)).toMatchObject({ timeInForce: 'GTC', extendedHours: true })
+    expect(buildOrderRequest(ticketReducer(s, { type: 'field', field: 'limitPrice', value: '3.255' }), occ, option)).toBeNull()
+    expect(buildOrderRequest(ticketReducer(s, { type: 'field', field: 'qty', value: '1.5' }), occ, option)).toBeNull()
+    expect(buildOrderRequest(ticketReducer(s, { type: 'orderType', orderType: 'STOP' }), occ, option)).toBeNull()
+    const amount = ticketReducer(ticketReducer(s, { type: 'qtyMode', mode: 'AMOUNT' }), { type: 'field', field: 'amount', value: '500' })
+    expect(buildOrderRequest(amount, occ, option)).toBeNull()
+    // sell to close up to the held contracts
+    expect(buildOrderRequest(ticketReducer(s, { type: 'side', side: 'SELL' }), occ, { ...option, availableQty: null })).toBeNull()
+    expect(qtyUnit(occ, false, true)).toBe('contracts')
+    expect(defaultLimitPrice('BUY', { ask: '0.4550', bid: '0.40' }, true)).toBe('0.46')
+    expect(midPrice('0.40', '0.47', true)).toBe('0.44')
+  })
+
+  it('sizes option quick chips in whole contracts of 100 shares', () => {
+    const base = { side: 'BUY' as const, qtyMode: 'SHARES' as const, buyingPower: '1000.00', ask: '3.20', bid: '3.10', availableQty: null, fractionable: false, option: true }
+    expect(quickQuantity('1', base)).toBe('3') // 1000 / (3.20 × 100 × 1.02) = 3.06…
+    expect(quickQuantity('0.25', base)).toBe('0')
+    expect(quickQuantity('0.5', { ...base, side: 'SELL', availableQty: '5' })).toBe('2')
+  })
+
   it('trades crypto in fractional units on every order type, never with the extended-hours flag', () => {
     const crypto = { fractionable: true, availableQty: '0.5', crypto: true }
     let s = initialTicket({ clientOrderId: 'web-1' })

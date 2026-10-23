@@ -8,7 +8,8 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { symbolBars } from './bySymbol'
-import { toPath } from '@/lib/symbols'
+import { stockLink } from '@/features/market/symbolLink'
+import { optionLabel } from '@/lib/options'
 
 /**
  * P&L by symbol (§16.10): diverging horizontal bars sorted by total P&L over the window; tapping or hovering a row
@@ -46,7 +47,7 @@ export function PnlBySymbol({ analysis, isPending }: { analysis: PnlAnalysis | u
                   className="grid min-h-11 w-full grid-cols-[4.5rem_1fr_5.5rem] items-center gap-2 px-4 py-1.5 text-left text-table"
                 >
                   <span className="flex min-w-0 items-center gap-1 font-semibold">
-                    <span className="truncate">{b.symbol}</span>
+                    <span className="truncate">{optionLabel(b.symbol)}</span>
                     {r?.held ? null : r ? <span className="sr-only">(closed)</span> : null}
                   </span>
                   <span className="relative h-3" aria-hidden="true">
@@ -72,7 +73,7 @@ export function PnlBySymbol({ analysis, isPending }: { analysis: PnlAnalysis | u
                           Dividends <b className={DIRECTION_TEXT[moneyDirection(r.dividends)]}>{formatMoney(r.dividends, { signed: true })}</b>
                         </span>
                         {r.held ? <Pill tone="accent">Held</Pill> : <Pill tone="neutral">Closed</Pill>}
-                        <Link to="/stock/$symbol" params={{ symbol: toPath(b.symbol) }} className="text-accent">
+                        <Link to="/stock/$symbol" {...stockLink(b.symbol)} className="text-accent">
                           Quote
                         </Link>
                       </>

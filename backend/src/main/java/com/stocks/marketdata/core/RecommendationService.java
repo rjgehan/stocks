@@ -3,6 +3,7 @@ package com.stocks.marketdata.core;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.stocks.common.domain.Crypto;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.time.TimeSource;
 import com.stocks.contract.marketdata.Recommendations;
 import com.stocks.contract.marketdata.model.RecommendationTrend;
@@ -59,7 +60,7 @@ public class RecommendationService {
   }
 
   public Optional<Recommendations> recommendations(String symbol) {
-    if (symbol == null || symbol.isBlank() || Crypto.isCrypto(symbol) || !available()
+    if (symbol == null || symbol.isBlank() || Crypto.isCrypto(symbol) || OptionSymbol.isOption(symbol) || !available()
         || failures.getIfPresent(symbol) != null) {
       return Optional.empty();
     }

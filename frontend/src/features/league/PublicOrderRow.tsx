@@ -5,18 +5,34 @@ import { Pill } from '@/components/ui/Pill'
 import { cx } from '@/components/ui/cx'
 import { CANCEL_REASON_LABEL, ORDER_TYPE_LABEL, STATUS_LABEL, STATUS_TONE, WAIT_LABEL, orderPriceLabel, orderSizeLabel } from '@/features/account/orderLabels'
 import { GROUP_TYPE_LABEL, ROLE_LABEL } from '@/features/groups/groupLabels'
+import { expiryLabel, isExpiryOrder, isOption, optionLabel } from '@/lib/options'
 
 /**
  * Public mode (§16.7): another player's orders, read-only. The labels reuse the account's (`orderLabels`), worded
  * for a third person ("waiting for its price", "Cancelled by the player").
  */
 
-/** "Buy 10 sh AAPL · Limit 227.40 · GTC · Ext" */
+/**
+ * "Buy 10 sh AAPL · Limit 227.40 · GTC · Ext"; an option (§30): "Buy to open 1 contract AAPL 20 Nov 26 $250 Call · Limit
+ * 3.20", its expiration "Expiry: 1 contract F 16 Oct 26 $11 Call".
+ */
 export function publicOrderLine(o: PublicOrder): string {
-  const side = o.side === 'SELL' ? 'Sell' : 'Buy'
+  return isExpiryOrder(o) ? `Expiry: ${publicOrderBody(o)}` : `${publicSideLabel(o)} ${publicOrderBody(o)}`
+}
+
+/** The side word of an order line: Buy · Sell, Buy to open · Sell to close for an option, Expiry for its expiration (§30). */
+export function publicSideLabel(o: Pick<PublicOrder, 'symbol' | 'side' | 'channel'>): string {
+  if (isExpiryOrder(o)) return 'Expiry'
+  if (isOption(o.symbol)) return o.side === 'SELL' ? 'Sell to close' : 'Buy to open'
+  return o.side === 'SELL' ? 'Sell' : 'Buy'
+}
+
+/** An order line without its side word: "10 sh AAPL · Limit 227.40 · GTC". */
+export function publicOrderBody(o: PublicOrder): string {
+  if (isExpiryOrder(o)) return `${orderSizeLabel(o)} ${optionLabel(o.symbol)}`
   const type = o.type ? ORDER_TYPE_LABEL[o.type] : ''
   const price = orderPriceLabel(o)
-  return [`${side} ${orderSizeLabel(o)} ${o.symbol ?? ''}`, `${type}${price ? ` ${price}` : ''}`, o.timeInForce === 'GTC' ? 'GTC' : null, o.extendedHours ? 'Ext' : null]
+  return [`${orderSizeLabel(o)} ${optionLabel(o.symbol)}`, `${type}${price ? ` ${price}` : ''}`, o.timeInForce === 'GTC' ? 'GTC' : null, o.extendedHours ? 'Ext' : null]
     .filter(Boolean)
     .join(' · ')
 }
@@ -26,6 +42,7 @@ export const publicWaitLabel = (w: WaitReason): string => WAIT_LABEL[w].replace(
 /** "Working · waiting for its price", "Cancelled by the player", "Filled". */
 export function publicStatusLine(o: PublicOrder): string {
   const status = o.status ? STATUS_LABEL[o.status] : 'Unknown'
+  if (isExpiryOrder(o) && o.status === 'FILLED') return expiryLabel(o.avgFillPrice)
   if (o.group?.held && (o.status === 'PENDING' || o.status === 'WORKING')) return 'Waiting for entry'
   if (o.waitReason && (o.status === 'PENDING' || o.status === 'WORKING')) return `${status} · ${publicWaitLabel(o.waitReason)}`
   if (o.status === 'CANCELLED' && o.statusReason) {
@@ -115,8 +132,8 @@ export function PublicOrderRow({ o, handle, action }: { o: PublicOrder; handle?:
       <div className="flex items-start gap-3 text-table">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className={cx('font-semibold', o.side === 'SELL' ? 'text-down' : 'text-up')}>{o.side === 'SELL' ? 'Sell' : 'Buy'}</span>
-            <span className="font-semibold">{publicOrderLine(o).replace(/^(Buy|Sell) /, '')}</span>
+            <span className={cx('font-semibold', o.side === 'SELL' ? 'text-down' : 'text-up')}>{publicSideLabel(o)}</span>
+            <span className="font-semibold">{publicOrderBody(o)}</span>
             <StatusPill o={o} />
             <OrderSourcePills o={o} handle={handle} />
           </div>

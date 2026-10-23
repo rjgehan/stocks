@@ -5,6 +5,7 @@ import { formatPrice, formatQty } from '@/lib/format/number'
 import { formatTimeEt } from '@/lib/format/time'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { QualityBadge } from '@/features/market/QualityBadge'
+import { formatOptionPrice } from '@/lib/options'
 
 function Row({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) {
   return (
@@ -15,13 +16,19 @@ function Row({ label, value, strong }: { label: string; value: React.ReactNode; 
   )
 }
 
-/** Estimates from POST /orders/preview (§22.5): price, qty for notional, principal, fees, hold, BP before → after, session note. */
+/**
+ * Estimates from POST /orders/preview (§22.5): price, qty for notional, principal, fees, hold, BP before → after, session
+ * note. An option's (§30) price is per share and its principal the server's price × 100 × contracts, shown as the
+ * cost to open or the proceeds to close.
+ */
 export function EstimatesPanel({
   preview,
   loading,
   notional,
   stop = false,
   highlighted = false,
+  option = false,
+  side,
 }: {
   preview: Preview | undefined
   loading: boolean
@@ -30,6 +37,9 @@ export function EstimatesPanel({
   stop?: boolean
   /** Some preview error is shown on an input; otherwise the ticket's general error list explains what is wrong. */
   highlighted?: boolean
+  /** An option contract: per-share price, principal per 100 shares a contract. */
+  option?: boolean
+  side?: 'BUY' | 'SELL' | null
 }) {
   const est = preview?.estimate
   if (!preview && loading) {
@@ -50,16 +60,20 @@ export function EstimatesPanel({
   return (
     <dl className="text-table">
       <Row
-        label={stop ? 'Est. price at trigger' : 'Est. price'}
+        label={stop ? 'Est. price at trigger' : option ? 'Est. price (per share)' : 'Est. price'}
         value={
           <span className="inline-flex items-center gap-1.5">
-            {formatPrice(est.price)}
+            {option ? formatOptionPrice(est.price) : formatPrice(est.price)}
             <QualityBadge quality={est.quoteQuality === 'REALTIME_SINGLE_VENUE' ? null : est.quoteQuality} />
           </span>
         }
       />
       {notional ? <Row label="Est. shares" value={formatQty(est.qty)} /> : null}
-      <Row label="Est. principal" value={formatMoney(est.principal)} />
+      <Row
+        label={option ? (side === 'SELL' ? 'Est. proceeds (× 100 per contract)' : 'Est. cost (× 100 per contract)') : 'Est. principal'}
+        strong={option}
+        value={formatMoney(est.principal)}
+      />
       <Row
         label="Fees"
         value={

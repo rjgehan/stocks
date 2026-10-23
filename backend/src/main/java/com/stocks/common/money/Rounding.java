@@ -1,5 +1,6 @@
 package com.stocks.common.money;
 
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.Side;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -112,6 +113,19 @@ public enum Rounding {
    */
   public static BigDecimal principal(Side side, BigDecimal qty, BigDecimal price) {
     return (Objects.requireNonNull(side, "side") == Side.BUY ? PRINCIPAL_BUY : PRINCIPAL_SELL).multiply(qty, price);
+  }
+
+  /**
+   * As {@link #principal(Side, BigDecimal, BigDecimal)} for {@code symbol}: an option contract (§30) is worth
+   * {@code price × 100} per unit, so its principal is {@code qty × price × 100}.
+   */
+  public static BigDecimal principal(String symbol, Side side, BigDecimal qty, BigDecimal price) {
+    return principal(side, qty, OptionSymbol.unitValue(symbol, price));
+  }
+
+  /** Per-position market value {@code MARKET_VALUE(qty × price × multiplier)}: ×100 for an option (§30). */
+  public static BigDecimal marketValue(String symbol, BigDecimal qty, BigDecimal price) {
+    return MARKET_VALUE.multiply(qty, OptionSymbol.unitValue(symbol, price));
   }
 
   /** Split quantity per lot: {@code (qty × newRate).divide(oldRate, 5, FLOOR)}; never {@code newRate / oldRate}. */

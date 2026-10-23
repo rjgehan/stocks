@@ -6,6 +6,7 @@ import { queryKeys } from '../api/queryKeys'
 import type { Account, Clock, Notification, OrderUpdateEvent, SessionEvent } from '../api/types'
 import { formatMoney } from '../format/money'
 import { formatPrice, formatQty } from '../format/number'
+import { contractsLabel, expiryLabel, formatOptionPrice, isExpiryOrder, isOption, optionLabel } from '../options'
 import { toast } from '@/features/notifications/toastStore'
 import { realtime } from './stomp'
 
@@ -18,20 +19,27 @@ interface AdminAlert {
   body: string | null
 }
 
-/** Toast copy for an order event (§22.5 Result): "Filled 10 AAPL @ 227.38". */
+/**
+ * Toast copy for an order event (§22.5 Result): "Filled 10 AAPL @ 227.38"; an option (§30): "Filled buy 3 contracts AAPL
+ * 20 Nov 26 $250 Call @ 3.20", its expiration "Expired: 1 contract F 16 Oct 26 $11 Call" · "Cash-settled at $0.62".
+ */
 export function orderEventToast(e: OrderUpdateEvent): Parameters<typeof toast>[0] | null {
   const order = e.order
   if (!order) return null
-  const sym = order.symbol ?? ''
+  const option = isOption(order.symbol)
+  const sym = optionLabel(order.symbol)
   const buy = order.side === 'BUY'
   switch (e.event) {
     case 'FILL':
     case 'PARTIAL_FILL': {
       const qty = e.execution?.qty ?? order.filledQty
       const price = e.execution?.price ?? order.avgFillPrice
+      if (e.execution?.liquidity === 'EXPIRY' || isExpiryOrder(order)) {
+        return { tone: 'neutral', title: `Expired: ${contractsLabel(qty)} ${sym}`, body: expiryLabel(price) }
+      }
       return {
         tone: buy ? 'up' : 'down',
-        title: `${e.event === 'FILL' ? 'Filled' : 'Partially filled'} ${buy ? 'buy' : 'sell'} ${formatQty(qty)} ${sym} @ ${formatPrice(price)}`,
+        title: `${e.event === 'FILL' ? 'Filled' : 'Partially filled'} ${buy ? 'buy' : 'sell'} ${option ? contractsLabel(qty) : formatQty(qty)} ${sym} @ ${option ? formatOptionPrice(price) : formatPrice(price)}`,
         body: e.execution?.principal ? `${buy ? 'Cost' : 'Proceeds'} ${formatMoney(e.execution.principal)}` : undefined,
       }
     }

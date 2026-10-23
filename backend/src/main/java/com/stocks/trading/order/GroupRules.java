@@ -1,6 +1,7 @@
 package com.stocks.trading.order;
 
 import com.stocks.common.domain.Crypto;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.OrderGroupRole;
 import com.stocks.common.domain.OrderGroupType;
 import com.stocks.common.domain.OrderType;
@@ -51,6 +52,11 @@ public final class GroupRules {
     }
     if (g.symbol() == null || g.symbol().isEmpty()) {
       throw ApiException.validation("symbol", "symbol is required");
+    }
+    if (OptionSymbol.isOption(g.symbol())) {
+      // §30: long options are single MARKET or LIMIT orders; brackets, OCO and spreads are not offered
+      throw invalid("symbol", "Group orders (OCO, OTO, OTOCO, BRACKET) are not available for options; send single "
+          + "MARKET or LIMIT orders.");
     }
     if (g.qty() == null) {
       throw invalid("qty", "qty is required: a whole number of shares for every leg.");

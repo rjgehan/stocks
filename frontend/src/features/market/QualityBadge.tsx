@@ -9,9 +9,10 @@ const LABELS: Record<DataQuality, { label: string; tone: PillTone; title: string
   SIMULATED: { label: 'SIM', tone: 'ai', title: 'Simulated market data' },
   STALE: { label: 'Stale', tone: 'down', title: 'No fresh quote' },
   NONE: { label: 'No data', tone: 'flat', title: 'No quote available' },
+  INDICATIVE: { label: 'Ind.', tone: 'warn', title: 'Indicative option quote (Alpaca free feed), not OPRA' },
 }
 
-/** Data-quality label (§22.1: IEX · SIM · Est. · Stale). Consolidated real-time data needs no badge. */
+/** Data-quality label (§22.1: IEX · SIM · Est. · Stale · Ind.). Consolidated real-time data needs no badge. */
 export function QualityBadge({ quality }: { quality: DataQuality | null | undefined }) {
   const meta = quality ? LABELS[quality] : null
   if (!meta) return null

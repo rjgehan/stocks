@@ -3,7 +3,9 @@ package com.stocks.trading.engine;
 import com.stocks.common.domain.CancelReason;
 import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.LedgerEntryType;
+import com.stocks.common.domain.Liquidity;
 import com.stocks.common.domain.OrderEventType;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.OrderStatus;
 import com.stocks.common.domain.Side;
 import com.stocks.common.events.AccountChanged;
@@ -118,7 +120,7 @@ public class PostingService {
       BigDecimal qty = leg.qty();
       BigDecimal price = leg.price();
       BigDecimal[] sums = orders.sameDaySums(order.id(), tradeDate);
-      BigDecimal principal = Rounding.principal(order.side(), qty, price);
+      BigDecimal principal = Rounding.principal(order.symbol(), order.side(), qty, price);   // ×100 for options
       Fees f = fees.forExecution(order.symbol(), order.side(), tradeDate, sums[0], sums[1], qty, principal);
 
       if (order.isBuy()) {
@@ -129,7 +131,7 @@ public class PostingService {
           if (qty.signum() <= 0) {
             break;
           }
-          principal = Rounding.principal(order.side(), qty, price);
+          principal = Rounding.principal(order.symbol(), order.side(), qty, price);
           f = fees.forExecution(order.symbol(), order.side(), tradeDate, sums[0], sums[1], qty, principal);
         }
       } else {
@@ -141,7 +143,7 @@ public class PostingService {
           if (qty.signum() <= 0) {
             break;
           }
-          principal = Rounding.principal(order.side(), qty, price);
+          principal = Rounding.principal(order.symbol(), order.side(), qty, price);
           f = fees.forExecution(order.symbol(), order.side(), tradeDate, sums[0], sums[1], qty, principal);
         }
       }
@@ -170,7 +172,8 @@ public class PostingService {
             settleDate, quote));
         ledger.append(order.accountId(), LedgerEntryType.TRADE_SELL, net, tradeDate, settleDate, now, null,
             executionId, order.symbol(), null, "EXEC:" + exeId);
-        if (relief.violating() != null) {
+        // an option's expiration (§30) is not the player's sale: it never causes a good-faith violation
+        if (relief.violating() != null && leg.liquidity() != Liquidity.EXPIRY) {
           gfv.recordSell(order.accountId(), order.playerId(), order.id(), order.publicId(), executionId,
               order.symbol(), relief.violating(), tradeDate, now, tx);
         }
@@ -238,15 +241,16 @@ public class PostingService {
   }
 
   /**
-   * The largest quantity whose principal + fees fit in {@code allowed}: whole shares, or 5 dp for fractional orders
-   * and crypto pairs.
+   * The largest quantity whose principal + fees fit in {@code allowed}: whole shares (whole contracts for an option,
+   * §30), or 5 dp for fractional orders and crypto pairs.
    */
   private BigDecimal affordable(OrderRow order, BigDecimal price, BigDecimal allowed, LocalDate tradeDate,
                                 BigDecimal[] sums) {
     int scale = order.fractional() || Crypto.isCrypto(order.symbol()) ? Qty.SCALE : 0;
-    BigDecimal qty = allowed.max(BigDecimal.ZERO).divide(price, scale, RoundingMode.FLOOR);
+    BigDecimal qty = allowed.max(BigDecimal.ZERO).divide(OptionSymbol.unitValue(order.symbol(), price), scale,
+        RoundingMode.FLOOR);
     while (qty.signum() > 0) {
-      BigDecimal principal = Rounding.principal(order.side(), qty, price);
+      BigDecimal principal = Rounding.principal(order.symbol(), order.side(), qty, price);
       Fees f = fees.forExecution(order.symbol(), order.side(), tradeDate, sums[0], sums[1], qty, principal);
       if (principal.add(f.total()).compareTo(allowed) <= 0) {
         return Qty.normalize(qty);

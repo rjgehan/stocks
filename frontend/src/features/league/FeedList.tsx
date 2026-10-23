@@ -15,7 +15,8 @@ import { DIRECTION_TEXT } from '@/features/market/Change'
 import { ReactionBar } from '@/features/stats/ReactionBar'
 import { AiChip, Avatar } from './PlayerBadge'
 import { useFeedDelay } from './useFeedDelay'
-import { toPath } from '@/lib/symbols'
+import { stockLink } from '@/features/market/symbolLink'
+import { contractsLabel, expiryLabel, isOption, optionLabel } from '@/lib/options'
 
 type Kind = NonNullable<FeedItem['kind']>
 export type FeedFilter = 'ALL' | 'TRADES' | 'JOURNAL' | 'LEADERS' | 'MONEY' | 'PLAYERS'
@@ -42,21 +43,41 @@ const KIND_ICON: Record<Kind, { icon: (p: { size?: number }) => React.ReactNode;
 
 const PERIOD_WORD: Record<string, string> = { TODAY: 'today', WEEK: 'the week', MONTH: 'the month', YTD: 'the year', SEASON: 'the season', ALL: 'all time' }
 
+/** A symbol in a feed line; an option contract (§30) reads as its label and opens its underlying's Options tab. */
 function SymbolLink({ symbol }: { symbol: string | null | undefined }) {
   return (
-    <Link to="/stock/$symbol" params={{ symbol: toPath(symbol ?? '') }} className="font-semibold text-text-1 hover:text-accent">
-      {symbol}
+    <Link to="/stock/$symbol" {...stockLink(symbol)} className="font-semibold text-text-1 hover:text-accent">
+      {optionLabel(symbol)}
     </Link>
+  )
+}
+
+/** An option expiration (§30, `payload.expired`): "1 contract F 16 Oct 26 $11 Call expired worthless / cash-settled at $0.62". */
+function expiredLine(i: FeedItem): React.ReactNode {
+  const p = i.payload
+  const settled = expiryLabel(p?.price)
+  return (
+    <>
+      held {isOption(i.symbol) ? contractsLabel(p?.qty) : formatQty(p?.qty)} <SymbolLink symbol={i.symbol} /> to expiration: {settled.charAt(0).toLowerCase() + settled.slice(1)}
+      {p?.realizedPnl ? (
+        <>
+          {' '}
+          for <span className={cx('font-semibold', DIRECTION_TEXT[moneyDirection(p.realizedPnl)])}>{formatMoney(p.realizedPnl, { signed: true })}</span>
+        </>
+      ) : null}
+    </>
   )
 }
 
 function describe(i: FeedItem): React.ReactNode {
   const p = i.payload
+  if (p?.expired && (i.kind === 'FILL' || i.kind === 'POSITION_CLOSED')) return expiredLine(i)
   switch (i.kind) {
     case 'FILL':
       return (
         <>
-          <span className={p?.side === 'SELL' ? 'text-down' : 'text-up'}>{p?.side === 'SELL' ? 'sold' : 'bought'}</span> {formatQty(p?.qty)} <SymbolLink symbol={i.symbol} /> @ {formatPrice(p?.price)}
+          <span className={p?.side === 'SELL' ? 'text-down' : 'text-up'}>{p?.side === 'SELL' ? 'sold' : 'bought'}</span> {isOption(i.symbol) ? contractsLabel(p?.qty) : formatQty(p?.qty)}{' '}
+          <SymbolLink symbol={i.symbol} /> @ {formatPrice(p?.price)}
         </>
       )
     case 'POSITION_CLOSED':

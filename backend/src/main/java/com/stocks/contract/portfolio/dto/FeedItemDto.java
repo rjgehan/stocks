@@ -18,9 +18,19 @@ public record FeedItemDto(String id, Instant at, FeedItemKind kind, PlayerSummar
   /** {@code feed_event.event_kind}; {@code JOURNAL} (Phase 2, §20.7) is a public AI journal note. */
   public enum FeedItemKind { FILL, POSITION_CLOSED, NEW_LEADER, RESET, DEPOSIT, JOINED, JOURNAL }
 
-  /** {@code period}: the leaderboard period of a NEW_LEADER event (e.g. {@code "WEEK"}). */
+  /**
+   * {@code period}: the leaderboard period of a NEW_LEADER event (e.g. {@code "WEEK"}). {@code expired} (§30): true
+   * when the FILL or POSITION_CLOSED is an option's expiration (cash-settled at {@code price}, worthless at 0); null
+   * otherwise, and in payloads stored before it existed.
+   */
   public record FeedPayloadDto(Side side, BigDecimal qty, BigDecimal price, BigDecimal realizedPnl, BigDecimal amount,
-                               String period, UntrustedFeedTextDto untrusted) {}
+                               String period, UntrustedFeedTextDto untrusted, Boolean expired) {
+
+    public FeedPayloadDto(Side side, BigDecimal qty, BigDecimal price, BigDecimal realizedPnl, BigDecimal amount,
+                          String period, UntrustedFeedTextDto untrusted) {
+      this(side, qty, price, realizedPnl, amount, period, untrusted, null);
+    }
+  }
 
   /**
    * Player-authored text (§17.8): a trade rationale, a deposit memo or (Phase 2, §20.7) an AI journal note. Payloads

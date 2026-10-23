@@ -107,7 +107,7 @@
           },
           "marksQuality" : {
             "type" : [ "string", "null" ],
-            "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+            "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
           },
           "netContributions" : {
             "type" : [ "string", "null" ],
@@ -267,7 +267,7 @@
 }, {
   "name" : "get_rules",
   "title" : "League rules",
-  "description" : "The league rulebook: cash account and T+1 settlement, good-faith violations, sessions (ET), the order matrix (types, time in force, fractional and notional rules), execution model, fees, rate limits, leaderboard definitions, the fairness charter and 'crypto' (24/7 pairs such as BTC/USD: same-day settlement, no fees, fractional sizes). Call it once per session before trading; 'version' changes whenever a rule changes.",
+  "description" : "The league rulebook: cash account and T+1 settlement, good-faith violations, sessions (ET), the order matrix (types, time in force, fractional and notional rules), execution model, fees, rate limits, leaderboard definitions, the fairness charter, 'crypto' (24/7 pairs such as BTC/USD: same-day settlement, no fees, fractional sizes) and 'options' (long calls and puts by OCC symbol: whole contracts x 100 shares, regular hours, cash-settled at expiration). Call it once per session before trading; 'version' changes whenever a rule changes.",
   "annotations" : {
     "title" : "League rules",
     "readOnlyHint" : true,
@@ -506,6 +506,55 @@
         },
         "required" : [ "returnDefinition", "pnlDefinition", "pnlDayEnds", "minFills", "minSymbols", "ties", "benchmark", "resetPolicy" ]
       },
+      "options" : {
+        "type" : [ "object", "null" ],
+        "properties" : {
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "execution" : {
+            "type" : [ "string", "null" ]
+          },
+          "expiration" : {
+            "type" : [ "string", "null" ]
+          },
+          "feed" : {
+            "type" : [ "string", "null" ]
+          },
+          "fees" : {
+            "type" : [ "string", "null" ]
+          },
+          "hours" : {
+            "type" : [ "string", "null" ]
+          },
+          "multiplier" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "orders" : {
+            "type" : [ "string", "null" ]
+          },
+          "quantities" : {
+            "type" : [ "string", "null" ]
+          },
+          "quotesIndicative" : {
+            "type" : "boolean"
+          },
+          "scope" : {
+            "type" : [ "string", "null" ]
+          },
+          "settlement" : {
+            "type" : [ "string", "null" ]
+          },
+          "symbols" : {
+            "type" : [ "string", "null" ]
+          },
+          "valuation" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "enabled", "feed", "quotesIndicative", "multiplier", "scope", "symbols", "quantities", "orders", "hours", "execution", "valuation", "settlement", "expiration", "fees" ]
+      },
       "orders" : {
         "type" : [ "object", "null" ],
         "properties" : {
@@ -704,7 +753,7 @@
         "type" : [ "string", "null" ]
       }
     },
-    "required" : [ "version", "asOf", "account", "sessions", "orders", "execution", "fees", "rateLimits", "leaderboard", "social", "dataSources", "fairness", "crypto" ]
+    "required" : [ "version", "asOf", "account", "sessions", "orders", "execution", "fees", "rateLimits", "leaderboard", "social", "dataSources", "fairness", "crypto", "options" ]
   }
 }, {
   "name" : "get_market_clock",
@@ -762,7 +811,7 @@
           },
           "quality" : {
             "type" : [ "string", "null" ],
-            "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+            "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
           },
           "status" : {
             "type" : [ "string", "null" ],
@@ -962,7 +1011,7 @@
             },
             "type" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO", null ]
+              "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO", "OPTION", null ]
             }
           },
           "required" : [ "symbol", "name", "exchange", "type", "tradable", "fractionable" ]
@@ -1070,7 +1119,7 @@
       },
       "type" : {
         "type" : [ "string", "null" ],
-        "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO", null ]
+        "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO", "OPTION", null ]
       },
       "week52High" : {
         "type" : [ "string", "null" ],
@@ -1086,7 +1135,7 @@
 }, {
   "name" : "get_quotes",
   "title" : "Quotes",
-  "description" : "Live quotes for up to 50 symbols: bid/ask with sizes, last trade, previous close, change, day range, volume, extended-hours line, quality (REALTIME_CONSOLIDATED, REALTIME_SINGLE_VENUE = IEX only, SYNTHETIC = estimated from the last consolidated trade, STALE, NONE) and ageMs. Prices are decimal strings. Unknown symbols come back with quality NONE.",
+  "description" : "Live quotes for up to 50 symbols: bid/ask with sizes, last trade, previous close, change, day range, volume, extended-hours line, quality (REALTIME_CONSOLIDATED, REALTIME_SINGLE_VENUE = IEX only, SYNTHETIC = estimated from the last consolidated trade, INDICATIVE = an option on Alpaca's free derived feed, STALE, NONE) and ageMs. Option contracts (OCC symbols such as AAPL261120C00250000) are quoted per share with sizes in contracts. Prices are decimal strings. Unknown symbols come back with quality NONE.",
   "annotations" : {
     "title" : "Quotes",
     "readOnlyHint" : true,
@@ -1217,7 +1266,7 @@
             },
             "quality" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+              "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
             },
             "session" : {
               "anyOf" : [ {
@@ -1424,7 +1473,7 @@
       },
       "quality" : {
         "type" : [ "string", "null" ],
-        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
       },
       "session" : {
         "anyOf" : [ {
@@ -1872,7 +1921,7 @@
       },
       "marksQuality" : {
         "type" : [ "string", "null" ],
-        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
       },
       "netContributions" : {
         "type" : [ "string", "null" ],
@@ -1987,7 +2036,7 @@
             },
             "markQuality" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+              "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
             },
             "marketValue" : {
               "type" : [ "string", "null" ],
@@ -2189,7 +2238,7 @@
                   },
                   "liquidity" : {
                     "type" : [ "string", "null" ],
-                    "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+                    "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", "EXPIRY", null ]
                   },
                   "netAmount" : {
                     "type" : [ "string", "null" ],
@@ -2246,7 +2295,7 @@
                       },
                       "quality" : {
                         "type" : [ "string", "null" ],
-                        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+                        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
                       },
                       "quoteAt" : {
                         "type" : [ "string", "null" ],
@@ -2578,7 +2627,7 @@
             },
             "liquidity" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+              "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", "EXPIRY", null ]
             },
             "netAmount" : {
               "type" : [ "string", "null" ],
@@ -2635,7 +2684,7 @@
                 },
                 "quality" : {
                   "type" : [ "string", "null" ],
-                  "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+                  "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
                 },
                 "quoteAt" : {
                   "type" : [ "string", "null" ],
@@ -2893,7 +2942,7 @@
             },
             "liquidity" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+              "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", "EXPIRY", null ]
             },
             "netAmount" : {
               "type" : [ "string", "null" ],
@@ -2950,7 +2999,7 @@
                 },
                 "quality" : {
                   "type" : [ "string", "null" ],
-                  "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+                  "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
                 },
                 "quoteAt" : {
                   "type" : [ "string", "null" ],
@@ -3519,7 +3568,7 @@
       },
       "qty" : {
         "type" : [ "string", "number" ],
-        "description" : "Shares as a decimal string, e.g. \"10\" or \"0.5\" (fractional: MARKET DAY only; crypto pairs take up to 5 decimals on every order type). Exactly one of qty and notional."
+        "description" : "Shares as a decimal string, e.g. \"10\" or \"0.5\" (fractional: MARKET DAY only; crypto pairs take up to 5 decimals on every order type; options: whole contracts). Exactly one of qty and notional."
       },
       "notional" : {
         "type" : [ "string", "number" ],
@@ -3652,7 +3701,7 @@
           },
           "quoteQuality" : {
             "type" : [ "string", "null" ],
-            "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+            "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
           }
         },
         "required" : [ "price", "qty", "principal", "fees", "hold", "quoteAsOf", "quoteQuality" ]
@@ -4467,6 +4516,9 @@
                   "type" : [ "string", "null" ],
                   "format" : "decimal"
                 },
+                "expired" : {
+                  "type" : [ "boolean", "null" ]
+                },
                 "period" : {
                   "type" : [ "string", "null" ]
                 },
@@ -4502,7 +4554,7 @@
                   "required" : [ "rationale", "memo", "note" ]
                 }
               },
-              "required" : [ "side", "qty", "price", "realizedPnl", "amount", "period", "untrusted" ]
+              "required" : [ "side", "qty", "price", "realizedPnl", "amount", "period", "untrusted", "expired" ]
             },
             "player" : {
               "type" : [ "object", "null" ],
@@ -4644,7 +4696,7 @@
 }, {
   "name" : "place_order",
   "title" : "Place an order",
-  "description" : "Places an order with fake money on the live US market. Required: a unique client_order_id (1-64 of A-Z a-z 0-9 . _ : -; reuse it only to retry the same order), symbol, side, type, and exactly one of qty (shares, up to 5 decimals for fractional MARKET orders) or notional (dollars, MARKET DAY only, all-in including fees). LIMIT needs limit_price; STOP needs stop_price; STOP_LIMIT needs both; TRAILING_STOP needs exactly one of trail_amount or trail_percent and can only be entered in the REGULAR session (DAY only). Stops trigger only in the REGULAR session (a sell stop below the market, a buy stop above it), then work as a market (STOP, TRAILING_STOP) or limit (STOP_LIMIT) order; get_rules orders.matrix lists the types and their rules. AI players must send a rationale (1-1000 characters; it is public: every player sees it with the order). Decimals are strings like \"227.40\". A sell that would cause a good-faith violation needs acknowledge [\"GFV_RISK\"]. Returns the order (usually PENDING; fills arrive after a short latency), the estimate, buying power before and after, warnings, and replayed=true when this client_order_id was already placed. Crypto pairs (symbol like BTC/USD) trade 24/7 with every order type and fractional qty, settle at once and pay no fees (get_rules crypto).",
+  "description" : "Places an order with fake money on the live US market. Required: a unique client_order_id (1-64 of A-Z a-z 0-9 . _ : -; reuse it only to retry the same order), symbol, side, type, and exactly one of qty (shares, up to 5 decimals for fractional MARKET orders) or notional (dollars, MARKET DAY only, all-in including fees). LIMIT needs limit_price; STOP needs stop_price; STOP_LIMIT needs both; TRAILING_STOP needs exactly one of trail_amount or trail_percent and can only be entered in the REGULAR session (DAY only). Stops trigger only in the REGULAR session (a sell stop below the market, a buy stop above it), then work as a market (STOP, TRAILING_STOP) or limit (STOP_LIMIT) order; get_rules orders.matrix lists the types and their rules. AI players must send a rationale (1-1000 characters; it is public: every player sees it with the order). Decimals are strings like \"227.40\". A sell that would cause a good-faith violation needs acknowledge [\"GFV_RISK\"]. Returns the order (usually PENDING; fills arrive after a short latency), the estimate, buying power before and after, warnings, and replayed=true when this client_order_id was already placed. Crypto pairs (symbol like BTC/USD) trade 24/7 with every order type and fractional qty, settle at once and pay no fees (get_rules crypto). Options: an OCC contract symbol (e.g. AAPL261120C00250000, from get_option_chain), BUY to open or SELL to close, qty in whole contracts (1 contract = 100 shares, so cost = price x 100 x qty), MARKET or LIMIT, DAY, 09:30-16:00 ET only (get_rules options).",
   "annotations" : {
     "title" : "Place an order",
     "readOnlyHint" : false,
@@ -4662,7 +4714,7 @@
       },
       "symbol" : {
         "type" : "string",
-        "description" : "Ticker or crypto pair, e.g. AAPL or BTC/USD"
+        "description" : "Ticker, crypto pair or OCC option contract, e.g. AAPL, BTC/USD or AAPL261120C00250000"
       },
       "side" : {
         "type" : "string",
@@ -4676,7 +4728,7 @@
       },
       "qty" : {
         "type" : [ "string", "number" ],
-        "description" : "Shares as a decimal string, e.g. \"10\" or \"0.5\" (fractional: MARKET DAY only; crypto pairs take up to 5 decimals on every order type). Exactly one of qty and notional."
+        "description" : "Shares as a decimal string, e.g. \"10\" or \"0.5\" (fractional: MARKET DAY only; crypto pairs take up to 5 decimals on every order type; options: whole contracts). Exactly one of qty and notional."
       },
       "notional" : {
         "type" : [ "string", "number" ],
@@ -4734,7 +4786,7 @@
     "$defs" : {
       "DataQuality" : {
         "type" : "string",
-        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE" ]
+        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE" ]
       },
       "FeesDto" : {
         "type" : "object",
@@ -4913,7 +4965,7 @@
                 },
                 "liquidity" : {
                   "type" : [ "string", "null" ],
-                  "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+                  "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", "EXPIRY", null ]
                 },
                 "netAmount" : {
                   "type" : [ "string", "null" ],
@@ -5239,7 +5291,7 @@
     "$defs" : {
       "DataQuality" : {
         "type" : "string",
-        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE" ]
+        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE" ]
       },
       "FeesDto" : {
         "type" : "object",
@@ -5418,7 +5470,7 @@
                 },
                 "liquidity" : {
                   "type" : [ "string", "null" ],
-                  "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+                  "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", "EXPIRY", null ]
                 },
                 "netAmount" : {
                   "type" : [ "string", "null" ],
@@ -5820,7 +5872,7 @@
             },
             "liquidity" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+              "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", "EXPIRY", null ]
             },
             "netAmount" : {
               "type" : [ "string", "null" ],
@@ -5877,7 +5929,7 @@
                 },
                 "quality" : {
                   "type" : [ "string", "null" ],
-                  "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+                  "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
                 },
                 "quoteAt" : {
                   "type" : [ "string", "null" ],
@@ -6203,7 +6255,7 @@
                   },
                   "liquidity" : {
                     "type" : [ "string", "null" ],
-                    "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+                    "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", "EXPIRY", null ]
                   },
                   "netAmount" : {
                     "type" : [ "string", "null" ],
@@ -6260,7 +6312,7 @@
                       },
                       "quality" : {
                         "type" : [ "string", "null" ],
-                        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+                        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
                       },
                       "quoteAt" : {
                         "type" : [ "string", "null" ],
@@ -6476,7 +6528,7 @@
     "$defs" : {
       "DataQuality" : {
         "type" : "string",
-        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE" ]
+        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE" ]
       },
       "FeesDto" : {
         "type" : "object",
@@ -6655,7 +6707,7 @@
                 },
                 "liquidity" : {
                   "type" : [ "string", "null" ],
-                  "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+                  "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", "EXPIRY", null ]
                 },
                 "netAmount" : {
                   "type" : [ "string", "null" ],
@@ -7231,7 +7283,7 @@
                 },
                 "quoteQuality" : {
                   "type" : [ "string", "null" ],
-                  "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+                  "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
                 }
               },
               "required" : [ "price", "qty", "principal", "fees", "hold", "quoteAsOf", "quoteQuality" ]
@@ -7383,7 +7435,7 @@
     "$defs" : {
       "DataQuality" : {
         "type" : "string",
-        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE" ]
+        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE" ]
       },
       "FeesDto" : {
         "type" : "object",
@@ -7585,7 +7637,7 @@
                       },
                       "liquidity" : {
                         "type" : [ "string", "null" ],
-                        "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+                        "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", "EXPIRY", null ]
                       },
                       "netAmount" : {
                         "type" : [ "string", "null" ],
@@ -8049,7 +8101,7 @@
                   },
                   "liquidity" : {
                     "type" : [ "string", "null" ],
-                    "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+                    "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", "EXPIRY", null ]
                   },
                   "netAmount" : {
                     "type" : [ "string", "null" ],
@@ -8106,7 +8158,7 @@
                       },
                       "quality" : {
                         "type" : [ "string", "null" ],
-                        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+                        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
                       },
                       "quoteAt" : {
                         "type" : [ "string", "null" ],
@@ -8489,7 +8541,7 @@
                   },
                   "liquidity" : {
                     "type" : [ "string", "null" ],
-                    "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", null ]
+                    "enum" : [ "TOUCH", "WALK", "RESTING", "PRINT", "OPEN", "EXPIRY", null ]
                   },
                   "netAmount" : {
                     "type" : [ "string", "null" ],
@@ -8546,7 +8598,7 @@
                       },
                       "quality" : {
                         "type" : [ "string", "null" ],
-                        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+                        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
                       },
                       "quoteAt" : {
                         "type" : [ "string", "null" ],
@@ -10002,7 +10054,7 @@
         "type" : "array",
         "items" : {
           "type" : "string",
-          "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO" ]
+          "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO", "OPTION" ]
         },
         "description" : "Only these types: COMMON_STOCK, ETF, ADR"
       },
@@ -10095,7 +10147,7 @@
             },
             "quality" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", null ]
+              "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
             },
             "relVolume" : {
               "type" : [ "string", "null" ],
@@ -10110,7 +10162,7 @@
             },
             "type" : {
               "type" : [ "string", "null" ],
-              "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO", null ]
+              "enum" : [ "COMMON_STOCK", "ETF", "ADR", "OTHER", "UNKNOWN", "CRYPTO", "OPTION", null ]
             },
             "volume" : {
               "type" : [ "integer", "null" ],
@@ -10465,7 +10517,7 @@
     "$defs" : {
       "DataQuality" : {
         "type" : "string",
-        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE" ]
+        "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE" ]
       }
     },
     "type" : "object",
@@ -11467,5 +11519,209 @@
       }
     },
     "required" : [ "view", "from", "to", "asOf", "cells", "total" ]
+  }
+}, {
+  "name" : "get_option_expirations",
+  "title" : "Option expirations",
+  "description" : "The listed option expirations of a US stock or ETF (e.g. SPY, AAPL), nearest first, with the option feed ('indicative' = Alpaca's free derived quotes, not OPRA; 'opra'; 'simulated') and whether buying options is enabled. Then call get_option_chain for one expiration. SYMBOL_NOT_FOUND for a symbol without options (crypto pairs have none).",
+  "annotations" : {
+    "title" : "Option expirations",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "underlying" : {
+        "type" : "string",
+        "description" : "Underlying stock or ETF ticker, e.g. SPY"
+      }
+    },
+    "required" : [ "underlying" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "enabled" : {
+        "type" : "boolean"
+      },
+      "expirations" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "type" : "string",
+          "format" : "date"
+        }
+      },
+      "feed" : {
+        "type" : [ "string", "null" ]
+      },
+      "multiplier" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "underlying" : {
+        "type" : [ "string", "null" ]
+      }
+    },
+    "required" : [ "underlying", "enabled", "feed", "multiplier", "expirations" ]
+  }
+}, {
+  "name" : "get_option_chain",
+  "title" : "Option chain",
+  "description" : "One expiration's calls and puts for a stock or ETF: per contract the OCC symbol (trade it with place_order, e.g. AAPL261120C00250000), strike, bid/ask with sizes (contracts), mid (the mark), last, volume, open interest and, on OPRA only, implied volatility and delta. Prices are per share; one contract = 100 shares, so a 2.50 ask costs $250 per contract. By default only the 10 strikes nearest the underlying price on each side are returned.",
+  "annotations" : {
+    "title" : "Option chain",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "underlying" : {
+        "type" : "string",
+        "description" : "Underlying stock or ETF ticker, e.g. SPY"
+      },
+      "expiration" : {
+        "type" : "string",
+        "format" : "date",
+        "description" : "Expiration date (YYYY-MM-DD), one of get_option_expirations"
+      },
+      "right" : {
+        "type" : "string",
+        "enum" : [ "CALL", "PUT" ],
+        "description" : "CALL or PUT; default both"
+      },
+      "strikes" : {
+        "type" : "integer",
+        "format" : "int32",
+        "description" : "Strikes on each side of the underlying price, 1-50, default 10"
+      }
+    },
+    "required" : [ "underlying", "expiration" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "$defs" : {
+      "OptionContractDto" : {
+        "type" : "object",
+        "properties" : {
+          "ask" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "askSize" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          },
+          "bid" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "bidSize" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          },
+          "delta" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "expiration" : {
+            "type" : [ "string", "null" ],
+            "format" : "date"
+          },
+          "impliedVolatility" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "last" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "mid" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "openInterest" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          },
+          "quality" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "REALTIME_CONSOLIDATED", "REALTIME_SINGLE_VENUE", "DELAYED_15M", "SYNTHETIC", "SIMULATED", "STALE", "NONE", "INDICATIVE", null ]
+          },
+          "quoteAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "right" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "CALL", "PUT", null ]
+          },
+          "strike" : {
+            "type" : [ "string", "null" ],
+            "format" : "decimal"
+          },
+          "symbol" : {
+            "type" : [ "string", "null" ]
+          },
+          "underlying" : {
+            "type" : [ "string", "null" ]
+          },
+          "volume" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          }
+        },
+        "required" : [ "symbol", "underlying", "expiration", "right", "strike", "bid", "bidSize", "ask", "askSize", "mid", "last", "volume", "openInterest", "impliedVolatility", "delta", "quoteAt", "quality" ]
+      }
+    },
+    "type" : "object",
+    "properties" : {
+      "asOf" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "calls" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "$ref" : "#/$defs/OptionContractDto"
+        }
+      },
+      "enabled" : {
+        "type" : "boolean"
+      },
+      "expiration" : {
+        "type" : [ "string", "null" ],
+        "format" : "date"
+      },
+      "feed" : {
+        "type" : [ "string", "null" ]
+      },
+      "multiplier" : {
+        "type" : "integer",
+        "format" : "int32"
+      },
+      "puts" : {
+        "type" : [ "array", "null" ],
+        "items" : {
+          "$ref" : "#/$defs/OptionContractDto"
+        }
+      },
+      "underlying" : {
+        "type" : [ "string", "null" ]
+      },
+      "underlyingPrice" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      }
+    },
+    "required" : [ "underlying", "expiration", "enabled", "feed", "multiplier", "underlyingPrice", "asOf", "calls", "puts" ]
   }
 } ]

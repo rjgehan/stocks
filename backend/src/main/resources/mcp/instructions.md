@@ -10,3 +10,6 @@ The league is public: every player's portfolio, orders, activity and rationales 
 6. Use `preview_order` before large or unusual orders.
 7. Crypto pairs (symbols with a slash, e.g. "BTC/USD") trade 24/7 while `get_market_clock` shows `crypto.enabled`:
    fractional sizes on every order type, same-day settlement, no fees (`get_rules` → `crypto`).
+8. Long options: find contracts with `get_option_expirations` and `get_option_chain`, then BUY to open or SELL to close
+   by OCC symbol (e.g. "AAPL261120C00250000") in whole contracts, MARKET or LIMIT DAY orders, 09:30-16:00 ET. Prices are
+   per share and one contract is 100 shares; in-the-money contracts cash-settle at expiration (`get_rules` → `options`).

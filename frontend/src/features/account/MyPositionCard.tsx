@@ -12,9 +12,15 @@ import { toast } from '@/features/notifications/toastStore'
 import { newClientOrderId } from '@/features/trade/ticketState'
 import { OrdersTable } from './OrdersTable'
 import { isCrypto } from '@/lib/symbols'
+import { contractsLabel, isOption, optionLabel } from '@/lib/options'
 
-/** "My position" and "my open orders" on the quote page (§22.4), with Close position (§11.8). */
+/**
+ * "My position" and "my open orders" on the quote page (§22.4), with Close position (§11.8). An option contract (§30)
+ * counts contracts; its market value and P&L already include × 100, its average cost is per share.
+ */
 export function MyPositionCard({ symbol }: { symbol: string }) {
+  const option = isOption(symbol)
+  const name = optionLabel(symbol)
   const { data } = usePositions()
   const close = useClosePosition()
   const [confirming, setConfirming] = useState(false)
@@ -29,7 +35,7 @@ export function MyPositionCard({ symbol }: { symbol: string }) {
         onSuccess: () => {
           setConfirming(false)
           setClientOrderId(newClientOrderId())
-          toast({ tone: 'down', title: `Sell ${formatQty(available)} ${symbol} Market · Pending` })
+          toast({ tone: 'down', title: `Sell ${option ? contractsLabel(available) : formatQty(available)} ${name} Market · Pending` })
         },
         onError: (e) => {
           const d = describeError(e)
@@ -52,8 +58,8 @@ export function MyPositionCard({ symbol }: { symbol: string }) {
         <dl className="grid grid-cols-2 gap-x-6 px-4 py-2 text-table tablet:grid-cols-3">
           {(
             [
-              [isCrypto(symbol) ? 'Quantity' : 'Shares', formatQty(p.qty)],
-              ['Avg cost', formatPrice(p.avgCost)],
+              [option ? 'Contracts' : isCrypto(symbol) ? 'Quantity' : 'Shares', formatQty(p.qty)],
+              [option ? 'Avg cost (per share)' : 'Avg cost', formatPrice(p.avgCost)],
               ['Market value', formatMoney(p.marketValue)],
               [
                 'Day P&L',
@@ -77,21 +83,29 @@ export function MyPositionCard({ symbol }: { symbol: string }) {
           ))}
         </dl>
       ) : (
-        <p className="px-4 py-3 text-caption text-text-3">You don't own {symbol} yet.</p>
+        <p className="px-4 py-3 text-caption text-text-3">You don't own {name} yet.</p>
       )}
       <h3 className="px-4 pt-2 text-caption font-semibold tracking-wide text-text-2 uppercase">Open orders</h3>
-      <OrdersTable view="OPEN" symbol={symbol} emptyHint={`Working ${symbol} orders show up here with a Cancel button.`} />
+      <OrdersTable view="OPEN" symbol={symbol} emptyHint={`Working ${name} orders show up here with a Cancel button.`} />
       <ConfirmDialog
         open={confirming}
         onClose={() => setConfirming(false)}
         onConfirm={doClose}
         pending={close.isPending}
         tone="sell"
-        title={`Close your ${symbol} position?`}
-        confirmLabel={`Sell ${formatQty(available)} ${symbol}`}
+        title={`Close your ${name} position?`}
+        confirmLabel={`Sell ${option ? contractsLabel(available) : formatQty(available)} ${option ? '' : symbol}`.trim()}
       >
-        This places a <strong className="text-text-1">market sell</strong> for all {formatQty(available)} available shares at the current bid. Fractional shares only sell during regular hours; outside them
-        the order waits for the open.
+        {option ? (
+          <>
+            This places a <strong className="text-text-1">market sell to close</strong> for all {contractsLabel(available)} at the current bid (regular hours only).
+          </>
+        ) : (
+          <>
+            This places a <strong className="text-text-1">market sell</strong> for all {formatQty(available)} available shares at the current bid. Fractional shares only sell during regular hours; outside
+            them the order waits for the open.
+          </>
+        )}
       </ConfirmDialog>
     </section>
   )

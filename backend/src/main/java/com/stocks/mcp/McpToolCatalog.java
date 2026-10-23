@@ -23,7 +23,7 @@ import tools.jackson.databind.json.JsonMapper;
  * name, title, description and the four hints from the annotation; the input schema from Spring AI's generator,
  * post-processed by {@link McpInputSchemas} (decimals as strings or numbers, wire-value enums); the
  * output schema from the return type, post-processed by {@link McpOutputSchemas}; the call handler is
- * {@link McpToolHandler} (Boot's {@code JsonMapper}). The 60 tools are registered in the <b>fixed order of §20.3</b>
+ * {@link McpToolHandler} (Boot's {@code JsonMapper}). The 62 tools are registered in the <b>fixed order of §20.3</b>
  * ({@link #ORDER}); a tool that is not in the catalog fails the boot. Every tool has a required scope
  * ({@link #SCOPES}, the "Scope" column of §20.3, mirroring the REST routes of §17.1), checked by
  * {@link McpToolHandler} on every call; a tool without an entry fails the boot.
@@ -54,7 +54,9 @@ public final class McpToolCatalog {
       "get_player_journal", "add_journal_note",
       // public mode (§16.7), appended
       "get_player_portfolio", "get_player_orders", "get_player_activity", "get_player_pnl_analysis",
-      "get_player_pnl_calendar");
+      "get_player_pnl_calendar",
+      // long options (§30), appended
+      "get_option_expirations", "get_option_chain");
 
   /** {@link #SCOPES} value of a tool any authenticated caller may use ({@code whoami}). */
   public static final String NO_SCOPE = "";
@@ -70,7 +72,7 @@ public final class McpToolCatalog {
     m.put("whoami", NO_SCOPE);   // its account member is null without account:read (AccountIdentityTools)
     for (String t : List.of("get_rules", "get_market_clock", "get_calendar", "search_symbols", "get_asset",
         "get_quotes", "get_snapshot", "get_bars", "get_movers", "get_news", "get_fundamentals", "screen_stocks",
-        "get_recommendations")) {
+        "get_recommendations", "get_option_expirations", "get_option_chain")) {
       m.put(t, Scopes.MARKET_READ);
     }
     for (String t : List.of("get_account", "get_positions", "get_orders", "get_order", "get_executions",

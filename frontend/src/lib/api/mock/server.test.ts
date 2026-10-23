@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, expectTypeOf, it } from 'vitest'
-import type { Activity, Leaderboard, Order, PlaceOrderResponse, PlayerProfile, PublicOrder, PublicPortfolio, Rules, Settings, TransferBatchResult } from '../types'
+import type { Activity, Leaderboard, OptionContract, Order, PlaceOrderResponse, PlayerProfile, PublicOrder, PublicPortfolio, Rules, Settings, TransferBatchResult } from '../types'
 import { MockServer, durationMs } from './server'
 import { roundToTick } from '../../format/decimal'
+import { isOption, parseOption } from '../../options'
 
 /**
  * The mock backend (§22.9) must answer with the exact §18.3 / §21.1 shapes, so screens built against it work
@@ -448,5 +449,109 @@ describe('mock server: crypto (§29)', () => {
     expect(buy.body.errors.map((e) => e.code)).toContain('SYMBOL_NOT_TRADABLE')
     const sell = await call<PreviewBody>('POST', '/orders/preview', { symbol: 'BTC/USD', side: 'SELL', type: 'MARKET', qty: '0.001' })
     expect(sell.body.errors.map((e) => e.code)).not.toContain('SYMBOL_NOT_TRADABLE')
+  })
+})
+
+describe('mock server: options (§30)', () => {
+  type Chain = { underlying: string; expiration: string; enabled: boolean; feed: string; multiplier: number; underlyingPrice: string; calls: OptionContract[]; puts: OptionContract[] }
+  type Pos = { symbol: string; qty: string; avgCost: string; mark: string; marketValue: string; costBasis: string }
+  const chainOf = async (underlying: string) => {
+    const exp = await call<{ expirations: string[] }>('GET', `/options/${underlying}/expirations`)
+    return (await call<Chain>('GET', `/options/${underlying}/chain?expiration=${exp.body.expirations[4]}`)).body
+  }
+
+  it('lists 4 weekly and 3 monthly expirations, nearest first, on stocks and ETFs only', async () => {
+    const res = await call<{ underlying: string; enabled: boolean; feed: string; multiplier: number; expirations: string[] }>('GET', '/options/aapl/expirations')
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ underlying: 'AAPL', enabled: true, feed: 'simulated', multiplier: 100 })
+    const dates = res.body.expirations
+    expect(dates).toHaveLength(7)
+    expect([...dates].sort()).toEqual(dates)
+    expect(dates.every((d) => new Date(`${d}T12:00:00Z`).getUTCDay() === 5)).toBe(true)
+    expect(dates.slice(4).every((d) => Number(d.slice(8)) >= 15 && Number(d.slice(8)) <= 21)).toBe(true) // third Fridays
+    expect((await call('GET', '/options/BTC-USD/expirations')).status).toBe(404)
+    expect((await call('GET', '/options/NOPE/expirations')).status).toBe(404)
+    expect((await call('GET', '/options/AAPL/chain?expiration=2020-01-17')).status).toBe(400)
+  })
+
+  it('serves a chain around the money with two-sided quotes, calls cheaper as the strike rises', async () => {
+    const chain = await chainOf('AAPL')
+    expect(chain).toMatchObject({ underlying: 'AAPL', feed: 'simulated', multiplier: 100, enabled: true })
+    expect(chain.underlyingPrice).toMatch(DECIMAL)
+    expect(chain.calls).toHaveLength(21)
+    expect(chain.puts).toHaveLength(21)
+    const strikes = chain.calls.map((c) => Number(c.strike))
+    expect([...strikes].sort((a, b) => a - b)).toEqual(strikes)
+    for (const c of [...chain.calls, ...chain.puts]) {
+      expect(parseOption(c.symbol)).toMatchObject({ underlying: 'AAPL', expiration: chain.expiration, right: c.right, strike: c.strike })
+      expect(Number(c.bid)).toBeGreaterThan(0)
+      expect(Number(c.ask)).toBeGreaterThan(Number(c.bid))
+      expect(c.quality).toBe('SIMULATED')
+    }
+    expect(Number(chain.calls[0]!.mid)).toBeGreaterThan(Number(chain.calls[20]!.mid))
+    expect(Number(chain.puts[0]!.mid)).toBeLessThan(Number(chain.puts[20]!.mid))
+    // the contract's own quote and asset
+    const occ = chain.calls[10]!.symbol!
+    const quote = (await call<{ quotes: Array<{ symbol: string; bid: string; ask: string; quality: string }> }>('GET', `/quotes?symbols=${occ}`)).body.quotes[0]!
+    expect(quote).toMatchObject({ symbol: occ, quality: 'SIMULATED' })
+    expect(Number(quote.ask)).toBeGreaterThan(Number(quote.bid))
+    expect((await call('GET', `/assets/${occ}`)).body).toMatchObject({ symbol: occ, type: 'OPTION', fractionable: false, tradable: true, fundamentals: null })
+  })
+
+  it('buys to open and sells to close whole contracts at the touch, with dollar amounts × 100 and no fees', async () => {
+    const occ = (await chainOf('F')).calls[11]!.symbol!
+    const cash0 = (await call<{ cash: { total: string } }>('GET', '/account')).body.cash.total
+    const placed = await call<PlaceOrderResponse>('POST', '/orders', { clientOrderId: 'web-test-opt-1', symbol: occ, side: 'BUY', type: 'MARKET', qty: '1', timeInForce: 'DAY' })
+    expect(placed.status).toBe(201)
+    expect(Number(placed.body.estimate!.principal)).toBeCloseTo(Number(placed.body.estimate!.price) * 100, 6)
+    expect(placed.body.estimate!.fees!.total).toBe('0.00')
+    await sleep(1_200)
+    const order = (await call<Order>('GET', `/orders/${placed.body.order!.orderId}`)).body
+    expect(order.status).toBe('FILLED')
+    const exe = order.executions![0]!
+    expect(Number(exe.principal)).toBeCloseTo(Number(exe.price) * 100, 6)
+    const cash1 = (await call<{ cash: { total: string } }>('GET', '/account')).body.cash.total
+    expect(Number(cash0) - Number(cash1)).toBeCloseTo(Number(exe.principal), 6)
+    const pos = (await call<Pos[]>('GET', '/account/positions')).body.find((p) => p.symbol === occ)!
+    expect(pos).toMatchObject({ qty: '1', costBasis: exe.principal })
+    expect(Number(pos.avgCost)).toBeCloseTo(Number(exe.price), 6) // per share
+    expect(Number(pos.marketValue)).toBeCloseTo(Number(pos.mark) * 100, 2)
+
+    const sold = await call<PlaceOrderResponse>('POST', '/orders', { clientOrderId: 'web-test-opt-2', symbol: occ, side: 'SELL', type: 'MARKET', qty: '1' })
+    expect(sold.status).toBe(201)
+    await sleep(1_200)
+    expect((await call<Pos[]>('GET', '/account/positions')).body.find((p) => p.symbol === occ)).toBeUndefined()
+  }, 10_000)
+
+  it('takes Market or Limit, Day, regular hours, whole contracts and cent prices only; buys stop while options are off', async () => {
+    const occ = (await chainOf('F')).calls[11]!.symbol!
+    const codes = async (body: Record<string, unknown>) => (await call<PreviewBody>('POST', '/orders/preview', { symbol: occ, side: 'BUY', qty: '1', ...body })).body.errors.map((e) => e.code)
+    expect(await codes({ type: 'LIMIT', limitPrice: '0.25' })).toEqual([])
+    expect(await codes({ type: 'LIMIT', limitPrice: '0.255' })).toContain('INVALID_TICK')
+    expect(await codes({ type: 'LIMIT', limitPrice: '0.25', timeInForce: 'GTC' })).toContain('TIF_NOT_ALLOWED')
+    expect(await codes({ type: 'LIMIT', limitPrice: '0.25', extendedHours: true })).toContain('VALIDATION_FAILED')
+    expect(await codes({ type: 'STOP', stopPrice: '0.50' })).toContain('VALIDATION_FAILED')
+    expect(await codes({ type: 'MARKET', qty: '1.5' })).toContain('INVALID_QTY')
+    expect(await codes({ type: 'MARKET', qty: undefined, notional: '25.00' })).toContain('VALIDATION_FAILED')
+
+    expect((await call<Rules>('GET', '/rules')).body.options).toMatchObject({ enabled: true, multiplier: 100 })
+    expect((await call('PUT', '/admin/settings', { 'options.enabled': 'no' })).status).toBe(422)
+    const off = await call<Settings>('PUT', '/admin/settings', { 'options.enabled': false })
+    expect(off.body['options.enabled']).toBe(false)
+    expect((await call<{ enabled: boolean }>('GET', '/options/F/expirations')).body.enabled).toBe(false)
+    expect(await codes({ type: 'MARKET' })).toContain('SYMBOL_NOT_TRADABLE')
+    expect(await codes({ type: 'MARKET', side: 'SELL' })).not.toContain('SYMBOL_NOT_TRADABLE')
+  })
+
+  it('seeds a member holding a contract and an expiry settlement on the own account', async () => {
+    const alice = (await call<PublicPortfolio>('GET', '/players/alice/portfolio')).body
+    const held = alice.positions!.find((p) => isOption(p.symbol))!
+    expect(parseOption(held.symbol)).toMatchObject({ underlying: 'F', right: 'CALL' })
+    expect(Number(held.marketValue)).toBeCloseTo(Number(held.qty) * Number(held.mark) * 100, 2)
+    const orders = (await call<{ items: Order[] }>('GET', '/orders?status=ALL&limit=100')).body.items
+    const expiry = orders.find((o) => o.channel === 'SYSTEM' && isOption(o.symbol))!
+    const detail = (await call<Order>('GET', `/orders/${expiry.orderId}`)).body
+    expect(detail).toMatchObject({ side: 'SELL', status: 'FILLED' })
+    expect(detail.executions![0]).toMatchObject({ liquidity: 'EXPIRY', price: '0.6200', principal: '62.00' })
   })
 })

@@ -9,5 +9,7 @@ public enum CancelReason {
   /** Phase 2 (§11.9): the other leg of its OCO pair executed. */
   OCO_FILLED,
   /** Phase 2 (§11.9): a held child whose entry ended without any fill. */
-  PARENT_NOT_FILLED
+  PARENT_NOT_FILLED,
+  /** §30: the option expired with the order still open. */
+  OPTION_EXPIRED
 }

@@ -98,6 +98,13 @@ public sealed interface EngineCommand {
   /** §14 06:00 ET: pays ACCRUED dividends with {@code payable_date ≤ date}; result: how many were paid. */
   record PayDividendsCmd(LocalDate date) implements EngineCommand {}
 
+  /**
+   * §30 after 16:00 ET on the contract's expiration date: cash-settles every long position in {@code symbol} at its
+   * intrinsic value from {@code underlyingClose} (the underlying's official close that day) and cancels its open
+   * orders; result: {@code OptionExpiryHandler.Result}. Idempotent per account.
+   */
+  record SettleOptionExpiryCmd(String symbol, BigDecimal underlyingClose) implements EngineCommand {}
+
   /** §8.4 I1–I9; result: {@code InvariantResult}. A failure halts the engine. */
   record CheckInvariantsCmd() implements EngineCommand {
     @Override

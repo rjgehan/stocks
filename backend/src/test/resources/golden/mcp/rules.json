@@ -1,5 +1,5 @@
 {
-  "version" : "1.53ca2f2964ac",
+  "version" : "1.c23430e4d35c",
   "asOf" : "2026-10-09T14:00:00.000Z",
   "account" : {
     "type" : "CASH",
@@ -211,5 +211,21 @@
     "settlement" : "Immediate: a crypto fill settles on its trade date, so its proceeds are settled cash at once and crypto never causes a good-faith violation.",
     "fees" : "None: SEC, FINRA TAF and CAT fees apply to stocks only.",
     "pnlDays" : "Every calendar day is a P&L day: weekend and holiday days end at 20:00 ET and get their own EOD snapshot, so crypto moves show in Day P&L, the P&L calendar, charts and the leaderboard."
+  },
+  "options" : {
+    "enabled" : true,
+    "feed" : "simulated",
+    "quotesIndicative" : false,
+    "multiplier" : 100,
+    "scope" : "Long US equity options only: BUY to open and SELL to close calls and puts on stocks and ETFs. No short (naked or covered) options, no spreads or multi-leg orders, no exercise or assignment requests.",
+    "symbols" : "OCC contract symbols: ROOT + YYMMDD + C/P + strike x 1000 in 8 digits, e.g. AAPL261120C00250000 = AAPL 20 Nov 2026 $250 call. Find them with get_option_expirations and get_option_chain (REST /api/v1/options/{underlying}/expirations and /chain).",
+    "quantities" : "Whole contracts, 1 to 1000 per order; one contract is 100 shares. Prices (bid, ask, limits, fills, average cost) are per share; dollar amounts are price x 100 x contracts. No notional (dollar) orders.",
+    "orders" : "MARKET or LIMIT, time in force DAY, no extended hours, no group orders (OCO/OTO/BRACKET). Limit prices in $0.01 steps.",
+    "hours" : "Regular session only: 09:30-16:00 ET on trading days (13:00 on early-close days); orders sent outside it are refused. Open DAY orders expire at the close.",
+    "execution" : "Buys fill at the ask, sells at the bid, in one piece, against the contract's own two-sided quote confirmed within 15 s and at most 5 minutes old. No fill (the order waits AWAITING_QUOTE) without such a quote or when the spread is absurd: wider than $0.10 and more than 50% of the mid. Option trades are never used for fills or marks.",
+    "valuation" : "Marked at the quote mid (the bid when there is no ask) x 100 x contracts in equity, EOD snapshots, the leaderboard and the P&L calendar; after the close at the closing quote's mid.",
+    "settlement" : "The premium is paid in full from cash (no margin); sale proceeds settle T+1 like stock sales, and the good-faith rules apply as for stocks.",
+    "expiration" : "At the close of the expiration day (settled about 30 minutes later): an in-the-money long option is cash-settled at its intrinsic value from the underlying's official close (call: close - strike, put: strike - close, x 100 x contracts; no shares are delivered); an out-of-the-money one expires worthless. Either way it shows as a SYSTEM sell order (liquidity EXPIRY) with its realized P&L.",
+    "fees" : "None: no commissions and no regulatory fees on options."
   }
 }

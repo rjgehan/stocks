@@ -32,7 +32,8 @@ import { DIRECTION_TEXT } from '@/features/market/Change'
 import { LinkedOrdersCard } from '@/features/groups/LinkedOrdersCard'
 import { GroupChip } from '@/features/groups/GroupChip'
 import { QualityBadge } from '@/features/market/QualityBadge'
-import { toPath } from '@/lib/symbols'
+import { stockLink } from '@/features/market/symbolLink'
+import { expiryLabel, isExpiryOrder, isOption, optionLabel } from '@/lib/options'
 
 export const Route = createFileRoute('/_app/account/orders/$orderId')({
   staticData: { phone: 'pushed' },
@@ -68,6 +69,8 @@ const LIQUIDITY_LABEL: Record<string, string> = {
   RESTING: 'Resting limit',
   PRINT: 'Trade-through',
   OPEN: 'Opening',
+  // §30: a long option settled at expiration (cash at intrinsic value, or worthless)
+  EXPIRY: 'Expired',
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -85,7 +88,7 @@ function FillCard({ e }: { e: Execution }) {
     <li className="rounded-md border border-divider p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="font-semibold">
-          {e.side === 'BUY' ? 'Bought' : 'Sold'} {formatQty(e.qty)} @ {formatPrice(e.price)}
+          {e.liquidity === 'EXPIRY' ? `${formatQty(e.qty)} expired · ${expiryLabel(e.price)}` : `${e.side === 'BUY' ? 'Bought' : 'Sold'} ${formatQty(e.qty)} @ ${formatPrice(e.price)}`}
         </span>
         <Pill tone="neutral">{e.liquidity ? LIQUIDITY_LABEL[e.liquidity] : '--'}</Pill>
       </div>
@@ -241,9 +244,12 @@ function OrderDetail() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-[20px] leading-7 font-bold tracking-tight">
-              <span className={o.side === 'BUY' ? 'text-up' : 'text-down'}>{o.side === 'BUY' ? 'Buy' : 'Sell'}</span> {orderSizeLabel(o)}{' '}
-              <Link to="/stock/$symbol" params={{ symbol: toPath(o.symbol ?? '') }} className="hover:text-accent">
-                {o.symbol}
+              <span className={isExpiryOrder(o) ? 'text-text-2' : o.side === 'BUY' ? 'text-up' : 'text-down'}>
+                {isExpiryOrder(o) ? 'Expiry' : isOption(o.symbol) ? (o.side === 'BUY' ? 'Buy to open' : 'Sell to close') : o.side === 'BUY' ? 'Buy' : 'Sell'}
+              </span>{' '}
+              {orderSizeLabel(o)}{' '}
+              <Link to="/stock/$symbol" {...stockLink(o.symbol)} className="hover:text-accent">
+                {optionLabel(o.symbol)}
               </Link>
             </h1>
             <p className="text-caption text-text-2">
@@ -262,7 +268,7 @@ function OrderDetail() {
             ) : null}
           </div>
         </div>
-        <p className="mt-2 text-body text-text-1">{statusLine(o)}</p>
+        <p className="mt-2 text-body text-text-1">{isExpiryOrder(o) && o.status === 'FILLED' ? `Expiration · ${expiryLabel(o.avgFillPrice)}` : statusLine(o)}</p>
         {o.rationale ? <p className="mt-2 rounded-sm bg-bg-2 p-2 text-caption text-text-2">Note: “{o.rationale}”</p> : null}
       </section>
 

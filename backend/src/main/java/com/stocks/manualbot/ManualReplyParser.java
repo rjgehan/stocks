@@ -773,7 +773,8 @@ public final class ManualReplyParser {
       v = Crypto.fromPath(v.toUpperCase(Locale.ROOT));
       if (!SYMBOL.matcher(v).matches()) {
         error("FIELD_INVALID", e.getKey(),
-            e.getKey() + " must be a ticker like \"AAPL\" or a crypto pair like \"BTC/USD\"", null);
+            e.getKey() + " must be a ticker like \"AAPL\", a crypto pair like \"BTC/USD\" or an OCC option "
+                + "symbol like \"AAPL261120C00250000\"", null);
         return null;
       }
       return v;

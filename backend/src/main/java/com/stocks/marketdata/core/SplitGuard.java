@@ -1,6 +1,7 @@
 package com.stocks.marketdata.core;
 
 import com.stocks.common.domain.Crypto;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.Timeframe;
 import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
@@ -66,7 +67,7 @@ public class SplitGuard {
   /** Checks every held symbol; returns what it flagged. */
   public List<Detected> run() {
     Set<String> held = new java.util.TreeSet<>(tracked.held());
-    held.removeIf(Crypto::isCrypto);                 // coins never split (§29)
+    held.removeIf(s -> Crypto.isCrypto(s) || OptionSymbol.isOption(s));   // coins and contracts (§29, §30)
     if (held.isEmpty()) {
       return List.of();
     }

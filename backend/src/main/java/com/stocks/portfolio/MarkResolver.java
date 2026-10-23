@@ -2,6 +2,7 @@ package com.stocks.portfolio;
 
 import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.DataQuality;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.money.Prices;
 import com.stocks.common.time.TimeSource;
 import com.stocks.contract.calendar.MarketCalendar;
@@ -170,7 +171,9 @@ public class MarkResolver {
       return new Mark(lastFill.get(), DataQuality.STALE, at, null);
     }
     if (qty != null && qty.signum() > 0 && costBasis != null) {
-      BigDecimal avg = costBasis.divide(qty, Prices.SCALE, RoundingMode.HALF_EVEN);
+      // per share: an option's cost basis covers 100 shares per contract (§30)
+      BigDecimal avg = costBasis.divide(qty.multiply(OptionSymbol.multiplier(symbol)), Prices.SCALE,
+          RoundingMode.HALF_EVEN);
       return new Mark(avg, DataQuality.NONE, at, null);
     }
     return new Mark(BigDecimal.ZERO.setScale(Prices.SCALE), DataQuality.NONE, at, null);

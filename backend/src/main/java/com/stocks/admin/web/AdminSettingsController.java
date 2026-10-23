@@ -59,7 +59,8 @@ public class AdminSettingsController {
           + "social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only "
           + "the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live); "
           + "crypto.enabled turns 24/7 crypto trading and weekend P&L days on or off (off: crypto buys are refused, "
-          + "sells still work). "
+          + "sells still work); options.enabled turns buying long calls and puts on or off (off: option buys are "
+          + "refused, sells to close still work). "
           + "Errors: SETTING_INVALID.")
   public SettingsDto put(@RequestBody UpdateSettingsRequest body, HttpServletRequest request) {
     PlayerPrincipal admin = CurrentPlayer.require();
@@ -74,6 +75,7 @@ public class AdminSettingsController {
     put(values, SettingKey.BOTS_REQUIRE_RATIONALE, body.botsRequireRationale());
     put(values, SettingKey.HUMAN_KIND_EXCLUDES_API_TRADERS, body.humanKindExcludesApiTraders());
     put(values, SettingKey.CRYPTO_ENABLED, body.cryptoEnabled());
+    put(values, SettingKey.OPTIONS_ENABLED, body.optionsEnabled());
     if (!values.isEmpty()) {
       Map<SettingKey, String> written = settings.putAll(values, admin.playerId());
       Map<String, Object> detail = new LinkedHashMap<>();
@@ -105,6 +107,6 @@ public class AdminSettingsController {
     return new SettingsDto(settings.defaultStartingCash(), settings.allowSelfReset(), settings.seasonStart(),
         settings.eligibilityMinFills(), settings.eligibilityMinSymbols(), settings.tradeFeedDelay().toString(),
         settings.showDepositsInFeed(), settings.botsRequireRationale(), settings.humanKindExcludesApiTraders(),
-        settings.cryptoEnabled());
+        settings.cryptoEnabled(), settings.optionsEnabled());
   }
 }

@@ -12,10 +12,13 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Symbol parameters of the market endpoints: upper case, 1–12 characters of {@code A–Z 0–9 . - /}. */
+/**
+ * Symbol parameters of the market endpoints: upper case, 1–12 characters of {@code A–Z 0–9 . - /}, or an OCC option
+ * contract (§30).
+ */
 final class Symbols {
 
-  static final Pattern SYMBOL = Pattern.compile("^[A-Z0-9][A-Z0-9.\\-/]{0,11}$");
+  static final Pattern SYMBOL = Pattern.compile("^[A-Z0-9][A-Z0-9.\\-/]{0,11}$|^[A-Z]{1,6}[0-9]{6}[CP][0-9]{8}$");
 
   private Symbols() {}
 

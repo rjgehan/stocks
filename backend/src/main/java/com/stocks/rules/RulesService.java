@@ -2,6 +2,7 @@ package com.stocks.rules;
 
 import com.stocks.common.domain.AccountType;
 import com.stocks.common.domain.Crypto;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.FeeCode;
 import com.stocks.common.domain.OrderGroupType;
 import com.stocks.common.domain.OrderType;
@@ -125,11 +126,11 @@ public class RulesService {
 
     RulesDto content = new RulesDto(null, null, account, sessions, orders, execution, fees(today), rateLimits,
         leaderboard, social, dataSources(config), fairness(botsRequireRationale()),
-        crypto(cryptoEnabled(), r.gtcDays()));
+        crypto(cryptoEnabled(), r.gtcDays()), options(optionsEnabled(), optionsFeed(config)));
     String version = version(content);
     return new RulesDto(version, time.now(), content.account(), content.sessions(), content.orders(),
         content.execution(), content.fees(), content.rateLimits(), content.leaderboard(), content.social(),
-        content.dataSources(), content.fairness(), content.crypto());
+        content.dataSources(), content.fairness(), content.crypto(), content.options());
   }
 
   // ------------------------------------------------------------------------------------------- orders
@@ -369,6 +370,55 @@ public class RulesService {
             + "snapshot, so crypto moves show in Day P&L, the P&L calendar, charts and the leaderboard."
             : "Crypto is off: buys are refused (sells of existing positions still work) and P&L days are trading "
                 + "days only.");
+  }
+
+  // ------------------------------------------------------------------------------------------- options
+
+  /** §30: the option feed of this deployment. */
+  static String optionsFeed(RulesConfig config) {
+    if (isSimulated(config)) {
+      return "simulated";
+    }
+    return config.optionsFeed() == null || config.optionsFeed().isBlank() ? "indicative"
+        : config.optionsFeed().trim().toLowerCase(Locale.ROOT);
+  }
+
+  /** §30: long calls and puts, in words a bot can quote. */
+  static RulesDto.RulesOptionsDto options(boolean enabled, String feed) {
+    boolean indicative = "indicative".equals(feed);
+    return new RulesDto.RulesOptionsDto(enabled, feed, indicative, OptionSymbol.MULTIPLIER,
+        "Long US equity options only: BUY to open and SELL to close calls and puts on stocks and ETFs. No short "
+            + "(naked or covered) options, no spreads or multi-leg orders, no exercise or assignment requests."
+            + (enabled ? "" : " Options are off: buys are refused; existing positions can still be sold."),
+        "OCC contract symbols: ROOT + YYMMDD + C/P + strike x 1000 in 8 digits, e.g. AAPL261120C00250000 = AAPL "
+            + "20 Nov 2026 $250 call. Find them with get_option_expirations and get_option_chain (REST "
+            + "/api/v1/options/{underlying}/expirations and /chain).",
+        "Whole contracts, 1 to " + OptionSymbol.MAX_ORDER_CONTRACTS.toPlainString() + " per order; one contract is "
+            + OptionSymbol.MULTIPLIER + " shares. Prices (bid, ask, limits, fills, average cost) are per share; "
+            + "dollar amounts are price x 100 x contracts. No notional (dollar) orders.",
+        "MARKET or LIMIT, time in force DAY, no extended hours, no group orders (OCO/OTO/BRACKET). Limit prices "
+            + "in $0.01 steps.",
+        "Regular session only: 09:30-16:00 ET on trading days (13:00 on early-close days); orders sent outside it "
+            + "are refused. Open DAY orders expire at the close.",
+        "Buys fill at the ask, sells at the bid, in one piece, against the contract's own two-sided quote confirmed "
+            + "within 15 s and at most 5 minutes old. No fill (the order waits AWAITING_QUOTE) without such a quote "
+            + "or when the spread is absurd: wider than $0.10 and more than 50% of the mid. Option trades are never "
+            + "used for fills or marks." + (indicative ? " Quotes are INDICATIVE: Alpaca's free feed derives them "
+            + "from OPRA; they can differ from the real national best bid and offer." : ""),
+        "Marked at the quote mid (the bid when there is no ask) x 100 x contracts in equity, EOD snapshots, the "
+            + "leaderboard and the P&L calendar; after the close at the closing quote's mid.",
+        "The premium is paid in full from cash (no margin); sale proceeds settle T+1 like stock sales, and the "
+            + "good-faith rules apply as for stocks.",
+        "At the close of the expiration day (settled about 30 minutes later): an in-the-money long option is "
+            + "cash-settled at its intrinsic value from the underlying's official close (call: close - strike, put: "
+            + "strike - close, x 100 x contracts; no shares are delivered); an out-of-the-money one expires "
+            + "worthless. Either way it shows as a SYSTEM sell order (liquidity EXPIRY) with its realized P&L.",
+        "None: no commissions and no regulatory fees on options.");
+  }
+
+  /** {@code options.enabled} (§30), true while settings are a Day-0 stub. */
+  public boolean optionsEnabled() {
+    return setting(settings::optionsEnabled, () -> true);
   }
 
   /** {@code crypto.enabled} (§29), true while settings are a Day-0 stub. */

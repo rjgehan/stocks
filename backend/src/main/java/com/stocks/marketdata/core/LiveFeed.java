@@ -1,6 +1,7 @@
 package com.stocks.marketdata.core;
 
 import com.stocks.common.domain.Crypto;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.DataQuality;
 import com.stocks.common.domain.LiquidityTier;
 import com.stocks.common.domain.SessionType;
@@ -66,6 +67,11 @@ public class LiveFeed implements MarketFeed {
   private static final Logger log = LoggerFactory.getLogger(LiveFeed.class);
   static final Duration LOOP = Duration.ofSeconds(1);
   static final Duration STREAMED_POLL = Duration.ofSeconds(60);
+  /**
+   * §30: option contracts are never streamed (Alpaca's option stream is msgpack only); their hot leases poll at most
+   * every 5 s, well inside the 15 s executable-quote freshness, to spare the shared REST budget.
+   */
+  static final Duration OPTION_HOT_POLL = Duration.ofSeconds(5);
   static final Duration SYNC_REFRESH_MAX_AGE = Duration.ofSeconds(10);
   static final Duration CLOSED_REFRESH_MAX_AGE = Duration.ofMinutes(5);
   static final Duration REST_COOLDOWN = Duration.ofSeconds(30);
@@ -273,7 +279,9 @@ public class LiveFeed implements MarketFeed {
           background.add(sym);                       // day bars and closes for streamed symbols
         }
       } else if (HOT.contains(e.getValue())) {
-        if (age.compareTo(props.poll().hot()) >= 0) {
+        Duration hot = OptionSymbol.isOption(sym) && props.poll().hot().compareTo(OPTION_HOT_POLL) < 0
+            ? OPTION_HOT_POLL : props.poll().hot();
+        if (age.compareTo(hot) >= 0) {
           (e.getValue() == LeasePriority.VIEWING ? ui : engine).add(sym);
         }
       } else if (age.compareTo(props.poll().warm()) >= 0) {
@@ -308,8 +316,9 @@ public class LiveFeed implements MarketFeed {
     return out;
   }
 
-  /** Symbols the stock streams (Alpaca IEX/SIP, Finnhub) may carry: never a crypto pair (§29). */
-  private static final java.util.function.Predicate<String> STOCKS = s -> !Crypto.isCrypto(s);
+  /** Symbols the stock streams (Alpaca IEX/SIP, Finnhub) may carry: never a crypto pair (§29) or an option (§30). */
+  private static final java.util.function.Predicate<String> STOCKS = s -> !Crypto.isCrypto(s)
+      && !OptionSymbol.isOption(s);
 
   /** Fetches snapshots and applies them; failures are logged once a minute, never thrown. */
   Map<String, Snapshot> fetch(Set<String> symbols, RefreshPriority priority) {
@@ -329,7 +338,7 @@ public class LiveFeed implements MarketFeed {
       }
       snaps.values().forEach(snap -> {
         boolean crypto = Crypto.isCrypto(snap.symbol());
-        if (snap.quote() != null && !crypto) {
+        if (snap.quote() != null && !crypto && !OptionSymbol.isOption(snap.symbol())) {   // option sizes are contracts
           restQuoteSizes.add(snap.quote().bidSize());
           restQuoteSizes.add(snap.quote().askSize());
         }
@@ -418,7 +427,8 @@ public class LiveFeed implements MarketFeed {
     QuoteBook.View view = v.get();
     Instant confirmed = confirmedAt(symbol, view, null, now);
     boolean crypto = Crypto.isCrypto(symbol);
-    boolean consolidated = crypto || "sip".equals(props.effectiveFeed());
+    // an option quote (§30) is the whole market's (OPRA, or Alpaca's indicative derivative of it)
+    boolean consolidated = crypto || OptionSymbol.isOption(symbol) || "sip".equals(props.effectiveFeed());
     QuoteComposer.Inputs in = new QuoteComposer.Inputs(symbol, view.quote(), confirmed, view.lastTrade(),
         view::close, d -> dayStats(view, d), !consolidated, view.halted(), false, consolidated, AlpacaSource.ID);
     // a crypto pair has its own 24/7 calendar and no IEX venue hours (§29)

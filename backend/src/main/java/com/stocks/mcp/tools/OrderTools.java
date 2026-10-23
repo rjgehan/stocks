@@ -151,7 +151,9 @@ public class OrderTools implements McpToolSet {
           + "(usually PENDING; fills arrive after a short latency), the estimate, buying power before and after, "
           + "warnings, and replayed=true when this client_order_id was already placed. Crypto pairs (symbol like "
           + "BTC/USD) trade 24/7 with every order type and fractional qty, settle at once and pay no fees "
-          + "(get_rules crypto).",
+          + "(get_rules crypto). Options: an OCC contract symbol (e.g. AAPL261120C00250000, from get_option_chain), "
+          + "BUY to open or SELL to close, qty in whole contracts (1 contract = 100 shares, so cost = price x 100 x "
+          + "qty), MARKET or LIMIT, DAY, 09:30-16:00 ET only (get_rules options).",
       generateOutputSchema = true,
       annotations = @McpTool.McpAnnotations(title = "Place an order", readOnlyHint = false, destructiveHint = false,
           idempotentHint = true, openWorldHint = false))
@@ -251,9 +253,11 @@ public class OrderTools implements McpToolSet {
 
   // ------------------------------------------------------------------------------------------- helpers
 
-  private static final String SYMBOL = "Ticker or crypto pair, e.g. AAPL or BTC/USD";
+  private static final String SYMBOL = "Ticker, crypto pair or OCC option contract, e.g. AAPL, BTC/USD or "
+      + "AAPL261120C00250000";
   private static final String QTY = "Shares as a decimal string, e.g. \"10\" or \"0.5\" (fractional: MARKET DAY "
-      + "only; crypto pairs take up to 5 decimals on every order type). Exactly one of qty and notional.";
+      + "only; crypto pairs take up to 5 decimals on every order type; options: whole contracts). Exactly one of qty "
+      + "and notional.";
   private static final String NOTIONAL = "Dollar amount as a decimal string, e.g. \"125.00\" (MARKET DAY only, "
       + "fractionable symbols, minimum \"1.00\" for buys; all-in including fees). Exactly one of qty and notional.";
   private static final String LIMIT_PRICE = "Limit price as a decimal string on tick ($0.01, or $0.0001 below $1)";

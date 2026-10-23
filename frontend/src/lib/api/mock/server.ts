@@ -91,6 +91,8 @@ import { Phase2Mock } from './phase2'
 import { type Lot, type MockOtherPlayer, type MockState, clearState, loadState, saveState } from './state'
 import { groupReactions, mockPlayerStats, mockPnlAnalysis, mockPnlCalendar, mockRace, mockRowStats, setReaction } from './stats'
 import { CRYPTO_PAIRS, fromPath, isCrypto, toPath } from '../../symbols'
+import { formatOption, isOption, optionLabel, underlyingOf } from '../../options'
+import { expiryMs, mockExpirations, strikeStep } from './options'
 
 type Listener = (destination: string, body: unknown) => void
 type Handler = (ctx: Ctx) => Response | Promise<Response>
@@ -197,6 +199,10 @@ const API_CHANNELS = new Set(['REST_KEY', 'MCP_KEY', 'MCP_OAUTH'])
 /** An open order as the league sees it (PENDING_CANCEL is still open). */
 const isOpenPublic = (o: PublicOrder): boolean => o.status === 'PENDING' || o.status === 'WORKING' || o.status === 'PARTIALLY_FILLED' || o.status === 'PENDING_CANCEL'
 const untrusted = (rationale: string | null): PublicOrder['untrusted'] => ({ rationale })
+/** Shares per unit of quantity: 100 for an option contract (§30), 1 for a share or a coin. */
+const multiplier = (symbol: string | null | undefined): Dec => (isOption(symbol) ? '100' : '1')
+/** No SEC, TAF or CAT fee: crypto pairs (§29) and options (§30). */
+const feeFree = (symbol: string | null | undefined): boolean => isCrypto(symbol) || isOption(symbol)
 /** A seed price on the tick grid. */
 const tickPrice = (d: Dec): Dec => roundToTick(setScale(d, 4, 'HALF_UP'))
 const byMarketValue = (xs: Position[]): Position[] => xs.sort((a, b) => compare(b.marketValue ?? '0', a.marketValue ?? '0'))
@@ -226,6 +232,7 @@ function defaultSettings(): Settings {
     'bots.requireRationale': true,
     'league.humanKindExcludesApiTraders': false,
     'crypto.enabled': true,
+    'options.enabled': true,
   }
 }
 
@@ -287,7 +294,7 @@ export class MockServer {
       /* no storage */
     }
     const saved = loadState()
-    // a state saved by an older build lacks the newer settings (crypto.enabled)
+    // a state saved by an older build lacks the newer settings (crypto.enabled, options.enabled)
     if (saved) saved.settings = { ...defaultSettings(), ...saved.settings }
     this.s = saved ?? this.seed()
     this.registerRoutes()
@@ -377,6 +384,7 @@ export class MockServer {
     // public mode (§16.7): every member's positions and orders are public, so they get some
     for (const p of s.others) this.seedBook(p)
     this.seedCorporateActionHistory()
+    this.seedExpiredOption()
     this.seedFeed()
     // §18.4: the notional buy of $125.00 NVDA, filled 45 minutes ago.
     const filledAt = iso(this.startedAt - 45 * MIN)
@@ -561,6 +569,36 @@ export class MockServer {
     })
   }
 
+  /**
+   * §30: a long F call bought before last week's expiration and cash-settled at the close on expiration day at its
+   * intrinsic value (F closed at $11.62 against the $11 strike: $0.62 a share, $62), recorded the way the backend
+   * records it: a SYSTEM market sell with one execution whose liquidity is EXPIRY.
+   */
+  private seedExpiredOption(): void {
+    const s = this.s
+    const day = this.lastExpiration()
+    const symbol = formatOption({ underlying: 'F', expiration: day, right: 'CALL', strike: '11' })
+    const boughtAt = iso(expiryMs(day) - 3 * DAY_MS - 5 * 60 * MIN)
+    const buy = this.newOrder({ clientOrderId: 'web-seed-option', symbol, side: 'BUY', type: 'LIMIT', qty: '1', limitPrice: '0.45', timeInForce: 'DAY' }, boughtAt)
+    s.orders.push(buy)
+    this.pushEvent(buy, 'ACCEPTED', boughtAt)
+    this.pushEvent(buy, 'WORKING', boughtAt)
+    this.fillAt(buy, '0.4500', '1', boughtAt, 'TOUCH')
+    const settledAt = iso(expiryMs(day))
+    const expiry = this.newOrder({ clientOrderId: `expiry:${symbol}`, symbol, side: 'SELL', type: 'MARKET', qty: '1', timeInForce: 'DAY' }, settledAt)
+    expiry.channel = 'SYSTEM'
+    s.orders.push(expiry)
+    this.pushEvent(expiry, 'ACCEPTED', settledAt)
+    this.fillAt(expiry, '0.6200', '1', settledAt, 'EXPIRY')
+  }
+
+  /** The last Friday at least two days before the mock started: an expiration that has settled. */
+  private lastExpiration(): string {
+    let day = etDate(this.startedAt - 2 * DAY_MS)
+    while (new Date(`${day}T12:00:00Z`).getUTCDay() !== 5) day = new Date(Date.parse(`${day}T12:00:00Z`) - DAY_MS).toISOString().slice(0, 10)
+    return day
+  }
+
   /** Feed items that are not derived from transfers or trades: joins, a new leader, a closed position. */
   private seedFeed(): void {
     const s = this.s
@@ -574,7 +612,7 @@ export class MockServer {
         kind,
         player: this.summary(p),
         symbol,
-        payload: { side: null, qty: null, price: null, realizedPnl: null, amount: null, period: null, untrusted: { rationale: null, memo: null, note: null }, ...payload },
+        payload: { side: null, qty: null, price: null, realizedPnl: null, amount: null, expired: false, period: null, untrusted: { rationale: null, memo: null, note: null }, ...payload },
         reactions: [],
       })
     }
@@ -583,6 +621,10 @@ export class MockServer {
     for (const [i, p] of s.others.entries()) item('JOINED', p.handle, this.startedAt - 9 * DAY_MS + (i + 1) * 17 * MIN, null, {})
     item('NEW_LEADER', 'claude', this.startedAt - 140 * MIN, null, { period: 'WEEK' })
     item('POSITION_CLOSED', 'alice', this.startedAt - 190 * MIN, 'AMD', { side: 'SELL', qty: '2', price: '166.2100', realizedPnl: '12.40' })
+    // §30: an option that expired out of the money (price 0: worthless) at last week's close
+    const expiredAt = expiryMs(this.lastExpiration())
+    const put = formatOption({ underlying: 'TSLA', expiration: this.lastExpiration(), right: 'PUT', strike: '400' })
+    item('POSITION_CLOSED', 'bob', expiredAt, put, { side: 'SELL', qty: '1', price: '0.0000', realizedPnl: '-14.00', expired: true })
     item('RESET', 'bob', this.startedAt - 3 * DAY_MS, null, {})
     // Phase 2 (§20.7): the bots' public journal notes
     for (const [i, h] of ['claude', 'chatgpt'].entries()) {
@@ -807,6 +849,21 @@ export class MockServer {
       return json(this.market.bars(symbol, range, timeframe))
     })
     r('GET', '/news', ({ url }) => json({ items: this.news(url.searchParams.get('symbols') ?? '') }))
+    // §30 long options: the listed expirations and one expiration's chain (feed `simulated`)
+    r('GET', '/options/{underlying}/expirations', ({ params }) => {
+      const underlying = params[0]!.toUpperCase()
+      if (!this.optionable(underlying)) return problem(404, 'SYMBOL_NOT_FOUND', 'Symbol not found', `No options on ${underlying}.`)
+      return json({ underlying, enabled: this.s.settings['options.enabled'], feed: 'simulated', multiplier: 100, expirations: mockExpirations(Date.now()) })
+    })
+    r('GET', '/options/{underlying}/chain', ({ params, url }) => {
+      const underlying = params[0]!.toUpperCase()
+      if (!this.optionable(underlying)) return problem(404, 'SYMBOL_NOT_FOUND', 'Symbol not found', `No options on ${underlying}.`)
+      const expiration = url.searchParams.get('expiration') ?? ''
+      if (!mockExpirations(Date.now()).includes(expiration)) {
+        return problem(400, 'VALIDATION_FAILED', 'Validation failed', 'Pick one of the listed expirations.', null, [{ field: 'expiration', code: 'Invalid', message: 'Not a listed expiration.' }])
+      }
+      return json(this.market.optionChain(underlying, expiration, this.s.settings['options.enabled']))
+    })
     // Phase 2 (§15.10)
     r('GET', '/assets/{symbol}/trades', ({ params, url }) => {
       const symbol = params[0]!.toUpperCase()
@@ -997,7 +1054,7 @@ export class MockServer {
     })
     r('GET', '/account/stats', ({ url }) => json(this.stats(this.s.me.handle, url.searchParams.get('period') ?? 'ALL')))
     r('GET', '/account/pnl-analysis', ({ url }) =>
-      json(mockPnlAnalysis(url.searchParams.get('range') ?? '1M', { u: this.unitValue(), equity: this.equity(), nc: this.s.nc, openedAtMs: Date.parse(this.s.openedAt), lots: Object.values(this.s.lots), executions: this.s.executions, mark: (sym) => this.mark(sym) }, Date.now())),
+      json(mockPnlAnalysis(url.searchParams.get('range') ?? '1M', { u: this.unitValue(), equity: this.equity(), nc: this.s.nc, openedAtMs: Date.parse(this.s.openedAt), lots: Object.values(this.s.lots), executions: this.s.executions, mark: (sym) => this.unitMark(sym) }, Date.now())),
     )
     r('GET', '/account/pnl-calendar', ({ url }) => {
       const view = (url.searchParams.get('view') ?? 'DAY').toUpperCase()
@@ -1314,7 +1371,7 @@ export class MockServer {
       createdAt: this.s.me.createdAt,
       lastSeenAt: iso(),
       // public mode (§16.7): their positions and orders stay visible to the league
-      positions: Object.values(this.s.lots).map((l) => ({ symbol: l.symbol, qty: l.qty, avgCost: div(l.costBasis, l.qty, 4, 'HALF_EVEN'), openedAt: l.openedAt })),
+      positions: Object.values(this.s.lots).map((l) => ({ symbol: l.symbol, qty: l.qty, avgCost: div(l.costBasis, mul(l.qty, multiplier(l.symbol)), 4, 'HALF_EVEN'), openedAt: l.openedAt })),
       orders: this.s.orders.map((o) => this.toPublicOrder(o)),
     })
     const now = iso()
@@ -1507,9 +1564,34 @@ export class MockServer {
 
   // ================================================================ market
 
+  /** A stock or ETF of the fake market (crypto pairs have no options). */
+  private optionable(underlying: string): boolean {
+    const type = this.market.meta(underlying)?.type
+    return type === 'COMMON_STOCK' || type === 'ETF' || type === 'ADR'
+  }
+
   private asset(symbol: string): Asset | null {
     const meta = this.market.meta(symbol)
     if (!meta) return null
+    if (meta.type === 'OPTION') {
+      // §30: a contract trades in whole contracts, has no fundamentals, 52-week range or logo of its own
+      return {
+        symbol,
+        name: meta.name,
+        exchange: meta.exchange,
+        type: 'OPTION',
+        tradable: !this.holdSymbols().includes(underlyingOf(symbol)),
+        fractionable: false,
+        shortable: false,
+        marginable: false,
+        liquidityTier: null,
+        status: 'ACTIVE',
+        week52High: null,
+        week52Low: null,
+        logoUrl: `/api/v1/assets/${underlyingOf(symbol)}/logo`,
+        fundamentals: null,
+      }
+    }
     return {
       symbol,
       name: meta.name,
@@ -1566,8 +1648,13 @@ export class MockServer {
     return unitsToDec(this.market.bidAsk(symbol)?.last ?? 0)
   }
 
+  /** What one unit of quantity is worth at the mark: the per-share mark × 100 for an option contract (§30). */
+  private unitMark(symbol: string): Dec {
+    return mul(this.mark(symbol), multiplier(symbol))
+  }
+
   private longValue(): Dec {
-    return Object.values(this.s.lots).reduce((acc, lot) => add(acc, money(mul(lot.qty, this.mark(lot.symbol)))), '0.00')
+    return Object.values(this.s.lots).reduce((acc, lot) => add(acc, money(mul(lot.qty, this.unitMark(lot.symbol)))), '0.00')
   }
 
   /** Accrued, unpaid dividends (§16.1 receivable): they count in equity from the ex-date until they pay. */
@@ -1594,11 +1681,15 @@ export class MockServer {
     })
   }
 
-  /** One lot valued at the live mark (the signed-in account's positions, and other players' in public mode). */
+  /**
+   * One lot valued at the live mark (the signed-in account's positions, and other players' in public mode). An option
+   * contract's dollar amounts include the × 100 (§30); its avgCost, last and mark stay per share.
+   */
   private positionRow(lot: Lot, equity: Dec, reservedQty: Dec = '0'): Position {
     const quote = this.market.quote(lot.symbol)
     const mark = this.mark(lot.symbol)
-    const marketValue = money(mul(lot.qty, mark))
+    const m = multiplier(lot.symbol)
+    const marketValue = money(mul(mul(lot.qty, mark), m))
     const unrealized = sub(marketValue, lot.costBasis)
     const prev = quote.prevClose ?? mark
     return {
@@ -1606,7 +1697,7 @@ export class MockServer {
       name: this.market.meta(lot.symbol)?.name ?? lot.symbol,
       qty: lot.qty,
       availableQty: setScale(sub(lot.qty, reservedQty), 5, 'DOWN'),
-      avgCost: div(lot.costBasis, lot.qty, 4, 'HALF_EVEN'),
+      avgCost: div(lot.costBasis, mul(lot.qty, m), 4, 'HALF_EVEN'),
       costBasis: lot.costBasis,
       last: quote.last,
       mark,
@@ -1614,7 +1705,7 @@ export class MockServer {
       marketValue,
       unrealizedPnl: unrealized,
       unrealizedReturn: isZero(lot.costBasis) ? '0' : div(unrealized, lot.costBasis, 10, 'HALF_EVEN'),
-      dayPnl: money(mul(lot.qty, sub(mark, prev))),
+      dayPnl: money(mul(mul(lot.qty, sub(mark, prev)), m)),
       dayReturn: isZero(prev) ? null : div(sub(mark, prev), prev, 10, 'HALF_EVEN'),
       weight: isZero(equity) ? '0' : div(marketValue, equity, 10, 'HALF_EVEN'),
       fractionable: this.market.meta(lot.symbol)?.fractionable ?? false,
@@ -1801,19 +1892,34 @@ export class MockServer {
     const last = unitsToDec(ba.last)
     // §29 crypto: 24/7, up to 5 decimals on every order type, extendedHours ignored, no fees; buys refused while off
     const crypto = meta.type === 'CRYPTO'
+    // §30 options: BUY opens, SELL closes; whole contracts of 100 shares, MARKET or LIMIT (cents), DAY, regular hours,
+    // no notional, no fees; buys refused while options.enabled is off
+    const option = meta.type === 'OPTION'
+    const m = multiplier(meta.symbol)
     const extendedHours = !crypto && Boolean(req.extendedHours)
 
     if (crypto && side === 'BUY' && !this.s.settings['crypto.enabled']) {
       err('SYMBOL_NOT_TRADABLE', 'symbol', 'Crypto trading is turned off: crypto buys are refused (sells still work).')
     }
+    if (option && side === 'BUY' && !this.s.settings['options.enabled']) {
+      err('SYMBOL_NOT_TRADABLE', 'symbol', 'Options trading is turned off: option buys are refused (sells still work).')
+    }
+    if (option) {
+      if (type !== 'MARKET' && type !== 'LIMIT') err('VALIDATION_FAILED', 'type', 'Options take Market or Limit orders only.')
+      if (tif !== 'DAY') err('TIF_NOT_ALLOWED', 'timeInForce', 'Option orders are Day only.')
+      if (extendedHours) err('VALIDATION_FAILED', 'extendedHours', 'Options trade in the regular session only (09:30–16:00 ET).')
+      if (notional != null) err('VALIDATION_FAILED', 'notional', 'Options trade in whole contracts, not dollar amounts.')
+    }
     if ((qty == null) === (notional == null)) err('QTY_OR_NOTIONAL_REQUIRED', 'qty', 'Enter a quantity or a dollar amount.')
     if (qty != null && (!isDecimal(qty) || sign(qty) <= 0)) err('INVALID_QTY', 'qty', 'Quantity must be greater than 0.')
     const fractionalQty = qty != null && isDecimal(qty) && sign(qty) > 0 && compare(setScale(qty, 0, 'DOWN'), qty) !== 0
-    if (crypto) {
+    if (option) {
+      if (fractionalQty) err('INVALID_QTY', 'qty', 'Options trade in whole contracts.')
+    } else if (crypto) {
       if (qty != null && isDecimal(qty) && sign(qty) > 0 && decimals(qty) > 5) err('INVALID_QTY', 'qty', 'Crypto quantities take at most 5 decimals.')
     } else if (fractionalQty && !meta.fractionable) err('NOT_FRACTIONABLE', 'qty', `${meta.symbol} trades in whole shares only.`)
     else if (fractionalQty && type !== 'MARKET') err('FRACTIONAL_MARKET_ONLY', 'qty', 'Fractional shares need a Market order.')
-    if (notional != null) {
+    if (notional != null && !option) {
       if (!isDecimal(notional) || lt(notional, side === 'BUY' ? '1.00' : '0.01')) err('NOTIONAL_TOO_SMALL', 'notional', 'The minimum dollar order is $1.00.')
       if (type !== 'MARKET') err('FRACTIONAL_MARKET_ONLY', 'type', 'Dollar orders must be Market orders.')
       if (tif !== 'DAY' || extendedHours) err('FRACTIONAL_DAY_ONLY', 'timeInForce', 'Dollar orders are Day only, regular hours.')
@@ -1847,6 +1953,8 @@ export class MockServer {
     for (const [field, price] of priceFields) {
       if (price == null) continue
       if (!isDecimal(price) || sign(price) <= 0) err('INVALID_TICK', field, 'Enter a valid price.')
+      else if (option && compare(setScale(price, 2, 'DOWN'), price) !== 0) err('INVALID_TICK', field, 'Option prices take at most 2 decimals.')
+      else if (option) continue // a contract's price can sit far from its last print
       else if (compare(setScale(price, tickFor(price) === '0.01' ? 2 : 4, 'DOWN'), price) !== 0) err('INVALID_TICK', field, `Prices must be in steps of $${tickFor(price)}.`)
       else {
         // check 19: a buy stop above the market, a sell stop below it
@@ -1887,35 +1995,39 @@ export class MockServer {
       } else {
         estQty = qty!
       }
-      const principal = money(mul(estQty, refPrice))
-      const fees = estimateFees(side, estQty, principal, crypto)
+      // an option's dollar amounts are per contract: price × 100 (§30)
+      const shares = mul(estQty, m)
+      const principal = money(mul(shares, refPrice))
+      const fees = estimateFees(side, estQty, principal, crypto || option)
       let hold = '0.00'
       if (side === 'BUY') {
         hold =
           notional != null
             ? setScale(notional, 2, 'CEILING')
             : type === 'MARKET'
-              ? setScale(add(mul(mul(estQty, ask), '1.02'), fees.cat ?? '0'), 2, 'CEILING')
+              ? setScale(add(mul(mul(shares, ask), '1.02'), fees.cat ?? '0'), 2, 'CEILING')
               : type === 'STOP'
                 ? setScale(add(mul(mul(estQty, max(req.stopPrice!, last)), '1.02'), fees.cat ?? '0'), 2, 'CEILING')
                 : type === 'TRAILING_STOP'
                   ? setScale(add(mul(mul(estQty, add(last, trail ?? '0')), '1.02'), fees.cat ?? '0'), 2, 'CEILING')
-                  : setScale(add(mul(estQty, req.limitPrice!), fees.cat ?? '0'), 2, 'CEILING')
+                  : setScale(add(mul(shares, req.limitPrice!), fees.cat ?? '0'), 2, 'CEILING')
         if (gt(hold, bp)) {
-          const maxShares = div(bp, mul(ask, '1.02'), 0, 'FLOOR')
+          const maxShares = div(bp, mul(mul(ask, m), '1.02'), 0, 'FLOOR')
           err(
             'INSUFFICIENT_BUYING_POWER',
             notional != null ? 'notional' : 'qty',
             `This order needs $${hold}; your buying power is $${bp}.`,
-            crypto
-              ? `You can afford about ${div(bp, mul(ask, '1.02'), 5, 'FLOOR')} at $${setScale(ask, 2)}, or try a dollar amount.`
-              : `You can afford ${maxShares} whole shares at $${setScale(ask, 2)}${meta.fractionable ? ', or try a dollar amount' : ''}.`,
+            option
+              ? `You can afford ${maxShares} contracts at $${setScale(ask, 2)} (× 100 shares each).`
+              : crypto
+                ? `You can afford about ${div(bp, mul(ask, '1.02'), 5, 'FLOOR')} at $${setScale(ask, 2)}, or try a dollar amount.`
+                : `You can afford ${maxShares} whole shares at $${setScale(ask, 2)}${meta.fractionable ? ', or try a dollar amount' : ''}.`,
           )
         }
         buyingPowerAfter = sub(bp, hold)
       } else {
         const available = this.positions().find((p) => p.symbol === meta.symbol)?.availableQty ?? '0'
-        if (gt(estQty, available)) err('INSUFFICIENT_POSITION', notional != null ? 'notional' : 'qty', `You can sell at most ${available} shares.`)
+        if (gt(estQty, available)) err('INSUFFICIENT_POSITION', notional != null ? 'notional' : 'qty', `You can sell at most ${available} ${option ? 'contracts' : 'shares'}.`)
         buyingPowerAfter = bp
       }
       if (qty != null && isDecimal(qty) && gt(qty, fromInteger(900))) {
@@ -2172,7 +2284,7 @@ export class MockServer {
     }
     if (order.side === 'BUY') {
       // never spend more than the cash the order reserved plus free buying power
-      const principal = money(mul(qty, price))
+      const principal = money(mul(mul(qty, price), multiplier(order.symbol)))
       if (gt(principal, add(this.s.cash, '0'))) {
         this.finish(order, 'CANCELLED', 'INSUFFICIENT_BUYING_POWER_AT_EXECUTION')
         return
@@ -2184,12 +2296,15 @@ export class MockServer {
     this.publish('/topic/leaderboard', { asOf: iso() })
   }
 
-  /** Posts an execution (§12.8): ledger row net of fees, lot update, realized P&L, order fields, FILL event. */
-  private fillAt(order: Order, price: Dec, qty: Dec, at: string, liquidity: 'TOUCH' | 'RESTING'): void {
+  /**
+   * Posts an execution (§12.8): ledger row net of fees, lot update, realized P&L, order fields, FILL event. An option's
+   * principal is price × 100 × contracts (§30); its fill price stays per share.
+   */
+  private fillAt(order: Order, price: Dec, qty: Dec, at: string, liquidity: 'TOUCH' | 'RESTING' | 'EXPIRY'): void {
     const symbol = order.symbol!
     const side = order.side ?? 'BUY'
-    const principal = money(mul(qty, price))
-    const fees = estimateFees(side, qty, principal, isCrypto(symbol))
+    const principal = money(mul(mul(qty, price), multiplier(symbol)))
+    const fees = estimateFees(side, qty, principal, feeFree(symbol))
     const net = side === 'BUY' ? add(principal, fees.total ?? '0') : sub(principal, fees.total ?? '0')
     const lot: Lot | undefined = this.s.lots[symbol]
     let realized: Dec | null = null
@@ -2251,6 +2366,7 @@ export class MockServer {
         amount: side === 'BUY' ? negate(net) : net,
         balanceAfter: this.s.cash,
         settleDate: SETTLE_DATE,
+        by: order.channel === 'SYSTEM' ? 'SYSTEM' : 'SELF',
         orderId: order.orderId,
         executionId: execution.executionId,
       }),
@@ -2268,7 +2384,12 @@ export class MockServer {
     } satisfies Partial<Order>)
     this.pushEvent(order, 'FILL', at, { executionId: execution.executionId, qty, price })
     this.groups.afterFill(order)
-    this.notify('FILL', `Filled: ${side === 'BUY' ? 'bought' : 'sold'} ${qty} ${symbol}`, `@ $${setScale(price, 2)} · ${side === 'BUY' ? 'cost' : 'proceeds'} $${principal}`, { orderId: order.orderId }, false)
+    if (liquidity === 'EXPIRY') {
+      const settled = sign(price) > 0 ? `cash-settled at $${setScale(price, 2)} a share · proceeds $${principal}` : 'expired worthless'
+      this.notify('FILL', `Expired: ${qty} ${optionLabel(symbol)}`, settled, { orderId: order.orderId }, false)
+    } else {
+      this.notify('FILL', `Filled: ${side === 'BUY' ? 'bought' : 'sold'} ${qty} ${isOption(symbol) ? optionLabel(symbol) : symbol}`, `@ $${setScale(price, 2)} · ${side === 'BUY' ? 'cost' : 'proceeds'} $${principal}`, { orderId: order.orderId }, false)
+    }
   }
 
   private cancel(orderId: string, reason: 'USER' | 'ADMIN'): Response {
@@ -2400,8 +2521,8 @@ export class MockServer {
     }
     // filled 0.6 s after it was placed; a sell realizes against `costBasis`
     const fill = (o: PublicOrder, qty: Dec, px: Dec, costBasis: Dec | null): void => {
-      const principal = money(mul(qty, px))
-      const fees = estimateFees(o.side!, qty, principal).total ?? '0.00'
+      const principal = money(mul(mul(qty, px), multiplier(o.symbol)))
+      const fees = estimateFees(o.side!, qty, principal, feeFree(o.symbol)).total ?? '0.00'
       const executedAt = iso(Date.parse(o.receivedAt!) + 600)
       Object.assign(o, { status: 'FILLED', waitReason: null, filledQty: qty, avgFillPrice: px, fees, doneAt: executedAt })
       o.fills = [{ executionId: publicId('exe'), executedAt, qty, price: px, fees, realizedPnl: costBasis ? money(sub(sub(principal, fees), costBasis)) : null }]
@@ -2432,6 +2553,21 @@ export class MockServer {
       positions.push({ symbol: h.symbol, qty, avgCost: px, openedAt: o.doneAt! })
     })
 
+    // §30: a long option, bought with a limit at the model's ask (its dollar amounts are × 100)
+    if (book.option) {
+      const o = book.option
+      const spot = Number(prev(o.underlying))
+      const step = strikeStep(spot)
+      const strike = (Math.round((spot * (1 + o.moneyness)) / step) * step).toFixed(3)
+      const symbol = formatOption({ underlying: o.underlying, expiration: mockExpirations(this.startedAt)[o.expiry]!, right: o.right, strike })
+      const px = setScale(unitsToDec(this.market.bidAsk(symbol)?.ask ?? 0), 2)
+      if (sign(px) > 0) {
+        const buy = order({ symbol, side: 'BUY', type: 'LIMIT', qty: o.contracts, limitPrice: px, receivedAt: at(2, 50), untrusted: untrusted(o.note) })
+        fill(buy, o.contracts, px, null)
+        positions.push({ symbol, qty: o.contracts, avgCost: px, openedAt: buy.doneAt! })
+      }
+    }
+
     // an order they pulled, and a resting limit buy under the market
     const xPx = tickPrice(mul(prev(book.cancelled), '0.9'))
     order({ symbol: book.cancelled, side: 'BUY', type: 'LIMIT', qty: '1', limitPrice: xPx, status: 'CANCELLED', statusReason: 'USER', receivedAt: at(3, 20), doneAt: at(3, 140), untrusted: untrusted(ai ? 'Not at this price after all: the earnings date moved up.' : null) })
@@ -2454,7 +2590,7 @@ export class MockServer {
     p.positions = positions
     p.orders = orders.sort((x, y) => Date.parse(x.receivedAt ?? '') - Date.parse(y.receivedAt ?? ''))
     // units so that units × U (the board's equity) matches the portfolio as seeded; U and the returns are unchanged
-    const lmv = positions.reduce((acc, x) => add(acc, mul(x.qty, this.mark(x.symbol))), '0.00')
+    const lmv = positions.reduce((acc, x) => add(acc, mul(x.qty, this.unitMark(x.symbol))), '0.00')
     p.units = div(add(p.cash, lmv), p.u, 18, 'HALF_EVEN')
   }
 
@@ -2504,8 +2640,8 @@ export class MockServer {
       untrusted: untrusted(a.rationale),
     }
     if (market && qty) {
-      const principal = money(mul(qty, px))
-      const fees = estimateFees(side, qty, principal, isCrypto(symbol)).total ?? '0.00'
+      const principal = money(mul(mul(qty, px), multiplier(symbol)))
+      const fees = estimateFees(side, qty, principal, feeFree(symbol)).total ?? '0.00'
       const pos = p.positions.find((x) => x.symbol === symbol)
       let realized: Dec | null = null
       if (side === 'BUY') {
@@ -2519,7 +2655,7 @@ export class MockServer {
       } else {
         p.cash = money(add(p.cash, sub(principal, fees)))
         if (pos) {
-          realized = money(sub(sub(principal, fees), mul(qty, pos.avgCost)))
+          realized = money(sub(sub(principal, fees), mul(mul(qty, pos.avgCost), multiplier(symbol))))
           pos.qty = sub(pos.qty, qty)
           if (sign(pos.qty) <= 0) p.positions = p.positions.filter((x) => x !== pos)
         }
@@ -2618,11 +2754,11 @@ export class MockServer {
       }
     }
     const p = this.other(handle)!
-    const lmv = money(p.positions.reduce((acc, x) => add(acc, mul(x.qty, this.mark(x.symbol))), '0.00'))
+    const lmv = money(p.positions.reduce((acc, x) => add(acc, mul(x.qty, this.unitMark(x.symbol))), '0.00'))
     const equity = add(p.cash, lmv)
-    const positions = byMarketValue(p.positions.map((x) => this.positionRow({ symbol: x.symbol, qty: x.qty, costBasis: money(mul(x.qty, x.avgCost)), openedAt: x.openedAt }, equity)))
+    const positions = byMarketValue(p.positions.map((x) => this.positionRow({ symbol: x.symbol, qty: x.qty, costBasis: money(mul(mul(x.qty, x.avgCost), multiplier(x.symbol))), openedAt: x.openedAt }, equity)))
     const openOrders = this.publicOrders(handle).filter(isOpenPublic)
-    const holds = money(openOrders.filter((o) => o.side === 'BUY' && !o.group?.held).reduce((acc, o) => add(acc, mul(o.qty ?? '0', o.limitPrice ?? '0')), '0.00'))
+    const holds = money(openOrders.filter((o) => o.side === 'BUY' && !o.group?.held).reduce((acc, o) => add(acc, mul(mul(o.qty ?? '0', o.limitPrice ?? '0'), multiplier(o.symbol))), '0.00'))
     const dayPnl = sum(positions, (x) => x.dayPnl)
     const before = sub(equity, dayPnl)
     return {
@@ -2672,8 +2808,8 @@ export class MockServer {
     }
     for (const o of p.orders) {
       for (const f of o.fills ?? []) {
-        const principal = money(mul(f.qty ?? '0', f.price ?? '0'))
-        const fees = estimateFees(o.side!, f.qty ?? '0', principal, isCrypto(o.symbol))
+        const principal = money(mul(mul(f.qty ?? '0', f.price ?? '0'), multiplier(o.symbol)))
+        const fees = estimateFees(o.side!, f.qty ?? '0', principal, feeFree(o.symbol))
         const amount = o.side === 'BUY' ? negate(add(principal, f.fees ?? '0.00')) : sub(principal, f.fees ?? '0.00')
         rows.push(this.ledgerRow({ at: f.executedAt, type: 'FILL', symbol: o.symbol, side: o.side, qty: f.qty, price: f.price, fees, amount, by: 'SELF', orderId: o.orderId, executionId: f.executionId, tradeDate: etDate(Date.parse(f.executedAt ?? '')), settleDate: etDate(Date.parse(f.executedAt ?? '') + DAY_MS) }))
       }
@@ -2690,12 +2826,12 @@ export class MockServer {
   /** `GET /players/{handle}/pnl-analysis`: the own-account builder, keyed by the player. */
   private playerPnlAnalysis(handle: string, range: string) {
     if (handle === this.s.me.handle) {
-      return mockPnlAnalysis(range, { u: this.unitValue(), equity: this.equity(), nc: this.s.nc, openedAtMs: Date.parse(this.s.openedAt), lots: Object.values(this.s.lots), executions: this.s.executions, mark: (sym) => this.mark(sym) }, Date.now())
+      return mockPnlAnalysis(range, { u: this.unitValue(), equity: this.equity(), nc: this.s.nc, openedAtMs: Date.parse(this.s.openedAt), lots: Object.values(this.s.lots), executions: this.s.executions, mark: (sym) => this.unitMark(sym) }, Date.now())
     }
     const p = this.other(handle)!
     const fills = p.orders.flatMap((o) => (o.fills ?? []).map((f) => ({ side: o.side, symbol: o.symbol, realizedPnl: f.realizedPnl, executedAt: f.executedAt })))
-    const lots = p.positions.map((x) => ({ symbol: x.symbol, qty: x.qty, costBasis: money(mul(x.qty, x.avgCost)), openedAt: x.openedAt }))
-    return mockPnlAnalysis(range, { u: p.u, equity: this.otherEquity(p), nc: p.nc, openedAtMs: Date.parse(p.createdAt), lots, executions: fills, mark: (sym) => this.mark(sym), key: handle }, Date.now())
+    const lots = p.positions.map((x) => ({ symbol: x.symbol, qty: x.qty, costBasis: money(mul(mul(x.qty, x.avgCost), multiplier(x.symbol))), openedAt: x.openedAt }))
+    return mockPnlAnalysis(range, { u: p.u, equity: this.otherEquity(p), nc: p.nc, openedAtMs: Date.parse(p.createdAt), lots, executions: fills, mark: (sym) => this.unitMark(sym), key: handle }, Date.now())
   }
 
   /** `GET /players/{handle}/pnl-calendar`: the own-account builder, keyed by the player. */
@@ -2936,7 +3072,7 @@ export class MockServer {
     // previous-close holdings with weight and qty (public mode: always both)
     const lots = mine ? Object.values(this.s.lots).map((l) => ({ symbol: l.symbol, qty: l.qty })) : p!.positions.map((x) => ({ symbol: x.symbol, qty: x.qty }))
     const prevClose = (symbol: string): Dec => this.market.quote(symbol).prevClose ?? this.mark(symbol)
-    const holdings = lots.map((l) => ({ symbol: l.symbol, weight: isZero(equity) ? '0' : div(money(mul(l.qty, prevClose(l.symbol))), equity, 4, 'HALF_EVEN'), qty: l.qty }))
+    const holdings = lots.map((l) => ({ symbol: l.symbol, weight: isZero(equity) ? '0' : div(money(mul(mul(l.qty, prevClose(l.symbol)), multiplier(l.symbol))), equity, 4, 'HALF_EVEN'), qty: l.qty }))
     const row = board.rows?.find((r) => r.player?.handle === handle)
     return {
       player: summary,
@@ -2965,7 +3101,7 @@ export class MockServer {
           kind: 'FILL',
           player: this.summary(p),
           symbol: t.symbol,
-          payload: { side: t.side, qty: t.qty, price: t.price, realizedPnl: t.realizedPnl, amount: null, period: null, untrusted: { rationale: t.untrusted?.rationale ?? null, memo: null, note: null } },
+          payload: { side: t.side, qty: t.qty, price: t.price, realizedPnl: t.realizedPnl, amount: null, expired: false, period: null, untrusted: { rationale: t.untrusted?.rationale ?? null, memo: null, note: null } },
           reactions: [],
         })
       }
@@ -2974,7 +3110,7 @@ export class MockServer {
       for (const t of this.s.transfers.filter((x) => x.type === 'DEPOSIT' && x.status === 'APPLIED')) {
         const p = t.handle === this.s.me.handle ? this.mySummary() : this.other(t.handle ?? '') ? this.summary(this.other(t.handle!)!) : null
         if (!p) continue
-        items.push({ id: `feed_dep_${t.transferId}`, at: t.effectiveAt, kind: 'DEPOSIT', player: p, symbol: null, payload: { side: null, qty: null, price: null, realizedPnl: null, amount: t.amount, period: null, untrusted: { rationale: null, memo: t.memo, note: null } }, reactions: [] })
+        items.push({ id: `feed_dep_${t.transferId}`, at: t.effectiveAt, kind: 'DEPOSIT', player: p, symbol: null, payload: { side: null, qty: null, price: null, realizedPnl: null, amount: t.amount, expired: false, period: null, untrusted: { rationale: null, memo: t.memo, note: null } }, reactions: [] })
       }
     }
     items.push(...this.s.liveFeed.filter((i) => Date.parse(i.at ?? '') <= Date.now()))
@@ -3005,6 +3141,7 @@ export class MockServer {
         price: kind === 'JOURNAL' ? null : price,
         realizedPnl: kind === 'POSITION_CLOSED' ? setScale(((Math.random() - 0.35) * 30).toFixed(2), 2) : null,
         amount: kind === 'DEPOSIT' ? '100.00' : null,
+        expired: false,
         period: kind === 'NEW_LEADER' ? 'TODAY' : null,
         untrusted: {
           rationale: p.kind === 'AI' && symbol && kind !== 'JOURNAL' ? `${side === 'BUY' ? 'Adding' : 'Trimming'} ${symbol}: ${side === 'BUY' ? 'momentum held above the 20-day average' : 'locking in gains, keeping settled cash'}.` : null,
@@ -3103,7 +3240,7 @@ export class MockServer {
     const eodHoldings = mine
       ? Object.values(this.s.lots).map((l) => {
           const mark = this.market.quote(l.symbol).prevClose ?? '0'
-          return { symbol: l.symbol, qty: l.qty, mark, marketValue: money(mul(l.qty, mark)) }
+          return { symbol: l.symbol, qty: l.qty, mark, marketValue: money(mul(mul(l.qty, mark), multiplier(l.symbol))) }
         })
       : [{ symbol: p!.top ?? 'SPY', qty: '1.5', mark: this.market.quote(p!.top ?? 'SPY').prevClose ?? '0', marketValue: money(mul('1.5', this.market.quote(p!.top ?? 'SPY').prevClose ?? '0')) }]
     return json({
@@ -3414,7 +3551,9 @@ export class MockServer {
     const cash = next['league.defaultStartingCash']
     if (!cash || !isDecimal(cash) || lt(cash, '1.00')) return problem(422, 'SETTING_INVALID', 'Invalid setting', 'Starting cash must be at least $1.00.', null, [{ field: 'league.defaultStartingCash', code: 'SETTING_INVALID', message: 'At least $1.00.' }])
     if (next['league.eligibility.minFills'] < 0 || next['league.eligibility.minSymbols'] < 0) return problem(422, 'SETTING_INVALID', 'Invalid setting', 'Eligibility minimums cannot be negative.')
-    if (typeof next['crypto.enabled'] !== 'boolean') return problem(422, 'SETTING_INVALID', 'Invalid setting', 'crypto.enabled must be true or false.', null, [{ field: 'crypto.enabled', code: 'SETTING_INVALID', message: 'true or false.' }])
+    for (const k of ['crypto.enabled', 'options.enabled'] as const) {
+      if (typeof next[k] !== 'boolean') return problem(422, 'SETTING_INVALID', 'Invalid setting', `${k} must be true or false.`, null, [{ field: k, code: 'SETTING_INVALID', message: 'true or false.' }])
+    }
     if (!/^P(?=\d|T\d)(?:\d+D)?(?:T(?=\d)(?:\d+H)?(?:\d+M)?(?:\d+S)?)?$/.test(next['social.tradeFeedDelay'] ?? '')) return problem(422, 'SETTING_INVALID', 'Invalid setting', 'Feed delay must be an ISO-8601 duration such as PT15M.', null, [{ field: 'social.tradeFeedDelay', code: 'SETTING_INVALID', message: 'ISO-8601 duration, e.g. PT15M.' }])
     next['league.defaultStartingCash'] = setScale(cash, 2)
     this.s.settings = next

@@ -12,6 +12,8 @@ tools:
   /api/v1/snapshots/{symbol}: get_snapshot
   /api/v1/bars/{symbol}: get_bars
   /api/v1/news: get_news
+  /api/v1/options/{underlying}/expirations: get_option_expirations
+  /api/v1/options/{underlying}/chain: get_option_chain
   /api/v1/account: get_account
   /api/v1/account/balances: get_account
   /api/v1/account/positions: get_positions

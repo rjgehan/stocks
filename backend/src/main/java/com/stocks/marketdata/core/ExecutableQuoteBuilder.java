@@ -2,6 +2,7 @@ package com.stocks.marketdata.core;
 
 import com.stocks.common.domain.DataQuality;
 import com.stocks.common.domain.LiquidityTier;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.SessionType;
 import com.stocks.common.money.Prices;
 import com.stocks.common.money.Rounding;
@@ -29,6 +30,8 @@ import java.util.Optional;
  *       (consolidated first; the IEX last only when no usable quote exists at all); otherwise none, and the order
  *       waits with {@code AWAITING_QUOTE}.</li>
  * </ol>
+ * An option contract (§30) skips the ladder: its own fresh two-sided quote with a sane spread
+ * ({@link #saneOptionSpread}), or nothing.
  */
 public final class ExecutableQuoteBuilder {
 
@@ -44,6 +47,10 @@ public final class ExecutableQuoteBuilder {
 
   private static final BigDecimal TEN_THOUSAND = BigDecimal.valueOf(10_000);
   private static final Duration CONSISTENCY_WINDOW = Duration.ofSeconds(10);
+  /** §30: an option spread up to $0.10 is always executable. */
+  public static final BigDecimal OPTION_SPREAD_ALLOWANCE = new BigDecimal("0.10");
+  /** §30: a wider option spread must be at most this fraction of the mid. */
+  public static final BigDecimal OPTION_MAX_SPREAD_OF_MID = new BigDecimal("0.50");
 
   private final ExecQuoteRules rules;
 
@@ -68,6 +75,14 @@ public final class ExecutableQuoteBuilder {
     BigDecimal last = in.lastConsolidated() != null ? in.lastConsolidated().price()
         : in.lastIex() != null ? in.lastIex().price() : null;
 
+    if (OptionSymbol.isOption(in.symbol())) {
+      // §30: an option executes only against its own two-sided, fresh quote with a sane spread; no synthetic quotes
+      if (!quoteOk || !saneOptionSpread(q.bid(), q.ask())) {
+        return Optional.empty();
+      }
+      return Optional.of(new ExecQuote(in.symbol(), q.bid(), q.bidSize(), q.ask(), q.askSize(), last, q.ts(),
+          in.confirmedAt(), q.quality() == null ? DataQuality.REALTIME_CONSOLIDATED : q.quality(), q.source(), false));
+    }
     Trade freshConsolidated = fresh(in.lastConsolidated(), now, floor, printWindow);
     if (quoteOk) {
       if (in.consolidatedQuote()) {
@@ -90,6 +105,23 @@ public final class ExecutableQuoteBuilder {
     }
     Trade print = freshConsolidated != null ? freshConsolidated : fresh(in.lastIex(), now, floor, printWindow);
     return print == null ? Optional.empty() : Optional.of(synthetic(in, print, last, ext));
+  }
+
+  /**
+   * §30 "absurd spread" rule for options: the spread is at most {@link #OPTION_SPREAD_ALLOWANCE} ($0.10) or at most
+   * {@link #OPTION_MAX_SPREAD_OF_MID} (50%) of the mid. A 1.00 × 3.00 market has no executable quote; 0.05 × 0.10
+   * and 8.00 × 9.50 do.
+   */
+  public static boolean saneOptionSpread(BigDecimal bid, BigDecimal ask) {
+    if (bid == null || ask == null || bid.signum() <= 0 || ask.compareTo(bid) < 0) {
+      return false;
+    }
+    BigDecimal spread = ask.subtract(bid);
+    if (spread.compareTo(OPTION_SPREAD_ALLOWANCE) <= 0) {
+      return true;
+    }
+    BigDecimal mid = bid.add(ask).divide(BigDecimal.TWO, 6, RoundingMode.HALF_EVEN);
+    return spread.compareTo(mid.multiply(OPTION_MAX_SPREAD_OF_MID)) <= 0;
   }
 
   private static Duration age(Instant now, Instant t) {

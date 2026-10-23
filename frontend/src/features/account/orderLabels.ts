@@ -4,6 +4,7 @@ import { type Dec, isDecimal } from '@/lib/format/decimal'
 import type { PillTone } from '@/components/ui/Pill'
 import { formatMoney, formatTrailAmount } from '@/lib/format/money'
 import { formatPrice, formatQty } from '@/lib/format/number'
+import { contractsLabel, formatOptionPrice, isExpiryOrder, isOption, optionLabel } from '@/lib/options'
 
 export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
   MARKET: 'Market',
@@ -76,8 +77,9 @@ export function statusLine(o: Order): string {
   return status
 }
 
-/** "10 sh" or "$25.00" */
-export function orderSizeLabel(o: Pick<Order, 'notional' | 'qty'>): string {
+/** "10 sh", "$25.00", or "2 contracts" for an option (§30). */
+export function orderSizeLabel(o: Pick<Order, 'notional' | 'qty'> & { symbol?: string | null }): string {
+  if (isOption(o.symbol)) return contractsLabel(o.qty)
   return o.notional ? formatMoney(o.notional) : `${formatQty(o.qty)} sh`
 }
 
@@ -90,12 +92,13 @@ export function trailLabel(o: Pick<Order, 'trailAmount' | 'trailPercent'>): stri
 
 /**
  * The prices that define an order, after its type label: "227.40" (Limit), "230.00" (Stop), "230.00 / 231.00"
- * (Stop Limit: stop / limit), "$1.50 trail" or "2% trail" (Trailing Stop). Empty for Market.
+ * (Stop Limit: stop / limit), "$1.50 trail" or "2% trail" (Trailing Stop). Empty for Market. An option's limit (§30)
+ * is in cents ("0.45").
  */
-export function orderPriceLabel(o: Pick<Order, 'type' | 'limitPrice' | 'stopPrice' | 'trailAmount' | 'trailPercent'>): string {
+export function orderPriceLabel(o: Pick<Order, 'type' | 'limitPrice' | 'stopPrice' | 'trailAmount' | 'trailPercent'> & { symbol?: string | null }): string {
   switch (o.type) {
     case 'LIMIT':
-      return o.limitPrice ? formatPrice(o.limitPrice) : ''
+      return o.limitPrice ? (isOption(o.symbol) ? formatOptionPrice(o.limitPrice) : formatPrice(o.limitPrice)) : ''
     case 'STOP':
       return o.stopPrice ? formatPrice(o.stopPrice) : ''
     case 'STOP_LIMIT':
@@ -109,12 +112,17 @@ export function orderPriceLabel(o: Pick<Order, 'type' | 'limitPrice' | 'stopPric
   }
 }
 
-/** "Buy 10 sh AAPL · Limit 227.40", "Sell 2 sh F · Trailing Stop 2% trail" */
+/**
+ * "Buy 10 sh AAPL · Limit 227.40", "Sell 2 sh F · Trailing Stop 2% trail"; an option (§30): "Buy to open 1 contract AAPL
+ * 20 Nov 26 $250 Call · Limit 3.20", and its expiration "Expiry: 1 contract F 16 Oct 26 $11 Call".
+ */
 export function orderTitle(o: Order): string {
-  const side = o.side === 'SELL' ? 'Sell' : 'Buy'
+  const option = isOption(o.symbol)
+  if (isExpiryOrder(o)) return `Expiry: ${orderSizeLabel(o)} ${optionLabel(o.symbol)}`
+  const side = option ? (o.side === 'SELL' ? 'Sell to close' : 'Buy to open') : o.side === 'SELL' ? 'Sell' : 'Buy'
   const type = o.type ? ORDER_TYPE_LABEL[o.type] : ''
   const price = orderPriceLabel(o)
-  return `${side} ${orderSizeLabel(o)} ${o.symbol ?? ''} · ${type}${price ? ` ${price}` : ''}`
+  return `${side} ${orderSizeLabel(o)} ${option ? optionLabel(o.symbol) : (o.symbol ?? '')} · ${type}${price ? ` ${price}` : ''}`
 }
 
 /**

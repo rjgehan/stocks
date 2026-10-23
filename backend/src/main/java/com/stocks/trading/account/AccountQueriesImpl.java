@@ -3,6 +3,7 @@ package com.stocks.trading.account;
 import com.stocks.common.domain.AccountStatus;
 import com.stocks.common.domain.AccountType;
 import com.stocks.common.domain.DataQuality;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.ViolationType;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
@@ -136,14 +137,14 @@ public class AccountQueriesImpl implements AccountQueries {
       marks.put(p.symbol(), m);
       BigDecimal price = m.price() != null ? m.price() : avgCost(p);
       prices.put(p.symbol(), price);
-      lmv = lmv.add(Rounding.MARKET_VALUE.multiply(p.qty(), price));
+      lmv = lmv.add(Rounding.marketValue(p.symbol(), p.qty(), price));
     }
     BigDecimal equity = acc.cashBalance().add(lmv).add(accounts.dividendsReceivable(accountId));
     Map<String, PositionDayPnl> day = positionDayPnl(accountId);
     return held.stream().map(p -> {
       Mark m = marks.get(p.symbol());
       BigDecimal price = prices.get(p.symbol());
-      BigDecimal mv = Rounding.MARKET_VALUE.multiply(p.qty(), price);
+      BigDecimal mv = Rounding.marketValue(p.symbol(), p.qty(), price);
       BigDecimal upnl = mv.subtract(p.costBasis());
       BigDecimal uret = p.costBasis().signum() > 0 ? upnl.divide(p.costBasis(), 10, RoundingMode.HALF_EVEN)
           : BigDecimal.ZERO.setScale(10);
@@ -164,9 +165,10 @@ public class AccountQueriesImpl implements AccountQueries {
     return performance.positionDayPnl(accountId);
   }
 
+  /** Cost per share: an option's cost basis covers 100 shares per contract (§30). */
   private static BigDecimal avgCost(PositionRow p) {
     return p.qty().signum() == 0 ? BigDecimal.ZERO.setScale(6)
-        : p.costBasis().divide(p.qty(), 6, RoundingMode.HALF_EVEN);
+        : p.costBasis().divide(p.qty().multiply(OptionSymbol.multiplier(p.symbol())), 6, RoundingMode.HALF_EVEN);
   }
 
   private Optional<Asset> safeAsset(String symbol) {

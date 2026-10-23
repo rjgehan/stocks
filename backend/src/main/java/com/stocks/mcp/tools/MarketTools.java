@@ -1,6 +1,7 @@
 package com.stocks.mcp.tools;
 
 import com.stocks.common.domain.MoverList;
+import com.stocks.common.domain.OptionRight;
 import com.stocks.common.domain.Timeframe;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
@@ -16,6 +17,9 @@ import com.stocks.contract.marketdata.dto.ClockDto;
 import com.stocks.contract.marketdata.dto.FundamentalsDto;
 import com.stocks.contract.marketdata.dto.MoversDto;
 import com.stocks.contract.marketdata.dto.NewsListDto;
+import com.stocks.contract.marketdata.dto.OptionChainDto;
+import com.stocks.contract.marketdata.dto.OptionContractDto;
+import com.stocks.contract.marketdata.dto.OptionExpirationsDto;
 import com.stocks.contract.marketdata.dto.QuoteDto;
 import com.stocks.contract.marketdata.dto.QuotesDto;
 import com.stocks.contract.marketdata.dto.SnapshotDto;
@@ -28,6 +32,7 @@ import com.stocks.contract.rules.dto.RulesDto;
 import com.stocks.contract.security.PlayerPrincipal;
 import com.stocks.mcp.tools.McpOutputs.AssetSearchDto;
 import com.stocks.mcp.tools.McpOutputs.CalendarDaysDto;
+import com.stocks.marketdata.mapper.OptionDtoMapper;
 import com.stocks.mcp.tools.McpOutputs.CompactBarsDto;
 import com.stocks.realtime.QuoteMessages;
 import com.stocks.realtime.SubscriptionTracker;
@@ -77,9 +82,10 @@ public class MarketTools implements McpToolSet {
   @McpTool(name = "get_rules", title = "League rules",
       description = "The league rulebook: cash account and T+1 settlement, good-faith violations, sessions (ET), the "
           + "order matrix (types, time in force, fractional and notional rules), execution model, fees, rate limits, "
-          + "leaderboard definitions, the fairness charter and 'crypto' (24/7 pairs such as BTC/USD: same-day "
-          + "settlement, no fees, fractional sizes). Call it once per session before trading; 'version' changes "
-          + "whenever a rule changes.",
+          + "leaderboard definitions, the fairness charter, 'crypto' (24/7 pairs such as BTC/USD: same-day "
+          + "settlement, no fees, fractional sizes) and 'options' (long calls and puts by OCC symbol: whole "
+          + "contracts x 100 shares, regular hours, cash-settled at expiration). Call it once per session before "
+          + "trading; 'version' changes whenever a rule changes.",
       generateOutputSchema = true,
       annotations = @McpTool.McpAnnotations(title = "League rules", readOnlyHint = true, destructiveHint = false,
           idempotentHint = true, openWorldHint = false))
@@ -155,8 +161,9 @@ public class MarketTools implements McpToolSet {
   @McpTool(name = "get_quotes", title = "Quotes",
       description = "Live quotes for up to 50 symbols: bid/ask with sizes, last trade, previous close, change, day "
           + "range, volume, extended-hours line, quality (REALTIME_CONSOLIDATED, REALTIME_SINGLE_VENUE = IEX only, "
-          + "SYNTHETIC = estimated from the last consolidated trade, STALE, NONE) and ageMs. Prices are decimal "
-          + "strings. Unknown symbols come back with quality NONE.",
+          + "SYNTHETIC = estimated from the last consolidated trade, INDICATIVE = an option on Alpaca's free derived "
+          + "feed, STALE, NONE) and ageMs. Option contracts (OCC symbols such as AAPL261120C00250000) are quoted per "
+          + "share with sizes in contracts. Prices are decimal strings. Unknown symbols come back with quality NONE.",
       generateOutputSchema = true,
       annotations = @McpTool.McpAnnotations(title = "Quotes", readOnlyHint = true, destructiveHint = false,
           idempotentHint = true, openWorldHint = false))
@@ -174,6 +181,58 @@ public class MarketTools implements McpToolSet {
       out.add(quoteMessages.quote(v != null ? v : QuoteView.none(s, "none"), now, session));
     }
     return new QuotesDto(out);
+  }
+
+  @McpTool(name = "get_option_expirations", title = "Option expirations",
+      description = "The listed option expirations of a US stock or ETF (e.g. SPY, AAPL), nearest first, with the "
+          + "option feed ('indicative' = Alpaca's free derived quotes, not OPRA; 'opra'; 'simulated') and whether "
+          + "buying options is enabled. Then call get_option_chain for one expiration. SYMBOL_NOT_FOUND for a symbol "
+          + "without options (crypto pairs have none).",
+      generateOutputSchema = true,
+      annotations = @McpTool.McpAnnotations(title = "Option expirations", readOnlyHint = true,
+          destructiveHint = false, idempotentHint = true, openWorldHint = false))
+  public OptionExpirationsDto get_option_expirations(McpTransportContext ctx,
+      @McpToolParam(description = "Underlying stock or ETF ticker, e.g. SPY") String underlying) {
+    String u = McpArgs.symbol(underlying, "underlying");
+    return OptionDtoMapper.toDto(marketData.optionExpirations(u), rules.optionsEnabled());
+  }
+
+  @McpTool(name = "get_option_chain", title = "Option chain",
+      description = "One expiration's calls and puts for a stock or ETF: per contract the OCC symbol (trade it with "
+          + "place_order, e.g. AAPL261120C00250000), strike, bid/ask with sizes (contracts), mid (the mark), last, "
+          + "volume, open interest and, on OPRA only, implied volatility and delta. Prices are per share; one "
+          + "contract = 100 shares, so a 2.50 ask costs $250 per contract. By default only the 10 strikes nearest "
+          + "the underlying price on each side are returned.",
+      generateOutputSchema = true,
+      annotations = @McpTool.McpAnnotations(title = "Option chain", readOnlyHint = true, destructiveHint = false,
+          idempotentHint = true, openWorldHint = false))
+  public OptionChainDto get_option_chain(McpTransportContext ctx,
+      @McpToolParam(description = "Underlying stock or ETF ticker, e.g. SPY") String underlying,
+      @McpToolParam(description = "Expiration date (YYYY-MM-DD), one of get_option_expirations") LocalDate expiration,
+      @McpToolParam(required = false, description = "CALL or PUT; default both") OptionRight right,
+      @McpToolParam(required = false, description = "Strikes on each side of the underlying price, 1-50, default 10")
+      Integer strikes) {
+    String u = McpArgs.symbol(underlying, "underlying");
+    if (expiration == null) {
+      throw ApiException.validation("expiration", "expiration is required (YYYY-MM-DD).");
+    }
+    int n = McpArgs.limit(strikes, 10, 1, 50, "strikes");
+    OptionChainDto all = OptionDtoMapper.toDto(marketData.optionChain(u, expiration), rules.optionsEnabled());
+    return new OptionChainDto(all.underlying(), all.expiration(), all.enabled(), all.feed(), all.multiplier(),
+        all.underlyingPrice(), all.asOf(), right == OptionRight.PUT ? List.of() : near(all.calls(),
+        all.underlyingPrice(), n), right == OptionRight.CALL ? List.of() : near(all.puts(), all.underlyingPrice(), n));
+  }
+
+  /** The {@code n} contracts below and the {@code n} at or above {@code price} by strike (all when price is unknown). */
+  static List<OptionContractDto> near(List<OptionContractDto> rows, java.math.BigDecimal price, int n) {
+    if (price == null) {
+      return rows.size() <= 2 * n ? rows : rows.subList(0, 2 * n);
+    }
+    int split = 0;
+    while (split < rows.size() && rows.get(split).strike().compareTo(price) < 0) {
+      split++;
+    }
+    return rows.subList(Math.max(0, split - n), Math.min(rows.size(), split + n));
   }
 
   @McpTool(name = "get_snapshot", title = "Snapshot",

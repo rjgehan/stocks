@@ -134,7 +134,7 @@ public class FeedEventListener {
 
   private record ExecRow(long id, String publicId, long accountId, long playerId, String symbol, Side side,
                          BigDecimal qty, BigDecimal price, BigDecimal realizedPnl, Instant executedAt,
-                         String rationale, boolean rationalePublic) {}
+                         String rationale, boolean rationalePublic, boolean expiry) {}
 
   /** FILL or POSITION_CLOSED for one execution (by public id); true if a row was written. */
   public boolean recordExecution(String executionPublicId) {
@@ -144,14 +144,15 @@ public class FeedEventListener {
     }
     Optional<ExecRow> found = jdbc.sql("""
             SELECT e.id, e.public_id, e.account_id, a.player_id, e.symbol, e.side, e.qty, e.price, e.realized_pnl,
-                   e.executed_at, o.rationale, o.rationale_public
+                   e.executed_at, e.liquidity, o.rationale, o.rationale_public
               FROM execution e JOIN account a ON a.id = e.account_id JOIN trade_order o ON o.id = e.order_id
              WHERE e.public_id = ?""")
         .param(executionPublicId)
         .query((rs, n) -> new ExecRow(rs.getLong("id"), rs.getString("public_id"), rs.getLong("account_id"),
             rs.getLong("player_id"), rs.getString("symbol"), Side.valueOf(rs.getString("side")),
             rs.getBigDecimal("qty"), rs.getBigDecimal("price"), rs.getBigDecimal("realized_pnl"),
-            Jdbc.instant(rs, "executed_at"), rs.getString("rationale"), rs.getBoolean("rationale_public")))
+            Jdbc.instant(rs, "executed_at"), rs.getString("rationale"), rs.getBoolean("rationale_public"),
+            "EXPIRY".equals(rs.getString("liquidity"))))
         .optional();
     if (found.isEmpty()) {
       return false;
@@ -161,7 +162,7 @@ public class FeedEventListener {
     String rationale = x.rationalePublic() ? Text.clip(x.rationale(), PublicProfileService.RATIONALE_MAX) : null;
     FeedPayloadDto payload = new FeedPayloadDto(x.side(), x.qty(), x.price(),
         x.side() == Side.SELL ? x.realizedPnl() : null, null, null,
-        rationale == null ? null : new UntrustedFeedTextDto(rationale, null, null));
+        rationale == null ? null : new UntrustedFeedTextDto(rationale, null, null), x.expiry() ? Boolean.TRUE : null);
     return feed.insertIfAbsent(publicIds.next(Prefix.FEED_EVENT), x.playerId(), x.accountId(),
         closed ? FeedItemKind.POSITION_CLOSED : FeedItemKind.FILL, x.symbol(), json.writeValueAsString(payload),
         ref, x.executedAt(), x.executedAt().plus(settings.tradeFeedDelay()));

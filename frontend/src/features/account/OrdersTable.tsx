@@ -15,6 +15,7 @@ import { toast } from '@/features/notifications/toastStore'
 import { GroupChip } from '@/features/groups/GroupChip'
 import { heldLabel } from '@/features/groups/groupLabels'
 import { ORDER_TYPE_LABEL, STATUS_LABEL, STATUS_TONE, isArmedStop, orderPriceLabel, orderSizeLabel, statusLine } from './orderLabels'
+import { expiryLabel, formatOptionPrice, isExpiryOrder, isOption, optionLabel } from '@/lib/options'
 
 export type OrderView = 'OPEN' | 'FILLED' | 'CANCELLED' | 'ALL'
 
@@ -38,7 +39,8 @@ export function useCancelWithToast() {
   const run = (o: Order) =>
     o.orderId &&
     cancel.mutate(o.orderId, {
-      onSuccess: (res) => toast({ tone: 'neutral', title: res.status === 'FILLED' ? `${o.symbol} filled before the cancel arrived` : `Cancel sent: ${o.side === 'BUY' ? 'Buy' : 'Sell'} ${o.symbol}` }),
+      onSuccess: (res) =>
+        toast({ tone: 'neutral', title: res.status === 'FILLED' ? `${optionLabel(o.symbol)} filled before the cancel arrived` : `Cancel sent: ${o.side === 'BUY' ? 'Buy' : 'Sell'} ${optionLabel(o.symbol)}` }),
       onError: (e) => {
         const d = describeError(e)
         toast({ tone: 'error', title: d.title, body: errorBody(d) })
@@ -47,23 +49,31 @@ export function useCancelWithToast() {
   return { run, pending: cancel.isPending, pendingId: cancel.isPending ? cancel.variables : undefined }
 }
 
-/** One order as a row (tablet/desktop) or a card line (phone). */
+/**
+ * One order as a row (tablet/desktop) or a card line (phone). An option (§30) shows its contract label and contracts; its
+ * expiration (a SYSTEM sell) reads "Expired worthless" or "Cash-settled at $X".
+ */
 export function OrderRow({ o, onCancel, cancelling, showDate }: { o: Order; onCancel: (o: Order) => void; cancelling: boolean; showDate?: boolean }) {
   const open = isOpenStatus(o.status)
+  const expiry = isExpiryOrder(o)
   return (
     <li className="flex items-center gap-3 px-4 py-2.5 text-table">
-      <span className={cx('w-9 shrink-0 font-semibold', o.side === 'BUY' ? 'text-up' : 'text-down')}>{o.side === 'BUY' ? 'Buy' : 'Sell'}</span>
+      <span className={cx('w-9 shrink-0 font-semibold', expiry ? 'text-text-2' : o.side === 'BUY' ? 'text-up' : 'text-down')}>{expiry ? 'Exp.' : o.side === 'BUY' ? 'Buy' : 'Sell'}</span>
       <Link to="/account/orders/$orderId" params={{ orderId: o.orderId ?? '' }} className="min-w-0 flex-1 hover:text-accent">
         {/* phones show the whole line on up to two lines: the status sits in the line below, the pills only from tablet */}
         <div className="line-clamp-2 font-semibold break-words tablet:line-clamp-1">
-          {o.symbol} · {orderSizeLabel(o)} · {o.type ? ORDER_TYPE_LABEL[o.type] : ''}
+          {optionLabel(o.symbol)} · {orderSizeLabel(o)} · {expiry ? 'Expiration' : o.type ? ORDER_TYPE_LABEL[o.type] : ''}
           {orderPriceLabel(o) ? ` ${orderPriceLabel(o)}` : ''}
           {o.timeInForce === 'GTC' ? ' · GTC' : ''}
           {o.extendedHours ? ' · Ext' : ''}
           <GroupChip group={o.group} />
         </div>
         <div className="line-clamp-2 text-caption text-text-3 break-words tablet:line-clamp-1">
-          {o.status === 'FILLED' || o.status === 'PARTIALLY_FILLED' ? `Filled ${formatQty(o.filledQty)} @ ${formatPrice(o.avgFillPrice)}` : (heldLabel(o.group) ?? statusLine(o))}
+          {expiry && o.status === 'FILLED'
+            ? expiryLabel(o.avgFillPrice)
+            : o.status === 'FILLED' || o.status === 'PARTIALLY_FILLED'
+              ? `Filled ${formatQty(o.filledQty)} @ ${isOption(o.symbol) ? formatOptionPrice(o.avgFillPrice) : formatPrice(o.avgFillPrice)}`
+              : (heldLabel(o.group) ?? statusLine(o))}
           {o.type === 'TRAILING_STOP' && isArmedStop(o) && o.stopPrice ? ` · stop ${formatPrice(o.stopPrice)}` : ''}
           {' · '}
           {showDate ? formatDateTimeEt(o.receivedAt) : formatTimeEt(o.receivedAt)}
@@ -79,7 +89,7 @@ export function OrderRow({ o, onCancel, cancelling, showDate }: { o: Order; onCa
         <Pill tone={o.status ? STATUS_TONE[o.status] : 'neutral'}>{o.status ? STATUS_LABEL[o.status] : '--'}</Pill>
       </span>
       {open ? (
-        <Button size="sm" variant="danger" disabled={cancelling} onClick={() => onCancel(o)} aria-label={`Cancel ${o.side === 'BUY' ? 'buy' : 'sell'} ${o.symbol} order`}>
+        <Button size="sm" variant="danger" disabled={cancelling} onClick={() => onCancel(o)} aria-label={`Cancel ${o.side === 'BUY' ? 'buy' : 'sell'} ${optionLabel(o.symbol)} order`}>
           Cancel
         </Button>
       ) : null}

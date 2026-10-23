@@ -19,7 +19,8 @@ import java.util.Map;
 public record RulesDto(String version, Instant asOf, RulesAccountDto account, RulesSessionsDto sessions,
                        RulesOrdersDto orders, RulesExecutionDto execution, List<RulesFeeDto> fees,
                        Map<String, Object> rateLimits, RulesLeaderboardDto leaderboard, RulesSocialDto social,
-                       List<String> dataSources, List<String> fairness, RulesCryptoDto crypto) {
+                       List<String> dataSources, List<String> fairness, RulesCryptoDto crypto,
+                       RulesOptionsDto options) {
 
   /** The rulebook without its crypto section (fixtures). */
   public RulesDto(String version, Instant asOf, RulesAccountDto account, RulesSessionsDto sessions,
@@ -27,8 +28,18 @@ public record RulesDto(String version, Instant asOf, RulesAccountDto account, Ru
                   Map<String, Object> rateLimits, RulesLeaderboardDto leaderboard, RulesSocialDto social,
                   List<String> dataSources, List<String> fairness) {
     this(version, asOf, account, sessions, orders, execution, fees, rateLimits, leaderboard, social, dataSources,
-        fairness, null);
+        fairness, null, null);
   }
+
+  /**
+   * Long US equity options (§30): {@code enabled} is the admin setting {@code options.enabled}; {@code feed} the
+   * option quote feed ({@code indicative}, {@code opra} or {@code simulated}); {@code quotesIndicative} true on
+   * Alpaca's free derived feed. The other members describe the rules in words a bot can quote.
+   */
+  public record RulesOptionsDto(boolean enabled, String feed, boolean quotesIndicative, int multiplier,
+                                String scope, String symbols, String quantities, String orders, String hours,
+                                String execution, String valuation, String settlement, String expiration,
+                                String fees) {}
 
   /**
    * Crypto pairs (§29): {@code enabled} is the admin setting {@code crypto.enabled}; {@code pairs} the tradable

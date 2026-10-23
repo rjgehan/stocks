@@ -10,6 +10,7 @@ import com.stocks.contract.marketdata.model.Bar;
 import com.stocks.contract.marketdata.model.CorporateActionData;
 import com.stocks.contract.marketdata.model.Mover;
 import com.stocks.contract.marketdata.model.NewsItem;
+import com.stocks.contract.marketdata.model.OptionQuote;
 import com.stocks.contract.marketdata.model.Quote;
 import com.stocks.contract.marketdata.model.Snapshot;
 import com.stocks.contract.marketdata.model.Trade;
@@ -169,6 +170,102 @@ public class AlpacaRestClient {
       case SPLIT -> "split";
       case ALL -> "all";
     };
+  }
+
+  // ------------------------------------------------------------------------------------------- options (§30)
+
+  /** Alpaca's options market data ({@code feed} = {@code indicative} on the free plan, {@code opra} on paid plans). */
+  static final String OPTIONS = "/v1beta1/options";
+
+  /** The largest page of {@code /v1beta1/options/snapshots/{underlying}}. */
+  static final int OPTION_CHAIN_PAGE = 1000;
+
+  /** One listed contract of {@code /v2/options/contracts}: its expiration, open interest and previous close. */
+  public record OptionContractRow(String symbol, LocalDate expiration, Long openInterest, BigDecimal closePrice) {}
+
+  /** {@code GET /v1beta1/options/snapshots?symbols=…&feed=…} → {@code {snapshots: {OCC: snapshot}}}. */
+  public Map<String, Snapshot> optionSnapshots(Set<String> symbols, String feed, RefreshPriority priority) {
+    Map<String, Snapshot> out = new LinkedHashMap<>();
+    if (symbols.isEmpty()) {
+      return out;
+    }
+    JsonNode root = http.getJson(priority, props.dataUrl(), OPTIONS + "/snapshots",
+        ProviderHttp.query("symbols", String.join(",", new TreeSet<>(symbols)), "feed", feed));
+    Instant observed = clock.get();
+    JsonNode body = root.has("snapshots") && root.get("snapshots").isObject() ? root.get("snapshots") : root;
+    for (Map.Entry<String, JsonNode> e : body.properties()) {
+      if (e.getValue() != null && e.getValue().isObject()) {
+        out.put(e.getKey(), AlpacaJson.optionSnapshot(e.getKey(), e.getValue(), observed, feed));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * {@code GET /v1beta1/options/snapshots/{underlying}?feed=…&expiration_date=…&limit=1000}, following
+   * {@code next_page_token}: every contract of one expiration with its latest quote, trade, day bar and (OPRA only)
+   * greeks ({@code expiration} null: every expiration). Contracts whose symbol is not a well-formed OCC symbol are
+   * skipped.
+   */
+  public List<OptionQuote> optionChain(String underlying, LocalDate expiration, String feed, RefreshPriority priority) {
+    List<OptionQuote> out = new ArrayList<>();
+    String token = null;
+    for (int page = 0; page < 20; page++) {
+      JsonNode root = http.getJson(priority, props.dataUrl(), OPTIONS + "/snapshots/" + underlying,
+          ProviderHttp.query("feed", feed, "expiration_date", expiration == null ? null : expiration.toString(),
+              "limit", OPTION_CHAIN_PAGE,
+              "page_token", token));
+      Instant observed = clock.get();
+      JsonNode body = root.get("snapshots");
+      if (body != null && body.isObject()) {
+        for (Map.Entry<String, JsonNode> e : body.properties()) {
+          if (e.getValue() != null && e.getValue().isObject()) {
+            OptionQuote q = AlpacaJson.optionChainRow(e.getKey(), e.getValue(), observed, feed);
+            if (q != null) {
+              out.add(q);
+            }
+          }
+        }
+      }
+      token = Json.str(root, "next_page_token");
+      if (token == null || token.isBlank()) {
+        break;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * {@code GET /v2/options/contracts?underlying_symbols=…&status=active&expiration_date_gte=…&expiration_date_lte=…}
+   * on the trading URL, following {@code page_token}: the listed contracts (Alpaca's default window ends next
+   * weekend, so both dates are always sent).
+   */
+  public List<OptionContractRow> optionContracts(String underlying, LocalDate from, LocalDate to,
+                                                 RefreshPriority priority) {
+    List<OptionContractRow> out = new ArrayList<>();
+    String token = null;
+    for (int page = 0; page < 20; page++) {
+      JsonNode root = http.getJson(priority, props.tradingUrl(), "/v2/options/contracts", ProviderHttp.query(
+          "underlying_symbols", underlying, "status", "active", "expiration_date_gte", from.toString(),
+          "expiration_date_lte", to.toString(), "limit", 10_000, "page_token", token));
+      JsonNode list = root.get("option_contracts");
+      if (list != null && list.isArray()) {
+        for (JsonNode c : list.values()) {
+          String symbol = Json.str(c, "symbol");
+          LocalDate exp = Json.date(c, "expiration_date");
+          if (symbol == null || exp == null) {
+            continue;
+          }
+          BigDecimal oi = Json.dec(c, "open_interest");
+          out.add(new OptionContractRow(symbol, exp, oi == null ? null : oi.longValue(), Json.dec(c, "close_price")));
+        }
+      }
+      token = Json.str(root, "next_page_token");
+      if (token == null || token.isBlank()) {
+        break;
+      }
+    }
+    return out;
   }
 
   // ------------------------------------------------------------------------------------------- crypto (§29)

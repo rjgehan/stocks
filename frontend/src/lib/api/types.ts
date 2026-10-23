@@ -34,6 +34,10 @@ export type Bars = S['Bars']
 export type Movers = S['Movers']
 export type MoverItem = S['MoverItem']
 export type NewsItem = S['NewsItem']
+// long options (§30)
+export type OptionExpirations = S['OptionExpirations']
+export type OptionChain = S['OptionChain']
+export type OptionContract = S['OptionContract']
 // account and orders
 export type Account = S['Account']
 export type Position = S['Position']
@@ -134,6 +138,7 @@ export type DividendDetail = S['DividendDetail']
 
 // enums (null stripped)
 export type DataQuality = NN<Quote['quality']>
+export type Liquidity = NN<Execution['liquidity']>
 export type SessionType = NN<Clock['session']>
 export type PlayerKind = NN<PlayerSummary['kind']>
 export type Side = NN<Order['side']>

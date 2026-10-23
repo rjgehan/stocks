@@ -148,6 +148,7 @@ stocks:
       max-stream-symbols: 30
       rest-per-minute: 180
       snapshot-batch: 100
+      options-feed: ${ALPACA_OPTIONS_FEED:indicative}   # §30: indicative (free) | opra (Algo Trader Plus)
     finnhub:
       token: ${FINNHUB_TOKEN:}
       base-url: https://finnhub.io/api/v1

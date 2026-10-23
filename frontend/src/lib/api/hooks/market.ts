@@ -78,3 +78,25 @@ export function useNews(symbols: string, enabled = true) {
     enabled,
   })
 }
+
+/** `GET /options/{underlying}/expirations` (§30): upcoming expirations, nearest first, plus the feed and the switch. */
+export function useOptionExpirations(underlying: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.optionExpirations(underlying),
+    queryFn: () => unwrap(api.GET('/api/v1/options/{underlying}/expirations', { params: { path: { underlying } } })),
+    staleTime: 10 * 60_000,
+    enabled: enabled && underlying.length > 0,
+  })
+}
+
+/** One expiration's chain (§30), re-polled every 10 s while the page is visible (the chain has no STOMP topic). */
+export function useOptionChain(underlying: string, expiration: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.optionChain(underlying, expiration ?? ''),
+    queryFn: () => unwrap(api.GET('/api/v1/options/{underlying}/chain', { params: { path: { underlying }, query: { expiration: expiration! } } })),
+    staleTime: 8_000,
+    refetchInterval: 10_000,
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[1] === underlying ? prev : undefined),
+    enabled: enabled && underlying.length > 0 && Boolean(expiration),
+  })
+}

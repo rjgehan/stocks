@@ -116,7 +116,7 @@ public class AccountPerformance {
         });
     for (PositionRow p : positions) {
       Mark m = v.marks().get(p.symbol());               // null only if a fill landed between the two reads
-      BigDecimal mvNow = m != null ? Rounding.MARKET_VALUE.multiply(p.qty(), m.price()) : p.costBasis();
+      BigDecimal mvNow = m != null ? Rounding.marketValue(p.symbol(), p.qty(), m.price()) : p.costBasis();
       BigDecimal mvPrev = Money.ZERO;
       BigDecimal net = Money.ZERO;
       String name = p.symbol();

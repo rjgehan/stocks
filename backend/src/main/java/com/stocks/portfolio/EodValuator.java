@@ -100,7 +100,7 @@ public class EodValuator {
           ? marks.heldEndOfDay(h.symbol(), daysBefore(exDate), calendar.preOpen(exDate), cutoff, h.qty(),
               h.costBasis())
           : marks.endOfDay(h.symbol(), tradeDate, cutoff, h.qty(), h.costBasis());
-      BigDecimal mv = Rounding.MARKET_VALUE.multiply(h.qty(), m.price());
+      BigDecimal mv = Rounding.marketValue(h.symbol(), h.qty(), m.price());
       rows.add(new HoldingRow(h.symbol(), h.qty(), m.price(), mv));
       qualities.add(m.quality());
       lmv = lmv.add(mv);

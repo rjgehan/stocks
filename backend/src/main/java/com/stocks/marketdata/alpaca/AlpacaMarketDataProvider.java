@@ -2,6 +2,8 @@ package com.stocks.marketdata.alpaca;
 
 import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.MoverList;
+import com.stocks.common.domain.OptionSymbol;
+import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
 import com.stocks.contract.marketdata.RefreshPriority;
 import com.stocks.contract.marketdata.model.Asset;
@@ -11,6 +13,7 @@ import com.stocks.contract.marketdata.model.MarketEvent;
 import com.stocks.contract.marketdata.model.Mover;
 import com.stocks.contract.marketdata.model.Movers;
 import com.stocks.contract.marketdata.model.NewsItem;
+import com.stocks.contract.marketdata.model.OptionQuote;
 import com.stocks.contract.marketdata.model.Quote;
 import com.stocks.contract.marketdata.model.Snapshot;
 import com.stocks.contract.marketdata.model.Trade;
@@ -20,6 +23,7 @@ import com.stocks.marketdata.core.WebSocketStream;
 import com.stocks.marketdata.spi.BarQuery;
 import com.stocks.marketdata.spi.Capabilities;
 import com.stocks.marketdata.spi.MarketDataProvider;
+import com.stocks.marketdata.spi.ProviderException;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -44,6 +48,9 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
 
   /** The Basic plan's 15-minute SIP embargo plus a minute of clock skew. */
   static final Duration SIP_EMBARGO_CLAMP = Duration.ofMinutes(16);
+
+  /** {@code /v1beta1/options/snapshots} takes at most 100 symbols per call (§30). */
+  static final int OPTION_BATCH = 100;
 
   private final MarketDataProperties props;
   private final AlpacaRestClient rest;
@@ -111,13 +118,21 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
     return snapshots(symbols, RefreshPriority.UI);
   }
 
-  /** Batched by {@code snapshot-batch} (100 by default; the probe may raise it); crypto pairs from the crypto API. */
+  /**
+   * Batched by {@code snapshot-batch} (100 by default; the probe may raise it); crypto pairs from the crypto API,
+   * option contracts (§30) from the options API in batches of 100.
+   */
   @Override
   public Map<String, Snapshot> snapshots(Set<String> symbols, RefreshPriority priority) {
     Map<String, Snapshot> out = new LinkedHashMap<>();
     Set<String> crypto = crypto(symbols);
     if (!crypto.isEmpty()) {
       out.putAll(rest.cryptoSnapshots(crypto, priority));
+    }
+    List<String> options = new ArrayList<>(options(symbols));
+    for (int i = 0; i < options.size(); i += OPTION_BATCH) {
+      out.putAll(rest.optionSnapshots(new TreeSet<>(options.subList(i, Math.min(options.size(), i + OPTION_BATCH))),
+          optionFeed(), priority));
     }
     List<String> all = new ArrayList<>(new TreeSet<>(stocks(symbols)));
     for (int i = 0; i < all.size(); i += snapshotBatch) {
@@ -130,6 +145,13 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
   @Override
   public Map<String, Quote> latestQuotes(Set<String> symbols) {
     Map<String, Quote> out = new LinkedHashMap<>();
+    if (!options(symbols).isEmpty()) {
+      snapshots(options(symbols), RefreshPriority.ORDER_CRITICAL).forEach((s, snap) -> {
+        if (snap.quote() != null) {
+          out.put(s, snap.quote());
+        }
+      });
+    }
     if (!crypto(symbols).isEmpty()) {
       out.putAll(rest.cryptoLatestQuotes(crypto(symbols), RefreshPriority.ORDER_CRITICAL));
     }
@@ -142,6 +164,13 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
   @Override
   public Map<String, Trade> latestTrades(Set<String> symbols) {
     Map<String, Trade> out = new LinkedHashMap<>();
+    if (!options(symbols).isEmpty()) {
+      snapshots(options(symbols), RefreshPriority.ORDER_CRITICAL).forEach((s, snap) -> {
+        if (snap.lastTrade() != null) {
+          out.put(s, snap.lastTrade());
+        }
+      });
+    }
     if (!crypto(symbols).isEmpty()) {
       out.putAll(rest.cryptoLatestTrades(crypto(symbols), RefreshPriority.ORDER_CRITICAL));
     }
@@ -162,11 +191,22 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
     return out;
   }
 
-  /** Everything in {@code symbols} that is not a crypto pair. */
+  /** The option contracts of {@code symbols} (§30). */
+  static Set<String> options(Set<String> symbols) {
+    Set<String> out = new TreeSet<>();
+    symbols.forEach(s -> {
+      if (OptionSymbol.isOption(s)) {
+        out.add(s);
+      }
+    });
+    return out;
+  }
+
+  /** Everything in {@code symbols} that is neither a crypto pair nor an option contract. */
   static Set<String> stocks(Set<String> symbols) {
     Set<String> out = new TreeSet<>();
     symbols.forEach(s -> {
-      if (!Crypto.isCrypto(s)) {
+      if (!Crypto.isCrypto(s) && !OptionSymbol.isOption(s)) {
         out.add(s);
       }
     });
@@ -186,6 +226,13 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
    */
   @Override
   public Map<String, List<Bar>> bars(BarQuery q, RefreshPriority priority) {
+    if (!options(q.symbols()).isEmpty()) {
+      // option contracts have no charts here (§30): drop them, and answer the rest of a mixed query
+      Set<String> others = new TreeSet<>(q.symbols());
+      others.removeAll(options(q.symbols()));
+      return others.isEmpty() ? Map.of() : bars(new BarQuery(others, q.tf(), q.from(), q.to(), q.adj(), q.extendedHours(),
+          q.limit(), q.feed()), priority);
+    }
     Set<String> crypto = crypto(q.symbols());
     if (!crypto.isEmpty()) {
       // crypto pairs: the crypto bars endpoint, no feed and no embargo (§29); stocks of a mixed query as below
@@ -209,6 +256,64 @@ public class AlpacaMarketDataProvider implements MarketDataProvider {
     }
     return rest.bars(new BarQuery(q.symbols(), q.tf(), q.from(), to, q.adj(), q.extendedHours(), q.limit(), feed),
         priority);
+  }
+
+  // ------------------------------------------------------------------------------------------- options (§30)
+
+  @Override
+  public String optionFeed() {
+    return props.alpaca().optionsFeed();
+  }
+
+  /**
+   * The distinct expirations of {@code underlying}'s active contracts for the next two years, from the trading API's
+   * contract list; if that list is refused (an account without options access), from the chain snapshots.
+   */
+  @Override
+  public List<LocalDate> optionExpirations(String underlying, RefreshPriority priority) {
+    LocalDate today = Et.date(time.now());
+    TreeSet<LocalDate> out = new TreeSet<>();
+    try {
+      for (AlpacaRestClient.OptionContractRow c : rest.optionContracts(underlying, today, today.plusYears(2),
+          priority)) {
+        if (!c.expiration().isBefore(today)) {
+          out.add(c.expiration());
+        }
+      }
+      return List.copyOf(out);
+    } catch (ProviderException e) {
+      if (e.status() != 401 && e.status() != 403 && e.status() != 404 && e.status() != 422) {
+        throw e;
+      }
+    }
+    for (OptionQuote q : rest.optionChain(underlying, null, optionFeed(), priority)) {
+      if (!q.expiration().isBefore(today)) {
+        out.add(q.expiration());
+      }
+    }
+    return List.copyOf(out);
+  }
+
+  /** The chain snapshots of one expiration, with open interest from the contract list when it is available. */
+  @Override
+  public List<OptionQuote> optionChain(String underlying, LocalDate expiration, RefreshPriority priority) {
+    List<OptionQuote> chain = rest.optionChain(underlying, expiration, optionFeed(), priority);
+    Map<String, Long> oi = new LinkedHashMap<>();
+    try {
+      rest.optionContracts(underlying, expiration, expiration, priority).forEach(c -> {
+        if (c.openInterest() != null) {
+          oi.put(c.symbol(), c.openInterest());
+        }
+      });
+    } catch (ProviderException e) {
+      // open interest is optional; the quotes are what matter
+    }
+    if (oi.isEmpty()) {
+      return chain;
+    }
+    return chain.stream().map(q -> new OptionQuote(q.symbol(), q.underlying(), q.expiration(), q.right(), q.strike(),
+        q.quote(), q.lastTrade(), q.volume(), oi.getOrDefault(q.symbol(), q.openInterest()), q.impliedVolatility(),
+        q.delta())).toList();
   }
 
   @Override

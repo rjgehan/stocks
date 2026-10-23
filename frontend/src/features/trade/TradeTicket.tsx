@@ -6,6 +6,8 @@
  * acknowledgement · note with "Share note publicly" · submit (disabled until the preview is valid) · review dialog ·
  * result toast. Server rejections (§7.2 codes) map to inline field errors or a banner. Phase 2: a Simple · Advanced
  * switch (when `GET /rules` lists `orders.groups`) swaps the body for the group-order ticket (`advanced/`, §11.9).
+ * An option contract (OCC symbol, §30) gets a narrower ticket: Buy to open · Sell to close, Market or Limit (cents),
+ * whole contracts, Day only, regular hours, no dollar amounts and no Advanced mode.
  */
 import { Suspense, lazy, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useAccount, useOrderPreview, usePlaceOrder, usePositions } from '@/lib/api/hooks/account'
@@ -16,7 +18,7 @@ import { isApiError } from '@/lib/api/problem'
 import type { OrderType, PlaceOrderRequest, Side } from '@/lib/api/types'
 import { useQuote } from '@/lib/realtime/useQuote'
 import { useQuoteStore } from '@/lib/realtime/quoteStore'
-import { type Dec, add, isDecimal, parseUserDecimal, roundToTick, sign, sub, tickFor } from '@/lib/format/decimal'
+import { type Dec, add, isDecimal, parseUserDecimal, sign, sub, tickFor } from '@/lib/format/decimal'
 import { formatInteger, formatPrice, formatQty } from '@/lib/format/number'
 import { formatMoney } from '@/lib/format/money'
 import { useDebounced } from '@/lib/useDebounced'
@@ -51,6 +53,7 @@ import {
   newClientOrderId,
   qtyUnit,
   quickQuantity,
+  roundPrice,
   showsLimit,
   showsStop,
   showsTrail,
@@ -61,6 +64,7 @@ import {
   withoutQueueDuplicates,
 } from './ticketState'
 import { isCrypto } from '@/lib/symbols'
+import { contractsLabel, formatOptionPrice, isOption, optionLabel, optionShortLabel } from '@/lib/options'
 
 /** The Advanced (group order) ticket and its review sheet load when Advanced is first chosen. */
 const AdvancedTicket = lazy(() => import('./advanced/AdvancedTicket').then((m) => ({ default: m.AdvancedTicket })))
@@ -68,12 +72,13 @@ const AdvancedTicket = lazy(() => import('./advanced/AdvancedTicket').then((m) =
 /** The price inputs the Bid · Mid · Ask · Last chips can fill. */
 type PriceField = 'limitPrice' | 'stopPrice'
 
-function step(value: string, dir: 1 | -1, reference: Dec | null | undefined): string {
+/** One tick up or down (an option's tick is a cent, §30). */
+function step(value: string, dir: 1 | -1, reference: Dec | null | undefined, option = false): string {
   const current = parseUserDecimal(value) ?? reference ?? null
   if (!current || !isDecimal(current)) return value
-  const tick = tickFor(current)
+  const tick = option ? '0.01' : tickFor(current)
   const next = dir === 1 ? add(current, tick) : sub(current, tick)
-  return roundToTick(next.startsWith('-') ? tick : next)
+  return roundPrice(next.startsWith('-') || sign(next) === 0 ? tick : next, option)
 }
 
 /** Maps a server/preview error to the input it belongs to, given the quantity mode the ticket shows. */
@@ -92,7 +97,9 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const clock = useClock()
   const quote = useQuote(symbol, 'quote')
   const matrix = rules.data?.orders?.matrix ?? null
-  const orderTypes = useMemo(() => availableOrderTypes(matrix), [matrix])
+  // an option contract (§30): Market or Limit, whole contracts, Day, regular hours; BUY opens, SELL closes
+  const option = isOption(symbol) || asset.data?.type === 'OPTION'
+  const orderTypes = useMemo(() => availableOrderTypes(matrix, option), [matrix, option])
   const [state, dispatch] = useReducer(ticketReducer, undefined, () => {
     const s = initialTicket({ side: initialSide, preferences: me.data?.preferences })
     return BASE_ORDER_TYPES.includes(s.type) ? s : ticketReducer(s, { type: 'orderType', orderType: 'LIMIT' })
@@ -104,7 +111,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const [banner, setBanner] = useState<DescribedError | null>(null)
   const place = usePlaceOrder()
   // Phase 2 group orders (§11.9): offered when the rulebook lists them
-  const groupRules = rules.data?.orders?.groups ?? []
+  const groupRules = option ? [] : (rules.data?.orders?.groups ?? [])
   const [ticketMode, setTicketMode] = useState<'SIMPLE' | 'ADVANCED'>('SIMPLE')
   const advanced = ticketMode === 'ADVANCED' && groupRules.length > 0
 
@@ -113,21 +120,31 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const position = positions.data?.find((p) => p.symbol === symbol)
   // a crypto pair trades 24/7 with fractional quantities on every order type and no extended-hours flag
   const cryptoPair = isCrypto(symbol) || asset.data?.type === 'CRYPTO'
-  const unit = qtyUnit(symbol, cryptoPair)
+  const unit = qtyUnit(symbol, cryptoPair, option)
   const ctx = useMemo(
-    () => ({ fractionable: asset.data?.fractionable ?? cryptoPair, availableQty: position?.availableQty ?? null, crypto: cryptoPair }),
-    [asset.data?.fractionable, position?.availableQty, cryptoPair],
+    () => ({ fractionable: option ? false : (asset.data?.fractionable ?? cryptoPair), availableQty: position?.availableQty ?? null, crypto: cryptoPair, option }),
+    [asset.data?.fractionable, position?.availableQty, cryptoPair, option],
   )
   const sellable = canSell(ctx)
   const tradable = asset.data ? asset.data.tradable : true
   const amountMode = state.qtyMode === 'AMOUNT'
+  // the admin switch (`options.enabled`): off refuses buys to open, holders can still sell to close
+  const optionsOff = option && rules.data?.options?.enabled === false
+  const title = option ? optionLabel(symbol) : symbol
+  // an option's prices are per share, in cents
+  const px = option ? formatOptionPrice : formatPrice
+
+  // options never take a dollar amount
+  useEffect(() => {
+    if (option && state.qtyMode === 'AMOUNT') dispatch({ type: 'qtyMode', mode: 'SHARES' })
+  }, [option, state.qtyMode])
 
   // A type the rulebook no longer lists (or a stale default) falls back to Limit.
   useEffect(() => {
     if (!orderTypes.includes(state.type)) dispatch({ type: 'orderType', orderType: orderTypes.includes('LIMIT') ? 'LIMIT' : orderTypes[0]! })
   }, [orderTypes, state.type])
   const matrixRow = matrix?.find((r) => r.type === state.type) ?? null
-  const gtcOk = gtcAllowed(state, matrixRow)
+  const gtcOk = !option && gtcAllowed(state, matrixRow)
   useEffect(() => {
     if (state.tif === 'GTC' && !gtcOk) dispatch({ type: 'tif', tif: 'DAY' })
   }, [state.tif, gtcOk])
@@ -149,12 +166,12 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
     defaulted.current = key
     const stop = defaultStopPrice(state.side, q.last)
     // a stop limit starts with its limit at the stop (it fills at the stop or better once triggered)
-    const limit = state.type === 'STOP_LIMIT' ? stop : defaultLimitPrice(state.side, q)
+    const limit = state.type === 'STOP_LIMIT' ? stop : defaultLimitPrice(state.side, q, option)
     if (showsLimit(state.type) && limit) dispatch({ type: 'field', field: 'limitPrice', value: limit })
     if (showsStop(state.type) && stop) dispatch({ type: 'field', field: 'stopPrice', value: stop })
     if (showsTrail(state.type) && !state.trail) dispatch({ type: 'field', field: 'trail', value: defaultTrail(state.trailMode, q.last) })
     setPriceField(showsStop(state.type) ? 'stopPrice' : 'limitPrice')
-  }, [symbol, state.type, state.side, state.trail, state.trailMode, hasQuote])
+  }, [symbol, state.type, state.side, state.trail, state.trailMode, hasQuote, option])
 
   const request = useMemo(() => buildOrderRequest(state, symbol, ctx), [state, symbol, ctx])
   const debounced = useDebounced(request, 250)
@@ -176,7 +193,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const placed = new Set(['qty', 'notional', 'limitPrice', 'stopPrice', 'trailAmount', 'trailPercent'])
   const session = clock.data?.session
   const stopSessionNote =
-    !cryptoPair && session && session !== 'REGULAR' && isStopType(state.type)
+    !cryptoPair && !option && session && session !== 'REGULAR' && isStopType(state.type)
       ? state.type === 'TRAILING_STOP'
         ? 'Trailing stops can only be placed during regular hours, 9:30–16:00 ET.'
         : 'Stops only trigger during regular hours (9:30–16:00 ET); this one arms at the next open.'
@@ -213,11 +230,12 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
       setReviewing(false)
       const o = res.order
       if (o) {
-        const size = o.notional ? formatMoney(o.notional) : formatQty(o.qty)
+        const size = option ? contractsLabel(o.qty) : o.notional ? formatMoney(o.notional) : formatQty(o.qty)
         const price = orderPriceLabel(o)
+        const verb = option ? (o.side === 'BUY' ? 'Buy to open' : 'Sell to close') : o.side === 'BUY' ? 'Buy' : 'Sell'
         toast({
           tone: o.side === 'BUY' ? 'up' : 'down',
-          title: `${o.side === 'BUY' ? 'Buy' : 'Sell'} ${size} ${o.symbol} ${o.type ? ORDER_TYPE_LABEL[o.type] : ''}${price ? ` ${price}` : ''} · ${res.replayed ? 'Already placed' : 'Pending'}`,
+          title: `${verb} ${size} ${option ? optionShortLabel(o.symbol) : o.symbol} ${o.type ? ORDER_TYPE_LABEL[o.type] : ''}${price ? ` ${price}` : ''} · ${res.replayed ? 'Already placed' : 'Pending'}`,
           body:
             !cryptoPair && o.waitReason === 'QUEUED_FOR_OPEN'
               ? isStopType(o.type)
@@ -261,7 +279,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
 
   const setPriceFromChip = (value: Dec | null | undefined) => {
     if (!value || !chipTarget) return
-    dispatch({ type: 'field', field: chipTarget, value: roundToTick(value) })
+    dispatch({ type: 'field', field: chipTarget, value: roundPrice(value, option) })
   }
   const quick = (fraction: '0.25' | '0.5' | '1') => {
     const v = quickQuantity(fraction, {
@@ -273,12 +291,13 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
       availableQty: position?.availableQty ?? null,
       fractionable: ctx.fractionable,
       crypto: cryptoPair,
+      option,
     })
     if (v !== null && sign(v) > 0) dispatch({ type: 'field', field: amountMode ? 'amount' : 'qty', value: v })
   }
 
   const showPriceChips = chipTarget !== null
-  const sideLabel = state.side === 'BUY' ? 'Buy' : 'Sell'
+  const sideLabel = option ? (state.side === 'BUY' ? 'Buy to open' : 'Sell to close') : state.side === 'BUY' ? 'Buy' : 'Sell'
   const est = previewData?.estimate
   const trailStart = showsTrail(state.type) ? trailingStopStart(state.side, quote?.last, state.trail, state.trailMode) : null
   const explanation = ticketExplanation(state, symbol)
@@ -286,8 +305,8 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
   const untradableNote = tradable
     ? null
     : quote?.halted
-      ? `${symbol} is on hold while a corporate action (such as a split) is reviewed. Orders open again once it is resolved.`
-      : `${symbol} cannot be traded right now (inactive, or not tradable on this platform).`
+      ? `${title} is on hold while a corporate action (such as a split) is reviewed. Orders open again once it is resolved.`
+      : `${title} cannot be traded right now (inactive, or not tradable on this platform).`
   const modeSwitch = groupRules.length ? (
     <Segmented
       label="Ticket mode"
@@ -305,17 +324,20 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
     <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-section font-semibold">{symbol}</span>
+          <span className="text-section font-semibold" title={option ? symbol : undefined}>
+            {title}
+          </span>
           <QualityBadge quality={quote?.quality} />
         </div>
+        {option ? <div className="text-micro text-text-3">1 contract = 100 shares · prices per share</div> : null}
         <div className="text-caption text-text-3">
-          Bid <span className="font-medium text-text-1">{formatPrice(quote?.bid)}</span> × {formatInteger(quote?.bidSize)}
+          Bid <span className="font-medium text-text-1">{px(quote?.bid)}</span> × {formatInteger(quote?.bidSize)}
           <span className="mx-1.5 text-text-3">·</span>
-          Ask <span className="font-medium text-text-1">{formatPrice(quote?.ask)}</span> × {formatInteger(quote?.askSize)}
+          Ask <span className="font-medium text-text-1">{px(quote?.ask)}</span> × {formatInteger(quote?.askSize)}
         </div>
       </div>
-      <span className="text-[20px] leading-7 font-semibold" aria-label={`Last ${formatPrice(quote?.last)}`}>
-        {formatPrice(quote?.last)}
+      <span className="text-[20px] leading-7 font-semibold" aria-label={`Last ${px(quote?.last)}`}>
+        {px(quote?.last)}
       </span>
     </div>
   )
@@ -357,10 +379,22 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
           value={state.side}
           onChange={(side) => dispatch({ type: 'side', side })}
           options={[
-            { value: 'BUY', label: 'Buy', tone: 'up' },
-            { value: 'SELL', label: 'Sell', tone: 'down', disabled: !sellable, title: sellable ? undefined : 'No position to sell (short selling is not allowed)' },
+            { value: 'BUY', label: option ? 'Buy to open' : 'Buy', tone: 'up' },
+            {
+              value: 'SELL',
+              label: option ? 'Sell to close' : 'Sell',
+              tone: 'down',
+              disabled: !sellable,
+              title: sellable ? undefined : option ? 'No contracts to sell (writing options is not allowed)' : 'No position to sell (short selling is not allowed)',
+            },
           ]}
         />
+        {optionsOff && state.side === 'BUY' ? (
+          <p role="status" className="flex gap-1.5 rounded-sm bg-warn/10 p-2 text-caption text-warn">
+            <IconInfo size={16} className="mt-0.5 shrink-0" />
+            Options trading is off: buys to open are refused. Holders can still sell to close.
+          </p>
+        ) : null}
 
         <div className="flex items-center justify-between gap-3">
           <label htmlFor={`${symbol}-order-type`} className="text-caption font-medium text-text-2">
@@ -400,7 +434,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             label="Limit price"
             value={state.limitPrice}
             onChange={(v) => dispatch({ type: 'field', field: 'limitPrice', value: v })}
-            onStep={(d) => dispatch({ type: 'field', field: 'limitPrice', value: step(state.limitPrice, d, quote?.last) })}
+            onStep={(d) => dispatch({ type: 'field', field: 'limitPrice', value: step(state.limitPrice, d, quote?.last, option) })}
             onFocus={() => setPriceField('limitPrice')}
             active={chipTarget === 'limitPrice' && showsStop(state.type)}
             error={fieldErrors.limitPrice}
@@ -452,7 +486,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             {(
               [
                 ['Bid', quote?.bid],
-                ['Mid', quote?.bid && quote?.ask ? midPrice(quote.bid, quote.ask) : null],
+                ['Mid', quote?.bid && quote?.ask ? midPrice(quote.bid, quote.ask, option) : null],
                 ['Ask', quote?.ask],
                 ['Last', quote?.last],
               ] as const
@@ -462,30 +496,32 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
                 type="button"
                 disabled={!value}
                 onClick={() => setPriceFromChip(value)}
-                aria-label={`Use the ${label.toLowerCase()} price ${formatPrice(value)}${chipTarget === 'stopPrice' ? ' as the stop' : ''}`}
+                aria-label={`Use the ${label.toLowerCase()} price ${px(value)}${chipTarget === 'stopPrice' ? ' as the stop' : ''}`}
                 className="flex h-11 flex-col items-center justify-center rounded-sm bg-bg-2 text-micro font-semibold text-text-2 hover:bg-bg-3 hover:text-text-1 disabled:opacity-40 tablet:h-10"
               >
                 <span>{label}</span>
-                <span className="text-text-1">{formatPrice(value)}</span>
+                <span className="text-text-1">{px(value)}</span>
               </button>
             ))}
           </div>
         ) : null}
 
         <div>
-          <div className="mb-1 flex items-center justify-between">
-            <span className="text-caption font-medium text-text-2">{sideLabel} in</span>
-            <Segmented
-              label="Quantity mode"
-              size="sm"
-              value={state.qtyMode}
-              onChange={(mode) => dispatch({ type: 'qtyMode', mode })}
-              options={[
-                { value: 'SHARES', label: cryptoPair ? unit : 'Shares' },
-                { value: 'AMOUNT', label: 'Amount ($)', disabled: !ctx.fractionable && asset.isSuccess, title: ctx.fractionable ? undefined : 'Dollar orders need a fractionable symbol' },
-              ]}
-            />
-          </div>
+          {option ? null : (
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-caption font-medium text-text-2">{sideLabel} in</span>
+              <Segmented
+                label="Quantity mode"
+                size="sm"
+                value={state.qtyMode}
+                onChange={(mode) => dispatch({ type: 'qtyMode', mode })}
+                options={[
+                  { value: 'SHARES', label: cryptoPair ? unit : 'Shares' },
+                  { value: 'AMOUNT', label: 'Amount ($)', disabled: !ctx.fractionable && asset.isSuccess, title: ctx.fractionable ? undefined : 'Dollar orders need a fractionable symbol' },
+                ]}
+              />
+            </div>
+          )}
           {amountMode ? (
             <Stepper
               label="Amount"
@@ -497,7 +533,8 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             />
           ) : (
             <Stepper
-              label={cryptoPair ? `Quantity (${unit})` : 'Shares'}
+              label={option ? 'Contracts' : cryptoPair ? `Quantity (${unit})` : 'Shares'}
+              inputMode={option ? 'numeric' : undefined}
               value={state.qty}
               onChange={(v) => dispatch({ type: 'field', field: 'qty', value: v })}
               onStep={(d) => {
@@ -550,13 +587,24 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
                 value: 'GTC',
                 label: 'GTC',
                 disabled: !gtcOk,
-                title: gtcOk ? 'Good till cancelled (60 days)' : state.type === 'TRAILING_STOP' ? 'Trailing stops are Day only' : 'Market and dollar orders are Day only',
+                title: gtcOk
+                  ? 'Good till cancelled (60 days)'
+                  : option
+                    ? 'Option orders are Day only'
+                    : state.type === 'TRAILING_STOP'
+                      ? 'Trailing stops are Day only'
+                      : 'Market and dollar orders are Day only',
               },
             ]}
           />
         </div>
 
-        {cryptoPair ? (
+        {option ? (
+          <p className="text-caption text-text-3">
+            Options trade in the regular session only (9:30–16:00 ET). At expiration an in-the-money contract is cash-settled at its
+            intrinsic value; an out-of-the-money one expires worthless. No exercise, no writing.
+          </p>
+        ) : cryptoPair ? (
           <p className="text-caption text-text-3">Crypto trades 24/7: every order type works at any hour, weekends included.</p>
         ) : (
           <Switch
@@ -567,13 +615,13 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
             description={<span className="text-micro">Limit orders only · 4:00–9:30 & 16:00–20:00 ET</span>}
           />
         )}
-        {state.extendedHours && !cryptoPair ? (
+        {state.extendedHours && !cryptoPair && !option ? (
           <p className="flex gap-1.5 rounded-sm bg-warn/10 p-2 text-caption text-warn">
             <IconInfo size={16} className="mt-0.5 shrink-0" />
             No live IEX quotes 4:00–8:00 and 17:00–20:00 ET; orders then use the last known prices.
           </p>
         ) : null}
-        {dividendAdjustable(state) && !cryptoPair ? (
+        {dividendAdjustable(state) && !cryptoPair && !option ? (
           <Checkbox checked={state.doNotReduce} onChange={(value) => dispatch({ type: 'doNotReduce', value })} className="text-caption text-text-2">
             Don't reduce on dividends (keep my prices on ex-dividend dates)
           </Checkbox>
@@ -581,7 +629,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
 
         <div className="rounded-md bg-bg-2/60 px-3 py-2" aria-live="polite">
           {request ? (
-            <EstimatesPanel preview={previewData} loading={preview.isPending} notional={amountMode} stop={isStopType(state.type)} highlighted={highlighted} />
+            <EstimatesPanel preview={previewData} loading={preview.isPending} notional={amountMode} stop={isStopType(state.type)} highlighted={highlighted} option={option} side={state.side} />
           ) : (
             <p className="py-1 text-caption text-text-3">Enter {amountMode ? 'an amount' : 'a quantity'} to see the estimate.</p>
           )}
@@ -657,7 +705,7 @@ export function TradeTicket({ symbol, initialSide = 'BUY', onDone, className }: 
           </p>
         ) : null}
         <Button variant={state.side === 'BUY' ? 'buy' : 'sell'} size="lg" block disabled={!canSubmit} onClick={onSubmitClick}>
-          {place.isPending ? 'Sending…' : `${sideLabel} ${symbol}`}
+          {place.isPending ? 'Sending…' : `${sideLabel} ${option ? optionShortLabel(symbol) : symbol}`}
         </Button>
       </div>
 

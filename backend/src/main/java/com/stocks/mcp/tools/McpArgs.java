@@ -42,7 +42,8 @@ final class McpArgs {
     }
     String s = Crypto.fromPath(raw.strip().toUpperCase(Locale.ROOT));
     if (!SYMBOL.matcher(s).matches()) {
-      throw ApiException.validation(field, "'" + clip(raw.strip()) + "' is not a ticker symbol or crypto pair.");
+      throw ApiException.validation(field, "'" + clip(raw.strip()) + "' is not a ticker symbol, crypto pair or OCC "
+          + "option symbol.");
     }
     return s;
   }

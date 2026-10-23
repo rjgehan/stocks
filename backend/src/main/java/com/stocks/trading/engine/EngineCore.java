@@ -27,6 +27,7 @@ import com.stocks.trading.engine.EngineCommand.HaltEngineCmd;
 import com.stocks.trading.engine.EngineCommand.LiftRestrictionCmd;
 import com.stocks.trading.engine.EngineCommand.OpenAccountCmd;
 import com.stocks.trading.engine.EngineCommand.PayDividendsCmd;
+import com.stocks.trading.engine.EngineCommand.SettleOptionExpiryCmd;
 import com.stocks.trading.engine.EngineCommand.PlaceOrderCmd;
 import com.stocks.trading.engine.EngineCommand.PlaceOrderGroupCmd;
 import com.stocks.trading.engine.EngineCommand.RecordAdminViewCmd;
@@ -86,6 +87,7 @@ public class EngineCore {
   private final JdbcClient jdbc;
   private final CorporateActionApplier corporateActions;
   private final GroupOrderEntry groups;
+  private final OptionExpiryHandler expiries;
   private final PrintBuffer prints = new PrintBuffer();
   private final Set<String> dirty = ConcurrentHashMap.newKeySet();
 
@@ -101,7 +103,7 @@ public class EngineCore {
                     Evaluator evaluator, AccountCommands accountCommands, TransferCommands transferCommands,
                     InvariantChecker invariants, OrderStore orderStore, AccountStore accountStore, TradingClock clock,
                     MarketDataService marketData, OpenOrderIndex index, JdbcClient jdbc,
-                    CorporateActionApplier corporateActions, GroupOrderEntry groups) {
+                    CorporateActionApplier corporateActions, GroupOrderEntry groups, OptionExpiryHandler expiries) {
     this.tx = new TransactionTemplate(txManager);
     this.publisher = publisher;
     this.orders = orders;
@@ -117,6 +119,7 @@ public class EngineCore {
     this.jdbc = jdbc;
     this.corporateActions = corporateActions;
     this.groups = groups;
+    this.expiries = expiries;
   }
 
   // ------------------------------------------------------------------------------------------- bootstrap
@@ -237,6 +240,7 @@ public class EngineCore {
       case ResolveCorporateActionCmd c -> corporateActions.resolve(c.actionId(), c.resolution(), c.oldRate(),
           c.newRate(), c.note(), c.actorPlayerId(), now, t);
       case PayDividendsCmd c -> corporateActions.payDividends(c.date(), now, t);
+      case SettleOptionExpiryCmd c -> expiries.settle(c, now, t);
       case CheckInvariantsCmd c -> checkInvariants();
       case HaltEngineCmd c -> {
         halt(c.reason());

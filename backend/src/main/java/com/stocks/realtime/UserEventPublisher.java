@@ -3,6 +3,7 @@ package com.stocks.realtime;
 import com.stocks.common.domain.AccountRestriction;
 import com.stocks.common.domain.CancelReason;
 import com.stocks.common.domain.NotificationKind;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.OrderEventType;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.PlayerStatus;
@@ -262,6 +263,17 @@ public class UserEventPublisher implements DisposableBean {
     switch (e.eventType()) {
       case FILL -> {
         kind = NotificationKind.FILL;
+        if (o.clientOrderId() != null && o.clientOrderId().startsWith("expiry:")) {
+          // §30: the SYSTEM order that settled an expired option
+          BigDecimal px = o.avgFillPrice() == null ? BigDecimal.ZERO : o.avgFillPrice();
+          String contract = OptionSymbol.parse(o.symbol()).map(OptionSymbol.Contract::label).orElse(o.symbol());
+          title = "Option expired: " + contract;
+          body = px.signum() > 0
+              ? qty(o.filledQty()) + " contract(s) expired in the money and were cash-settled at " + price(px)
+                  + " per share (" + money(o.filledPrincipal()) + ")."
+              : qty(o.filledQty()) + " contract(s) expired worthless.";
+          break;
+        }
         title = (o.side() == Side.BUY ? "Bought " : "Sold ") + qty(o.filledQty()) + " " + o.symbol();
         body = "Your " + what + " filled" + (o.avgFillPrice() == null ? "." : " at an average price of "
             + price(o.avgFillPrice()) + ".");
@@ -405,6 +417,7 @@ public class UserEventPublisher implements DisposableBean {
         case DUST -> "the quantity rounded below the minimum (0.00001 shares)";
         case OCO_FILLED -> "the other order of its one-cancels-other pair executed";
         case PARENT_NOT_FILLED -> "its entry order ended without a fill";
+        case OPTION_EXPIRED -> "the option contract expired";
         case USER, REPLACED_BY_USER -> "you cancelled it";
       };
     } catch (IllegalArgumentException e) {

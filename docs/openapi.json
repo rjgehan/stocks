@@ -29,6 +29,10 @@
       "name": "account"
     },
     {
+      "description": "Option chains of US stocks and ETFs (§30)",
+      "name": "options"
+    },
+    {
       "description": "Leaderboard, players and the league feed",
       "name": "league"
     },
@@ -2439,7 +2443,7 @@
         ]
       },
       "put": {
-        "description": "Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live); crypto.enabled turns 24/7 crypto trading and weekend P&L days on or off (off: crypto buys are refused, sells still work). Errors: SETTING_INVALID.",
+        "description": "Recent password check. Partial: only the keys present change. league.defaultStartingCash is a decimal string >= 1.00 (applies to new players and resets, never to existing accounts); social.tradeFeedDelay an ISO-8601 duration (PT0S..P7D; default PT0S. In public mode it holds back only the feed, the trade list and journal notes; portfolios, orders, activity and P&L are always live); crypto.enabled turns 24/7 crypto trading and weekend P&L days on or off (off: crypto buys are refused, sells still work); options.enabled turns buying long calls and puts on or off (off: option buys are refused, sells to close still work). Errors: SETTING_INVALID.",
         "operationId": "put",
         "requestBody": {
           "content": {
@@ -4215,7 +4219,8 @@
                   "ADR",
                   "OTHER",
                   "UNKNOWN",
-                  "CRYPTO"
+                  "CRYPTO",
+                  "OPTION"
                 ]
               }
             }
@@ -5589,6 +5594,99 @@
         "summary": "Recent news, newest first",
         "tags": [
           "news"
+        ]
+      }
+    },
+    "/api/v1/options/{underlying}/chain": {
+      "get": {
+        "description": "Prices are per share; one contract is 100 shares. Trade a contract by its OCC symbol (e.g. AAPL261120C00250000) with POST /orders: BUY to open, SELL to close, whole contracts, MARKET or LIMIT, DAY, 09:30-16:00 ET. Errors: SYMBOL_NOT_FOUND, VALIDATION_FAILED, PROVIDER_UNAVAILABLE.",
+        "operationId": "optionChain",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "underlying",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expiration date, YYYY-MM-DD (one of /expirations)",
+            "in": "query",
+            "name": "expiration",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptionChain"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "One expiration's option chain: calls and puts by strike, with quotes",
+        "tags": [
+          "options"
+        ]
+      }
+    },
+    "/api/v1/options/{underlying}/expirations": {
+      "get": {
+        "description": "feed: indicative (Alpaca's free derived quotes, not OPRA), opra or simulated. enabled: buying options is allowed. Errors: SYMBOL_NOT_FOUND, PROVIDER_UNAVAILABLE.",
+        "operationId": "optionExpirations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "underlying",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptionExpirations"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Listed option expirations of a stock or ETF, nearest first",
+        "tags": [
+          "options"
         ]
       }
     },
@@ -7588,6 +7686,7 @@
               "SIMULATED",
               "STALE",
               "NONE",
+              "INDICATIVE",
               null
             ]
           },
@@ -9650,6 +9749,7 @@
               "OTHER",
               "UNKNOWN",
               "CRYPTO",
+              "OPTION",
               null
             ]
           },
@@ -9724,6 +9824,7 @@
               "OTHER",
               "UNKNOWN",
               "CRYPTO",
+              "OPTION",
               null
             ]
           }
@@ -10758,6 +10859,7 @@
               "SIMULATED",
               "STALE",
               "NONE",
+              "INDICATIVE",
               null
             ]
           },
@@ -11541,6 +11643,7 @@
               "SIMULATED",
               "STALE",
               "NONE",
+              "INDICATIVE",
               null
             ]
           }
@@ -11592,6 +11695,7 @@
               "RESTING",
               "PRINT",
               "OPEN",
+              "EXPIRY",
               null
             ]
           },
@@ -11837,6 +11941,12 @@
             ],
             "format": "decimal"
           },
+          "expired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "period": {
             "type": [
               "string",
@@ -11888,6 +11998,7 @@
         },
         "required": [
           "amount",
+          "expired",
           "period",
           "price",
           "qty",
@@ -14218,6 +14329,276 @@
           "redirectUrl"
         ]
       },
+      "OptionChain": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "calls": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/OptionContract"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expiration": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "feed": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "multiplier": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "puts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/OptionContract"
+            }
+          },
+          "underlying": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "underlyingPrice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          }
+        },
+        "required": [
+          "asOf",
+          "calls",
+          "enabled",
+          "expiration",
+          "feed",
+          "multiplier",
+          "puts",
+          "underlying",
+          "underlyingPrice"
+        ]
+      },
+      "OptionContract": {
+        "type": "object",
+        "properties": {
+          "ask": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "askSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "bid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "bidSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "delta": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "expiration": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "impliedVolatility": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "last": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "mid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "openInterest": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "quality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "REALTIME_CONSOLIDATED",
+              "REALTIME_SINGLE_VENUE",
+              "DELAYED_15M",
+              "SYNTHETIC",
+              "SIMULATED",
+              "STALE",
+              "NONE",
+              "INDICATIVE",
+              null
+            ]
+          },
+          "quoteAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "right": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CALL",
+              "PUT",
+              null
+            ]
+          },
+          "strike": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "underlying": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "volume": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "required": [
+          "ask",
+          "askSize",
+          "bid",
+          "bidSize",
+          "delta",
+          "expiration",
+          "impliedVolatility",
+          "last",
+          "mid",
+          "openInterest",
+          "quality",
+          "quoteAt",
+          "right",
+          "strike",
+          "symbol",
+          "underlying",
+          "volume"
+        ]
+      },
+      "OptionExpirations": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "expirations": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          "feed": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "multiplier": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "underlying": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "expirations",
+          "feed",
+          "multiplier",
+          "underlying"
+        ]
+      },
       "Order": {
         "type": "object",
         "properties": {
@@ -16442,6 +16823,7 @@
               "SIMULATED",
               "STALE",
               "NONE",
+              "INDICATIVE",
               null
             ]
           },
@@ -17399,6 +17781,7 @@
               "SIMULATED",
               "STALE",
               "NONE",
+              "INDICATIVE",
               null
             ]
           },
@@ -17954,6 +18337,7 @@
               "SIMULATED",
               "STALE",
               "NONE",
+              "INDICATIVE",
               null
             ]
           },
@@ -18415,6 +18799,7 @@
               "SIMULATED",
               "STALE",
               "NONE",
+              "INDICATIVE",
               null
             ]
           },
@@ -18859,6 +19244,16 @@
               }
             ]
           },
+          "options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "orders": {
             "anyOf": [
               {
@@ -18912,6 +19307,7 @@
           "fairness",
           "fees",
           "leaderboard",
+          "options",
           "orders",
           "rateLimits",
           "sessions",
@@ -19323,6 +19719,103 @@
           "resetPolicy",
           "returnDefinition",
           "ties"
+        ]
+      },
+      "RulesOptions": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "execution": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiration": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "feed": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fees": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hours": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "multiplier": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "orders": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quantities": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quotesIndicative": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "settlement": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "symbols": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valuation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "execution",
+          "expiration",
+          "feed",
+          "fees",
+          "hours",
+          "multiplier",
+          "orders",
+          "quantities",
+          "quotesIndicative",
+          "scope",
+          "settlement",
+          "symbols",
+          "valuation"
         ]
       },
       "RulesOrders": {
@@ -20057,6 +20550,7 @@
               "SIMULATED",
               "STALE",
               "NONE",
+              "INDICATIVE",
               null
             ]
           },
@@ -20105,6 +20599,7 @@
               "OTHER",
               "UNKNOWN",
               "CRYPTO",
+              "OPTION",
               null
             ]
           },
@@ -20212,6 +20707,9 @@
             ],
             "format": "date"
           },
+          "options.enabled": {
+            "type": "boolean"
+          },
           "social.showDepositsInFeed": {
             "type": "boolean"
           },
@@ -20231,6 +20729,7 @@
           "league.eligibility.minSymbols",
           "league.humanKindExcludesApiTraders",
           "league.seasonStart",
+          "options.enabled",
           "social.showDepositsInFeed",
           "social.tradeFeedDelay"
         ]
@@ -20457,6 +20956,7 @@
               "SIMULATED",
               "STALE",
               "NONE",
+              "INDICATIVE",
               null
             ]
           },
@@ -21265,6 +21765,7 @@
               "SIMULATED",
               "STALE",
               "NONE",
+              "INDICATIVE",
               null
             ]
           },
@@ -21376,6 +21877,7 @@
               "SIMULATED",
               "STALE",
               "NONE",
+              "INDICATIVE",
               null
             ]
           },
@@ -21975,6 +22477,12 @@
               "null"
             ],
             "format": "date"
+          },
+          "options.enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "social.showDepositsInFeed": {
             "type": [

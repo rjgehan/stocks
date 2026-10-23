@@ -30,8 +30,8 @@ import java.util.function.Function;
  *   <li><b>POST</b>, and CLOSED until the next pre-open: main price = T's regular close; extended line = the latest
  *       after-hours print vs that close.</li>
  * </ul>
- * Labels: {@code SIMULATED} for SIM; {@code REALTIME_SINGLE_VENUE} (IEX) or {@code REALTIME_CONSOLIDATED} (SIP) while
- * confirmed; {@code SYNTHETIC} when only a fresh consolidated last exists ("Est."); {@code STALE} when past the §12.3
+ * Labels: {@code SIMULATED} for SIM; {@code REALTIME_SINGLE_VENUE} (IEX), {@code REALTIME_CONSOLIDATED} (SIP) or
+ * {@code INDICATIVE} (an option on Alpaca's free indicative feed, §30) while confirmed; {@code SYNTHETIC} when only a fresh consolidated last exists ("Est."); {@code STALE} when past the §12.3
  * freshness thresholds during venue hours; {@code NONE} when nothing is known. {@code changePct} is a fraction at
  * scale 10 ({@code 0.0123} = +1.23%).
  */
@@ -131,7 +131,7 @@ public final class QuoteComposer {
     }
     Quote q = in.quote();
     if (q != null && confirmed) {
-      return in.consolidatedQuote() ? DataQuality.REALTIME_CONSOLIDATED : DataQuality.REALTIME_SINGLE_VENUE;
+      return live(in, q);
     }
     Trade t = in.lastTrade();
     if (t != null && t.consolidated() && t.observedAt() != null
@@ -143,6 +143,15 @@ public final class QuoteComposer {
     }
     if (inVenueHours) {
       return DataQuality.STALE;
+    }
+    return q != null ? live(in, q) : in.consolidatedQuote() ? DataQuality.REALTIME_CONSOLIDATED
+        : DataQuality.REALTIME_SINGLE_VENUE;
+  }
+
+  /** The live label: an indicative option quote (§30) says so; otherwise SIP/consolidated or IEX. */
+  private static DataQuality live(Inputs in, Quote q) {
+    if (q.quality() == DataQuality.INDICATIVE) {
+      return DataQuality.INDICATIVE;
     }
     return in.consolidatedQuote() ? DataQuality.REALTIME_CONSOLIDATED : DataQuality.REALTIME_SINGLE_VENUE;
   }

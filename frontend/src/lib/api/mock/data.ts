@@ -102,7 +102,9 @@ export const MOCK_INVITE_CODE = 'welcome-friends'
  * show. `holdings` split the money they have invested (the first is their `top`); the server prices them from the
  * fake market at seed time. `closed` is a position they bought and sold again (a realized gain or loss), `working`
  * a resting limit buy below the market, `cancelled` an order they pulled. One bot also has a bracket whose entry has
- * not filled yet, so its take profit and stop loss are held. Bots explain every order; humans only some.
+ * not filled yet, so its take profit and stop loss are held, and one member holds a long option (§30): `option` names
+ * its underlying, right, moneyness (the strike vs the previous close), which listed expiration and how many contracts.
+ * Bots explain every order; humans only some.
  */
 export interface MockPlayerBook {
   holdings: Array<{ symbol: string; share: number }>
@@ -110,6 +112,7 @@ export interface MockPlayerBook {
   working: string
   cancelled: string
   bracket?: string
+  option?: { underlying: string; right: 'CALL' | 'PUT'; moneyness: number; expiry: number; contracts: string; note: string | null }
   notes: { buy: string | null; closed: string | null; working: string | null }
 }
 
@@ -138,6 +141,7 @@ export const MOCK_BOOKS: Record<string, MockPlayerBook> = {
     closed: { symbol: 'DIS', pnl: '-1.40' },
     working: 'KO',
     cancelled: 'NFLX',
+    option: { underlying: 'F', right: 'CALL', moneyness: 0.1, expiry: 5, contracts: '1', note: 'Cheap upside on Ford into the new year.' },
     notes: { buy: 'Core holding, buying the dip.', closed: null, working: null },
   },
   chatgpt: {

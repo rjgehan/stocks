@@ -3,6 +3,7 @@ package com.stocks.trading.order;
 import com.stocks.common.domain.AccountRestriction;
 import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.DataQuality;
+import com.stocks.common.domain.OptionSymbol;
 import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.PlayerKind;
 import com.stocks.common.domain.Side;
@@ -160,7 +161,15 @@ public class OrderValidator {
           .withField(o.qty() == null ? "qty" : "notional", ErrorCode.QTY_OR_NOTIONAL_REQUIRED, "Exactly one");
     }
 
-    // 10: quantity (a crypto pair allows more units: $500,000 of DOGE is about 2,000,000 coins, §29)
+    // 10: quantity (a crypto pair allows more units: $500,000 of DOGE is about 2,000,000 coins, §29; an option takes
+    // whole contracts, §30)
+    boolean option = OptionSymbol.isOption(o.symbol());
+    if (option && o.qty() != null && (o.qty().signum() <= 0 || o.qty().compareTo(OptionSymbol.MAX_ORDER_CONTRACTS) > 0
+        || !Money.hasAtMostDecimals(o.qty(), 0))) {
+      throw ApiException.of(ErrorCode.INVALID_QTY, "Options trade in whole contracts: qty must be 1 to "
+              + OptionSymbol.MAX_ORDER_CONTRACTS.toPlainString() + " (one contract = 100 shares).")
+          .withField("qty", ErrorCode.INVALID_QTY, "Whole contracts, 1–" + OptionSymbol.MAX_ORDER_CONTRACTS);
+    }
     BigDecimal maxQty = Crypto.isCrypto(o.symbol()) ? Crypto.MAX_ORDER_QTY : rules.maxOrderQty();
     if (o.qty() != null && (o.qty().signum() <= 0 || o.qty().compareTo(maxQty) > 0
         || !Money.hasAtMostDecimals(o.qty(), Qty.SCALE))) {
@@ -249,6 +258,11 @@ public class OrderValidator {
         throw ApiException.validation("limitPrice", "limitPrice must be > 0");
       }
       limit = Prices.requireOnTick("limitPrice", o.limitPrice());
+      if (option && !Money.hasAtMostDecimals(limit, 2)) {
+        throw ApiException.of(ErrorCode.INVALID_TICK, "Option prices are quoted per share in $0.01 steps; limitPrice "
+                + o.limitPrice().toPlainString() + " has more decimals.")
+            .withField("limitPrice", ErrorCode.INVALID_TICK, "A multiple of 0.01");
+      }
     }
     BigDecimal stop = null;
     if (o.stopPrice() != null) {
@@ -390,7 +404,7 @@ public class OrderValidator {
           "No live IEX quotes 04:00–08:00 and 17:00–20:00 ET; extended-hours fills need consolidated prints."));
     }
     Long shown = q == null ? null : (buy ? q.askSize() : q.bidSize());
-    if (!fractional && !crypto && o.qty() != null && shown != null && shown > 0
+    if (!fractional && !crypto && !option && o.qty() != null && shown != null && shown > 0
         && o.qty().compareTo(BigDecimal.valueOf(shown)) > 0) {
       warnings.add(Warning.of(WarningCode.PARTIAL_FILL_LIKELY, "Quantity exceeds the displayed size of " + shown
           + "; the order may fill in parts."));
@@ -475,9 +489,16 @@ public class OrderValidator {
       hint = bp.signum() > 0 ? "Try a notional amount of \"" + bp.toPlainString() + "\" or less." : null;
     } else {
       boolean crypto = Crypto.isCrypto(o.symbol());
+      boolean option = OptionSymbol.isOption(o.symbol());
       BigDecimal max = perShare == null || perShare.signum() <= 0 ? BigDecimal.ZERO
-          : bp.max(BigDecimal.ZERO).divide(perShare, crypto ? Qty.SCALE : 0, RoundingMode.FLOOR);
-      hint = "Max " + qtyOut(max).toPlainString()
+          : bp.max(BigDecimal.ZERO).divide(OptionSymbol.unitValue(o.symbol(), perShare), crypto ? Qty.SCALE : 0,
+              RoundingMode.FLOOR);
+      hint = option ? "Max " + qtyOut(max).toPlainString() + " contracts at $" + (perShare == null ? "?"
+          : perShare.setScale(2, RoundingMode.HALF_UP).toPlainString()) + " per share ($"
+          + (perShare == null ? "?" : OptionSymbol.unitValue(o.symbol(), perShare).setScale(2, RoundingMode.HALF_UP)
+              .toPlainString()) + " per contract)." + (cushionNote == null ? "" : " That hold includes a cushion: "
+              + cushionNote + "; the unused part is released when it fills.")
+          : "Max " + qtyOut(max).toPlainString()
           + (crypto ? " " + o.symbol() + " at $" : " whole shares at $") + (perShare == null ? "?"
           : perShare.setScale(2, RoundingMode.HALF_UP).toPlainString()) + "."
           + (cushionNote == null ? "" : " That per-share hold includes a cushion: " + cushionNote
@@ -512,7 +533,7 @@ public class OrderValidator {
     BigDecimal principal = null;
     Fees f = Fees.ZERO;
     if (qty != null && price != null) {
-      principal = Rounding.principal(o.side(), qty, price);
+      principal = Rounding.principal(o.symbol(), o.side(), qty, price);   // ×100 for an option (§30)
       f = fees.estimate(o.symbol(), o.side(), qty, principal, tradeDate);
     }
     return new EstimateDto(price == null ? null : Prices.normalize(price.setScale(Prices.SCALE, RoundingMode.HALF_UP)),

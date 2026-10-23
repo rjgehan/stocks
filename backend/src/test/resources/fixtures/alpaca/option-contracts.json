@@ -1,0 +1,15 @@
+{
+  "option_contracts": [
+    {"id": "a1", "symbol": "SPY261016C00660000", "name": "SPY Oct 16 2026 660 Call", "status": "active", "tradable": true,
+     "expiration_date": "2026-10-16", "root_symbol": "SPY", "underlying_symbol": "SPY", "type": "call", "style": "american",
+     "strike_price": "660", "multiplier": "100", "size": "100", "open_interest": "18234", "open_interest_date": "2026-10-08",
+     "close_price": "3.9", "close_price_date": "2026-10-08"},
+    {"id": "a2", "symbol": "SPY261016P00660000", "name": "SPY Oct 16 2026 660 Put", "status": "active", "tradable": true,
+     "expiration_date": "2026-10-16", "root_symbol": "SPY", "underlying_symbol": "SPY", "type": "put", "style": "american",
+     "strike_price": "660", "multiplier": "100", "size": "100", "open_interest": null, "close_price": null},
+    {"id": "a3", "symbol": "SPY261120C00700000", "name": "SPY Nov 20 2026 700 Call", "status": "active", "tradable": true,
+     "expiration_date": "2026-11-20", "root_symbol": "SPY", "underlying_symbol": "SPY", "type": "call", "style": "american",
+     "strike_price": "700", "multiplier": "100", "size": "100", "open_interest": "512"}
+  ],
+  "next_page_token": null
+}

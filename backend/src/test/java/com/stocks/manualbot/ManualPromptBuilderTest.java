@@ -282,9 +282,9 @@ class ManualPromptBuilderTest {
 
     // a smaller budget keeps cutting: holdings beyond 40, open orders beyond 10, holdings beyond 20
     ManualPromptBuilder tight = new ManualPromptBuilder(new ManualBotsProperties(4000, 20_000, 163_840, 10, 15, 50,
-        50, Duration.ofHours(1), Duration.ofHours(24), 13_000, 10, 25, 40, Duration.ofSeconds(3)));
+        50, Duration.ofHours(1), Duration.ofHours(24), 13_100, 10, 25, 40, Duration.ofSeconds(3)));
     String cut = tight.build(in);
-    assertThat(cut.length()).isLessThanOrEqualTo(13_000);
+    assertThat(cut.length()).isLessThanOrEqualTo(13_100);
     assertThat(cut).contains("…and 40 more open orders (not shown)").contains("…and 40 more\n")
         .doesNotContain("| S20 |").contains("| S19 |");
   }
@@ -318,5 +318,17 @@ class ManualPromptBuilderTest {
     assertThat(ManualPromptBuilder.cryptoLine(new RulesDto.RulesCryptoDto(false, List.of(), "", "", "", "", "", "",
         ""))).contains("turned off");
     assertThat(ManualPromptBuilder.cryptoLine(null)).isEmpty();
+  }
+  /** §30: the options line follows the rulebook's options section; the reply format takes OCC symbols. */
+  @Test
+  void longOptionsAreExplainedAndTheirSymbolsParse() {
+    RulesDto.RulesOptionsDto on = new RulesDto.RulesOptionsDto(true, "indicative", true, 100, "", "", "", "", "", "",
+        "", "", "", "");
+    assertThat(ManualPromptBuilder.optionsLine(on)).contains("BUY to open or SELL to close")
+        .contains("\"AAPL261120C00250000\"").contains("1 contract = 100 shares").contains("indicative");
+    assertThat(ManualPromptBuilder.optionsLine(new RulesDto.RulesOptionsDto(false, "opra", false, 100, "", "", "", "",
+        "", "", "", "", "", ""))).contains("turned off");
+    assertThat(ManualPromptBuilder.optionsLine(null)).isEmpty();
+    assertThat(ManualReplyParser.SYMBOL.matcher("AAPL261120C00250000").matches()).isTrue();
   }
 }

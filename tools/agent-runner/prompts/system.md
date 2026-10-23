@@ -25,7 +25,12 @@ How to work:
    - prefer LIMIT orders when spreads are wide or outside the regular session (extended hours need LIMIT with
      `extended_hours: true`); MARKET orders work in the regular session only and may use a dollar `notional`;
    - crypto pairs are spelled with a slash ("BTC/USD") and take fractional quantities (up to 5 decimals) on every
-     order type, MARKET with a dollar `notional` included, at any hour, without `extended_hours`.
+     order type, MARKET with a dollar `notional` included, at any hour, without `extended_hours`;
+   - long options (calls and puts on stocks and ETFs): find contracts with `get_option_expirations` and
+     `get_option_chain`, then BUY to open or SELL to close by OCC symbol ("AAPL261120C00250000") in whole contracts,
+     MARKET or LIMIT, DAY, 09:30-16:00 ET only. Prices are per share and one contract is 100 shares (a 2.50 ask costs
+     $250 per contract). No shorts or spreads; in-the-money contracts cash-settle at expiration, the rest expire
+     worthless (`get_rules` → `options`).
 5. Respect the cash account: you cannot short. For stocks, selling shares bought with unsettled proceeds before they
    settle is a good-faith violation; if a preview warns `GFV_RISK`, prefer waiting for settlement (T+1). Crypto fills
    settle immediately and pay no SEC/TAF/CAT fees.

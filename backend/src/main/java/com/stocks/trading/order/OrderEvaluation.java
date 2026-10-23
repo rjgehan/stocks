@@ -1,8 +1,12 @@
 package com.stocks.trading.order;
 
 import com.stocks.common.domain.Crypto;
+import com.stocks.common.domain.OptionSymbol;
+import com.stocks.common.domain.OrderType;
 import com.stocks.common.domain.PlayerKind;
+import com.stocks.common.domain.SessionType;
 import com.stocks.common.domain.Side;
+import com.stocks.common.domain.TimeInForce;
 import com.stocks.common.domain.WaitReason;
 import com.stocks.common.error.ApiException;
 import com.stocks.common.error.ErrorCode;
@@ -18,6 +22,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 /**
@@ -75,6 +80,7 @@ public class OrderEvaluation {
     OrderValidator.requireShape(o);
     requireCryptoOpen(o);
     SessionState session = clock.session(o.symbol(), now);
+    requireOptionRules(o, session, now);
     SessionOrderMatrix.Acceptance acceptance;
     ApiException sessionRejection = null;
     try {
@@ -132,6 +138,49 @@ public class OrderEvaluation {
               + " can only be sold.")
           .withHint("The admin turned crypto off (Admin → Settings). Existing crypto positions can still be sold.")
           .withField("symbol", ErrorCode.SYMBOL_NOT_TRADABLE, "Crypto is off");
+    }
+  }
+
+  /**
+   * §30 long options: buy to open and sell to close whole contracts with MARKET or LIMIT DAY orders in the regular
+   * session (09:30–16:00 ET), never after the contract's expiration; buys only while {@code options.enabled} is on.
+   */
+  private void requireOptionRules(NormalizedOrder o, SessionState session, Instant now) {
+    Optional<OptionSymbol.Contract> contract = OptionSymbol.parse(o.symbol());
+    if (contract.isEmpty()) {
+      return;
+    }
+    if (o.side() == Side.BUY && !settings.optionsEnabled()) {
+      throw ApiException.of(ErrorCode.SYMBOL_NOT_TRADABLE, "Options trading is turned off; " + o.symbol()
+              + " can only be sold.")
+          .withHint("The admin turned options off (Admin → Settings). Existing option positions can still be sold.")
+          .withField("symbol", ErrorCode.SYMBOL_NOT_TRADABLE, "Options are off");
+    }
+    if (contract.get().expiration().isBefore(Et.date(now))) {
+      throw ApiException.of(ErrorCode.SYMBOL_NOT_TRADABLE, o.symbol() + " expired on " + contract.get().expiration()
+              + ".")
+          .withHint("List current expirations with get_option_expirations (GET /api/v1/options/{underlying}/expirations).")
+          .withField("symbol", ErrorCode.SYMBOL_NOT_TRADABLE, "Expired");
+    }
+    if (o.notional() != null) {
+      throw ApiException.of(ErrorCode.NOT_FRACTIONABLE, "Options trade in whole contracts; send qty, not notional.")
+          .withHint("qty is a number of contracts; one contract is 100 shares, so it costs price × 100.")
+          .withField("notional", ErrorCode.NOT_FRACTIONABLE, "Whole contracts only");
+    }
+    if (o.type() != OrderType.MARKET && o.type() != OrderType.LIMIT) {
+      throw ApiException.of(ErrorCode.VALIDATION_FAILED, "Option orders are MARKET or LIMIT; " + o.type()
+              + " is not available for options.")
+          .withField("type", ErrorCode.VALIDATION_FAILED, "MARKET or LIMIT");
+    }
+    if (o.timeInForce() == TimeInForce.GTC) {
+      throw ApiException.of(ErrorCode.TIF_NOT_ALLOWED, "Option orders are DAY only.")
+          .withField("timeInForce", ErrorCode.TIF_NOT_ALLOWED, "DAY");
+    }
+    if (o.extendedHours() || session.type() != SessionType.REGULAR) {
+      throw ApiException.of(ErrorCode.SESSION_NOT_ALLOWED, "Options trade only in the regular session, 09:30–16:00 ET"
+              + " on trading days.")
+          .withHint("Send option orders between 09:30 and 16:00 ET, without extendedHours.")
+          .withField(o.extendedHours() ? "extendedHours" : "symbol", ErrorCode.SESSION_NOT_ALLOWED, "Regular hours");
     }
   }
 

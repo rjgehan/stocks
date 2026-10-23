@@ -85,6 +85,12 @@ describe('advanced ticket (§11.9, §22.5)', () => {
     expect(buildGroupRequest(s, 'ETH/USD')).toMatchObject({ symbol: 'ETH/USD', qty: '2.5' })
   })
 
+  it('builds no group order on an option contract', () => {
+    const s = groupTicketReducer(bracket(), { type: 'field', field: 'qty', value: '2' })
+    expect(buildGroupRequest(s, 'AAPL')).not.toBeNull()
+    expect(buildGroupRequest(s, 'AAPL261120C00250000')).toBeNull()
+  })
+
   it('builds an OCO on its side without an entry, and an OTO with its then-order', () => {
     let oco = groupTicketReducer(bracket(), { type: 'groupType', groupType: 'OCO' })
     oco = groupTicketReducer(oco, { type: 'ocoSide', side: 'SELL' })

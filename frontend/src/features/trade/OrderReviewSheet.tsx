@@ -8,8 +8,12 @@ import { ORDER_TYPE_LABEL } from '@/features/account/orderLabels'
 import { EstimatesPanel } from './EstimatesPanel'
 import { isStopType, stopExplanation, withoutQueueDuplicates } from './ticketState'
 import { isCrypto } from '@/lib/symbols'
+import { formatOptionPrice, isOption, optionLabel } from '@/lib/options'
 
-/** Review sheet (§22.5, on by default via `confirmOrders`): every field and warning, then Confirm or Edit. */
+/**
+ * Review sheet (§22.5, on by default via `confirmOrders`): every field and warning, then Confirm or Edit. An option
+ * (§30) shows the contract, Buy to open / Sell to close and contracts.
+ */
 export function OrderReviewSheet({
   open,
   onClose,
@@ -26,14 +30,18 @@ export function OrderReviewSheet({
   preview: Preview
 }) {
   const buy = request.side === 'BUY'
+  const option = isOption(request.symbol)
   const rows: Array<[string, string]> = [
-    ['Symbol', request.symbol ?? ''],
-    ['Side', buy ? 'Buy' : 'Sell'],
+    option ? ['Contract', optionLabel(request.symbol)] : ['Symbol', request.symbol ?? ''],
+    ['Side', option ? (buy ? 'Buy to open' : 'Sell to close') : buy ? 'Buy' : 'Sell'],
     ['Order type', request.type ? ORDER_TYPE_LABEL[request.type] : ''],
-    [request.notional ? 'Amount' : isCrypto(request.symbol) ? 'Quantity' : 'Shares', request.notional ? formatMoney(request.notional) : formatQty(request.qty)],
+    [
+      request.notional ? 'Amount' : option ? 'Contracts' : isCrypto(request.symbol) ? 'Quantity' : 'Shares',
+      request.notional ? formatMoney(request.notional) : option ? `${formatQty(request.qty)} × 100 shares` : formatQty(request.qty),
+    ],
   ]
   if (request.stopPrice) rows.push(['Stop price', formatPrice(request.stopPrice)])
-  if (request.limitPrice) rows.push(['Limit price', formatPrice(request.limitPrice)])
+  if (request.limitPrice) rows.push(option ? ['Limit price (per share)', formatOptionPrice(request.limitPrice)] : ['Limit price', formatPrice(request.limitPrice)])
   if (request.trailAmount) rows.push(['Trail', `${formatTrailAmount(request.trailAmount)} ${buy ? 'above the low' : 'below the high'}`])
   if (request.trailPercent) rows.push(['Trail', `${request.trailPercent}% ${buy ? 'above the low' : 'below the high'}`])
   rows.push(['Time in force', request.timeInForce === 'GTC' ? 'GTC (60 days)' : 'Day'])
@@ -47,7 +55,7 @@ export function OrderReviewSheet({
     <Dialog
       open={open}
       onClose={onClose}
-      title={`Review ${side} ${request.symbol ?? ''}`}
+      title={option ? `Review ${buy ? 'buy to open' : 'sell to close'} ${optionLabel(request.symbol)}` : `Review ${side} ${request.symbol ?? ''}`}
       footer={
         <div className="flex gap-2">
           <Button variant="secondary" size="lg" className="flex-1" onClick={onClose}>
@@ -70,7 +78,7 @@ export function OrderReviewSheet({
         </dl>
         {explanation ? <p className="rounded-sm bg-accent-bg px-2 py-1.5 text-caption text-text-1">{explanation}</p> : null}
         <div className="rounded-md bg-bg-2/60 px-3 py-2">
-          <EstimatesPanel preview={preview} loading={false} notional={Boolean(request.notional)} stop={isStopType(request.type)} />
+          <EstimatesPanel preview={preview} loading={false} notional={Boolean(request.notional)} stop={isStopType(request.type)} option={option} side={request.side} />
         </div>
         {withoutQueueDuplicates(preview.warnings ?? [], preview.sessionNote).map((w) => (
           <p key={w.code} className="rounded-sm bg-warn/10 p-2 text-caption text-warn">
@@ -81,7 +89,9 @@ export function OrderReviewSheet({
         <p className="text-micro text-text-3">
           {isStopType(request.type)
             ? 'A stop is not a guaranteed price: once triggered, the order fills at the next available price (a stop limit may not fill). Paper trading only.'
-            : 'Market orders fill at the best available price, which may differ from the estimate. Paper trading only.'}
+            : option
+              ? 'Option buys fill at the ask and sells at the bid; a wide or one-sided quote can delay the fill. Paper trading only.'
+              : 'Market orders fill at the best available price, which may differ from the estimate. Paper trading only.'}
         </p>
       </div>
     </Dialog>

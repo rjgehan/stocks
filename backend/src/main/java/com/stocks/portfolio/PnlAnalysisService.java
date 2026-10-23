@@ -332,7 +332,7 @@ public class PnlAnalysisService implements PnlAnalysisQueries {
     if (end.live() != null) {
       for (PositionRow p : repository.positions(run.id())) {
         Mark m = end.live().marks().get(p.symbol());
-        BigDecimal mv = m != null ? Rounding.MARKET_VALUE.multiply(p.qty(), m.price()) : p.costBasis();
+        BigDecimal mv = m != null ? Rounding.marketValue(p.symbol(), p.qty(), m.price()) : p.costBasis();
         Acc x = at(acc, p.symbol());
         x.mvB = x.mvB.add(mv);
         x.held = true;

@@ -16,7 +16,8 @@ import { topHoldings } from '@/features/league/PublicPortfolio'
 import { useFeedDelay } from '@/features/league/useFeedDelay'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { PlayerStatsSection } from '@/features/stats/StatsSections'
-import { toPath } from '@/lib/symbols'
+import { stockLink } from '@/features/market/symbolLink'
+import { contractsLabel, isOption, optionLabel } from '@/lib/options'
 
 const LineChart = lazy(() => import('@/features/account/LineChart'))
 
@@ -34,9 +35,9 @@ function TradeRow({ t }: { t: PublicTrade }) {
     <li className="px-4 py-3">
       <div className="flex items-center justify-between gap-3 text-table">
         <span>
-          <span className={cx('font-semibold', t.side === 'SELL' ? 'text-down' : 'text-up')}>{t.side === 'SELL' ? 'Sold' : 'Bought'}</span> {formatQty(t.qty)}{' '}
-          <Link to="/stock/$symbol" params={{ symbol: toPath(t.symbol ?? '') }} className="font-semibold hover:text-accent">
-            {t.symbol}
+          <span className={cx('font-semibold', t.side === 'SELL' ? 'text-down' : 'text-up')}>{t.side === 'SELL' ? 'Sold' : 'Bought'}</span> {isOption(t.symbol) ? contractsLabel(t.qty) : formatQty(t.qty)}{' '}
+          <Link to="/stock/$symbol" {...stockLink(t.symbol)} className="font-semibold hover:text-accent">
+            {optionLabel(t.symbol)}
           </Link>{' '}
           @ {formatPrice(t.price)}
           {t.viaApi ? (
@@ -71,8 +72,8 @@ function TopHoldings({ handle }: { handle: string }) {
           {top.map((h) => (
             <li key={h.symbol}>
               <div className="flex justify-between gap-2 text-table">
-                <Link to="/stock/$symbol" params={{ symbol: toPath(h.symbol ?? '') }} className="font-semibold hover:text-accent">
-                  {h.symbol}
+                <Link to="/stock/$symbol" {...stockLink(h.symbol)} className="font-semibold hover:text-accent">
+                  {optionLabel(h.symbol)}
                 </Link>
                 <span>
                   {formatPct(h.weight, { signed: false, scale: 1 })}

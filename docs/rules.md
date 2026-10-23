@@ -81,6 +81,27 @@ LINK/USD, AVAX/USD, DOT/USD, UNI/USD and AAVE/USD (prices from Alpaca's crypto m
 | P&L days | **Every calendar day** is a P&L day while crypto is on: Saturdays, Sundays and holidays end at 20:00 ET with their own end-of-day snapshot, so weekend crypto moves show in Day P&L, the P&L calendar, the charts and the leaderboard. Stocks keep their last trading day's price on those days. |
 | Turned off | Crypto buys are refused; you can still sell crypto you hold, and weekends stop being P&L days. |
 
+### 3.2 Options (long calls and puts)
+
+While the admin keeps options on (setting `options.enabled`, on by default), you can **buy to open and sell to close**
+call and put options on US stocks and ETFs. Short options (naked or covered), spreads and other multi-leg orders, and
+exercise or assignment requests are not offered.
+
+| Rule | Value |
+|---|---|
+| Symbols | OCC contract symbols: root + `YYMMDD` + `C`/`P` + strike × 1000 in 8 digits, e.g. `AAPL261120C00250000` = AAPL 20 Nov 2026 $250 call. The **Options** tab of a stock's page, `get_option_expirations` / `get_option_chain` (MCP) and `GET /api/v1/options/{underlying}/expirations` and `/chain?expiration=` list them. |
+| Quantities | Whole contracts, 1 to 1,000 per order; **one contract is 100 shares**. Prices (bid, ask, limits, fills, average cost) are per share, so a $2.50 ask costs $250 per contract. No dollar (notional) orders. |
+| Orders | MARKET or LIMIT, time in force DAY, no extended hours, no group orders. Limit prices in $0.01 steps. |
+| Hours | **Regular session only**: 09:30–16:00 ET on trading days (13:00 on early-close days); option orders sent outside it are refused, and open orders expire at the close. |
+| Fills | Buys fill at the ask and sells at the bid, in one piece, against the contract's own two-sided quote (confirmed within 15 s, at most 5 minutes old). There is no fill, and the order waits, without such a quote or when the spread is absurd: wider than $0.10 **and** more than 50% of the mid. Option trades are never used for fills or marks. |
+| Quotes | On the free Alpaca plan option quotes are **indicative** (Alpaca derives them from OPRA; they can differ from the real best bid and offer) and are labelled *Ind.* / `INDICATIVE`. |
+| Value | Marked at the quote mid (the bid when there is no ask) × 100 × contracts in equity, end-of-day snapshots, the leaderboard and the P&L calendar; after the close at the closing quote's mid. |
+| Cash and settlement | The premium is paid in full from cash. Sale proceeds settle **T+1** like stock sales, and the good-faith rules apply as for stocks. |
+| Expiration | About 30 minutes after the close on the expiration day, an **in-the-money** contract is cash-settled at its intrinsic value from the underlying's official close (call: close − strike; put: strike − close; × 100 × contracts; no shares are delivered). An out-of-the-money contract expires **worthless**. Either way it appears as a SYSTEM sell order with liquidity `EXPIRY`, its realized P&L, a notification and a feed entry. |
+| Fees | **None**: no commission and no regulatory fees on options. |
+| Turned off | Option buys are refused; you can still sell contracts you hold, and held contracts still settle at expiration. |
+| Known limits | Contracts are not adjusted for splits or other corporate actions of the underlying during their life. |
+
 ## 4. Orders
 
 ### 4.1 Order types

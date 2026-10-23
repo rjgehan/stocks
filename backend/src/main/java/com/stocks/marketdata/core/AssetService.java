@@ -3,6 +3,8 @@ package com.stocks.marketdata.core;
 import com.stocks.common.domain.AssetType;
 import com.stocks.common.domain.Crypto;
 import com.stocks.common.domain.LiquidityTier;
+import com.stocks.common.domain.OptionSymbol;
+import com.stocks.common.time.Et;
 import com.stocks.common.time.TimeSource;
 import com.stocks.contract.marketdata.model.Asset;
 import java.math.BigDecimal;
@@ -66,7 +68,8 @@ public class AssetService {
       universe.entries().forEach(en -> m.put(en.symbol(), en.asset()));
     }
     bySymbol = Map.copyOf(m);
-    searchable = m.values().stream().filter(a -> a.active() && a.tradable()).toList();
+    // option contracts (§30) are reached through their underlying's chain, not symbol search
+    searchable = m.values().stream().filter(a -> a.active() && a.tradable() && a.type() != AssetType.OPTION).toList();
   }
 
   /** Upserts {@code assets} (source {@code simulated}, {@code alpaca} or {@code manual}) and reloads. */
@@ -91,8 +94,36 @@ public class AssetService {
   }
 
   public Optional<Asset> asset(String symbol) {
-    return symbol == null ? Optional.empty() : Optional.ofNullable(bySymbol.get(symbol));
+    if (symbol == null) {
+      return Optional.empty();
+    }
+    Asset a = bySymbol.get(symbol);
+    if (a != null && a.type() == AssetType.OPTION) {
+      return option(symbol).or(() -> Optional.of(a));   // a stored contract stops being tradable once it expired
+    }
+    return a != null ? Optional.of(a) : option(symbol);
   }
+
+  /**
+   * §30: an option contract on a known, active stock or ETF, as an asset: type OPTION, exchange OPRA, whole contracts,
+   * tradable and active until its expiration date has passed. A contract gets an {@code asset} row when it is first
+   * ordered (the engine inserts it for the order's foreign key); this synthesizes it, so chains and previews need no
+   * writes, and a stored contract is read through it too, so it stops being tradable once it expired.
+   */
+  Optional<Asset> option(String symbol) {
+    Optional<OptionSymbol.Contract> c = OptionSymbol.parse(symbol);
+    if (c.isEmpty() || !c.get().symbol().equals(symbol)) {
+      return Optional.empty();
+    }
+    Asset u = bySymbol.get(c.get().underlying());
+    if (u == null || !u.active() || u.type() == AssetType.CRYPTO || u.type() == AssetType.OPTION) {
+      return Optional.empty();
+    }
+    boolean live = !c.get().expiration().isBefore(Et.date(time.now()));
+    return Optional.of(new Asset(symbol, c.get().label(), OptionSymbol.EXCHANGE, AssetType.OPTION, live, false, false,
+        false, false, LiquidityTier.SMALL, live));
+  }
+
 
   public LiquidityTier tier(String symbol) {
     Asset a = bySymbol.get(symbol);

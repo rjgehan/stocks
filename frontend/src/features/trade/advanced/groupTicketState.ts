@@ -10,6 +10,7 @@ import type { OrderGroupRule, OrderGroupType, PlaceOrderGroupRequest } from '@/l
 import type { OrderType, Side, TimeInForce } from '@/lib/api/types'
 import { type Dec, compare, decimals, div, isDecimal, mul, parseUserDecimal, roundToTick, setScale, sign, stripTrailingZeros, sub } from '@/lib/format/decimal'
 import { isCrypto } from '@/lib/symbols'
+import { isOption } from '@/lib/options'
 import { newClientOrderId } from '../ticketState'
 
 export type EntryType = 'MARKET' | 'LIMIT' | 'STOP' | 'STOP_LIMIT'
@@ -173,6 +174,8 @@ function price(input: string): Dec | null {
  * Prices go out as typed (the server checks the tick and reports the leg's field).
  */
 export function buildGroupRequest(s: GroupTicketState, symbol: string): PlaceOrderGroupRequest | null {
+  // option contracts (§30) take no group orders (the ticket hides Advanced for them)
+  if (isOption(symbol)) return null
   const qty = isCrypto(symbol) ? cryptoUnits(s.qty) : wholeShares(s.qty)
   if (!qty) return null
   const t = s.groupType

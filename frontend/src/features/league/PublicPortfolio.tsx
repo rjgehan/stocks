@@ -13,7 +13,8 @@ import { PositionCard, Signed } from '@/features/account/PositionsTable'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { QualityBadge } from '@/features/market/QualityBadge'
 import { PublicOrderRow } from './PublicOrderRow'
-import { toPath } from '@/lib/symbols'
+import { stockLink } from '@/features/market/symbolLink'
+import { contractsLabel, isOption, optionLabel } from '@/lib/options'
 
 const RESTRICTION_LABEL: Record<string, string> = {
   SETTLED_CASH_ONLY: 'Settled cash only',
@@ -100,12 +101,12 @@ function HoldingsTable({ positions }: { positions: Position[] }) {
         {positions.map((p) => (
           <tr key={p.symbol} className="h-10 hover:bg-bg-2">
             <td className="px-4 font-semibold">
-              <Link to="/stock/$symbol" params={{ symbol: toPath(p.symbol ?? '') }} className="hover:text-accent">
-                {p.symbol}
+              <Link to="/stock/$symbol" {...stockLink(p.symbol)} className="hover:text-accent">
+                {optionLabel(p.symbol)}
               </Link>
-              {p.name ? <span className="ml-2 hidden font-normal text-text-3 desktop:inline">{p.name}</span> : null}
+              {p.name && !isOption(p.symbol) ? <span className="ml-2 hidden font-normal text-text-3 desktop:inline">{p.name}</span> : null}
             </td>
-            <td className="px-2 text-right">{formatQty(p.qty)}</td>
+            <td className="px-2 text-right">{isOption(p.symbol) ? contractsLabel(p.qty) : formatQty(p.qty)}</td>
             <td className="px-2 text-right">{formatPrice(p.avgCost)}</td>
             <td className="px-2 text-right">
               <span className="inline-flex items-center justify-end gap-1">

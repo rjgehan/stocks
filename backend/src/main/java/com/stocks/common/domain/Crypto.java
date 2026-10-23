@@ -42,10 +42,12 @@ public final class Crypto {
   public static final BigDecimal MAX_ORDER_QTY = new BigDecimal("100000000");
 
   /**
-   * Every symbol the app accepts at its boundaries: a stock or ETF ticker ({@code AAPL}, {@code BRK.B}) or a crypto
-   * pair ({@code BTC/USD}). Apply {@link #fromPath} first, so {@code BTC-USD} is accepted as {@code BTC/USD}.
+   * Every symbol the app accepts at its boundaries: a stock or ETF ticker ({@code AAPL}, {@code BRK.B}), a crypto
+   * pair ({@code BTC/USD}) or an OCC option contract ({@code AAPL261120C00250000}, §30). Apply {@link #fromPath}
+   * first, so {@code BTC-USD} is accepted as {@code BTC/USD}.
    */
-  public static final String SYMBOL_REGEX = "^[A-Z][A-Z0-9.\\-]{0,11}$|^[A-Z0-9]{2,10}/[A-Z]{3,4}$";
+  public static final String SYMBOL_REGEX = "^[A-Z][A-Z0-9.\\-]{0,11}$|^[A-Z0-9]{2,10}/[A-Z]{3,4}$|"
+      + "^[A-Z]{1,6}[0-9]{6}[CP][0-9]{8}$";
 
   /** The exchange label on crypto assets. */
   public static final String EXCHANGE = "CRYPTO";

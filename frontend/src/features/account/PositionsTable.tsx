@@ -8,8 +8,9 @@ import { SkeletonRows } from '@/components/ui/Skeleton'
 import { cx } from '@/components/ui/cx'
 import { DIRECTION_TEXT } from '@/features/market/Change'
 import { QualityBadge } from '@/features/market/QualityBadge'
-import { toPath } from '@/lib/symbols'
+import { stockLink } from '@/features/market/symbolLink'
 import { baseAsset, isCrypto } from '@/lib/symbols'
+import { contractsLabel, isOption, optionLabel } from '@/lib/options'
 
 export function Signed({ value, pct, className }: { value: string | null | undefined; pct?: string | null; className?: string }) {
   return (
@@ -20,17 +21,26 @@ export function Signed({ value, pct, className }: { value: string | null | undef
   )
 }
 
-/** One position as a phone card: a read-only link to the stock (also another player's portfolio, public mode). */
+/** "10 sh", "0.5 BTC", "2 contracts" (§30): a position's quantity with its unit. */
+export function positionQty(p: Pick<Position, 'symbol' | 'qty'>): string {
+  if (isOption(p.symbol)) return contractsLabel(p.qty)
+  return `${formatQty(p.qty)} ${isCrypto(p.symbol) ? baseAsset(p.symbol ?? '') : 'sh'}`
+}
+
+/**
+ * One position as a phone card: a read-only link to the stock (also another player's portfolio, public mode). An option
+ * contract (§30) shows its label and links to its underlying's Options tab; its dollar amounts already include × 100.
+ */
 export function PositionCard({ p }: { p: Position }) {
   return (
-    <Link to="/stock/$symbol" params={{ symbol: toPath(p.symbol ?? '') }} className="flex items-center justify-between gap-3 px-4 py-3 active:bg-bg-2">
+    <Link to="/stock/$symbol" {...stockLink(p.symbol)} className="flex items-center justify-between gap-3 px-4 py-3 active:bg-bg-2">
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 font-semibold">
-          {p.symbol}
+          {optionLabel(p.symbol)}
           <QualityBadge quality={p.markQuality === 'SIMULATED' ? null : p.markQuality} />
         </div>
         <div className="text-caption text-text-3">
-          {formatQty(p.qty)} {isCrypto(p.symbol) ? baseAsset(p.symbol ?? '') : 'sh'} · avg {formatPrice(p.avgCost)}
+          {positionQty(p)} · avg {formatPrice(p.avgCost)}
         </div>
         <div className="text-caption">
           <span className="text-text-3">Today </span>
@@ -84,12 +94,12 @@ export function PositionsTable({ compact }: { compact?: boolean }) {
             {data.map((p) => (
               <tr key={p.symbol} className={cx('hover:bg-bg-2', compact ? 'h-8' : 'h-10')}>
                 <td className="px-4 font-semibold">
-                  <Link to="/stock/$symbol" params={{ symbol: toPath(p.symbol ?? '') }} className="hover:text-accent">
-                    {p.symbol}
+                  <Link to="/stock/$symbol" {...stockLink(p.symbol)} className="hover:text-accent">
+                    {optionLabel(p.symbol)}
                   </Link>
-                  {p.name && !compact ? <span className="ml-2 hidden font-normal text-text-3 desktop:inline">{p.name}</span> : null}
+                  {p.name && !compact && !isOption(p.symbol) ? <span className="ml-2 hidden font-normal text-text-3 desktop:inline">{p.name}</span> : null}
                 </td>
-                <td className="px-2 text-right">{formatQty(p.qty)}</td>
+                <td className="px-2 text-right">{isOption(p.symbol) ? contractsLabel(p.qty) : formatQty(p.qty)}</td>
                 <td className="px-2 text-right">{formatPrice(p.avgCost)}</td>
                 <td className="px-2 text-right">{formatPrice(p.mark)}</td>
                 <td className="px-2 text-right">{formatMoney(p.marketValue)}</td>

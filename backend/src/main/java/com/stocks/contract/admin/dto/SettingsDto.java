@@ -18,4 +18,5 @@ public record SettingsDto(
     @JsonProperty("social.showDepositsInFeed") boolean showDepositsInFeed,
     @JsonProperty("bots.requireRationale") boolean botsRequireRationale,
     @JsonProperty("league.humanKindExcludesApiTraders") boolean humanKindExcludesApiTraders,
-    @JsonProperty("crypto.enabled") boolean cryptoEnabled) {}
+    @JsonProperty("crypto.enabled") boolean cryptoEnabled,
+    @JsonProperty("options.enabled") boolean optionsEnabled) {}

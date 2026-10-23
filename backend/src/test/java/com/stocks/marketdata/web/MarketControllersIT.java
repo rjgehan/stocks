@@ -146,6 +146,37 @@ class MarketControllersIT {
         "IWM");
   }
 
+  /** §30: SIM option chains and contract quotes through the real stack (market:read). */
+  @Test
+  void optionChainsAndContractQuotes() throws Exception {
+    String e = json("/api/v1/options/aapl/expirations");
+    assertThat((String) read(e, "$.underlying")).isEqualTo("AAPL");
+    assertThat((String) read(e, "$.feed")).isEqualTo("simulated");
+    assertThat((Boolean) read(e, "$.enabled")).isTrue();
+    assertThat((Integer) read(e, "$.multiplier")).isEqualTo(100);
+    List<Object> dates = read(e, "$.expirations");
+    assertThat(dates).first().isEqualTo("2026-10-09");                        // Friday: same-day expiration listed
+    assertThat(dates).contains("2026-10-16", "2026-11-20");
+
+    String c = json("/api/v1/options/AAPL/chain?expiration=2026-11-20");
+    assertThat((String) read(c, "$.expiration")).isEqualTo("2026-11-20");
+    assertThat((String) read(c, "$.underlyingPrice")).isNotNull();
+    List<Object> calls = read(c, "$.calls[*].symbol");
+    assertThat(calls).hasSizeGreaterThan(10).allSatisfy(x -> assertThat((String) x).matches("AAPL261120C\\d{8}"));
+    assertThat((List<Object>) read(c, "$.puts[*].right")).containsOnly("PUT");
+    assertThat((String) read(c, "$.calls[0].bid")).matches("\\d+\\.\\d+");
+    String occ = (String) calls.get(calls.size() / 2);
+
+    String q = json("/api/v1/quotes?symbols=" + occ);
+    assertThat((String) read(q, "$.quotes[0].symbol")).isEqualTo(occ);
+    assertThat((String) read(q, "$.quotes[0].quality")).isEqualTo("SIMULATED");
+    assertThat((String) read(q, "$.quotes[0].ask")).isNotNull();
+
+    assertThat(code("/api/v1/options/BTC-USD/expirations")).isEqualTo("SYMBOL_NOT_FOUND");
+    assertThat(code("/api/v1/options/ZZZZ/expirations")).isEqualTo("SYMBOL_NOT_FOUND");
+    assertThat(code("/api/v1/options/AAPL/chain?expiration=next-friday")).isEqualTo("VALIDATION_FAILED");
+  }
+
   @Test
   void calendarEndpoint() throws Exception {
     String days = json("/api/v1/market/calendar?from=2026-10-09&to=2026-10-13");

@@ -315,4 +315,51 @@ class AlpacaRestClientTest {
         .containsExactly("112001.5000", "112005.1200");                      // ascending, on the tick
     assertThat(bars.get("BTC/USD").get(0).volume()).isEqualTo(2);
   }
+  /**
+   * §30: option contracts go to the options API with the indicative feed; quotes land on the cent (bid down, ask
+   * up) labelled INDICATIVE, sizes stay contracts, prints are never eligible, and chains carry open interest.
+   */
+  @Test
+  void optionSnapshotsChainsAndExpirationsUseTheOptionsApi() {
+    http.fixture("/v1beta1/options/snapshots", "alpaca/option-snapshots.json");
+    Map<String, Snapshot> snaps = alpaca.snapshots(Set.of("SPY261016C00660000", "SPY261016P00640000"),
+        RefreshPriority.UI);
+    FakeHttpServer.Request req = http.requests("/v1beta1/options/snapshots").getFirst();
+    assertThat(req.query()).containsEntry("symbols", "SPY261016C00660000,SPY261016P00640000")
+        .containsEntry("feed", "indicative");
+    assertThat(http.requests("/v2/stocks/snapshots")).isEmpty();
+    Snapshot call = snaps.get("SPY261016C00660000");
+    assertThat(call.quote().bid()).isEqualByComparingTo("4.07");
+    assertThat(call.quote().ask()).isEqualByComparingTo("4.13");               // 4.125 rounded up to the cent
+    assertThat(call.quote().askSize()).isEqualTo(120);                        // contracts, never × 100
+    assertThat(call.quote().quality()).isEqualTo(com.stocks.common.domain.DataQuality.INDICATIVE);
+    assertThat(call.lastTrade().consolidated()).isFalse();
+    assertThat(call.lastTrade().eligible()).isFalse();                        // delayed prints never fill
+    assertThat(call.prevDailyBar().close()).isEqualByComparingTo("3.9");
+    Snapshot put = snaps.get("SPY261016P00640000");
+    assertThat(put.quote().bid()).isEqualByComparingTo("0");
+    assertThat(put.quote().twoSided()).isFalse();
+
+    http.fixture("/v1beta1/options/snapshots/SPY", "alpaca/option-chain.json");
+    http.fixture("/v2/options/contracts", "alpaca/option-contracts.json");
+    List<com.stocks.contract.marketdata.model.OptionQuote> chain = alpaca.optionChain("SPY", LocalDate.of(2026, 10, 16),
+        RefreshPriority.UI);
+    assertThat(http.requests("/v1beta1/options/snapshots/SPY").getFirst().query())
+        .containsEntry("expiration_date", "2026-10-16").containsEntry("feed", "indicative")
+        .containsEntry("limit", "1000");
+    assertThat(chain).hasSize(2);                                            // the malformed key is skipped
+    var c = chain.stream().filter(q -> q.right() == com.stocks.common.domain.OptionRight.CALL).findFirst()
+        .orElseThrow();
+    assertThat(c.strike()).isEqualByComparingTo("660");
+    assertThat(c.volume()).isEqualTo(1532);
+    assertThat(c.openInterest()).isEqualTo(18234);
+    assertThat(c.delta()).isEqualByComparingTo("0.5123");
+    assertThat(c.impliedVolatility()).isEqualByComparingTo("0.1834");
+
+    List<LocalDate> expirations = alpaca.optionExpirations("SPY", RefreshPriority.UI);
+    assertThat(expirations).containsExactly(LocalDate.of(2026, 10, 16), LocalDate.of(2026, 11, 20));
+    FakeHttpServer.Request contracts = http.requests("/v2/options/contracts").getLast();
+    assertThat(contracts.query()).containsEntry("underlying_symbols", "SPY").containsEntry("status", "active")
+        .containsEntry("expiration_date_gte", "2026-10-09").containsEntry("expiration_date_lte", "2028-10-09");
+  }
 }

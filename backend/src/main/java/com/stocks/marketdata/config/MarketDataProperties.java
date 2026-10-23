@@ -78,17 +78,22 @@ public record MarketDataProperties(
                        @DefaultValue("180") int restPerMinute,
                        @DefaultValue("100") int snapshotBatch,
                        @DefaultValue("5s") Duration connectTimeout,
-                       @DefaultValue("10s") Duration readTimeout) {
+                       @DefaultValue("10s") Duration readTimeout,
+                       @DefaultValue("indicative") String optionsFeed) {
 
     public Alpaca {
       feed = feed == null || feed.isBlank() ? "iex" : feed.trim().toLowerCase(Locale.ROOT);
+      // §30: Alpaca's options feed, "indicative" (free, Basic plan) or "opra" (Algo Trader Plus)
+      optionsFeed = optionsFeed == null || optionsFeed.isBlank() ? "indicative"
+          : optionsFeed.trim().toLowerCase(Locale.ROOT);
       keyId = keyId == null ? "" : keyId.trim();
       secretKey = secretKey == null ? "" : secretKey.trim();
     }
 
     public static Alpaca defaults() {
       return new Alpaca("", "", "iex", "https://data.alpaca.markets", "https://paper-api.alpaca.markets",
-          "wss://stream.data.alpaca.markets/v2/iex", 30, 180, 100, Duration.ofSeconds(5), Duration.ofSeconds(10));
+          "wss://stream.data.alpaca.markets/v2/iex", 30, 180, 100, Duration.ofSeconds(5), Duration.ofSeconds(10),
+          "indicative");
     }
 
     public boolean hasKeys() {
@@ -106,7 +111,7 @@ public record MarketDataProperties(
 
     @Override
     public String toString() {                     // never log the secret
-      return "Alpaca[feed=" + feed + ", dataUrl=" + dataUrl + ", streamUrl=" + streamUrl + ", keys="
+      return "Alpaca[feed=" + feed + ", optionsFeed=" + optionsFeed + ", dataUrl=" + dataUrl + ", streamUrl=" + streamUrl + ", keys="
           + (hasKeys() ? "set" : "missing") + "]";
     }
   }

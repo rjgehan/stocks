@@ -12,6 +12,7 @@ import { ExtraStatValue, columnLabel } from '@/features/stats/ExtraStat'
 import { FormulaPopover } from './MetricInfoPopover'
 import { AiChip, Avatar } from './PlayerBadge'
 import { toPath } from '@/lib/symbols'
+import { optionShortLabel } from '@/lib/options'
 
 const MEDAL = ['bg-gold', 'bg-silver', 'bg-bronze'] as const
 /** Room for "+$1,234,567.89" whichever unit shows, so the %/$ toggle never resizes the board. */
@@ -109,7 +110,7 @@ function Name({ row, me }: { row: LeaderboardRow; me: boolean }) {
         <span className="block truncate text-caption text-text-3">
           @{p?.handle}
           {row.eligibilityNote ? ` · ${row.eligibilityNote}` : ` · ${row.fills} fills · ${row.symbolsTraded} symbols`}
-          {row.topHolding ? ` · top ${row.topHolding}` : ''}
+          {row.topHolding ? ` · top ${optionShortLabel(row.topHolding)}` : ''}
         </span>
       </span>
     </Link>

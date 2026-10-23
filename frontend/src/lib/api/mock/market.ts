@@ -1,10 +1,14 @@
 /**
  * A tiny deterministic fake market for mock mode (§22.9): seeded random walks in integer ten-thousandths,
  * rendered as §18.3 `Quote`, `Tick` and `Bars` DTOs with decimal strings. Quality is always SIMULATED.
+ * Option contracts (§30, OCC symbols) have no walk of their own: they are priced off their underlying's
+ * (`./options`), so stepping or nudging a contract moves its underlying.
  */
 import { type Dec, div, fromInteger, shift } from '../../format/decimal'
-import type { Bar, Bars, ChartRange, MoverItem, MoverList, Quote, Tick, Timeframe } from '../types'
+import { type OptionParts, isOption, optionLabel, parseOption } from '../../options'
+import type { Bar, Bars, ChartRange, MoverItem, MoverList, OptionChain, OptionContract, Quote, Tick, Timeframe } from '../types'
 import { MOCK_UNIVERSE, type MockSymbol } from './data'
+import { blackScholes, chainSymbols, impliedVol, optionBook, yearsTo } from './options'
 
 const UNITS_PER_DOLLAR = 10_000
 
@@ -115,16 +119,59 @@ export class MockMarket {
     return [...this.states.keys()]
   }
 
+  /** A listed symbol: a stock, ETF or pair of the universe, or an unexpired contract on a stock or ETF. */
   has(symbol: string): boolean {
-    return this.states.has(symbol)
+    return this.states.has(symbol) || this.optionState(symbol) !== null
   }
 
   meta(symbol: string): MockSymbol | undefined {
-    return this.states.get(symbol)?.meta
+    const st = this.states.get(symbol)
+    if (st) return st.meta
+    const o = this.optionState(symbol)
+    if (!o) return undefined
+    return {
+      ...o.underlying.meta,
+      symbol,
+      name: optionLabel(symbol),
+      exchange: 'OPRA',
+      type: 'OPTION',
+      fractionable: false,
+      prevClose: this.optionUnits(symbol, true)?.mid ?? 0,
+      openBps: 0,
+      marketCap: null,
+      peTtm: null,
+      industry: null,
+      adv: 0,
+    }
   }
 
-  /** Advance one symbol by one random step. */
+  /** The underlying's state of an unexpired OCC contract on a stock or ETF of the universe, or null. */
+  private optionState(symbol: string): { underlying: SymbolState; parts: OptionParts } | null {
+    if (!isOption(symbol)) return null
+    const parts = parseOption(symbol)
+    const underlying = parts ? this.states.get(parts.underlying) : undefined
+    if (!parts || !underlying || underlying.meta.type === 'CRYPTO' || yearsTo(parts.expiration, this.now()) <= 0) return null
+    return { underlying, parts }
+  }
+
+  /**
+   * A contract's book in ten-thousandths off its underlying's last price (`prev`: off the previous close, a day
+   * further from expiry, for the change), with the model's delta and volatility.
+   */
+  private optionUnits(symbol: string, prev = false): { bid: number; ask: number; mid: number; delta: number; iv: number } | null {
+    const o = this.optionState(symbol)
+    if (!o) return null
+    const spot = (prev ? o.underlying.meta.prevClose : o.underlying.last) / UNITS_PER_DOLLAR
+    const iv = impliedVol(o.underlying.meta.vol)
+    const years = yearsTo(o.parts.expiration, this.now()) + (prev ? 1 / 365 : 0)
+    const { price, delta } = blackScholes(o.parts.right, spot, Number(o.parts.strike), years, iv)
+    return { ...optionBook(price), delta, iv }
+  }
+
+  /** Advance one symbol by one random step (a contract: its underlying). */
   step(symbol: string): void {
+    const underlying = this.optionState(symbol)?.underlying.meta.symbol
+    if (underlying) return this.step(underlying)
     const s = this.states.get(symbol)
     if (!s) return
     const move = s.meta.vol * 0.0006 * gaussian(this.rng)
@@ -143,6 +190,8 @@ export class MockMarket {
    * trigger without waiting for the random walk).
    */
   nudge(symbol: string, bps: number): void {
+    const underlying = this.optionState(symbol)?.underlying.meta.symbol
+    if (underlying) return this.nudge(underlying, bps)
     const s = this.states.get(symbol)
     if (!s) return
     s.last = toTick(Math.round(s.last * (1 + bps / 10_000)))
@@ -153,6 +202,8 @@ export class MockMarket {
 
   /** Executable side prices in units. */
   bidAsk(symbol: string): { bid: number; ask: number; last: number } | null {
+    const option = this.optionUnits(symbol)
+    if (option) return { bid: option.bid, ask: option.ask, last: option.mid }
     const s = this.states.get(symbol)
     if (!s) return null
     const tick = tickUnits(s.last)
@@ -163,6 +214,8 @@ export class MockMarket {
   quote(symbol: string): Quote {
     const s = this.states.get(symbol)
     const nowIso = new Date(this.now()).toISOString()
+    const option = s ? null : this.optionQuote(symbol)
+    if (option) return option
     if (!s) {
       return {
         symbol, bid: null, bidSize: null, ask: null, askSize: null, last: null, lastSize: null, lastAt: null,
@@ -197,6 +250,94 @@ export class MockMarket {
       source: 'mock',
       halted: false,
       session: 'REGULAR',
+    }
+  }
+
+  /** A contract's quote (§30): the model's book, its mid as the last print, the change since yesterday's value. */
+  private optionQuote(symbol: string): Quote | null {
+    const o = this.optionState(symbol)
+    const now = this.optionUnits(symbol)
+    const prev = this.optionUnits(symbol, true)
+    if (!o || !now || !prev) return null
+    const change = unitsToDec(now.mid - prev.mid)
+    return {
+      symbol,
+      bid: unitsToDec(now.bid),
+      bidSize: 10 + (hashString(`${symbol}:b`) % 90),
+      ask: unitsToDec(now.ask),
+      askSize: 10 + (hashString(`${symbol}:a`) % 90),
+      last: unitsToDec(now.mid),
+      lastSize: 1 + (hashString(symbol) % 9),
+      lastAt: new Date(o.underlying.lastAt).toISOString(),
+      prevClose: unitsToDec(prev.mid),
+      change,
+      changePct: prev.mid > 0 ? div(change, unitsToDec(prev.mid), 10, 'HALF_EVEN') : null,
+      dayOpen: unitsToDec(prev.mid),
+      dayHigh: unitsToDec(Math.max(now.mid, prev.mid)),
+      dayLow: unitsToDec(Math.min(now.mid, prev.mid)),
+      volume: this.optionActivity(symbol, now.delta).volume,
+      volumeIsPartial: false,
+      extended: null,
+      asOf: new Date(this.now()).toISOString(),
+      ageMs: Math.max(0, this.now() - o.underlying.lastAt),
+      quality: 'SIMULATED',
+      source: 'mock',
+      halted: false,
+      session: 'REGULAR',
+    }
+  }
+
+  /** Deterministic volume and open interest, highest near the money (|delta| ≈ 0.5). */
+  private optionActivity(symbol: string, delta: number): { volume: number; openInterest: number } {
+    const h = hashString(symbol)
+    const nearness = 1 - Math.min(1, Math.abs(Math.abs(delta) - 0.5) * 2)
+    const openInterest = Math.round((200 + (h % 4000)) * (0.15 + nearness))
+    return { volume: Math.round(openInterest * (0.05 + ((h >>> 12) % 40) / 100)), openInterest }
+  }
+
+  /**
+   * One expiration's chain (§30): 21 strikes around the previous close (so the rows stay put through the day), calls
+   * and puts, or null for an unknown underlying or a crypto pair.
+   */
+  optionChain(underlying: string, expiration: string, enabled: boolean): OptionChain | null {
+    const s = this.states.get(underlying)
+    if (!s || s.meta.type === 'CRYPTO') return null
+    const { calls, puts } = chainSymbols(underlying, expiration, s.meta.prevClose / UNITS_PER_DOLLAR)
+    const contract = (symbol: string): OptionContract => {
+      const q = this.quote(symbol)
+      const u = this.optionUnits(symbol)
+      const { volume, openInterest } = this.optionActivity(symbol, u?.delta ?? 0)
+      const parts = parseOption(symbol)!
+      return {
+        symbol,
+        underlying,
+        expiration,
+        right: parts.right,
+        strike: parts.strike,
+        bid: q.bid,
+        bidSize: q.bidSize,
+        ask: q.ask,
+        askSize: q.askSize,
+        mid: q.last,
+        last: q.last,
+        volume,
+        openInterest,
+        impliedVolatility: u ? u.iv.toFixed(4) : null,
+        delta: u ? u.delta.toFixed(4) : null,
+        quoteAt: q.asOf,
+        quality: q.quality,
+      }
+    }
+    return {
+      underlying,
+      expiration,
+      enabled,
+      feed: 'simulated',
+      multiplier: 100,
+      underlyingPrice: unitsToDec(s.last),
+      asOf: new Date(this.now()).toISOString(),
+      calls: calls.map(contract),
+      puts: puts.map(contract),
     }
   }
 
