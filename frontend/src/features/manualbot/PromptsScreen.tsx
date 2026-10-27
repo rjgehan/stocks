@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { api, unwrap } from '@/lib/api/client'
 import { describeError, errorBody } from '@/lib/api/errors'
-import { useCheckManualReply, useCreateManualSession, useExecuteManualSession, useManualSession, useMyManualBots, usePlayerManualSessions } from '@/lib/api/hooks/manualBots'
+import { manualKeys, useCheckManualReply, useCreateManualSession, useExecuteManualSession, useManualSession, useMyManualBots, usePlayerManualSessions } from '@/lib/api/hooks/manualBots'
 import { isApiError } from '@/lib/api/problem'
 import type { ManualAction, ManualBot, ManualSession } from '@/lib/api/types'
 import { etDatePlusDays, formatTimeEt } from '@/lib/format/time'
@@ -13,6 +15,7 @@ import { IconCheck, IconCopy, IconRobot } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { AiChip, Avatar } from '@/features/league/PlayerBadge'
 import { toast } from '@/features/notifications/toastStore'
+import { combinePrompts, splitReplies } from './batchPrompts'
 import { hasError, isDone, isTickable, issueLine, resultLabel, resultTone, rowOrder, rowSize, rowTif, sortIssues } from './manualView'
 
 const ACTION_TONE: Record<string, PillTone> = { BUY: 'up', SELL: 'down', CANCEL: 'neutral' }
@@ -77,8 +80,30 @@ function TradeLine({ a }: { a: ManualAction }) {
   )
 }
 
+/** What "All bots at once" hands one bot: its new session and, once the answer is split, its reply. */
+interface Assigned {
+  sessionId: string
+  reply: string | null
+  nonce: number
+}
+
 /** One bot: copy its prompt, paste the reply (checked as you go), place the trades; a check when it is done. */
-function BotPrompt({ m, index, onDone, onStatus }: { m: ManualBot; index: number; onDone: (index: number) => void; onStatus: (handle: string, done: boolean) => void }) {
+function BotPrompt({
+  m,
+  index,
+  onDone,
+  onStatus,
+  assigned,
+  onReady,
+}: {
+  m: ManualBot
+  index: number
+  onDone: (index: number) => void
+  onStatus: (handle: string, done: boolean) => void
+  assigned?: Assigned
+  /** The bot's current session and, when its checked trades can be placed, how to place them. */
+  onReady: (handle: string, sessionId: string | null, place: (() => void) | null) => void
+}) {
   const handle = m.bot?.handle ?? ''
   const canWrite = m.status === 'ACTIVE'
   const latest = usePlayerManualSessions(handle)
@@ -91,9 +116,9 @@ function BotPrompt({ m, index, onDone, onStatus }: { m: ManualBot; index: number
     const first = latest.data?.pages[0]?.items?.[0]
     const p = pickUp(first, Date.now())
     setDoneToday(p.done)
-    if (p.reuse) setSessionId(p.reuse)
+    if (p.reuse && !assigned) setSessionId(p.reuse)
     setPicked(true)
-  }, [picked, latest.isPending, latest.data])
+  }, [picked, latest.isPending, latest.data, assigned])
 
   const session = useManualSession(handle, sessionId)
   const s = sessionId ? session.data : undefined
@@ -175,6 +200,27 @@ function BotPrompt({ m, index, onDone, onStatus }: { m: ManualBot; index: number
       },
     })
   const failure = execute.error ? describeError(execute.error) : check.error ? describeError(check.error) : null
+
+  // "All bots at once": a new session from Copy all, then this bot's part of the pasted answer (checked as if typed)
+  useEffect(() => {
+    if (!assigned) return
+    setPicked(true)
+    if (assigned.sessionId !== sessionId) {
+      setSessionId(assigned.sessionId)
+      checkedText.current = null
+      setText('')
+    }
+    if (assigned.reply != null) setText(assigned.reply)
+    // only when a new assignment arrives
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assigned?.nonce])
+
+  // tell the screen whether this bot is ready for "Execute all" (a stable function that runs the current place)
+  const placeRef = useRef(place)
+  placeRef.current = place
+  const placeNow = useCallback(() => placeRef.current(), [])
+  const ready = canExecute && !execute.isPending
+  useEffect(() => onReady(handle, sessionId, ready ? placeNow : null), [handle, sessionId, ready, placeNow, onReady])
 
   return (
     <li id={`bot-${handle}`} aria-label={`@${handle}`} className={cx('rounded-lg border bg-bg-1 p-4', done ? 'border-up/50' : 'border-divider')}>
@@ -281,6 +327,143 @@ function BotPrompt({ m, index, onDone, onStatus }: { m: ManualBot; index: number
 }
 
 /**
+ * All bots at once: Copy all makes a fresh prompt for every active bot and copies them as one message for one chat AI;
+ * the AI's whole answer, pasted once, is split by the session each JSON block names and handed to each bot's card
+ * (checked there as if typed); Execute all places every bot whose trades checked out.
+ */
+function AllAtOnce({
+  bots,
+  states,
+  places,
+  assign,
+}: {
+  bots: ManualBot[]
+  states: Record<string, { sessionId: string | null; ready: boolean }>
+  places: React.RefObject<Record<string, () => void>>
+  assign: (parts: Record<string, { sessionId: string; reply: string | null }>) => void
+}) {
+  const qc = useQueryClient()
+  const active = bots.filter((m) => m.status === 'ACTIVE' && m.bot?.handle)
+  const [making, setMaking] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [fallback, setFallback] = useState<string | null>(null)
+  const [answer, setAnswer] = useState('')
+  const [result, setResult] = useState<string | null>(null)
+  const selectAll = useCallback((el: HTMLTextAreaElement | null) => el?.select(), [])
+
+  const copyAll = () => {
+    setMaking(true)
+    setFallback(null)
+    let combined = ''
+    const made = Promise.all(
+      active.map((m) => unwrap(api.POST('/api/v1/me/bots/{handle}/manual-sessions', { params: { path: { handle: m.bot!.handle! } } }))),
+    ).then((sessions) => {
+      const parts: Record<string, { sessionId: string; reply: string | null }> = {}
+      const items = sessions.map((s, i) => {
+        const m = active[i]!
+        const h = m.bot!.handle!
+        if (s.sessionId) {
+          qc.setQueryData(manualKeys.session(h, s.sessionId), s)
+          void qc.invalidateQueries({ queryKey: manualKeys.sessionList(h) })
+          parts[h] = { sessionId: s.sessionId, reply: null }
+        }
+        return { handle: h, name: m.bot?.displayName ?? h, sessionId: s.sessionId ?? '', prompt: s.untrusted?.prompt ?? '' }
+      })
+      assign(parts)
+      combined = combinePrompts(items)
+      return combined
+    })
+    made
+      .catch((e: unknown) => {
+        const d = describeError(e)
+        toast({ tone: 'error', title: isApiError(e) && e.code === 'RATE_LIMITED' ? 'Prompt limit reached' : 'Prompts not made', body: errorBody(d) ?? d.title })
+      })
+      .finally(() => setMaking(false))
+    copyToClipboard(made).then(
+      () => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2_000)
+      },
+      () => made.then(() => setFallback(combined), () => {}),
+    )
+  }
+
+  // split the pasted answer a moment after it changes, and hand each bot its part
+  useEffect(() => {
+    if (!answer.trim()) {
+      setResult(null)
+      return
+    }
+    const t = setTimeout(() => {
+      const sessions: Record<string, string> = {}
+      for (const [h, s] of Object.entries(states)) if (s.sessionId) sessions[s.sessionId] = h
+      const split = splitReplies(answer, sessions)
+      const parts: Record<string, { sessionId: string; reply: string | null }> = {}
+      for (const [h, reply] of Object.entries(split.replies)) parts[h] = { sessionId: states[h]!.sessionId!, reply }
+      if (Object.keys(parts).length) assign(parts)
+      const n = Object.keys(parts).length
+      setResult(
+        [
+          `Found replies for ${n} of ${active.length} bot${active.length === 1 ? '' : 's'}.`,
+          split.unknown.length ? `${split.unknown.length} named an old or unknown session (make the prompts again).` : '',
+          split.unlabeled ? `${split.unlabeled} JSON block${split.unlabeled === 1 ? '' : 's'} named no session.` : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
+      )
+    }, CHECK_DELAY_MS)
+    return () => clearTimeout(t)
+    // split again only when the answer changes (the sessions are read as they are then)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answer])
+
+  const ready = Object.entries(states).filter(([h, s]) => s.ready && places.current[h])
+  const executeAll = () => {
+    for (const [h] of ready) places.current[h]?.()
+  }
+
+  return (
+    <section aria-label="All bots at once" className="space-y-2 rounded-lg border border-accent/40 bg-bg-1 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-section font-semibold">All bots at once</h2>
+        <span className="text-caption text-text-3">one prompt, one reply</span>
+        <Button variant="primary" size="sm" className="ml-auto" onClick={copyAll} disabled={making || active.length === 0} aria-live="polite">
+          {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
+          {making ? 'Making…' : copied ? 'Copied' : `Copy all ${active.length} prompts`}
+        </Button>
+      </div>
+      {fallback ? (
+        <div className="space-y-1">
+          <p role="status" className="text-caption text-warn">
+            Copy blocked by the browser: press Ctrl/⌘+C.
+          </p>
+          <textarea aria-label="All prompts" readOnly rows={3} value={fallback} ref={selectAll} className="w-full resize-y rounded-md border border-border bg-bg-2 px-3 py-2 font-mono text-micro text-text-2 outline-none" />
+        </div>
+      ) : null}
+      <textarea
+        aria-label="The AI's whole answer"
+        rows={3}
+        value={answer}
+        onChange={(e) => setAnswer(e.target.value)}
+        spellCheck={false}
+        placeholder="Paste the AI's whole answer: each bot gets its own part"
+        className="w-full resize-y rounded-md border border-border bg-bg-2 px-3 py-2 font-mono text-caption text-text-1 outline-none placeholder:text-text-3 focus:border-accent"
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        {result ? (
+          <p role="status" className="text-caption text-text-2">
+            {result}
+          </p>
+        ) : null}
+        <Button variant="primary" size="sm" className="ml-auto" onClick={executeAll} disabled={ready.length === 0}>
+          Execute all ready ({ready.length})
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+/**
  * Prompts (`/prompts`): every AI bot I own on one screen. Per bot: copy its prompt, paste the chat AI's reply (the
  * trades are read back as soon as it is pasted), execute them; a check marks the bots that are done.
  */
@@ -290,13 +473,29 @@ export function PromptsScreen() {
   const onStatus = useCallback((h: string, d: boolean) => setDone((prev) => (prev[h] === d ? prev : { ...prev, [h]: d })), [])
   const [showApi, setShowApi] = useState(false)
   const all = mine.data ?? []
-  const api = all.filter(linked).length
+  const apiBots = all.filter(linked).length
   const bots = showApi ? all : all.filter((m) => !linked(m))
+
+  // each bot's current session and its "place now" (when its checked trades can be placed), for the batch card
+  const [states, setStates] = useState<Record<string, { sessionId: string | null; ready: boolean }>>({})
+  const places = useRef<Record<string, () => void>>({})
+  const onReady = useCallback((h: string, sessionId: string | null, place: (() => void) | null) => {
+    if (place) places.current[h] = place
+    else delete places.current[h]
+    setStates((prev) => (prev[h]?.sessionId === sessionId && prev[h]?.ready === Boolean(place) ? prev : { ...prev, [h]: { sessionId, ready: Boolean(place) } }))
+  }, [])
+  const [assigned, setAssigned] = useState<Record<string, Assigned>>({})
+  const assign = (parts: Record<string, { sessionId: string; reply: string | null }>) =>
+    setAssigned((prev) => {
+      const next = { ...prev }
+      for (const [h, p] of Object.entries(parts)) next[h] = { ...p, nonce: (prev[h]?.nonce ?? 0) + 1 }
+      return next
+    })
 
   // after a bot is done, move to the next one
   const next = (i: number) => {
     const following = bots[i + 1]?.bot?.handle
-    if (following) document.getElementById(`bot-${following}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (following) document.getElementById(`bot-${following}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
   }
 
   if (mine.isPending) {
@@ -318,20 +517,23 @@ export function PromptsScreen() {
       <div className="flex flex-wrap items-baseline gap-2">
         <h1 className="text-[20px] leading-7 font-bold tracking-tight">Prompts</h1>
         {bots.length ? <span className="text-caption text-text-3">{bots.filter((m) => done[m.bot?.handle ?? '']).length} of {bots.length} done</span> : null}
-        {api ? (
+        {apiBots ? (
           <button type="button" onClick={() => setShowApi((v) => !v)} className="ml-auto text-caption font-semibold text-accent hover:text-accent-hover">
-            {showApi ? 'Hide API bots' : `Show ${api} API bot${api === 1 ? '' : 's'}`}
+            {showApi ? 'Hide API bots' : `Show ${apiBots} API bot${apiBots === 1 ? '' : 's'}`}
           </button>
         ) : null}
       </div>
       {bots.length === 0 ? (
         <EmptyState icon={<IconRobot size={28} />} title="No manual bots" body="Your bots trade with an API key." />
       ) : (
-        <ul className="space-y-3">
-          {bots.map((m, i) => (
-            <BotPrompt key={m.bot?.handle} m={m} index={i} onDone={next} onStatus={onStatus} />
-          ))}
-        </ul>
+        <>
+          {bots.length > 1 ? <AllAtOnce bots={bots} states={states} places={places} assign={assign} /> : null}
+          <ul className="space-y-3">
+            {bots.map((m, i) => (
+              <BotPrompt key={m.bot?.handle} m={m} index={i} onDone={next} onStatus={onStatus} assigned={assigned[m.bot?.handle ?? '']} onReady={onReady} />
+            ))}
+          </ul>
+        </>
       )}
     </div>
   )

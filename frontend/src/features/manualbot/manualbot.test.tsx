@@ -423,3 +423,47 @@ describe('the prompts screen', { timeout: 20_000 }, () => {
     expect(screen.getByText('1 of 1 done')).toBeTruthy()
   })
 })
+
+describe('all bots at once', { timeout: 30_000 }, () => {
+  const SID2 = 'mbs_01JB0000000000000000000000'
+  const nova = bot({ bot: { ...bot().bot!, handle: 'nova', displayName: 'Nova', playerId: 'ply_3' } })
+
+  it('copies every prompt as one message, splits one answer back to each bot and executes them all', async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const now = new Date().toISOString()
+    const s1 = session({ createdAt: now, untrusted: { summary: null, prompt: 'PROMPT FOR GEM', reply: null } })
+    const s2 = session({ sessionId: SID2, botHandle: 'nova', createdAt: now, untrusted: { summary: null, prompt: 'PROMPT FOR NOVA', reply: null } })
+    const replied = (s: typeof s1) => session({ ...s, status: 'REPLIED', repliedAt: now, actions: [row(1)] })
+    const executed = (s: typeof s1) => session({ ...s, status: 'EXECUTED', executedAt: now, actions: [row(1, { result: { status: 'PLACED', orderId: 'ord_1', orderStatus: 'FILLED', code: null, message: null, at: null } })] })
+    routes['GET /me/bots'] = () => ({ body: [bot(), nova] })
+    for (const [h, s] of [['gem', s1], ['nova', s2]] as const) {
+      routes[`GET /players/${h}/manual-sessions`] = () => ({ body: { items: [], nextCursor: null } })
+      routes[`POST /me/bots/${h}/manual-sessions`] = () => ({ status: 201, body: s })
+      routes[`GET /players/${h}/manual-sessions/${s.sessionId}`] = () => ({ body: s })
+      routes[`POST /me/bots/${h}/manual-sessions/${s.sessionId}/reply`] = () => ({ body: replied(s) })
+      routes[`POST /me/bots/${h}/manual-sessions/${s.sessionId}/execute`] = () => ({ body: executed(s) })
+    }
+    renderWithRouter(<PromptsScreen />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy all 2 prompts' }, SLOW))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    const copied = writeText.mock.calls[0]![0]
+    expect(copied).toContain('This message holds 2 separate prompts')
+    expect(copied).toContain(`@gem (Gem), session ${SID}`)
+    expect(copied).toContain('PROMPT FOR NOVA')
+
+    const answer = `Gem buys.\n\`\`\`json\n{"session": "${SID}", "orders": [{"action": "BUY"}]}\n\`\`\`\nNova buys.\n\`\`\`json\n{"session": "${SID2}", "orders": [{"action": "BUY"}]}\n\`\`\``
+    fireEvent.change(screen.getByLabelText("The AI's whole answer"), { target: { value: answer } })
+    expect(await screen.findByText('Found replies for 2 of 2 bots.', {}, SLOW)).toBeTruthy()
+    await waitFor(() => expect(calls.filter((c) => c.path.endsWith('/reply'))).toHaveLength(2), SLOW)
+    const gemReply = calls.find((c) => c.path === `/me/bots/gem/manual-sessions/${SID}/reply`)!.body as { reply: string }
+    expect(gemReply.reply).toContain(SID)
+    expect(gemReply.reply).not.toContain(SID2)   // each bot gets only its own block
+
+    const executeAll = await screen.findByRole('button', { name: 'Execute all ready (2)' }, SLOW)
+    await userEvent.click(executeAll)
+    await waitFor(() => expect(calls.filter((c) => c.path.endsWith('/execute'))).toHaveLength(2), SLOW)
+    expect(await screen.findByText('2 of 2 done', {}, SLOW)).toBeTruthy()
+  })
+})
