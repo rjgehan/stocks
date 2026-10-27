@@ -78,6 +78,8 @@ CLOCK_PATH = "/api/v1/market/clock"  # server mode: before a weekend check-in (i
 HEARTBEAT_PATH = "/api/v1/agent-runs/requests/heartbeat"
 NO_SLOT = "no free session slot"  # why a due check-in waits (Sessions.waiting); run requests leave it that slot
 MAX_TURNS = 60
+# The built-in Claude Code tools a check-in may use: web search, and tool search to load Stocks tools on demand.
+BUILTIN_TOOLS = ["WebSearch", "ToolSearch"]
 SELFTEST_MAX_TURNS = 5
 SUMMARIES_KEPT = 3
 SUMMARY_MAX_CHARS = 1500
@@ -692,10 +694,12 @@ def claude_command(cfg: Config, agent: Agent, exe: str, text: str, allowed: list
                    max_turns: int) -> list:
     cmd = [exe, "-p", text]
     if cfg.server:
-        # Only the agent's own MCP server, the Stocks tools plus web search as the only built-in tool, and no saved
-        # transcripts piling up in the container.
+        # Only the agent's own MCP server, the Stocks tools plus web search and tool search as the only built-in tools,
+        # and no saved transcripts piling up in the container. ToolSearch keeps the Stocks tools deferred: a session
+        # starts with their names and loads a definition when it needs one, instead of every definition up front
+        # (leaving ToolSearch out of --tools makes Claude Code load all of them on every check-in).
         cmd += ["--strict-mcp-config", "--mcp-config", str(agent.dir / "mcp.json"),
-                "--tools", "WebSearch", "--no-session-persistence"]
+                "--tools", ",".join(BUILTIN_TOOLS), "--no-session-persistence"]
     cmd += ["--allowedTools", ",".join(allowed), "--max-turns", str(max_turns), "--output-format", "json"]
     if disallowed:
         cmd += ["--disallowedTools", ",".join(disallowed)]
@@ -706,7 +710,7 @@ def claude_command(cfg: Config, agent: Agent, exe: str, text: str, allowed: list
 
 def session_command(cfg: Config, agent: Agent, exe: str, text: str, dry_run: bool) -> list:
     disallowed = [f"{cfg.prefix}__{t}" for t in ORDER_TOOLS] if dry_run else []
-    return claude_command(cfg, agent, exe, text, [cfg.prefix, "WebSearch"], disallowed, MAX_TURNS)
+    return claude_command(cfg, agent, exe, text, [cfg.prefix, *BUILTIN_TOOLS], disallowed, MAX_TURNS)
 
 
 def _signal_group(p: subprocess.Popen, sig: int) -> None:
@@ -771,6 +775,19 @@ def prune_logs(logs: Path) -> None:
             pass
 
 
+def usage_line(result: dict) -> str:
+    """A "tokens in=… cache_write=… cache_read=… out=… ~$0.18" summary of Claude Code's JSON result (the dollar
+    figure is its API-price estimate; on a subscription nothing is billed). Empty when the result has no usage."""
+    u = result.get("usage")
+    if not isinstance(u, dict):
+        return ""
+    parts = [f"{name}={int(u.get(key) or 0)}" for name, key in (
+        ("in", "input_tokens"), ("cache_write", "cache_creation_input_tokens"),
+        ("cache_read", "cache_read_input_tokens"), ("out", "output_tokens"))]
+    cost = result.get("total_cost_usd")
+    return "tokens " + " ".join(parts) + (f" ~${cost:.2f}" if isinstance(cost, (int, float)) else "")
+
+
 def run_session(cfg: Config, agent: Agent, why: str, dry_run: bool = False, outcome: dict | None = None) -> int:
     """Runs one check-in; the caller holds the agent's lock. `outcome`, when given, receives the session's turns,
     its reply and its error (a run request's report to the app)."""
@@ -823,7 +840,7 @@ def run_session(cfg: Config, agent: Agent, why: str, dry_run: bool = False, outc
     save_state(agent, s, now_et())
     log(
         f"check-in done: {result.get('subtype')} turns={result.get('num_turns')} "
-        f"error={result.get('is_error')} denied={len(result.get('permission_denials') or [])}",
+        f"error={result.get('is_error')} denied={len(result.get('permission_denials') or [])} {usage_line(result)}",
         h,
     )
     for r in refused:

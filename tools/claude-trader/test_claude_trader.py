@@ -598,14 +598,15 @@ class CommandTest(Base):
         cfg = self.cfg(server=False, STOCKS_TRADER_MODEL="opus")
         a = ct.load_agents(cfg).agents[0]
         cmd = ct.session_command(cfg, a, "/bin/claude", "PROMPT", False)
-        self.assertEqual(cmd, ["/bin/claude", "-p", "PROMPT", "--allowedTools", "mcp__claude_ai_Stocks,WebSearch",
+        self.assertEqual(cmd, ["/bin/claude", "-p", "PROMPT", "--allowedTools",
+                               "mcp__claude_ai_Stocks,WebSearch,ToolSearch",
                                "--max-turns", "60", "--output-format", "json", "--model", "opus"])
         dry = ct.session_command(cfg, a, "/bin/claude", "PROMPT", True)
         deny = dry[dry.index("--disallowedTools") + 1].split(",")
         self.assertEqual(deny, [f"mcp__claude_ai_Stocks__{t}" for t in ct.ORDER_TOOLS])
         self.assertIn("mcp__claude_ai_Stocks__place_order", deny)
         other = self.cfg(server=False, STOCKS_TRADER_MCP="mcp__claude_ai_Stocks_2")
-        self.assertIn("mcp__claude_ai_Stocks_2,WebSearch", ct.session_command(other, a, "c", "P", False))
+        self.assertIn("mcp__claude_ai_Stocks_2,WebSearch,ToolSearch", ct.session_command(other, a, "c", "P", False))
 
     def test_server_mode(self):
         self.write_agents(agent_toml("claude_tech", KEY_B, model="sonnet"))
@@ -615,13 +616,23 @@ class CommandTest(Base):
         self.assertEqual(cmd[:3], ["/usr/local/bin/claude", "-p", "PROMPT"])
         self.assertIn("--strict-mcp-config", cmd)
         self.assertEqual(cmd[cmd.index("--mcp-config") + 1], str(self.home / "agents" / "claude_tech" / "mcp.json"))
-        self.assertEqual(cmd[cmd.index("--allowedTools") + 1], "mcp__stocks,WebSearch")
+        self.assertEqual(cmd[cmd.index("--allowedTools") + 1], "mcp__stocks,WebSearch,ToolSearch")
+        # tool search on: the Stocks tools load on demand instead of every definition at the start of a check-in
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "WebSearch,ToolSearch")
         self.assertEqual(cmd[cmd.index("--disallowedTools") + 1],
                          ",".join(f"mcp__stocks__{t}" for t in ct.ORDER_TOOLS))
         self.assertEqual(cmd[cmd.index("--model") + 1], "sonnet")
         self.assertEqual(cmd[cmd.index("--output-format") + 1], "json")
         self.assertFalse(any(KEY_B in x for x in cmd))
         self.assertNotIn("--disallowedTools", ct.session_command(cfg, a, "c", "P", False))
+
+    def test_usage_line(self):
+        result = {"usage": {"input_tokens": 8, "cache_creation_input_tokens": 36000, "cache_read_input_tokens": 101000,
+                            "output_tokens": 900}, "total_cost_usd": 0.1766}
+        self.assertEqual(ct.usage_line(result), "tokens in=8 cache_write=36000 cache_read=101000 out=900 ~$0.18")
+        self.assertEqual(ct.usage_line({"usage": {"output_tokens": 5}}),
+                         "tokens in=0 cache_write=0 cache_read=0 out=5")
+        self.assertEqual(ct.usage_line({}), "")
 
 
 # ------------------------------------------------------------------------------------------------ scheduling
@@ -938,7 +949,7 @@ class RunSessionTest(Base):
         with fixed(WED), capture() as out:
             self.assertEqual(ct.run_session(cfg, agent, "a check-in started by hand", dry_run=False), 0)
         rec = self.records()[-1]
-        self.assertIn("mcp__claude_ai_Stocks,WebSearch", rec["argv"])
+        self.assertIn("mcp__claude_ai_Stocks,WebSearch,ToolSearch", rec["argv"])
         self.assertNotIn("--mcp-config", rec["argv"])
         self.assertIsNone(rec["agent_key"])
         s = json.loads((self.home / "state.json").read_text())

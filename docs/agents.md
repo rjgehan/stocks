@@ -400,7 +400,8 @@ is in Admin → Audit (`OAUTH_GRANT`, `OAUTH_TOKEN`, `OAUTH_REFRESH`, `OAUTH_REV
 @claude at 09:30, 12:45 and 15:50 ET on weekdays. Claude Code uses your Claude login and your claude.ai **Stocks**
 connector (§2.9, "Act as @claude"), which it lists as `claude.ai Stocks` in `claude mcp list`, so no key is
 involved. A launch agent runs `tick` every minute; each check-in is one headless `claude -p` session in an empty
-directory, allowed only the Stocks tools and web search. To run the check-ins on the CasaOS server instead (no Mac
+directory, allowed only the Stocks tools, web search and tool search (Stocks tool definitions load on demand,
+which keeps each check-in's token use down). To run the check-ins on the CasaOS server instead (no Mac
 needed, several agents with their own strategies), see §2.11; then uninstall the launch agent here.
 
 ```sh
