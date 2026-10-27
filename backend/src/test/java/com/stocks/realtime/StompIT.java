@@ -346,7 +346,8 @@ class StompIT {
   /** A connected STOMP client and everything it received. */
   final class Client extends StompSessionHandlerAdapter {
     StompSession session;
-    StompHeaders connected;
+    /** Set by {@link #afterConnected}, which can run just after the connect future completes. */
+    volatile StompHeaders connected;
     final BlockingQueue<String> errors = new LinkedBlockingQueue<>();
     final Map<String, BlockingQueue<String>> messages = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -419,6 +420,11 @@ class StompIT {
     // generous: the first CONNECT of a fresh context also warms up Tomcat's WebSocket upgrade, which took more than
     // 5 s on a loaded machine (the full suite next to other builds)
     client.session = stomp.connectAsync(url(), handshake, connectHeaders, client).get(20, TimeUnit.SECONDS);
+    // the future can complete before the handler's afterConnected has stored the CONNECTED headers
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (client.connected == null && System.nanoTime() < deadline) {
+      Thread.sleep(10);
+    }
     return client;
   }
 
