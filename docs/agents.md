@@ -588,6 +588,14 @@ claude.ai connector), so each agent trades as its own player and shows up on the
   counts toward your Claude plan's usage limits. Three agents on the default schedule are 9 sessions a trading day
   (and a weekend day while crypto trading is on), plus the extra check-ins they book. If you hit the limits, use
   fewer agents or times, or `extra_runs_per_day = 0`.
+- **Plan usage on the website**: before and after each check-in, and before and after each round of check-ins
+  that run together, the trader reads the plan's meters with Claude Code's `/usage` (the 5-hour session and the
+  weekly limit; no model call, so it costs no usage) and sends them to the app with an agent's key. Admin → Bots
+  shows them under **Claude plan**: the latest meters, the day's change of the weekly meter, each round with its
+  bots' check-ins (tokens and Claude Code's API-price estimate, which a subscription does not bill), and the last
+  days. When `/usage` has no meters (a login without the profile scope), the reading that comes back with the
+  check-in stands in for the "after". The log shows them too (`plan 5h 10% week 81% before, …`).
+  `STOCKS_TRADER_PLAN_USAGE=0` turns the readings off (default `1`).
 - **Secrets**: the token and the keys only ever go into `/DATA/AppData/stocks/.env` and
   `trader-data/agents.toml` on the server: never into a chat, the repository or a screenshot. The trader never
   prints, logs or writes a key: each agent's `mcp.json` holds the placeholder `${STOCKS_AGENT_KEY}`, which Claude

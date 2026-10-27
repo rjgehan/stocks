@@ -51,6 +51,14 @@ if rec:
     with open(rec, "a") as f:
         f.write(json.dumps({"argv": args, "prompt": prompt, "agent_key": os.environ.get("STOCKS_AGENT_KEY"),
                             "claude_key_in_env": "STOCKS_CLAUDE_KEY" in os.environ, "cwd": os.getcwd()}) + "\n")
+if prompt == "/usage":
+    usage = os.environ.get("FAKE_USAGE")
+    limits = json.loads(usage) if usage else None
+    print(json.dumps({"type": "system", "subtype": "init"}))
+    print(json.dumps({"type": "assistant", "message": {"content": []},
+                      "usage_report": {"rate_limits": None if limits is None else {"limits": limits}}}))
+    print(json.dumps({"type": "result", "subtype": "success", "result": "usage", "total_cost_usd": 0}))
+    sys.exit(0)
 mode = os.environ.get("FAKE_MODE", "ok")
 if mode == "sleep":
     with open(os.environ["FAKE_PIDFILE"], "w") as f:
@@ -66,8 +74,13 @@ if allowed.endswith("__whoami"):
     text = ("HANDLE: " + who) if who else "HANDLE_ERROR: UNAUTHORIZED (invalid API key)"
 else:
     text = os.environ.get("FAKE_RESULT", "Bought 2 NVDA on the breakout.\nEXTRA_RUN: 2026-10-14 14:15 | NVDA earnings")
+rate = os.environ.get("FAKE_RATE")
+if rate:
+    print(json.dumps({"type": "rate_limit_event", "rate_limit_info": json.loads(rate)}))
 print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "num_turns": 7, "result": text,
-                  "permission_denials": []}))
+                  "permission_denials": [], "total_cost_usd": 0.1766,
+                  "usage": {"input_tokens": 8, "cache_creation_input_tokens": 36000, "cache_read_input_tokens": 101000,
+                            "output_tokens": 900}}))
 '''
 
 
@@ -86,6 +99,7 @@ class FakeApp:
         self.claims = {}          # key -> [run requests], oldest first
         self.finished = []        # (request id, body, headers)
         self.heartbeats = []      # the handle of each heartbeat's key
+        self.plan_usage = []      # (the handle of the key, body) of each plan usage snapshot
         self.finish_status = None
         self.broken = False
         self.clock = {"session": "CLOSED", "tradingDate": None,
@@ -129,6 +143,9 @@ class FakeApp:
                     else:
                         app.heartbeats.append(app.players[key])
                         code, out = 204, None
+                elif self.path == "/api/v1/agent-runs/plan-usage":
+                    app.plan_usage.append((app.players.get(key), body))
+                    code, out = 201, body
                 elif self.path.endswith("/finish"):
                     app.finished.append((self.path.split("/")[-2], body, dict(self.headers)))
                     code = app.finish_status or 200
@@ -180,7 +197,8 @@ class Base(unittest.TestCase):
                                                       "FAKE_PIDFILE": str(self.pidfile),
                                                       "no_proxy": "127.0.0.1,localhost"})
         self.env_patch.start()
-        for k in ("FAKE_MODE", "FAKE_RESULT", "FAKE_WHOAMI", "STOCKS_CLAUDE_KEY", "STOCKS_AGENT_KEY"):
+        for k in ("FAKE_MODE", "FAKE_RESULT", "FAKE_WHOAMI", "FAKE_USAGE", "FAKE_RATE", "STOCKS_CLAUDE_KEY",
+                  "STOCKS_AGENT_KEY"):
             os.environ.pop(k, None)
         self.handlers = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGINT)}
         ct.STOP.clear()
@@ -194,7 +212,9 @@ class Base(unittest.TestCase):
         self.tmp.cleanup()
 
     def env(self, server: bool = True, **more) -> dict:
-        e = {"STOCKS_TRADER_HOME": str(self.home), "STOCKS_TRADER_CLAUDE_BIN": str(self.fake)}
+        # plan readings (/usage around check-ins) off unless a test turns them on: they add claude runs
+        e = {"STOCKS_TRADER_HOME": str(self.home), "STOCKS_TRADER_CLAUDE_BIN": str(self.fake),
+             "STOCKS_TRADER_PLAN_USAGE": "0"}
         if server:
             e["STOCKS_TRADER_MCP_URL"] = self.app.mcp_url
         e.update(more)
@@ -600,7 +620,8 @@ class CommandTest(Base):
         cmd = ct.session_command(cfg, a, "/bin/claude", "PROMPT", False)
         self.assertEqual(cmd, ["/bin/claude", "-p", "PROMPT", "--allowedTools",
                                "mcp__claude_ai_Stocks,WebSearch,ToolSearch",
-                               "--max-turns", "60", "--output-format", "json", "--model", "opus"])
+                               "--max-turns", "60", "--verbose", "--output-format", "stream-json", "--model",
+                               "opus"])
         dry = ct.session_command(cfg, a, "/bin/claude", "PROMPT", True)
         deny = dry[dry.index("--disallowedTools") + 1].split(",")
         self.assertEqual(deny, [f"mcp__claude_ai_Stocks__{t}" for t in ct.ORDER_TOOLS])
@@ -622,7 +643,8 @@ class CommandTest(Base):
         self.assertEqual(cmd[cmd.index("--disallowedTools") + 1],
                          ",".join(f"mcp__stocks__{t}" for t in ct.ORDER_TOOLS))
         self.assertEqual(cmd[cmd.index("--model") + 1], "sonnet")
-        self.assertEqual(cmd[cmd.index("--output-format") + 1], "json")
+        self.assertEqual(cmd[cmd.index("--output-format") + 1], "stream-json")
+        self.assertIn("--verbose", cmd)
         self.assertFalse(any(KEY_B in x for x in cmd))
         self.assertNotIn("--disallowedTools", ct.session_command(cfg, a, "c", "P", False))
 
@@ -1013,6 +1035,97 @@ class RunSessionTest(Base):
         with fixed(WED), capture():
             self.assertEqual(ct.run_once(self.cfg(), "claude", True), 0)
         self.assertEqual(self.records()[-1]["agent_key"], KEY_A)
+
+
+USAGE_LIMITS = [
+    {"kind": "session", "group": "session", "percent": 10, "resets_at": "2026-10-14T18:30:00.9+00:00"},
+    {"kind": "weekly_all", "group": "weekly", "percent": 81, "resets_at": "2026-10-16T02:00:00+00:00"},
+    {"kind": "weekly_scoped", "group": "weekly", "percent": 2, "resets_at": "2026-10-16T02:00:00+00:00"},
+]
+
+
+class PlanUsageTest(Base):
+    """The plan's meters around check-ins: /usage before and after each check-in and each round, sent to the app with
+    the agent's key, with the check-in's own rate-limit reading when /usage has none."""
+
+    def setUp(self):
+        super().setUp()
+        ct.PLAN.last = None
+
+    def test_parsing(self):
+        out = "\n".join(json.dumps(m) for m in [
+            {"type": "system", "subtype": "init"},
+            {"type": "assistant", "message": {"content": []}, "usage_report": {"rate_limits": {"limits": USAGE_LIMITS}}},
+        ])
+        self.assertEqual(ct.parse_usage(out), {"sessionPercent": 10.0, "sessionResetsAt": "2026-10-14T18:30:00Z",
+                                               "weeklyPercent": 81.0, "weeklyResetsAt": "2026-10-16T02:00:00Z"})
+        self.assertIsNone(ct.parse_usage(json.dumps({"type": "assistant", "usage_report": {"rate_limits": None}})))
+        self.assertIsNone(ct.parse_usage("not json"))
+        event = {"type": "rate_limit_event", "rate_limit_info": {
+            "status": "allowed_warning", "rateLimitType": "seven_day", "utilization": 0.8, "resetsAt": 1793239200,
+            "unifiedWindows": {"five_hour": {"utilization": 0.09, "resetsAt": 1793125800},
+                               "seven_day": {"utilization": 0.8, "resetsAt": 1793239200}}}}
+        result = {"type": "result", "result": "done"}
+        stream = json.dumps(event) + "\n" + json.dumps(result)
+        self.assertEqual(ct.parse_rate_limit(stream), {"sessionPercent": 9.0, "sessionResetsAt": "2026-10-27T18:30:00Z",
+                                                       "weeklyPercent": 80.0, "weeklyResetsAt": "2026-10-29T02:00:00Z"})
+        self.assertEqual(ct.parse_result(stream), result)            # the stream's last result
+        self.assertEqual(ct.parse_result(json.dumps(result)), result)  # a json output: the one object
+        self.assertIsNone(ct.parse_result("not json"))
+        self.assertEqual(ct.meter_text({"sessionPercent": 9.0, "weeklyPercent": 80.5}), "5h 9% week 80.5%")
+        self.assertEqual(ct.meter_text(None), "?")
+
+    def test_a_check_in_brackets_itself_and_its_round(self):
+        self.write_agents(agent_toml("claude_tech", KEY_B))
+        os.environ["FAKE_USAGE"] = json.dumps(USAGE_LIMITS)
+        cfg = self.cfg(STOCKS_TRADER_PLAN_USAGE="1")
+        agent = ct.load_agents(cfg).agents[0]
+        with fixed(WED), capture() as out:
+            self.assertEqual(ct.run_session(cfg, agent, "the 09:30 ET scheduled check-in"), 0, out.getvalue())
+        kinds = [b["kind"] for _, b in self.app.plan_usage]
+        self.assertEqual(kinds, ["ROUND_BEFORE", "CHECKIN_BEFORE", "CHECKIN_AFTER", "ROUND_AFTER"])
+        before, after = self.app.plan_usage[1][1], self.app.plan_usage[2][1]
+        self.assertEqual(before["roundRef"], after["roundRef"])
+        self.assertTrue(before["roundRef"].startswith("round-"))
+        self.assertEqual(before["runRef"], "claude_tech-20261014-093000")
+        self.assertEqual((after["source"], after["sessionPercent"], after["weeklyPercent"]), ("USAGE", 10.0, 81.0))
+        self.assertEqual(after["tokens"], {"input": 8, "cacheWrite": 36000, "cacheRead": 101000, "output": 900})
+        self.assertEqual(after["costUsd"], 0.1766)
+        self.assertNotIn("tokens", before)
+        # the round's first reading stands in for the check-in's "before" (no second /usage); the "after"s are fresh
+        prompts = [r["prompt"] for r in self.records()]
+        self.assertEqual(prompts.count("/usage"), 3)
+        usage_argv = next(r["argv"] for r in self.records() if r["prompt"] == "/usage")
+        self.assertIn("--strict-mcp-config", usage_argv)
+        self.assertEqual(usage_argv[usage_argv.index("--tools") + 1], "")
+        self.assertIn("[claude_tech] plan 5h 10% week 81% before, 5h 10% week 81% after", out.getvalue())
+
+    def test_without_usage_the_check_ins_own_reading_stands_in(self):
+        self.write_agents(agent_toml("claude_tech", KEY_B))
+        os.environ["FAKE_RATE"] = json.dumps({"status": "allowed", "unifiedWindows": {
+            "five_hour": {"utilization": 0.12, "resetsAt": 1793125800},
+            "seven_day": {"utilization": 0.815, "resetsAt": 1793239200}}})
+        cfg = self.cfg(STOCKS_TRADER_PLAN_USAGE="1")   # FAKE_USAGE unset: /usage has no meters
+        agent = ct.load_agents(cfg).agents[0]
+        with fixed(WED), capture() as out:
+            self.assertEqual(ct.run_session(cfg, agent, "a check-in started by hand"), 0, out.getvalue())
+        sent = [(b["kind"], b["source"], b["weeklyPercent"]) for _, b in self.app.plan_usage]
+        self.assertEqual(sent, [("CHECKIN_AFTER", "CHECKIN", 81.5), ("ROUND_AFTER", "CHECKIN", 81.5)])
+
+    def test_off_and_mac_mode_send_nothing(self):
+        self.write_agents(agent_toml("claude_tech", KEY_B))
+        os.environ["FAKE_USAGE"] = json.dumps(USAGE_LIMITS)
+        agent = ct.load_agents(self.cfg()).agents[0]
+        with fixed(WED), capture():
+            ct.run_session(self.cfg(), agent, "x")                    # STOCKS_TRADER_PLAN_USAGE=0 (the tests' default)
+        self.assertNotIn("/usage", [r["prompt"] for r in self.records()])
+        mac = self.cfg(server=False, STOCKS_TRADER_PLAN_USAGE="1")
+        with fixed(WED), capture() as out:
+            ct.run_session(mac, ct.load_agents(mac).agents[0], "y")
+        self.assertEqual(self.app.plan_usage, [])                    # Mac mode has no key: it only logs
+        self.assertIn("plan 5h 10% week 81% before", out.getvalue())
+        with self.assertRaises(ct.ConfigError):
+            self.cfg(STOCKS_TRADER_PLAN_USAGE="yes")
 
 
 class SelftestTest(Base):

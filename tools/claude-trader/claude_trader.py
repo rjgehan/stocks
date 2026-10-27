@@ -55,7 +55,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -76,6 +76,9 @@ REPORT_MAX_CHARS = 480    # a run request's report (the app keeps 500 characters
 CLAIM_PATH = "/api/v1/agent-runs/requests/claim"
 CLOCK_PATH = "/api/v1/market/clock"  # server mode: before a weekend check-in (is crypto trading on?)
 HEARTBEAT_PATH = "/api/v1/agent-runs/requests/heartbeat"
+PLAN_USAGE_PATH = "/api/v1/agent-runs/plan-usage"  # server mode: the plan's meters around check-ins and rounds
+USAGE_TIMEOUT_S = 90      # Claude Code's /usage: the plan's meters, no model call
+USAGE_CACHE_S = 30        # a reading this recent stands in for a check-in's "before" (check-ins that start together)
 NO_SLOT = "no free session slot"  # why a due check-in waits (Sessions.waiting); run requests leave it that slot
 MAX_TURNS = 60
 # The built-in Claude Code tools a check-in may use: web search, and tool search to load Stocks tools on demand.
@@ -195,6 +198,7 @@ class Config:
     claude: str             # STOCKS_TRADER_CLAUDE_BIN, or empty: find claude on PATH
     oauth_token_set: bool
     weekends: bool = True   # STOCKS_TRADER_WEEKENDS: weekend check-ins while crypto trades (server mode only)
+    plan_usage: bool = True  # STOCKS_TRADER_PLAN_USAGE: read the plan's meters around check-ins (/usage)
     fallback_key: str = field(default="", repr=False)
 
     @property
@@ -226,6 +230,9 @@ def load_config(env=None) -> Config:
     if raw_weekends not in ("0", "1"):
         raise ConfigError("STOCKS_TRADER_WEEKENDS must be 1 (weekend check-ins while crypto trades) or 0 (weekdays "
                           "only)")
+    raw_usage = env.get("STOCKS_TRADER_PLAN_USAGE", "").strip() or "1"
+    if raw_usage not in ("0", "1"):
+        raise ConfigError("STOCKS_TRADER_PLAN_USAGE must be 1 (read the plan's usage around check-ins) or 0 (don't)")
     fallback_key = env.get("STOCKS_CLAUDE_KEY", "").strip()
     add_secret(fallback_key)
     agents_env = env.get("STOCKS_TRADER_AGENTS", "").strip()
@@ -242,6 +249,7 @@ def load_config(env=None) -> Config:
         claude=env.get("STOCKS_TRADER_CLAUDE_BIN", "").strip(),
         oauth_token_set=bool(env.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip()),
         weekends=raw_weekends == "1",
+        plan_usage=raw_usage == "1",
         fallback_key=fallback_key,
     )
 
@@ -709,8 +717,13 @@ def claude_command(cfg: Config, agent: Agent, exe: str, text: str, allowed: list
 
 
 def session_command(cfg: Config, agent: Agent, exe: str, text: str, dry_run: bool) -> list:
+    """A check-in's command. It streams its output (stream-json): the result comes last, and the plan's rate-limit
+    reading comes with it (the fallback "after" when /usage has no answer)."""
     disallowed = [f"{cfg.prefix}__{t}" for t in ORDER_TOOLS] if dry_run else []
-    return claude_command(cfg, agent, exe, text, [cfg.prefix, *BUILTIN_TOOLS], disallowed, MAX_TURNS)
+    cmd = claude_command(cfg, agent, exe, text, [cfg.prefix, *BUILTIN_TOOLS], disallowed, MAX_TURNS)
+    cmd[cmd.index("--output-format") + 1] = "stream-json"
+    cmd.insert(cmd.index("--output-format"), "--verbose")
+    return cmd
 
 
 def _signal_group(p: subprocess.Popen, sig: int) -> None:
@@ -775,6 +788,204 @@ def prune_logs(logs: Path) -> None:
             pass
 
 
+# ------------------------------------------------------------------------------------------- plan usage
+
+
+def usage_command(exe: str) -> list:
+    """Claude Code's /usage, headless: the plan's meters as JSON (no model call, no tools, no MCP server)."""
+    return [exe, "-p", "/usage", "--output-format", "stream-json", "--verbose", "--strict-mcp-config", "--tools", "",
+            "--no-session-persistence"]
+
+
+def stream_messages(out: str) -> list:
+    """The JSON objects of a stream-json output, one per line (a json output is one such line); other lines skipped."""
+    msgs = []
+    for line in (out or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            m = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(m, dict):
+            msgs.append(m)
+    return msgs
+
+
+def parse_result(out: str) -> dict | None:
+    """A check-in's result: the whole output when it is one JSON object, else the last "result" message of a stream."""
+    try:
+        whole = json.loads(out)
+        if isinstance(whole, dict):
+            return whole
+    except ValueError:
+        pass
+    for m in reversed(stream_messages(out)):
+        if m.get("type") == "result":
+            return m
+    return None
+
+
+def _iso(value) -> str | None:
+    """An ISO-8601 UTC instant from /usage's ISO string or a rate-limit event's epoch seconds; None if neither."""
+    try:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            d = datetime.fromtimestamp(value, timezone.utc)
+        elif isinstance(value, str) and value:
+            d = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+        else:
+            return None
+    except (ValueError, OverflowError, OSError):
+        return None
+    return d.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _percent(value, scale: float = 1.0) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    v = round(float(value) * scale, 1)
+    return v if 0 <= v <= 100 else None
+
+
+def parse_usage(out: str) -> dict | None:
+    """The plan's meters from a /usage run: {sessionPercent, sessionResetsAt, weeklyPercent, weeklyResetsAt} (the 5-hour
+    session and the weekly all-models meter), or None when Claude Code had none (e.g. a login without the profile
+    scope)."""
+    for m in reversed(stream_messages(out)):
+        msg = m.get("message")
+        report = m.get("usage_report") or (msg.get("usage_report") if isinstance(msg, dict) else None)
+        if not isinstance(report, dict):
+            continue
+        limits = report.get("rate_limits")
+        limits = limits.get("limits") if isinstance(limits, dict) else None
+        reading = {}
+        for row in limits if isinstance(limits, list) else []:
+            name = {"session": "session", "weekly_all": "weekly"}.get(row.get("kind")) if isinstance(row, dict) else None
+            if name and _percent(row.get("percent")) is not None:
+                reading[f"{name}Percent"] = _percent(row.get("percent"))
+                reading[f"{name}ResetsAt"] = _iso(row.get("resets_at"))
+        return reading or None
+    return None
+
+
+def parse_rate_limit(out: str) -> dict | None:
+    """The plan's meters from the last rate-limit reading in a check-in's stream (utilization 0-1), or None."""
+    for m in reversed(stream_messages(out)):
+        info = m.get("rate_limit_info") if m.get("type") == "rate_limit_event" else None
+        if not isinstance(info, dict):
+            continue
+        windows = info.get("unifiedWindows") if isinstance(info.get("unifiedWindows"), dict) else {}
+        reading = {}
+        for name, key in (("session", "five_hour"), ("weekly", "seven_day")):
+            w = windows.get(key)
+            if not isinstance(w, dict) and info.get("rateLimitType") == key:
+                w = info
+            if isinstance(w, dict) and _percent(w.get("utilization"), 100) is not None:
+                reading[f"{name}Percent"] = _percent(w.get("utilization"), 100)
+                reading[f"{name}ResetsAt"] = _iso(w.get("resetsAt"))
+        if reading:
+            return reading
+    return None
+
+
+def meter_text(reading: dict | None) -> str:
+    """"5h 12% week 81%" for the log; "?" when there is no reading."""
+    if not reading:
+        return "?"
+    parts = [f"{label} {reading[k]:g}%" for label, k in (("5h", "sessionPercent"), ("week", "weeklyPercent"))
+             if reading.get(k) is not None]
+    return " ".join(parts) or "?"
+
+
+class PlanMeter:
+    """Reads the plan's meters with Claude Code's /usage (no model call, so it costs no usage). One at a time; a reading
+    younger than USAGE_CACHE_S stands in for a "before", so check-ins that start together share one."""
+
+    def __init__(self):
+        self.mu = threading.Lock()
+        self.last = None  # (time.monotonic(), reading)
+
+    def read(self, cfg: Config, agent: Agent, fresh: bool = False) -> dict | None:
+        if not cfg.plan_usage:
+            return None
+        with self.mu:
+            if not fresh and self.last and time.monotonic() - self.last[0] < USAGE_CACHE_S:
+                return self.last[1]
+            exe = claude_bin(cfg)
+            if not exe:
+                return None
+            agent.dir.mkdir(parents=True, exist_ok=True)
+            code, out, _ = run_claude(usage_command(exe), child_env(cfg, agent), agent.dir, USAGE_TIMEOUT_S)
+            reading = parse_usage(out) if code == 0 else None
+            if reading:
+                self.last = (time.monotonic(), reading)
+            return reading
+
+
+def report_plan_usage(cfg: Config, agent: Agent, kind: str, source: str, reading: dict | None, round_ref: str,
+                      run_ref: str | None = None, result: dict | None = None) -> None:
+    """Sends one snapshot to the app with the agent's key (server mode; Mac mode only logs). Never raises."""
+    if not cfg.server or not reading or not agent.key:
+        return
+    body = {"kind": kind, "source": source, "takenAt": _iso(time.time()), "roundRef": round_ref, "runRef": run_ref,
+            **reading}
+    if result is not None:
+        u = result.get("usage") if isinstance(result.get("usage"), dict) else {}
+        body["tokens"] = {"input": int(u.get("input_tokens") or 0),
+                          "cacheWrite": int(u.get("cache_creation_input_tokens") or 0),
+                          "cacheRead": int(u.get("cache_read_input_tokens") or 0),
+                          "output": int(u.get("output_tokens") or 0)}
+        cost = result.get("total_cost_usd")
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+            body["costUsd"] = round(float(cost), 4)
+    try:
+        status, answer = api_post(cfg, agent, PLAN_USAGE_PATH, body)
+    except OSError as e:
+        log(f"could not send the plan usage ({kind}): {getattr(e, 'reason', None) or e}", agent.handle)
+        return
+    if status != 201:
+        log(f"the app did not take the plan usage ({kind}): {http_problem(status, answer)}", agent.handle)
+
+
+class Rounds:
+    """A round is a stretch of overlapping check-ins: it starts when one starts while none runs, and ends when the last
+    one ends. Its readings bracket all of them (one check-in's own before and after overlap the others')."""
+
+    def __init__(self):
+        self.mu = threading.Lock()  # held while a round's first reading is taken, so its check-ins wait for it
+        self.active = 0
+        self.ref = ""
+
+    def enter(self, cfg: Config, agent: Agent) -> str:
+        with self.mu:
+            self.active += 1
+            if self.active == 1:
+                self.ref = f"round-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
+                reading = PLAN.read(cfg, agent, fresh=True)
+                report_plan_usage(cfg, agent, "ROUND_BEFORE", "USAGE", reading, self.ref)
+                if cfg.plan_usage:
+                    log(f"{self.ref} starts: plan {meter_text(reading)}", agent.handle)
+            return self.ref
+
+    def leave(self, cfg: Config, agent: Agent, fallback: dict | None) -> None:
+        with self.mu:
+            self.active -= 1
+            if self.active:
+                return
+            ref = self.ref
+        reading, source = PLAN.read(cfg, agent, fresh=True), "USAGE"
+        if reading is None and fallback:
+            reading, source = fallback, "CHECKIN"
+        report_plan_usage(cfg, agent, "ROUND_AFTER", source, reading, ref)
+        if cfg.plan_usage:
+            log(f"{ref} ends: plan {meter_text(reading)}", agent.handle)
+
+
+PLAN = PlanMeter()
+ROUNDS = Rounds()
+
+
 def usage_line(result: dict) -> str:
     """A "tokens in=… cache_write=… cache_read=… out=… ~$0.18" summary of Claude Code's JSON result (the dollar
     figure is its API-price estimate; on a subscription nothing is billed). Empty when the result has no usage."""
@@ -808,18 +1019,29 @@ def run_session(cfg: Config, agent: Agent, why: str, dry_run: bool = False, outc
     if cfg.server:
         write_mcp_config(cfg, agent)
     log_file = logs / f"{now:%Y%m%d-%H%M}{'-dry' if dry_run else ''}.json"
-    log(f"check-in ({why}{', dry run' if dry_run else ''}) started; log {log_file}", h)
-    code, out, err = run_claude(cmd, child_env(cfg, agent), workdir, SESSION_TIMEOUT_S)
-    log_file.write_text(redact(out + ("\n--- stderr\n" + err if err else "")))
-    prune_logs(logs)
-    if code == EXIT_STOPPED:
-        log("check-in stopped: the trader is shutting down", h)
-        return EXIT_STOPPED
+    run_ref = f"{h}-{now:%Y%m%d-%H%M%S}"
+    round_ref = ROUNDS.enter(cfg, agent)
+    after = None
     try:
-        result = json.loads(out)
-        if not isinstance(result, dict):
-            raise ValueError("not an object")
-    except ValueError:
+        before = PLAN.read(cfg, agent)
+        report_plan_usage(cfg, agent, "CHECKIN_BEFORE", "USAGE", before, round_ref, run_ref)
+        log(f"check-in ({why}{', dry run' if dry_run else ''}) started; log {log_file}", h)
+        code, out, err = run_claude(cmd, child_env(cfg, agent), workdir, SESSION_TIMEOUT_S)
+        log_file.write_text(redact(out + ("\n--- stderr\n" + err if err else "")))
+        prune_logs(logs)
+        if code == EXIT_STOPPED:
+            log("check-in stopped: the trader is shutting down", h)
+            return EXIT_STOPPED
+        result = parse_result(out)
+        if cfg.plan_usage:
+            after, source = PLAN.read(cfg, agent, fresh=True), "USAGE"
+            if after is None:
+                after, source = parse_rate_limit(out), "CHECKIN"
+            report_plan_usage(cfg, agent, "CHECKIN_AFTER", source, after, round_ref, run_ref, result or {})
+            log(f"plan {meter_text(before)} before, {meter_text(after)} after", h)
+    finally:
+        ROUNDS.leave(cfg, agent, after)
+    if result is None:
         info["error"] = f"claude failed (exit {code}): {(err or out).strip()[-300:]}"
         log(f"check-in failed (exit {code}): {(err or out).strip()[-500:]}", h)
         return 1

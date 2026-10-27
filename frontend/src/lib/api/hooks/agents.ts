@@ -132,6 +132,21 @@ export function usePlayerJournal(handle: string, enabled = true) {
   })
 }
 
+/**
+ * `GET /me/bots/plan-usage`: the Claude plan meters the claude-trader read around check-ins and rounds (the last `days`
+ * days, newest first). Session only.
+ */
+export function usePlanUsage(days = 7, enabled = true) {
+  return useQuery({
+    queryKey: ['me', 'planUsage', days] as const,
+    queryFn: () => unwrap(api.GET('/api/v1/me/bots/plan-usage', { params: { query: { days } } })),
+    enabled,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: false,
+  })
+}
+
 /** `GET /admin/bots`: every AI player's runs, spend against the cap and tool calls. */
 export function useAdminBots() {
   return useQuery({

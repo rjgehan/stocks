@@ -2611,6 +2611,48 @@
         ]
       }
     },
+    "/api/v1/agent-runs/plan-usage": {
+      "post": {
+        "description": "Sent by the claude-trader with a bot's own API key (trade scope; AI players only) before and after each check-in and each round of check-ins: the plan's 5-hour session and weekly meters (0-100) as Claude Code's /usage reports them, or as the check-in's own rate-limit reading. At most 500 per bot in 24 hours.",
+        "operationId": "reportPlanUsage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanUsageReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanUsage"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "Report a Claude plan usage snapshot",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/v1/agent-runs/requests/claim": {
       "post": {
         "description": "Sent by the claude-trader service with the bot's own API key (trade scope; AI players only): 200 with the bot's oldest PENDING request, now CLAIMED, or 204 when there is none (or the bot is not ACTIVE). A claimed request must be finished within 30 minutes, else it becomes FAILED. Each claim is the trader's sign of life for the bot (traderSeenAt); an empty answer does not count as the bot's activity (last seen, Recent API calls).",
@@ -4581,6 +4623,54 @@
         "summary": "My bots' manual consoles",
         "tags": [
           "manual bots"
+        ]
+      }
+    },
+    "/api/v1/me/bots/plan-usage": {
+      "get": {
+        "description": "Session only. The plan usage snapshots of the last `days` days (1-14, default 7) sent with the keys of the bots the caller owns (every AI player's for the admin), newest first, at most 2000.",
+        "operationId": "getPlanUsage",
+        "parameters": [
+          {
+            "description": "1-14, default 7",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PlanUsage"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2)"
+          }
+        },
+        "summary": "My bots' Claude plan usage",
+        "tags": [
+          "me",
+          "agents"
         ]
       }
     },
@@ -16071,6 +16161,232 @@
           "order",
           "replayed",
           "warnings"
+        ]
+      },
+      "PlanUsage": {
+        "type": "object",
+        "properties": {
+          "botHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "costUsd": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CHECKIN_BEFORE",
+              "CHECKIN_AFTER",
+              "ROUND_BEFORE",
+              "ROUND_AFTER",
+              null
+            ]
+          },
+          "roundRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessionPercent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "sessionResetsAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "USAGE",
+              "CHECKIN",
+              null
+            ]
+          },
+          "takenAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentRunTokens"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tradeDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "weeklyPercent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal"
+          },
+          "weeklyResetsAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "botHandle",
+          "costUsd",
+          "kind",
+          "roundRef",
+          "runRef",
+          "sessionPercent",
+          "sessionResetsAt",
+          "source",
+          "takenAt",
+          "tokens",
+          "tradeDate",
+          "weeklyPercent",
+          "weeklyResetsAt"
+        ]
+      },
+      "PlanUsageReportRequest": {
+        "type": "object",
+        "properties": {
+          "costUsd": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "description": "CHECKIN_AFTER: Claude Code's API-price estimate in USD (not billed on a subscription)"
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CHECKIN_BEFORE",
+              "CHECKIN_AFTER",
+              "ROUND_BEFORE",
+              "ROUND_AFTER",
+              null
+            ]
+          },
+          "roundRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The trader's id of the round, ^[A-Za-z0-9._:-]{8,64}$"
+          },
+          "runRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The trader's id of the check-in (CHECKIN_* only), ^[A-Za-z0-9._:-]{8,64}$"
+          },
+          "sessionPercent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "description": "5-hour session meter, 0-100"
+          },
+          "sessionResetsAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "USAGE",
+              "CHECKIN",
+              null
+            ]
+          },
+          "takenAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "tokens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentRunTokensRequest",
+                "description": "CHECKIN_AFTER: the check-in's tokens"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "CHECKIN_AFTER: the check-in's tokens"
+          },
+          "weeklyPercent": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "description": "Weekly (all models) meter, 0-100"
+          },
+          "weeklyResetsAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "kind",
+          "source",
+          "takenAt"
         ]
       },
       "PlayerProfile": {

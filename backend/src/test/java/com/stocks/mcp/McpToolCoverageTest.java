@@ -98,6 +98,7 @@ class McpToolCoverageTest {
         normalize("/api/v1/me/oauth/requests/{requestId}"), normalize("/api/v1/me/connected-apps"),
         normalize("/api/v1/players/{handle}/agent-runs"), normalize("/api/v1/me/api-calls"),
         normalize("/api/v1/stream"), normalize("/api/v1/me/bots/{handle}/manual"), normalize("/api/v1/me/bots"),
+        normalize("/api/v1/me/bots/plan-usage"),
         normalize("/api/v1/players/{handle}/manual-sessions"),
         normalize("/api/v1/players/{handle}/manual-sessions/{sessionId}"),
         normalize("/api/v1/me/bots/{handle}/run-requests"));

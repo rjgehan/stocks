@@ -266,11 +266,12 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.POST, "/api/v1/orders", "/api/v1/account/positions/*/close",
                 "/api/v1/watchlists", "/api/v1/watchlists/**")
                 .access(RouteAuthorization.scope(Scopes.TRADE))
-            // Phase 2: run reports (§20.6), journal notes (§20.7) and claiming/finishing Run now requests (§20.9,
-            // with the trader's heartbeat) need trade; the services allow AI players' keys only
+            // Phase 2: run reports (§20.6), journal notes (§20.7), claiming/finishing Run now requests (§20.9, with
+            // the trader's heartbeat) and Claude plan usage snapshots need trade; the services allow AI players' keys
+            // only
             .requestMatchers(HttpMethod.POST, "/api/v1/agent-runs", "/api/v1/journal",
                 "/api/v1/agent-runs/requests/claim", "/api/v1/agent-runs/requests/heartbeat",
-                "/api/v1/agent-runs/requests/*/finish")
+                "/api/v1/agent-runs/requests/*/finish", "/api/v1/agent-runs/plan-usage")
                 .access(RouteAuthorization.scope(Scopes.TRADE))
             .requestMatchers(HttpMethod.PATCH, "/api/v1/orders/*").access(RouteAuthorization.scope(Scopes.TRADE))
             .requestMatchers(HttpMethod.PUT, "/api/v1/watchlists/**").access(RouteAuthorization.scope(Scopes.TRADE))

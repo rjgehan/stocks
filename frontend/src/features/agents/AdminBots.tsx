@@ -12,6 +12,7 @@ import { IconRobot } from '@/components/ui/icons'
 import { cx } from '@/components/ui/cx'
 import { AiChip, Avatar } from '@/features/league/PlayerBadge'
 import { RUN_STATUSES, formatTokens, formatUsd, runCounts, spendMeter, statusLabel, statusTone } from './agentView'
+import { PlanUsagePanel } from './PlanUsagePanel'
 import { RunAll } from './RunAll'
 import { RunNow } from './RunNow'
 
@@ -215,6 +216,7 @@ export function AdminBots() {
         </p>
         {runnable.length ? <RunAll bots={runnable} className="w-full tablet:w-auto tablet:max-w-md" /> : null}
       </div>
+      <PlanUsagePanel />
       {bots.isPending ? (
         <div className="rounded-lg border border-divider bg-bg-1 px-4">
           <SkeletonRows rows={3} cols={3} />

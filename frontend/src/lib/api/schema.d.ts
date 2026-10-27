@@ -904,6 +904,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-runs/plan-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report a Claude plan usage snapshot
+         * @description Sent by the claude-trader with a bot's own API key (trade scope; AI players only) before and after each check-in and each round of check-ins: the plan's 5-hour session and weekly meters (0-100) as Claude Code's /usage reports them, or as the check-in's own rate-limit reading. At most 500 per bot in 24 hours.
+         */
+        post: operations["reportPlanUsage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent-runs/requests/claim": {
         parameters: {
             query?: never;
@@ -1573,6 +1593,26 @@ export interface paths {
          * @description The console state of every AI bot the signed-in person owns, by handle (the shape of GET /me/bots/{handle}/manual).
          */
         get: operations["getMyManualBots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/bots/plan-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My bots' Claude plan usage
+         * @description Session only. The plan usage snapshots of the last `days` days (1-14, default 7) sent with the keys of the bots the caller owns (every AI player's for the admin), newest first, at most 2000.
+         */
+        get: operations["getPlanUsage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4316,6 +4356,63 @@ export interface components {
             order: components["schemas"]["Order"] | null;
             replayed: boolean;
             warnings: components["schemas"]["Warning"][] | null;
+        };
+        PlanUsage: {
+            botHandle: string | null;
+            /** Format: decimal */
+            costUsd: string | null;
+            /** @enum {string|null} */
+            kind: "CHECKIN_BEFORE" | "CHECKIN_AFTER" | "ROUND_BEFORE" | "ROUND_AFTER" | null;
+            roundRef: string | null;
+            runRef: string | null;
+            /** Format: decimal */
+            sessionPercent: string | null;
+            /** Format: date-time */
+            sessionResetsAt: string | null;
+            /** @enum {string|null} */
+            source: "USAGE" | "CHECKIN" | null;
+            /** Format: date-time */
+            takenAt: string | null;
+            tokens: components["schemas"]["AgentRunTokens"] | null;
+            /** Format: date */
+            tradeDate: string | null;
+            /** Format: decimal */
+            weeklyPercent: string | null;
+            /** Format: date-time */
+            weeklyResetsAt: string | null;
+        };
+        PlanUsageReportRequest: {
+            /**
+             * Format: decimal
+             * @description CHECKIN_AFTER: Claude Code's API-price estimate in USD (not billed on a subscription)
+             */
+            costUsd?: string | null;
+            /** @enum {string|null} */
+            kind: "CHECKIN_BEFORE" | "CHECKIN_AFTER" | "ROUND_BEFORE" | "ROUND_AFTER" | null;
+            /** @description The trader's id of the round, ^[A-Za-z0-9._:-]{8,64}$ */
+            roundRef?: string | null;
+            /** @description The trader's id of the check-in (CHECKIN_* only), ^[A-Za-z0-9._:-]{8,64}$ */
+            runRef?: string | null;
+            /**
+             * Format: decimal
+             * @description 5-hour session meter, 0-100
+             */
+            sessionPercent?: string | null;
+            /** Format: date-time */
+            sessionResetsAt?: string | null;
+            /** @enum {string|null} */
+            source: "USAGE" | "CHECKIN" | null;
+            /** Format: date-time */
+            takenAt: string | null;
+            /** @description CHECKIN_AFTER: the check-in's tokens */
+            tokens?: components["schemas"]["AgentRunTokensRequest"] | null;
+            /**
+             * Format: decimal
+             * @description Weekly (all models) meter, 0-100
+             */
+            weeklyPercent?: string | null;
+            /** Format: date-time */
+            weeklyResetsAt?: string | null;
         };
         PlayerProfile: {
             deposits: components["schemas"]["DepositsSummary"] | null;
@@ -7390,6 +7487,39 @@ export interface operations {
             };
         };
     };
+    reportPlanUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanUsageReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanUsage"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     claimRunRequest: {
         parameters: {
             query?: never;
@@ -8636,6 +8766,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ManualBot"][];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getPlanUsage: {
+        parameters: {
+            query?: {
+                /** @description 1-14, default 7 */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanUsage"][];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

@@ -3,7 +3,7 @@
  * public journals, the admin Bots page and "Recent API calls". Derived deterministically from the current time and
  * the league's players, so nothing here needs persisting. Run now (§20.9) is in ./runRequests.ts.
  */
-import type { AdminBot, AgentRun, AgentRunStatus, ApiCall, JournalNote, PlayerSummary, RunRequestList } from '../types'
+import type { AdminBot, AgentRun, AgentRunStatus, ApiCall, JournalNote, PlanUsage, PlayerSummary, RunRequestList } from '../types'
 import { mulberry32 } from './market'
 import { registerRunRequestRoutes } from './runRequests'
 
@@ -26,6 +26,8 @@ export interface AgentMockDeps {
 const MIN = 60_000
 const DAY = 24 * 60 * MIN
 const iso = (ms: number) => new Date(ms).toISOString()
+/** An instant without milliseconds, as the trader sends them. */
+const isoSeconds = (ms: number) => iso(ms).replace(/\.\d{3}Z$/, 'Z')
 const etDate = (ms: number) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -46,6 +48,48 @@ const SLOTS = ['09:30', '12:45', '15:50']
 const MODELS: Record<string, string> = { claude: 'claude-opus-5-5', chatgpt: 'gpt-5.5' }
 
 /** The bots' reported runs over the last 14 days, newest first (3 slots a weekday; skips on weekends). */
+/**
+ * The claude-trader's plan readings (`GET /me/bots/plan-usage`): three rounds a day for the last three days (the times
+ * of day in UTC, roughly 09:30, 12:45 and 15:50 ET), up to three bots each, the 5-hour meter rising per check-in and
+ * resetting between rounds, the weekly one rising through the week. Newest first; only rounds that already happened.
+ */
+export function mockPlanUsage(bots: PlayerSummary[], now: number): PlanUsage[] {
+  const rnd = mulberry32(7)
+  const out: PlanUsage[] = []
+  const day0 = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate())
+  const weeklyResets = isoSeconds(day0 + 2 * DAY + 2 * 3_600_000)
+  let weekly = 62
+  const who = bots.slice(0, 3)
+  for (let d = 2; d >= 0; d--) {
+    for (const [h, m] of [[13, 30], [16, 45], [19, 50]] as const) {
+      const start = day0 - d * DAY + (h * 60 + m) * 60_000
+      if (start > now - 10 * 60_000 || !who.length) continue
+      const roundRef = `round-${isoSeconds(start).replace(/[-:]/g, '')}`
+      const sessionResets = isoSeconds(start + 5 * 3_600_000)
+      const tradeDate = isoSeconds(start).slice(0, 10)
+      let session = Math.round(rnd() * 4)
+      const snap = (kind: PlanUsage['kind'], at: number, extra: Partial<PlanUsage> = {}): PlanUsage => ({
+        botHandle: who[0]!.handle, kind, source: 'USAGE', takenAt: isoSeconds(at), tradeDate, roundRef, runRef: null,
+        sessionPercent: session.toFixed(1), sessionResetsAt: sessionResets, weeklyPercent: weekly.toFixed(1),
+        weeklyResetsAt: weeklyResets, tokens: null, costUsd: null, ...extra,
+      })
+      out.push(snap('ROUND_BEFORE', start))
+      who.forEach((b, i) => {
+        const runRef = `${b.handle}-${isoSeconds(start).replace(/[-:TZ]/g, '').slice(0, 14)}`
+        out.push(snap('CHECKIN_BEFORE', start + 5_000 + i * 1000, { botHandle: b.handle, runRef }))
+        session += 2 + Math.round(rnd() * 3)
+        weekly += 0.3 + Math.round(rnd() * 4) / 10
+        out.push(snap('CHECKIN_AFTER', start + 60_000 * (2 + i), {
+          botHandle: b.handle, runRef, tokens: { input: 300, cacheWrite: 14_000 + Math.round(rnd() * 8000), cacheRead: 60_000 + Math.round(rnd() * 30_000), output: 800 + Math.round(rnd() * 400) },
+          costUsd: (0.08 + rnd() * 0.06).toFixed(4),
+        }))
+      })
+      out.push(snap('ROUND_AFTER', start + 60_000 * (3 + who.length)))
+    }
+  }
+  return out.sort((a, b) => (b.takenAt ?? '').localeCompare(a.takenAt ?? ''))
+}
+
 export function mockRuns(bots: PlayerSummary[], now: number): AgentRun[] {
   const out: AgentRun[] = []
   for (const bot of bots) {
@@ -257,6 +301,7 @@ export function registerAgentRoutes(r: RouteFn, d: AgentMockDeps): void {
     if (!p) return notFound(params[0]!)
     return json(page(p.kind === 'AI' ? mockJournal(p, Date.now(), d.feedDelayMs()) : [], url, 20))
   })
+  r('GET', '/me/bots/plan-usage', () => json(mockPlanUsage(bots().filter((b) => d.isAdmin() || b.kind === 'AI'), Date.now())))
   r('GET', '/admin/bots', () => (d.isAdmin() ? json(mockAdminBots(bots(), mockRuns(bots(), Date.now()), Date.now())) : adminOnly()))
   r('GET', '/admin/agent-runs', ({ url }) => {
     if (!d.isAdmin()) return adminOnly()
