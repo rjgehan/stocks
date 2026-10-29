@@ -5,11 +5,13 @@ import com.stocks.common.time.TimeSource;
 import com.stocks.contract.marketdata.MarketDataService;
 import com.stocks.contract.marketdata.dto.AssetDto;
 import com.stocks.contract.marketdata.dto.AssetSummaryDto;
+import com.stocks.contract.marketdata.dto.IndicatorsDto;
 import com.stocks.contract.marketdata.dto.RecommendationsDto;
 import com.stocks.contract.marketdata.dto.TimeAndSalesDto;
 import com.stocks.contract.marketdata.model.Asset;
 import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.marketdata.config.MarketDataRuntime;
+import com.stocks.marketdata.core.IndicatorService;
 import com.stocks.marketdata.core.LogoService;
 import com.stocks.marketdata.mapper.AssetDtoMapper;
 import io.swagger.v3.oas.annotations.Operation;
@@ -44,11 +46,14 @@ public class AssetController {
   private final MarketDataService marketData;
   private final MarketDataRuntime runtime;
   private final TimeSource time;
+  private final IndicatorService indicators;
 
-  public AssetController(MarketDataService marketData, MarketDataRuntime runtime, TimeSource time) {
+  public AssetController(MarketDataService marketData, MarketDataRuntime runtime, TimeSource time,
+                         IndicatorService indicators) {
     this.marketData = marketData;
     this.runtime = runtime;
     this.time = time;
+    this.indicators = indicators;
   }
 
   @GetMapping("/search")
@@ -92,6 +97,18 @@ public class AssetController {
     String s = Symbols.normalize(symbol, "symbol");
     Symbols.require(marketData, s);
     return TimeAndSalesDto.of(marketData.timeAndSales(s, limit), time.now());
+  }
+
+  @GetMapping("/{symbol}/indicators")
+  @Operation(summary = "Exact daily indicators",
+      description = "Moving averages (5, 20, 50, 100, 200 days), price vs the 50- and 200-day averages, RSI(2) and "
+          + "RSI(14) (Wilder), 1-, 3- and 6-month returns and the 52-week range, from split and dividend adjusted "
+          + "daily closes with the live price as today's close (todayIncluded). Null where history is too short. "
+          + "Stocks, ETFs and crypto pairs (BTC-USD in the path). Errors: SYMBOL_NOT_FOUND.")
+  public IndicatorsDto indicators(@PathVariable String symbol) {
+    String s = Symbols.normalize(symbol, "symbol");
+    Symbols.require(marketData, s);
+    return indicators.indicators(s);
   }
 
   @GetMapping("/{symbol}/recommendations")

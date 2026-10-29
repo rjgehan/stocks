@@ -151,7 +151,8 @@ final class McpToolHarness implements AutoCloseable {
         alertProps), marketData, db.jdbc(), new PublicId(time), time, alertProps);
     toolSets = List.of(
         new AccountIdentityTools(me, accounts, rateLimits),
-        new MarketTools(rules, calendar, marketData, quoteMessages, tracker, time),
+        new MarketTools(rules, calendar, marketData, quoteMessages, tracker, time,
+            new com.stocks.marketdata.core.IndicatorService(marketData, time)),
         new AccountTools(accounts, orders, performance, time),
         new OrderTools(orderService, orders, accounts),
         new OrderGroupTools(orderService, orders, accounts),

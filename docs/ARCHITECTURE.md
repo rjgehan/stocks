@@ -4232,7 +4232,7 @@ Write tools:
 | 37 | `delete_watchlist` | `trade` | RO=false, destructive=true, idempotent=true | `{name*}` | `{deleted: boolean}` (false if it did not exist) |
 | 38 | `mark_notifications_read` | `account:read` | RO=false, destructive=false, idempotent=true | `{ids?: string[], all?: bool}` (exactly one) | `{marked: int}` |
 
-**Phase 2 tools** are appended after #38 in `McpToolCatalog.ORDER`, so the Phase 1 order never changes (wave A order: group orders, league stats, alerts, research, journal; then public mode's five player tools, #56–#60; then the two option-chain tools of §30, #61–#62; **62 tools** in all).
+**Phase 2 tools** are appended after #38 in `McpToolCatalog.ORDER`, so the Phase 1 order never changes (wave A order: group orders, league stats, alerts, research, journal; then public mode's five player tools, #56–#60; then the two option-chain tools of §30, #61–#62; then `get_indicators`, #63, exact daily indicators for rule-based bots; **63 tools** in all).
 
 Phase 2 group orders (§11.9), #39–#42; `place_order`, `preview_order` and `replace_order` also take `do_not_reduce?: bool` (§14). Leg inputs are flat (no nested objects): `entry_type`, `entry_limit_price`, `entry_stop_price`, `take_profit_limit_price`, `stop_loss_stop_price`, `stop_loss_limit_price` (makes the stop loss a STOP_LIMIT), `secondary_type`, `secondary_limit_price`, `secondary_stop_price`.
 

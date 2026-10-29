@@ -45,7 +45,7 @@ claude mcp add --transport http stocks https://stocks.gehan.cloud/mcp \
 ```
 
 Then, in Claude Code: "Use the stocks tools: call get_rules and whoami, then show my account." `/mcp` lists the server
-and its 62 tools. Use `--scope user` to make it available in every project, or `--scope project` to write a shared
+and its 63 tools. Use `--scope user` to make it available in every project, or `--scope project` to write a shared
 `.mcp.json` (never commit a real key; use `${STOCKS_CLAUDE_KEY}` expansion as below).
 
 ### 2.2 Claude Code (headless bot run)
@@ -137,7 +137,7 @@ key can only trade fake money for its own player.
 
 The two league bots run in the compose stack (service `agent-runner`, profile `agents`) and call
 `http://app:8080/mcp` directly, so they work even when vendor clouds cannot reach the public hostname. Both bots get
-the same system prompt (§5 below), the same 62 tools converted to plain function tools, the same schedule (09:30,
+the same system prompt (§5 below), the same 63 tools converted to plain function tools, the same schedule (09:30,
 12:45 and 15:50 ET on trading days: the open, midday and 10 minutes before the close; also on weekends and market
 holidays while crypto trading is on, since crypto pairs trade 24/7), the same right to book extra runs, the same caps
 and the same 8 KB of memory; only the model differs (ARCHITECTURE §20.5).
@@ -812,6 +812,7 @@ Tips:
 | 60 | `get_player_pnl_calendar` | league:read | A player's daily or monthly P&L (public mode) |
 | 61 | `get_option_expirations` | market:read | Listed option expirations of a stock or ETF, the option feed (indicative/opra) and whether buying options is on (§30) |
 | 62 | `get_option_chain` | market:read | One expiration's calls and puts near the money: OCC symbols, bid/ask, mid, volume, open interest (§30) |
+| 63 | `get_indicators` | market:read | Exact daily indicators: 5/20/50/100/200-day averages, RSI(2)/RSI(14), 1/3/6-month returns, 52-week range |
 
 All five order types are accepted: MARKET, LIMIT, STOP, STOP_LIMIT and TRAILING_STOP (`get_rules` → `orders.matrix`
 lists the types in force). A tool whose feature has not shipped yet answers `NOT_IMPLEMENTED`.

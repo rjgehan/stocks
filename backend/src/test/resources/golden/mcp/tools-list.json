@@ -11724,4 +11724,119 @@
     },
     "required" : [ "underlying", "expiration", "enabled", "feed", "multiplier", "underlyingPrice", "asOf", "calls", "puts" ]
   }
+}, {
+  "name" : "get_indicators",
+  "title" : "Daily indicators",
+  "description" : "Exact daily indicators of one stock, ETF or crypto pair, computed by the league (use them instead of estimating averages from bars): moving averages over 5, 20, 50, 100 and 200 days, price vs the 50- and 200-day averages (0.021 = 2.1% above), RSI(2) and RSI(14) (Wilder), 1-, 3- and 6-month returns and the 52-week range. Split and dividend adjusted daily closes, with the live price as today's close (todayIncluded). A value is null when history is too short.",
+  "annotations" : {
+    "title" : "Daily indicators",
+    "readOnlyHint" : true,
+    "destructiveHint" : false,
+    "idempotentHint" : true,
+    "openWorldHint" : false
+  },
+  "inputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "symbol" : {
+        "type" : "string",
+        "description" : "Ticker or crypto pair, e.g. QQQ or BTC/USD"
+      }
+    },
+    "required" : [ "symbol" ]
+  },
+  "outputSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "type" : "object",
+    "properties" : {
+      "asOf" : {
+        "type" : [ "string", "null" ],
+        "format" : "date-time"
+      },
+      "closes" : {
+        "type" : "integer",
+        "format" : "int32",
+        "description" : "Daily closes the indicators are computed from, today's included"
+      },
+      "high252" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal",
+        "description" : "Highest daily close of the last 252 sessions"
+      },
+      "low252" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal",
+        "description" : "Lowest daily close of the last 252 sessions"
+      },
+      "price" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal",
+        "description" : "The live price used as today's close (the last close when there is none)"
+      },
+      "return126" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal",
+        "description" : "price / close 126 sessions ago - 1 (about 6 months)"
+      },
+      "return21" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal",
+        "description" : "price / close 21 sessions ago - 1 (about 1 month)"
+      },
+      "return63" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal",
+        "description" : "price / close 63 sessions ago - 1 (about 3 months)"
+      },
+      "rsi14" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal",
+        "description" : "RSI(14), Wilder smoothing, 0-100"
+      },
+      "rsi2" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal",
+        "description" : "RSI(2), Wilder smoothing, 0-100"
+      },
+      "sma100" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "sma20" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "sma200" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "sma5" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "sma50" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal"
+      },
+      "symbol" : {
+        "type" : [ "string", "null" ]
+      },
+      "todayIncluded" : {
+        "type" : "boolean",
+        "description" : "Whether the live price counts as today's close"
+      },
+      "vsSma200" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal",
+        "description" : "price / sma200 - 1 (0.021 = 2.1% above)"
+      },
+      "vsSma50" : {
+        "type" : [ "string", "null" ],
+        "format" : "decimal",
+        "description" : "price / sma50 - 1"
+      }
+    },
+    "required" : [ "symbol", "asOf", "price", "todayIncluded", "closes", "sma5", "sma20", "sma50", "sma100", "sma200", "vsSma200", "vsSma50", "rsi2", "rsi14", "return21", "return63", "return126", "high252", "low252" ]
+  }
 } ]

@@ -1109,6 +1109,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assets/{symbol}/indicators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Exact daily indicators
+         * @description Moving averages (5, 20, 50, 100, 200 days), price vs the 50- and 200-day averages, RSI(2) and RSI(14) (Wilder), 1-, 3- and 6-month returns and the 52-week range, from split and dividend adjusted daily closes with the live price as today's close (todayIncluded). Null where history is too short. Stocks, ETFs and crypto pairs (BTC-USD in the path). Errors: SYMBOL_NOT_FOUND.
+         */
+        get: operations["indicators"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assets/{symbol}/logo": {
         parameters: {
             query?: never;
@@ -3709,6 +3729,78 @@ export interface components {
             pnl: string | null;
             /** Format: decimal */
             return: string | null;
+        };
+        Indicators: {
+            /** Format: date-time */
+            asOf: string | null;
+            /**
+             * Format: int32
+             * @description Daily closes the indicators are computed from, today's included
+             */
+            closes: number;
+            /**
+             * Format: decimal
+             * @description Highest daily close of the last 252 sessions
+             */
+            high252: string | null;
+            /**
+             * Format: decimal
+             * @description Lowest daily close of the last 252 sessions
+             */
+            low252: string | null;
+            /**
+             * Format: decimal
+             * @description The live price used as today's close (the last close when there is none)
+             */
+            price: string | null;
+            /**
+             * Format: decimal
+             * @description price / close 126 sessions ago - 1 (about 6 months)
+             */
+            return126: string | null;
+            /**
+             * Format: decimal
+             * @description price / close 21 sessions ago - 1 (about 1 month)
+             */
+            return21: string | null;
+            /**
+             * Format: decimal
+             * @description price / close 63 sessions ago - 1 (about 3 months)
+             */
+            return63: string | null;
+            /**
+             * Format: decimal
+             * @description RSI(14), Wilder smoothing, 0-100
+             */
+            rsi14: string | null;
+            /**
+             * Format: decimal
+             * @description RSI(2), Wilder smoothing, 0-100
+             */
+            rsi2: string | null;
+            /** Format: decimal */
+            sma100: string | null;
+            /** Format: decimal */
+            sma20: string | null;
+            /** Format: decimal */
+            sma200: string | null;
+            /** Format: decimal */
+            sma5: string | null;
+            /** Format: decimal */
+            sma50: string | null;
+            symbol: string | null;
+            /** @description Whether the live price counts as today's close */
+            todayIncluded: boolean;
+            /**
+             * Format: decimal
+             * @description price / sma200 - 1 (0.021 = 2.1% above)
+             */
+            vsSma200: string | null;
+            /**
+             * Format: decimal
+             * @description price / sma50 - 1
+             */
+            vsSma50: string | null;
         };
         Invite: {
             /** Format: date-time */
@@ -7863,6 +7955,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Asset"];
+                };
+            };
+            /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    indicators: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Indicators"];
                 };
             };
             /** @description Error: an RFC 9457 problem with a stable `code` (§6.5, §7.2) */

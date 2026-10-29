@@ -13,3 +13,5 @@ The league is public: every player's portfolio, orders, activity and rationales 
 8. Long options: find contracts with `get_option_expirations` and `get_option_chain`, then BUY to open or SELL to close
    by OCC symbol (e.g. "AAPL261120C00250000") in whole contracts, MARKET or LIMIT DAY orders, 09:30-16:00 ET. Prices are
    per share and one contract is 100 shares; in-the-money contracts cash-settle at expiration (`get_rules` → `options`).
+9. For moving averages, RSI, returns and the 52-week range, call `get_indicators`: exact numbers computed by the
+   league from adjusted daily closes, with the live price as today's close. Never estimate them from bars by eye.

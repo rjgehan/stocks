@@ -56,7 +56,9 @@ public final class McpToolCatalog {
       "get_player_portfolio", "get_player_orders", "get_player_activity", "get_player_pnl_analysis",
       "get_player_pnl_calendar",
       // long options (§30), appended
-      "get_option_expirations", "get_option_chain");
+      "get_option_expirations", "get_option_chain",
+      // exact daily indicators for rule-based bots, appended
+      "get_indicators");
 
   /** {@link #SCOPES} value of a tool any authenticated caller may use ({@code whoami}). */
   public static final String NO_SCOPE = "";
@@ -72,7 +74,7 @@ public final class McpToolCatalog {
     m.put("whoami", NO_SCOPE);   // its account member is null without account:read (AccountIdentityTools)
     for (String t : List.of("get_rules", "get_market_clock", "get_calendar", "search_symbols", "get_asset",
         "get_quotes", "get_snapshot", "get_bars", "get_movers", "get_news", "get_fundamentals", "screen_stocks",
-        "get_recommendations", "get_option_expirations", "get_option_chain")) {
+        "get_recommendations", "get_option_expirations", "get_option_chain", "get_indicators")) {
       m.put(t, Scopes.MARKET_READ);
     }
     for (String t : List.of("get_account", "get_positions", "get_orders", "get_order", "get_executions",

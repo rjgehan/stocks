@@ -15,6 +15,7 @@ import com.stocks.contract.marketdata.dto.AssetDto;
 import com.stocks.contract.marketdata.dto.BarDto;
 import com.stocks.contract.marketdata.dto.ClockDto;
 import com.stocks.contract.marketdata.dto.FundamentalsDto;
+import com.stocks.contract.marketdata.dto.IndicatorsDto;
 import com.stocks.contract.marketdata.dto.MoversDto;
 import com.stocks.contract.marketdata.dto.NewsListDto;
 import com.stocks.contract.marketdata.dto.OptionChainDto;
@@ -30,6 +31,7 @@ import com.stocks.contract.marketdata.model.Bar;
 import com.stocks.contract.marketdata.model.Fundamentals;
 import com.stocks.contract.rules.dto.RulesDto;
 import com.stocks.contract.security.PlayerPrincipal;
+import com.stocks.marketdata.core.IndicatorService;
 import com.stocks.mcp.tools.McpOutputs.AssetSearchDto;
 import com.stocks.mcp.tools.McpOutputs.CalendarDaysDto;
 import com.stocks.marketdata.mapper.OptionDtoMapper;
@@ -68,9 +70,12 @@ public class MarketTools implements McpToolSet {
   private final QuoteMessages quoteMessages;
   private final SubscriptionTracker tracker;
   private final TimeSource time;
+  private final IndicatorService indicators;
 
   public MarketTools(RulesService rules, MarketCalendar calendar, MarketDataService marketData,
-                     QuoteMessages quoteMessages, SubscriptionTracker tracker, TimeSource time) {
+                     QuoteMessages quoteMessages, SubscriptionTracker tracker, TimeSource time,
+                     IndicatorService indicators) {
+    this.indicators = indicators;
     this.rules = rules;
     this.calendar = calendar;
     this.marketData = marketData;
@@ -181,6 +186,21 @@ public class MarketTools implements McpToolSet {
       out.add(quoteMessages.quote(v != null ? v : QuoteView.none(s, "none"), now, session));
     }
     return new QuotesDto(out);
+  }
+
+  @McpTool(name = "get_indicators", title = "Daily indicators",
+      description = "Exact daily indicators of one stock, ETF or crypto pair, computed by the league (use them "
+          + "instead of estimating averages from bars): moving averages over 5, 20, 50, 100 and 200 days, price vs the "
+          + "50- and 200-day averages (0.021 = 2.1% above), RSI(2) and RSI(14) (Wilder), 1-, 3- and 6-month returns "
+          + "and the 52-week range. Split and dividend adjusted daily closes, with the live price as today's close "
+          + "(todayIncluded). A value is null when history is too short.",
+      generateOutputSchema = true,
+      annotations = @McpTool.McpAnnotations(title = "Daily indicators", readOnlyHint = true, destructiveHint = false,
+          idempotentHint = true, openWorldHint = false))
+  public IndicatorsDto get_indicators(McpTransportContext ctx,
+      @McpToolParam(description = "Ticker or crypto pair, e.g. QQQ or BTC/USD") String symbol) {
+    McpArgs.caller(ctx);
+    return indicators.indicators(McpArgs.symbol(symbol, "symbol"));
   }
 
   @McpTool(name = "get_option_expirations", title = "Option expirations",
